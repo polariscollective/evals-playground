@@ -46,17 +46,17 @@ def write_judge(dimension: JudgeDimension, directory: Path = JUDGES_DIR) -> Path
     Écrase un juge existant du même nom : c'est le geste « éditer ».
     """
     directory.mkdir(parents=True, exist_ok=True)
-    entete: dict[str, object] = {"description": dimension.description}
+    header: dict[str, object] = {"description": dimension.description}
     if dimension.display_name:
-        entete["display_name"] = dimension.display_name
-    entete["tags"] = dimension.tags
-    entete["palette"] = dimension.palette
+        header["display_name"] = dimension.display_name
+    header["tags"] = dimension.tags
+    header["palette"] = dimension.palette
 
-    front_matter = yaml.safe_dump(entete, sort_keys=False, allow_unicode=True)
-    corps = (dimension.rubric or "").strip()
-    chemin = directory / f"{dimension.name}.md"
-    chemin.write_text(f"---\n{front_matter}---\n\n{corps}\n", encoding="utf-8")
-    return chemin
+    front_matter = yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
+    body = (dimension.rubric or "").strip()
+    path = directory / f"{dimension.name}.md"
+    path.write_text(f"---\n{front_matter}---\n\n{body}\n", encoding="utf-8")
+    return path
 
 
 def delete_judge(name: str, directory: Path = JUDGES_DIR) -> None:
@@ -65,7 +65,7 @@ def delete_judge(name: str, directory: Path = JUDGES_DIR) -> None:
     Raises:
         KeyError: si aucun juge de ce nom n'existe.
     """
-    chemin = directory / f"{name}.md"
-    if not chemin.exists():
+    path = directory / f"{name}.md"
+    if not path.exists():
         raise KeyError(f"Juge inconnu : {name!r}")
-    chemin.unlink()
+    path.unlink()

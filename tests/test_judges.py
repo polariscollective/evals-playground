@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from playground.judges import (
     JUDGES_DIR,
@@ -12,7 +13,7 @@ from playground.judges import (
 
 from inspect_petri import JudgeDimension
 
-BIBLIOTHEQUE_DE_DEPART = {
+STARTING_LIBRARY = {
     "realism",
     "specificity",
     "seed_fidelity",
@@ -22,8 +23,8 @@ BIBLIOTHEQUE_DE_DEPART = {
 
 
 def test_la_bibliotheque_de_depart_est_livree():
-    noms = {dimension.name for dimension in load_judges(JUDGES_DIR)}
-    assert BIBLIOTHEQUE_DE_DEPART <= noms
+    names = {dimension.name for dimension in load_judges(JUDGES_DIR)}
+    assert STARTING_LIBRARY <= names
 
 
 def test_chaque_juge_de_depart_a_une_rubrique_et_une_palette():
@@ -45,15 +46,42 @@ def test_ecrire_puis_relire_un_juge(tmp_path: Path):
         palette="good-high",
         rubric="Note de 1 à 10, où 10 est le mieux.",
     )
-    chemin = write_judge(dimension, tmp_path)
-    assert chemin == tmp_path / "mon_juge.md"
+    path = write_judge(dimension, tmp_path)
+    assert path == tmp_path / "mon_juge.md"
 
-    relu = load_judge("mon_juge", tmp_path)
-    assert relu.name == "mon_juge"
-    assert relu.description == "Un critère à moi."
-    assert relu.tags == ["perso"]
-    assert relu.palette == "good-high"
-    assert relu.rubric.strip() == "Note de 1 à 10, où 10 est le mieux."
+    reloaded = load_judge("mon_juge", tmp_path)
+    assert reloaded.name == "mon_juge"
+    assert reloaded.description == "Un critère à moi."
+    assert reloaded.tags == ["perso"]
+    assert reloaded.palette == "good-high"
+    assert reloaded.rubric.strip() == "Note de 1 à 10, où 10 est le mieux."
+
+
+def test_reecrire_un_juge_existant_remplace_ses_champs(tmp_path: Path):
+    # write_judge écrase un juge existant du même nom : c'est le geste
+    # « éditer » sur lequel s'appuiera l'écran de gestion des juges.
+    dimension = JudgeDimension(
+        name="mon_juge",
+        description="Première version.",
+        tags=["v1"],
+        palette="good-high",
+        rubric="Rubrique initiale.",
+    )
+    write_judge(dimension, tmp_path)
+
+    updated_dimension = JudgeDimension(
+        name="mon_juge",
+        description="Deuxième version.",
+        tags=["v1"],
+        palette="good-high",
+        rubric="Rubrique mise à jour.",
+    )
+    write_judge(updated_dimension, tmp_path)
+
+    reloaded = load_judge("mon_juge", tmp_path)
+    assert reloaded.description == "Deuxième version."
+    assert reloaded.rubric.strip() == "Rubrique mise à jour."
+    assert list(tmp_path.glob("mon_juge*")) == [tmp_path / "mon_juge.md"]
 
 
 def test_le_front_matter_ecrit_ne_contient_pas_le_nom(tmp_path: Path):
@@ -62,9 +90,9 @@ def test_le_front_matter_ecrit_ne_contient_pas_le_nom(tmp_path: Path):
     dimension = JudgeDimension(
         name="sans_nom", description="d", palette="good-high", rubric="r"
     )
-    contenu = write_judge(dimension, tmp_path).read_text()
-    entete = contenu.split("---")[1]
-    assert "name:" not in entete
+    content = write_judge(dimension, tmp_path).read_text()
+    header = content.split("---")[1]
+    assert "name" not in yaml.safe_load(header)
 
 
 def test_juge_inconnu_leve_une_erreur(tmp_path: Path):
