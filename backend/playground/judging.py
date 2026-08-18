@@ -6,7 +6,7 @@ tool call forcé. Échelle 1 à 10, celle des rubriques Petri.
 
 from typing import Any, Callable
 
-from inspect_ai.model import get_model
+from inspect_ai.model import ChatMessageSystem, ChatMessageUser, get_model
 from inspect_ai.scorer import Score, Scorer, Target, mean, scorer, stderr
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
@@ -161,6 +161,7 @@ def scenario_judge(
     config: RunConfig,
     dimensions: list[JudgeDimension],
     on_complete: Callable[[], None] | None = None,
+    model_args: dict[str, Any] | None = None,
 ) -> Scorer:
     """Note un scénario sur les juges du run.
 
@@ -170,21 +171,23 @@ def scenario_judge(
         on_complete: Appelé une fois par scénario tenté, pour la progression —
             que le jugement ait abouti ou non (voir le `try`/`finally`
             ci-dessous).
+        model_args: Arguments de construction transmis à `get_model`. Voir la
+            docstring de `scenario_solver.model_args` : la même raison
+            s'applique ici, côté juge.
     """
 
     async def score(state: TaskState, target: Target) -> Score:
         scenario = state.metadata.get("scenario") or {}
-        model = get_model(config.models.judge)
+        model = get_model(config.models.judge, **(model_args or {}))
         try:
             output = await model.generate(
                 input=[
-                    {"role": "system", "content": JUDGE_SYSTEM},
-                    {
-                        "role": "user",
-                        "content": judge_prompt(
+                    ChatMessageSystem(content=JUDGE_SYSTEM),
+                    ChatMessageUser(
+                        content=judge_prompt(
                             scenario, state.metadata.get("seed", ""), dimensions
-                        ),
-                    },
+                        )
+                    ),
                 ],
                 tools=[submit_scores()],
                 tool_choice=ToolFunction(name="submit_scores"),

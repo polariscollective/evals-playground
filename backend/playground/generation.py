@@ -179,11 +179,26 @@ def tool_call_arguments(
 
 
 @solver
-def scenario_solver(config: RunConfig) -> Solver:
-    """Génère un scénario par sample, via un tool call forcé."""
+def scenario_solver(
+    config: RunConfig, model_args: dict[str, Any] | None = None
+) -> Solver:
+    """Génère un scénario par sample, via un tool call forcé.
+
+    Args:
+        config: La configuration du run, pour le modèle générateur.
+        model_args: Arguments de construction transmis à `get_model`. Sert aux
+            tests de bout en bout, où `run_job` y passe `custom_outputs` pour
+            piloter `mockllm` : `get_model(nom)` seul ne les reçoit pas,
+            puisque `mockllm` est explicitement exclu de la mémoïsation par
+            inspect (les sorties personnalisées peuvent être un générateur à
+            état), et qu'un nom de modèle explicite — par opposition à
+            `get_model()` sans argument — ne retombe jamais sur le modèle actif
+            de l'évaluation, seul à recevoir les `model_args` passés à
+            `eval()`.
+    """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        model = get_model(config.models.generator)
+        model = get_model(config.models.generator, **(model_args or {}))
         state.output = await model.generate(
             input=[
                 *state.messages,
