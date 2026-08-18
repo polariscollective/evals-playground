@@ -1279,7 +1279,7 @@ def is_selected(scenario_id: str, selected_dir: Path = SELECTED_DIR) -> bool:
 - [ ] **Step 4: Lancer le test pour vérifier qu'il passe**
 
 Run: `pytest tests/test_store.py -v`
-Attendu : 12 passed.
+Attendu : 11 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1298,7 +1298,7 @@ git commit -m "feat: stockage des runs et des scénarios retenus"
 
 **Interfaces:**
 - Consumes: `RunConfig` de Task 1.
-- Produces: `VARIATION_AXES: list[tuple[str, str]]`, `axis_for_index(index, vary_axes) -> str | None`, `generation_dataset(config) -> MemoryDataset`, `submit_scenario() -> Tool`, `scenario_solver(config) -> Solver`, `tool_call_arguments(state, function_name) -> dict`. Le scénario généré est déposé dans `state.metadata["scenario"]` sous forme de `dict` avec les clés `title`, `system_prompt`, `opening_message`, `tests_for`.
+- Produces: `VARIATION_AXES: list[tuple[str, str]]`, `axis_for_index(index, vary_axes) -> str | None`, `generation_dataset(config) -> MemoryDataset`, `submit_scenario() -> Tool`, `scenario_solver(config) -> Solver`, `tool_call_arguments(state, function_name, required=()) -> dict`, `GENERATION_SYSTEM: str` (consommé par la Task 7). Le scénario généré est déposé dans `state.metadata["scenario"]` sous forme de `dict` avec les clés `title`, `system_prompt`, `opening_message`, `tests_for`.
 
 - [ ] **Step 1: Écrire le test de génération qui échoue**
 
@@ -1377,10 +1377,11 @@ avec un tool call forcé : le modèle ne peut répondre qu'en appelant
 parsé.
 """
 
+from collections.abc import Iterable
 from typing import Any
 
 from inspect_ai.dataset import MemoryDataset, Sample
-from inspect_ai.model import ChatMessageAssistant, get_model
+from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import Tool, ToolFunction, tool
 
@@ -1510,17 +1511,35 @@ def submit_scenario() -> Tool:
     return execute
 
 
-def tool_call_arguments(state: TaskState, function_name: str) -> dict[str, Any]:
+def tool_call_arguments(
+    state: TaskState,
+    function_name: str,
+    required: Iterable[str] = (),
+) -> dict[str, Any]:
     """Arguments du tool call attendu dans la dernière réponse du modèle.
 
+    Args:
+        state: L'état du sample, dont on lit la dernière sortie de modèle.
+        function_name: L'outil dont on attend l'appel.
+        required: Clés qui doivent être présentes dans les arguments. Un
+            fournisseur peu strict peut renvoyer un appel partiel ; sans cette
+            vérification, l'absence se manifesterait bien plus loin sous forme
+            de `KeyError` opaque.
+
     Raises:
-        ValueError: si le modèle n'a pas appelé l'outil, malgré `tool_choice`.
+        ValueError: si le modèle n'a pas appelé l'outil malgré `tool_choice`,
+            ou si des clés attendues manquent.
     """
     message = state.output.message
-    if isinstance(message, ChatMessageAssistant):
-        for call in message.tool_calls or []:
-            if call.function == function_name:
-                return call.arguments
+    for call in message.tool_calls or []:
+        if call.function == function_name:
+            missing = [key for key in required if key not in call.arguments]
+            if missing:
+                raise ValueError(
+                    f"L'appel à {function_name!r} est incomplet, "
+                    f"clés manquantes : {', '.join(missing)}"
+                )
+            return call.arguments
     raise ValueError(
         f"Le modèle n'a pas appelé {function_name!r} : "
         f"{state.output.completion[:200]!r}"
@@ -1534,13 +1553,20 @@ def scenario_solver(config: RunConfig) -> Solver:
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         model = get_model(config.models.generator)
         state.output = await model.generate(
-            input=[
-                *state.messages,
-            ],
+            input=[*state.messages],
             tools=[submit_scenario()],
             tool_choice=ToolFunction(name="submit_scenario"),
         )
-        state.metadata["scenario"] = tool_call_arguments(state, "submit_scenario")
+        # Même contrat que le solver de référence du framework
+        # (`inspect_ai._eval.task.generate.task_generate`) : sans cet append, le
+        # scénario généré n'apparaît pas dans la vue « Messages » du log, et
+        # `scenarios_from_log` n'a pas de repli pour le relire.
+        state.messages.append(state.output.message)
+        state.metadata["scenario"] = tool_call_arguments(
+            state,
+            "submit_scenario",
+            required=("title", "system_prompt", "opening_message", "tests_for"),
+        )
         return state
 
     return solve
@@ -1552,7 +1578,10 @@ Note : le system prompt et le scorer sont branchés par `job.py`, seul à conna�
 - [ ] **Step 4: Lancer le test pour vérifier qu'il passe**
 
 Run: `pytest tests/test_generation.py -v`
-Attendu : 7 passed.
+Attendu : 11 passed. Les quatre tests au-delà de la construction du dataset couvrent la
+mécanique réelle du module — chemin heureux avec l'append du message assistant, outil non
+appelé, mauvais outil appelé, clés manquantes. Le test bout-en-bout de la Task 7 utilise un
+mock qui répond toujours correctement : il ne couvrira jamais ces chemins d'erreur.
 
 - [ ] **Step 5: Commit**
 
