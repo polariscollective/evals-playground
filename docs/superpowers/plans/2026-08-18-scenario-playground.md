@@ -85,11 +85,16 @@ XAI_API_KEY=
 
 - [ ] **Step 3: Installer l'environnement**
 
+Créer d'abord le paquet vide, sinon hatchling n'a rien à découvrir et l'install
+éditable ne rend pas `playground` importable :
+
 ```bash
+mkdir -p backend/playground && touch backend/playground/__init__.py
 python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 ```
 
-Attendu : installation réussie, `inspect-ai` et `inspect-petri` présents.
+Attendu : installation réussie, `inspect-ai` et `inspect-petri` présents, et
+`python -c "import playground"` ne lève rien.
 
 - [ ] **Step 4: Écrire le test du catalogue qui échoue**
 
