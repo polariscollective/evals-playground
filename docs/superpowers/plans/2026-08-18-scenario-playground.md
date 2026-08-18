@@ -821,12 +821,33 @@ def test_verdict_un_seul_echec_suffit():
     assert mean_margin == pytest.approx(-1.5)
 
 
-def test_score_manquant_compte_comme_un_echec():
-    selections = [JudgeSelection(name="realism", threshold=7, direction="gte")]
+@pytest.mark.parametrize(
+    "direction,threshold,expected_margin",
+    [("gte", 7, -6.0), ("lte", 3, -7.0)],
+)
+def test_score_manquant_compte_comme_un_echec(direction, threshold, expected_margin):
+    selections = [
+        JudgeSelection(name="realism", threshold=threshold, direction=direction)
+    ]
     per_judge, all_pass, mean_margin = verdict({}, selections)
     assert per_judge == {"realism": False}
     assert all_pass is False
-    assert mean_margin == -7.0
+    assert mean_margin == expected_margin
+
+
+@pytest.mark.parametrize("direction,threshold", [("gte", 7), ("lte", 3)])
+@pytest.mark.parametrize("score", range(1, 11))
+def test_un_score_manquant_ne_classe_jamais_au_dessus_d_un_score_reel(
+    direction, threshold, score
+):
+    """L'invariant qui compte : ne pas savoir noter est au moins aussi mauvais
+    que la pire note réelle, dans les deux sens de seuil."""
+    selections = [
+        JudgeSelection(name="realism", threshold=threshold, direction=direction)
+    ]
+    _, _, margin_absent = verdict({}, selections)
+    _, _, margin_note = verdict({"realism": score}, selections)
+    assert margin_absent <= margin_note
 
 
 def test_verdict_sans_juge_ne_passe_pas():
@@ -860,6 +881,16 @@ _THRESHOLDS_BY_PALETTE: dict[str, tuple[int, Direction]] = {
 }
 
 
+_WORST_SCORE: dict[Direction, int] = {"gte": 1, "lte": 10}
+"""Le pire score valide de l'échelle, selon le sens du seuil.
+
+Sert de repli quand un juge n'a rien renvoyé. Un sentinel hors échelle comme 0
+serait un piège : en direction `lte`, `margin(0, seuil, "lte")` vaut `+seuil`,
+soit une marge meilleure que celle du meilleur score réel — le scénario non noté
+remonterait en tête de table au lieu d'y descendre.
+"""
+
+
 def suggested_threshold(dimension: JudgeDimension) -> tuple[int, Direction]:
     """Seuil et direction pré-remplis pour un juge, déduits de sa palette.
 
@@ -889,9 +920,9 @@ def verdict(
 ) -> tuple[dict[str, bool], bool, float]:
     """Applique les seuils d'un run aux scores d'un scénario.
 
-    Un juge sans score est traité comme un échec, avec la pire marge possible
-    pour son seuil : un scénario que le juge n'a pas su noter ne doit pas
-    remonter en tête de table.
+    Un juge sans score est traité comme un échec, avec la marge du pire score
+    valide pour son seuil : un scénario que le juge n'a pas su noter ne doit
+    jamais se classer au-dessus d'un scénario qu'il a réellement noté.
 
     Returns:
         Le verdict par juge, le fait que tous passent, et la marge moyenne.
@@ -905,7 +936,13 @@ def verdict(
         score = scores.get(selection.name)
         if score is None:
             per_judge[selection.name] = False
-            margins.append(margin(0, selection.threshold, selection.direction))
+            margins.append(
+                margin(
+                    _WORST_SCORE[selection.direction],
+                    selection.threshold,
+                    selection.direction,
+                )
+            )
             continue
         per_judge[selection.name] = passes(
             score, selection.threshold, selection.direction
