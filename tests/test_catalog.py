@@ -42,8 +42,15 @@ def test_une_cle_vide_ne_compte_pas(monkeypatch):
 
 def test_neuf_modeles_connus_avec_prefixe_provider():
     ids = known_model_ids()
-    assert len(ids) == 9
-    assert "anthropic/claude-opus-5" in ids
-    assert "openai/gpt-5.6-sol" in ids
-    assert "grok/grok-4.6" in ids
-    assert all("/" in model_id for model_id in ids)
+    expected = {
+        "anthropic/claude-opus-5",
+        "anthropic/claude-sonnet-5",
+        "anthropic/claude-haiku-4-5",
+        "openai/gpt-5.6-sol",
+        "openai/gpt-5.6-terra",
+        "openai/gpt-5.6-luna",
+        "grok/grok-4.6",
+        "grok/grok-4.5",
+        "grok/grok-4.3",
+    }
+    assert ids == expected
