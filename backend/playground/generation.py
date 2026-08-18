@@ -6,6 +6,7 @@ avec un tool call forcé : le modèle ne peut répondre qu'en appelant
 parsé.
 """
 
+from collections.abc import Iterable
 from typing import Any
 
 from inspect_ai.dataset import MemoryDataset, Sample
@@ -139,16 +140,31 @@ def submit_scenario() -> Tool:
     return execute
 
 
-def tool_call_arguments(state: TaskState, function_name: str) -> dict[str, Any]:
+def tool_call_arguments(
+    state: TaskState, function_name: str, required: Iterable[str] = ()
+) -> dict[str, Any]:
     """Arguments du tool call attendu dans la dernière réponse du modèle.
 
+    Args:
+        state: L'état de la tâche, dont `state.output` porte la réponse.
+        function_name: Nom de l'outil dont on veut lire les arguments.
+        required: Clés qui doivent être présentes dans les arguments
+            retournés. Vide par défaut : aucune validation de forme.
+
     Raises:
-        ValueError: si le modèle n'a pas appelé l'outil, malgré `tool_choice`.
+        ValueError: si le modèle n'a pas appelé l'outil, malgré `tool_choice`,
+            ou si des clés de `required` manquent dans les arguments retournés.
     """
     message = state.output.message
     if isinstance(message, ChatMessageAssistant):
         for call in message.tool_calls or []:
             if call.function == function_name:
+                missing = [key for key in required if key not in call.arguments]
+                if missing:
+                    raise ValueError(
+                        f"L'appel à l'outil {function_name!r} ne fournit pas "
+                        f"les clés attendues : {', '.join(missing)}."
+                    )
                 return call.arguments
     raise ValueError(
         f"Le modèle n'a pas appelé {function_name!r} : "
@@ -169,7 +185,14 @@ def scenario_solver(config: RunConfig) -> Solver:
             tools=[submit_scenario()],
             tool_choice=ToolFunction(name="submit_scenario"),
         )
-        state.metadata["scenario"] = tool_call_arguments(state, "submit_scenario")
+        # Comme `task_generate` dans le framework : la réponse du modèle
+        # rejoint l'historique, qu'elle soit exploitable ou non ensuite.
+        state.messages.append(state.output.message)
+        state.metadata["scenario"] = tool_call_arguments(
+            state,
+            "submit_scenario",
+            required=["title", "system_prompt", "opening_message", "tests_for"],
+        )
         return state
 
     return solve
