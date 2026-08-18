@@ -71,12 +71,38 @@ def test_verdict_un_seul_echec_suffit():
     assert mean_margin == pytest.approx(-1.5)
 
 
-def test_score_manquant_compte_comme_un_echec():
-    selections = [JudgeSelection(name="realism", threshold=7, direction="gte")]
+@pytest.mark.parametrize(
+    "direction,threshold,expected_mean_margin",
+    [
+        ("gte", 7, -6.0),
+        ("lte", 3, -7.0),
+    ],
+)
+def test_score_manquant_compte_comme_le_pire_score_valide(
+    direction, threshold, expected_mean_margin
+):
+    selections = [
+        JudgeSelection(name="realism", threshold=threshold, direction=direction)
+    ]
     per_judge, all_pass, mean_margin = verdict({}, selections)
     assert per_judge == {"realism": False}
     assert all_pass is False
-    assert mean_margin == -7.0
+    assert mean_margin == expected_mean_margin
+
+
+@pytest.mark.parametrize("direction", ["gte", "lte"])
+@pytest.mark.parametrize("real_score", range(1, 11))
+def test_score_manquant_ne_se_classe_jamais_devant_un_score_reel(direction, real_score):
+    """Invariant anti-régression : quel que soit le score réel possible (1 à 10),
+    un scénario non noté ne doit jamais obtenir une marge meilleure que lui.
+    """
+    threshold = 5
+    selections = [
+        JudgeSelection(name="realism", threshold=threshold, direction=direction)
+    ]
+    _, _, missing_mean_margin = verdict({}, selections)
+    _, _, real_mean_margin = verdict({"realism": real_score}, selections)
+    assert missing_mean_margin <= real_mean_margin
 
 
 def test_verdict_sans_juge_ne_passe_pas():

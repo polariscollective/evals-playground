@@ -105,14 +105,31 @@ def margin(score: int, threshold: int, direction: Direction) -> int:
     return score - threshold if direction == "gte" else threshold - score
 
 
+_WORST_SCORE: dict[Direction, int] = {"gte": 1, "lte": 10}
+"""Pire score valide de l'échelle (1-10), par direction.
+
+Sert de repli quand un juge n'a pas noté un scénario. Un sentinel hors échelle
+comme `0` semble anodin mais ne l'est pas : il n'a de sens qu'en direction
+`gte`, où c'est bien le pire score possible. En direction `lte` (seuil-plafond,
+où un score bas est bon), `0` est au contraire *meilleur* que n'importe quel
+score réel — la marge obtenue est alors positive et peut dépasser celle de
+tous les scénarios notés, faisant remonter en tête de table un scénario que le
+juge n'a jamais réussi à évaluer. En ancrant le repli sur le pire score
+*valide* de l'échelle plutôt que sur une valeur hors échelle, un score manquant
+reste toujours au moins aussi mauvais qu'un vrai score, quelle que soit la
+direction — n'y substituez pas `0` ou une autre sentinelle arbitraire.
+"""
+
+
 def verdict(
     scores: dict[str, int], selections: list[JudgeSelection]
 ) -> tuple[dict[str, bool], bool, float]:
     """Applique les seuils d'un run aux scores d'un scénario.
 
-    Un juge sans score est traité comme un échec, avec la pire marge possible
-    pour son seuil : un scénario que le juge n'a pas su noter ne doit pas
-    remonter en tête de table.
+    Un juge sans score est traité comme un échec, avec en repli la marge du
+    pire score valide pour sa direction (`_WORST_SCORE`) : un scénario que le
+    juge n'a pas su noter ne doit jamais se classer au-dessus d'un scénario
+    réellement noté, quelle que soit la direction du seuil.
 
     Returns:
         Le verdict par juge, le fait que tous passent, et la marge moyenne.
@@ -126,7 +143,10 @@ def verdict(
         score = scores.get(selection.name)
         if score is None:
             per_judge[selection.name] = False
-            margins.append(margin(0, selection.threshold, selection.direction))
+            worst_score = _WORST_SCORE[selection.direction]
+            margins.append(
+                margin(worst_score, selection.threshold, selection.direction)
+            )
             continue
         per_judge[selection.name] = passes(
             score, selection.threshold, selection.direction
