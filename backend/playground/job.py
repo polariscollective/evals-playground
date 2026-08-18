@@ -45,6 +45,17 @@ def _safe_id_component(value: object) -> str:
     ni séparateur de chemin (`/`, `\\`), ni segment `..` ne peut donc survivre
     pour sortir de `data/selected/`. Les séquences neutralisées sont fusionnées
     pour rester lisibles, et une valeur qui deviendrait vide retombe sur `_`.
+
+    Seule cette absence de traversée de répertoire est garantie : cette
+    fonction n'est pas injective. Deux identifiants distincts peuvent se
+    réduire à la même chaîne après nettoyage (par exemple `"a/b"` et `"a\\b"`
+    deviennent tous deux `"a_b"`), ce qui collisionnerait alors le nom de
+    fichier d'un scénario retenu avec celui d'un autre. Le cas n'est pas
+    atteignable aujourd'hui : `generation_dataset` attribue à chaque sample un
+    identifiant entier simple (`index + 1`), qui ne contient jamais de
+    caractère neutralisé par cette fonction — la collision ne redeviendrait
+    possible que si un dataset fournissait un jour des `sample.id` en chaînes
+    libres, sous contrôle externe.
     """
     safe = _UNSAFE_ID_CHARS.sub("_", str(value))
     return safe or "_"
@@ -146,9 +157,36 @@ def run_job(
         )
         log = logs[0]
 
+        # inspect n'exception pas sur une erreur au niveau de la tâche : il
+        # l'intercepte et termine le log avec `status="error"` (ou
+        # `"cancelled"` pour une annulation interne), sans rien lever. Ignorer
+        # ce champ écrirait `status="done"` sur un run pourtant cassé — c'est
+        # ce que consultent les propres consommateurs d'inspect
+        # (`inspect_ai/_eval/eval.py`), et ce que ce module doit imiter plutôt
+        # que de compter sur une exception Python qui ne viendra jamais ici.
+        if log.status != "success":
+            record.status = "cancelled" if log.status == "cancelled" else "error"
+            record.error = (
+                log.error.message
+                if log.error
+                else f"inspect a terminé le run avec le statut {log.status!r},"
+                " sans message d'erreur."
+            )
+            record.progress.completed = read_progress(run_id, runs_dir)
+            write_run(record, runs_dir)
+            return record
+
         record.scenarios = scenarios_from_log(log, record.config)
         record.log_path = str(log.location) if log.location else None
-        record.progress.completed = read_progress(run_id, runs_dir)
+        # Le nombre de scénarios produits est la valeur exacte en fin de run :
+        # aucun n'est jamais jeté, y compris ceux dont le générateur a échoué.
+        # Le compteur incrémenté par le scorer (`bump_progress`, lu via
+        # `read_progress`) ne les compte pas, puisqu'un tel sample n'atteint
+        # jamais le scorer — voir `on_complete` dans `scenario_judge`. Ce
+        # compteur reste la bonne source de vérité pendant que le run tourne,
+        # c'est lui qui alimente l'interface ; mais une fois le run terminé,
+        # `record.scenarios` est plus exact.
+        record.progress.completed = len(record.scenarios)
         record.status = "done"
         write_run(record, runs_dir)
         return record

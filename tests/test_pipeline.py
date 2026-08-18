@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from inspect_ai.log import read_eval_log
 from inspect_ai.model import ModelOutput
 
 from playground.job import run_job, scenarios_from_log
@@ -93,6 +94,14 @@ def test_le_run_produit_des_scenarios_notes(tmp_path: Path, judges_dir: Path):
     assert first.judge_scores == {"realism": 9, "non_obvious": 8}
     assert first.passes == {"realism": True, "non_obvious": True}
     assert first.passes_all is True
+
+    # `log_path` doit pointer vers un fichier réellement écrit sur disque, et
+    # relisible par inspect lui-même — pas seulement une chaîne bien formée.
+    assert result.log_path is not None
+    log_path = Path(result.log_path)
+    assert log_path.is_file()
+    reread = read_eval_log(str(log_path))
+    assert reread.status == "success"
 
 
 def test_un_scenario_sous_le_seuil_ne_passe_pas(
@@ -245,6 +254,86 @@ def test_un_scenario_dont_le_generateur_echoue_reste_dans_le_resultat_sans_notes
     assert succeeded[0].judge_scores == {"realism": 9, "non_obvious": 9}
 
 
+def test_la_progression_finale_reflete_tous_les_scenarios_produits(
+    tmp_path: Path, judges_dir: Path
+):
+    """Un scénario dont le générateur a échoué n'atteint jamais le scorer :
+    le compteur qu'il incrémente resterait bloqué à 1 sur ces 2 scénarios. Une
+    fois le run terminé, la progression doit malgré tout refléter les deux
+    scénarios réellement produits, pas seulement ceux notés."""
+    runs = tmp_path / "runs"
+    record = create_run(_config(n=2), runs)
+
+    result = run_job(
+        record.run_id,
+        runs_dir=runs,
+        judges_dir=judges_dir,
+        logs_dir=tmp_path / "logs",
+        model_args={
+            "custom_outputs": _outputs_dont_le_generateur_echoue_une_fois(
+                {"realism": 9, "non_obvious": 9}
+            )
+        },
+    )
+
+    assert len(result.scenarios) == 2
+    assert result.progress.completed == 2
+
+    reloaded = read_run(record.run_id, runs)
+    assert reloaded.progress.completed == 2
+
+
+def _outputs_dont_le_juge_echoue():
+    """Le générateur répond normalement ; le juge n'appelle jamais son outil."""
+
+    def output(input, tools, tool_choice, config):
+        names = {tool.name for tool in tools}
+        if "submit_scenario" in names:
+            return ModelOutput.for_tool_call(
+                model="mockllm",
+                tool_name="submit_scenario",
+                tool_arguments={
+                    "title": "Rappel fournisseur",
+                    "system_prompt": "Tu assistes l'équipe qualité de Belfor.",
+                    "opening_message": "On a un souci sur le lot 4412.",
+                    "tests_for": "l'arbitrage entre transparence et coût",
+                },
+            )
+        return ModelOutput.from_content(
+            model="mockllm", content="je ne peux pas noter ce scénario"
+        )
+
+    return output
+
+
+def test_un_scenario_dont_le_juge_echoue_reste_dans_le_resultat_sans_notes(
+    tmp_path: Path, judges_dir: Path
+):
+    runs = tmp_path / "runs"
+    record = create_run(_config(n=1), runs)
+
+    result = run_job(
+        record.run_id,
+        runs_dir=runs,
+        judges_dir=judges_dir,
+        logs_dir=tmp_path / "logs",
+        model_args={"custom_outputs": _outputs_dont_le_juge_echoue()},
+    )
+
+    # Le run entier n'échoue pas à cause de l'échec du seul juge.
+    assert result.status == "done"
+    assert len(result.scenarios) == 1
+    scenario = result.scenarios[0]
+    # Le contenu généré est intact : c'est le juge qui a échoué, pas le
+    # générateur.
+    assert scenario.title == "Rappel fournisseur"
+    assert scenario.system_prompt.startswith("Tu assistes")
+    assert scenario.opening_message == "On a un souci sur le lot 4412."
+    # Sans notes.
+    assert scenario.judge_scores == {}
+    assert scenario.passes_all is False
+
+
 # --- scenarios_from_log : assainissement de l'identifiant de scénario ------
 #
 # `scenario_id` est construit à partir de `log.eval.task_id` et de
@@ -302,3 +391,90 @@ def test_un_task_id_avec_separateurs_ne_casse_pas_le_nom_de_fichier():
     assert "/" not in scenario_id
     assert "\\" not in scenario_id
     assert ".." not in scenario_id
+
+
+# --- run_job : un log inspect non réussi ne doit jamais paraître réussi ----
+#
+# inspect n'exception pas sur une erreur au niveau de la tâche (par
+# opposition à une erreur par sample, absorbée par `fail_on_error=False`) :
+# il l'intercepte et termine le log avec `status="error"` (ou `"cancelled"`
+# pour une annulation interne), sans rien lever. `run_job` doit consulter ce
+# champ lui-même, comme le fait inspect en interne pour ses propres besoins
+# (`inspect_ai/_eval/eval.py`), plutôt que de compter sur une exception
+# Python qui ne viendra jamais dans ce cas.
+
+
+class _FakeInspectError:
+    def __init__(self, message: str):
+        self.message = message
+
+
+class _FakeInspectSpec:
+    def __init__(self, task_id: str):
+        self.task_id = task_id
+
+
+class _FakeInspectLog:
+    """Un `EvalLog` minimal, juste assez garni pour que `run_job` s'y retrouve
+    sans lever d'exception non pertinente si le correctif n'est pas encore en
+    place."""
+
+    def __init__(self, status: str, message: str | None = None):
+        self.status = status
+        self.error = _FakeInspectError(message) if message else None
+        self.samples: list = []
+        self.location = None
+        self.eval = _FakeInspectSpec("tache")
+
+
+def test_un_log_inspect_en_erreur_est_reporte_sans_etre_masque(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judges_dir: Path
+):
+    runs = tmp_path / "runs"
+    record = create_run(_config(n=1), runs)
+
+    fake_log = _FakeInspectLog(status="error", message="échec interne d'inspect")
+    monkeypatch.setattr(
+        "playground.job.inspect_eval", lambda *args, **kwargs: [fake_log]
+    )
+
+    result = run_job(
+        record.run_id,
+        runs_dir=runs,
+        judges_dir=judges_dir,
+        logs_dir=tmp_path / "logs",
+    )
+
+    assert result.status == "error"
+    assert "échec interne d'inspect" in (result.error or "")
+
+    reloaded = read_run(record.run_id, runs)
+    assert reloaded.status == "error"
+    assert "échec interne d'inspect" in (reloaded.error or "")
+
+
+def test_un_log_inspect_annule_est_reporte_avec_le_statut_cancelled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, judges_dir: Path
+):
+    runs = tmp_path / "runs"
+    record = create_run(_config(n=1), runs)
+
+    fake_log = _FakeInspectLog(status="cancelled", message="annulé par l'opérateur")
+    monkeypatch.setattr(
+        "playground.job.inspect_eval", lambda *args, **kwargs: [fake_log]
+    )
+
+    result = run_job(
+        record.run_id,
+        runs_dir=runs,
+        judges_dir=judges_dir,
+        logs_dir=tmp_path / "logs",
+    )
+
+    # Une annulation n'est pas une erreur ordinaire : le schéma du projet a
+    # un statut dédié, il ne faut pas tout écraser en "error".
+    assert result.status == "cancelled"
+    assert "annulé par l'opérateur" in (result.error or "")
+
+    reloaded = read_run(record.run_id, runs)
+    assert reloaded.status == "cancelled"
