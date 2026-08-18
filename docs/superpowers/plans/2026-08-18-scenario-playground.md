@@ -17,7 +17,7 @@
 - **Aucun test ne fait d'appel API réel.** Le provider `mockllm/model` d'inspect couvre le pipeline complet.
 - **Les juges sont des fichiers**, jamais du code : `data/judges/<name>.md`, front matter YAML + rubrique markdown. Le champ `name` ne figure **jamais** dans le front matter — `inspect_petri` le dérive du nom de fichier et un doublon lève un `TypeError`.
 - **IDs de modèles exacts**, tels quels, sans suffixe de date : `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`, `anthropic/claude-haiku-4-5`, `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, `openai/gpt-5.6-luna`, `grok/grok-4.6`, `grok/grok-4.5`, `grok/grok-4.3`.
-- **Langue du code :** identifiants et docstrings en français comme le reste de l'énoncé ; messages d'erreur en français.
+- **Langue du code :** docstrings, commentaires, noms de tests et messages d'erreur en **français**. Les identifiants de code (champs pydantic, clés JSON, noms de routes) restent en **anglais** : ce sont le contrat d'API partagé avec le front TypeScript, où les mêmes noms sont repris à l'identique.
 
 **Écart assumé par rapport à la spec §8 :** le front Next.js vit dans `web/` et non à la racine, et un `scripts/dev.sh` lance les deux services au lieu d'un `package.json` racine avec `concurrently`. Raison : `create-next-app` refuse de s'installer dans un dépôt racine déjà peuplé. La spec est mise à jour en Task 12.
 
@@ -1543,7 +1543,7 @@ Créer `tests/test_judging.py` :
 ```python
 from inspect_petri import JudgeDimension
 
-from playground.judging import judge_prompt, render_rubrics
+from playground.judging import _scores_entiers, judge_prompt, render_rubrics
 
 
 def _dimensions() -> list[JudgeDimension]:
@@ -1595,6 +1595,28 @@ def test_le_prompt_contient_la_seed_pour_juger_la_fidelite():
 def test_le_prompt_rappelle_l_echelle():
     prompt = judge_prompt(_scenario(), "seed", _dimensions())
     assert "1 à 10" in prompt
+
+
+def test_les_notes_hors_echelle_sont_ecartees():
+    scores = _scores_entiers(
+        {"realism": 0, "non_obvious": 11}, _dimensions()
+    )
+    assert scores == {}
+
+
+def test_les_notes_aux_bornes_sont_gardees():
+    scores = _scores_entiers({"realism": 1, "non_obvious": 10}, _dimensions())
+    assert scores == {"realism": 1, "non_obvious": 10}
+
+
+def test_une_dimension_non_demandee_est_ignoree():
+    scores = _scores_entiers({"realism": 8, "inconnue": 9}, _dimensions())
+    assert scores == {"realism": 8}
+
+
+def test_une_note_non_entiere_est_ecartee():
+    scores = _scores_entiers({"realism": "beaucoup"}, _dimensions())
+    assert scores == {}
 ```
 
 - [ ] **Step 2: Lancer le test pour vérifier qu'il échoue**
@@ -1708,10 +1730,14 @@ def submit_scores() -> Tool:
 def _scores_entiers(brut: Any, dimensions: list[JudgeDimension]) -> dict[str, int]:
     """Normalise les scores renvoyés par le juge.
 
-    Un juge peut renvoyer une note sous forme de chaîne, ou nommer une dimension
-    inconnue. On retient les dimensions demandées dont la note est un entier
-    exploitable ; le reste est laissé absent, ce que `verdict` traite comme un
-    échec.
+    Un juge peut renvoyer une note sous forme de chaîne, nommer une dimension
+    inconnue, ou sortir de l'échelle 1-10. On retient les dimensions demandées
+    dont la note est un entier dans l'échelle ; le reste est laissé absent, ce
+    que `verdict` traite comme un échec.
+
+    Le bornage se fait ici, au point d'entrée des notes, et pas dans
+    `Scenario.judge_scores` : une contrainte au niveau du schéma rendrait
+    illisible tout run déjà écrit contenant une note aberrante.
     """
     attendues = {dimension.name for dimension in dimensions}
     scores: dict[str, int] = {}
@@ -1721,9 +1747,15 @@ def _scores_entiers(brut: Any, dimensions: list[JudgeDimension]) -> dict[str, in
         if nom not in attendues:
             continue
         try:
-            scores[nom] = int(valeur)
+            note = int(valeur)
         except (TypeError, ValueError):
             continue
+        if not 1 <= note <= 10:
+            # Hors échelle : le juge n'a pas suivi la consigne. On laisse la
+            # dimension absente plutôt que de stocker une note ininterprétable,
+            # ce que `verdict` traite comme un échec.
+            continue
+        scores[nom] = note
     return scores
 
 
@@ -1784,7 +1816,7 @@ def scenario_judge(
 - [ ] **Step 4: Lancer le test pour vérifier qu'il passe**
 
 Run: `pytest tests/test_judging.py -v`
-Attendu : 4 passed.
+Attendu : 8 passed.
 
 - [ ] **Step 5: Commit**
 
