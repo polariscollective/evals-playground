@@ -8,6 +8,11 @@
 
 **Tech Stack:** Python 3.11+, inspect-ai, inspect-petri (pour le format `JudgeDimension` uniquement), FastAPI, uvicorn, pydantic, pytest. Next.js 15 (App Router, TypeScript, Tailwind).
 
+> **Sur les tâches déjà livrées, le code fait foi, pas ce document.** Les revues ont
+> corrigé plusieurs défauts qui venaient de ce plan ; les correctifs structurants ont été
+> reportés ici, les divergences de détail non. Le journal `.superpowers/sdd/progress.md`
+> récapitule ce qui a été trouvé et tranché à chaque tâche.
+
 ## Global Constraints
 
 - **Échelle de notation : 1 à 10**, jamais autre chose. C'est l'échelle native Petri, et les rubriques sont calibrées pour elle.
