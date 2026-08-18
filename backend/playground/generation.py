@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from inspect_ai.dataset import MemoryDataset, Sample
-from inspect_ai.model import ChatMessageAssistant, get_model
+from inspect_ai.model import ChatMessageAssistant, ModelOutput, get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import Tool, ToolFunction, tool
 
@@ -141,12 +141,18 @@ def submit_scenario() -> Tool:
 
 
 def tool_call_arguments(
-    state: TaskState, function_name: str, required: Iterable[str] = ()
+    output: ModelOutput, function_name: str, required: Iterable[str] = ()
 ) -> dict[str, Any]:
-    """Arguments du tool call attendu dans la dernière réponse du modèle.
+    """Arguments du tool call attendu dans une réponse de modèle.
+
+    Prend le `ModelOutput` directement plutôt qu'un `TaskState` : cette
+    fonction est appelée aussi bien par un solver (`scenario_solver`, qui
+    écrit sa réponse dans `state.output` avant de la lire) que par un scorer
+    (`scenario_judge`), qui ne doit lui jamais écrire dans `state.output` —
+    ce champ est celui persisté comme sortie du sample dans le log.
 
     Args:
-        state: L'état de la tâche, dont `state.output` porte la réponse.
+        output: La réponse du modèle dont on veut lire le tool call.
         function_name: Nom de l'outil dont on veut lire les arguments.
         required: Clés qui doivent être présentes dans les arguments
             retournés. Vide par défaut : aucune validation de forme.
@@ -155,7 +161,7 @@ def tool_call_arguments(
         ValueError: si le modèle n'a pas appelé l'outil, malgré `tool_choice`,
             ou si des clés de `required` manquent dans les arguments retournés.
     """
-    message = state.output.message
+    message = output.message
     if isinstance(message, ChatMessageAssistant):
         for call in message.tool_calls or []:
             if call.function == function_name:
@@ -168,7 +174,7 @@ def tool_call_arguments(
                 return call.arguments
     raise ValueError(
         f"Le modèle n'a pas appelé {function_name!r} : "
-        f"{state.output.completion[:200]!r}"
+        f"{output.completion[:200]!r}"
     )
 
 
@@ -189,7 +195,7 @@ def scenario_solver(config: RunConfig) -> Solver:
         # rejoint l'historique, qu'elle soit exploitable ou non ensuite.
         state.messages.append(state.output.message)
         state.metadata["scenario"] = tool_call_arguments(
-            state,
+            state.output,
             "submit_scenario",
             required=["title", "system_prompt", "opening_message", "tests_for"],
         )

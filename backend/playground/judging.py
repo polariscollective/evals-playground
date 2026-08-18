@@ -102,9 +102,20 @@ def _integer_scores(raw: Any, dimensions: list[JudgeDimension]) -> dict[str, int
     """Normalise les scores renvoyés par le juge.
 
     Un juge peut renvoyer une note sous forme de chaîne, nommer une dimension
-    inconnue, ou sortir de l'échelle 1-10. On retient les dimensions demandées
-    dont la note est un entier dans l'échelle ; le reste est laissé absent, ce
-    que `verdict` traite comme un échec.
+    inconnue, sortir de l'échelle 1-10, ou renvoyer une valeur qui n'est tout
+    simplement pas une note entière. On retient les dimensions demandées dont
+    la note est un entier dans l'échelle ; le reste est laissé absent, ce que
+    `verdict` traite comme un échec.
+
+    Deux cas sont écartés explicitement plutôt que confiés à `int()`, qui les
+    laisserait passer silencieusement :
+    - une note flottante non entière (`int(8.7) == 8`) serait tronquée sans
+      qu'on le sache ;
+    - un booléen (`int(True) == 1`, `int(False) == 0`) n'est pas une note,
+      quelle que soit sa valeur ; `False` serait de plus écarté par accident
+      comme hors échelle plutôt que pour ce qu'il est.
+    Une note entière donnée en chaîne de caractères (`"9"`) reste acceptée :
+    les modèles le font couramment.
 
     Le bornage se fait ici, au point d'entrée des notes, et pas dans
     `Scenario.judge_scores` : une contrainte au niveau du schéma rendrait
@@ -116,6 +127,13 @@ def _integer_scores(raw: Any, dimensions: list[JudgeDimension]) -> dict[str, int
         return scores
     for name, value in raw.items():
         if name not in expected:
+            continue
+        if isinstance(value, bool):
+            # Un booléen n'est pas une note : voir la docstring ci-dessus.
+            continue
+        if isinstance(value, float) and not value.is_integer():
+            # Flottante non entière : on refuse la troncature silencieuse de
+            # `int()`, voir la docstring ci-dessus.
             continue
         try:
             grade = int(value)
@@ -130,6 +148,14 @@ def _integer_scores(raw: Any, dimensions: list[JudgeDimension]) -> dict[str, int
     return scores
 
 
+# Note d'implémentation, non corrigée ici : `metrics={"*": [...]}` résout ses
+# clés de métriques sur le premier `Score` à valeur `dict` rencontré dans le
+# run. Si les notes du premier scénario sont toutes invalides, ce dictionnaire
+# est vide et aucune métrique n'est calculée pour l'ensemble du run, sans
+# avertissement. Ce produit ne consomme pas les métriques agrégées d'inspect —
+# il stocke ses propres notes par scénario dans le run record — d'où le choix
+# de ne pas contourner cette limite ici. À garder en tête si quelqu'un
+# s'appuyait un jour sur ces métriques agrégées.
 @scorer(metrics={"*": [mean(), stderr()]})
 def scenario_judge(
     config: RunConfig,
@@ -141,44 +167,57 @@ def scenario_judge(
     Args:
         config: La configuration du run, pour le modèle juge et les seuils.
         dimensions: Les juges sélectionnés, rubriques comprises.
-        on_complete: Appelé une fois par scénario noté, pour la progression.
+        on_complete: Appelé une fois par scénario tenté, pour la progression —
+            que le jugement ait abouti ou non (voir le `try`/`finally`
+            ci-dessous).
     """
 
     async def score(state: TaskState, target: Target) -> Score:
         scenario = state.metadata.get("scenario") or {}
         model = get_model(config.models.judge)
-        output = await model.generate(
-            input=[
-                {"role": "system", "content": JUDGE_SYSTEM},
-                {
-                    "role": "user",
-                    "content": judge_prompt(
-                        scenario, state.metadata.get("seed", ""), dimensions
-                    ),
+        try:
+            output = await model.generate(
+                input=[
+                    {"role": "system", "content": JUDGE_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": judge_prompt(
+                            scenario, state.metadata.get("seed", ""), dimensions
+                        ),
+                    },
+                ],
+                tools=[submit_scores()],
+                tool_choice=ToolFunction(name="submit_scores"),
+            )
+            # On ne touche jamais à `state.output` ici : c'est le rôle du
+            # solver, pas du scorer. `state` reste le même objet pendant tout
+            # le sample, et `state.output` est ce qui est persisté comme
+            # sortie du sample dans le log ; y écrire depuis le scorer
+            # substituerait le verdict du juge au scénario généré.
+            arguments = tool_call_arguments(output, "submit_scores")
+
+            scores = _integer_scores(arguments.get("scores"), dimensions)
+            per_judge, all_pass, mean_margin = verdict(scores, config.judges)
+
+            return Score(
+                value=scores,
+                explanation=arguments.get("summary", ""),
+                metadata={
+                    "summary": arguments.get("summary", ""),
+                    "justifications": arguments.get("justifications", {}) or {},
+                    "passes": per_judge,
+                    "passes_all": all_pass,
+                    "mean_margin": mean_margin,
                 },
-            ],
-            tools=[submit_scores()],
-            tool_choice=ToolFunction(name="submit_scores"),
-        )
-        state.output = output
-        arguments = tool_call_arguments(state, "submit_scores")
-
-        scores = _integer_scores(arguments.get("scores"), dimensions)
-        per_judge, all_pass, mean_margin = verdict(scores, config.judges)
-
-        if on_complete is not None:
-            on_complete()
-
-        return Score(
-            value=scores,
-            explanation=arguments.get("summary", ""),
-            metadata={
-                "summary": arguments.get("summary", ""),
-                "justifications": arguments.get("justifications", {}) or {},
-                "passes": per_judge,
-                "passes_all": all_pass,
-                "mean_margin": mean_margin,
-            },
-        )
+            )
+        finally:
+            # Compté et réussi sont deux choses différentes : un scénario
+            # tenté fait avancer la progression même si le jugement échoue
+            # avant d'obtenir un verdict (appel de modèle en échec, outil non
+            # appelé...). C'est cohérent avec le reste du module, où une note
+            # invalide devient un échec enregistré plutôt qu'une progression
+            # perdue.
+            if on_complete is not None:
+                on_complete()
 
     return score

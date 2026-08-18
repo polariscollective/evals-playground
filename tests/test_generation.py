@@ -172,9 +172,7 @@ def test_tool_call_arguments_sans_required_ne_valide_aucune_cle():
     output = ModelOutput.for_tool_call(
         model="mockllm/model", tool_name="un_outil", tool_arguments={"a": 1}
     )
-    state = _state()
-    state.output = output
-    assert tool_call_arguments(state, "un_outil") == {"a": 1}
+    assert tool_call_arguments(output, "un_outil") == {"a": 1}
 
 
 def test_tool_call_arguments_avec_required_personnalise_nomme_la_cle_absente():
@@ -183,7 +181,5 @@ def test_tool_call_arguments_avec_required_personnalise_nomme_la_cle_absente():
     output = ModelOutput.for_tool_call(
         model="mockllm/model", tool_name="un_outil", tool_arguments={"a": 1}
     )
-    state = _state()
-    state.output = output
     with pytest.raises(ValueError, match="b"):
-        tool_call_arguments(state, "un_outil", required=["a", "b"])
+        tool_call_arguments(output, "un_outil", required=["a", "b"])
