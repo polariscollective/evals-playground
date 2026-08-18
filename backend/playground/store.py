@@ -8,7 +8,6 @@ de vérité est l'existence du fichier dans `data/selected/`. Un scénario reten
 survit donc à la suppression de son run.
 """
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,7 +89,11 @@ def list_runs(runs_dir: Path = RUNS_DIR) -> list[RunRecord]:
             records.append(
                 RunRecord.model_validate_json(path.read_text(encoding="utf-8"))
             )
-        except (json.JSONDecodeError, ValueError):
+        except ValueError:
+            # Couvre à la fois un JSON malformé (json.JSONDecodeError) et un
+            # JSON valide mais non conforme au schéma d'un run
+            # (pydantic_core.ValidationError) : les deux sont des sous-classes
+            # de ValueError.
             continue
     return sorted(records, key=lambda record: record.created_at, reverse=True)
 

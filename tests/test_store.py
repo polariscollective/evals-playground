@@ -77,20 +77,44 @@ def test_ecrire_ecrase_le_run(tmp_path: Path):
     assert len(read_run(record.run_id, tmp_path).scenarios) == 1
 
 
-def test_lister_les_runs_du_plus_recent_au_plus_ancien(tmp_path: Path):
-    first = create_run(_config(), tmp_path)
-    first.created_at = "2026-08-01T10:00:00"
-    write_run(first, tmp_path)
-    second = create_run(_config(), tmp_path)
-    second.created_at = "2026-08-02T10:00:00"
-    write_run(second, tmp_path)
+def test_lister_les_runs_du_plus_recent_au_plus_ancien(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Les identifiants sont figés à "aaa" < "bbb" < "ccc" et les dates leur
+    # sont anti-corrélées ("aaa" le plus ancien, "ccc" le plus récent) : l'ordre
+    # alphabétique des fichiers sur disque est donc l'exact inverse de l'ordre
+    # temporel attendu. Un `list_runs` qui ne trierait pas (ou trierait mal)
+    # renverrait l'ordre des fichiers et échouerait ici. Trois runs, pas deux,
+    # pour qu'un ordre issu du hasard n'ait pas une chance sur deux de passer.
+    ids = iter(["aaa", "bbb", "ccc"])
+    monkeypatch.setattr("playground.store.new_run_id", lambda: next(ids))
 
-    assert [r.run_id for r in list_runs(tmp_path)] == [second.run_id, first.run_id]
+    oldest = create_run(_config(), tmp_path)
+    oldest.created_at = "2026-08-01T10:00:00"
+    write_run(oldest, tmp_path)
+    middle = create_run(_config(), tmp_path)
+    middle.created_at = "2026-08-02T10:00:00"
+    write_run(middle, tmp_path)
+    newest = create_run(_config(), tmp_path)
+    newest.created_at = "2026-08-03T10:00:00"
+    write_run(newest, tmp_path)
+
+    assert [r.run_id for r in list_runs(tmp_path)] == [
+        newest.run_id,
+        middle.run_id,
+        oldest.run_id,
+    ]
 
 
 def test_lister_ignore_un_fichier_corrompu(tmp_path: Path):
     record = create_run(_config(), tmp_path)
     (tmp_path / "casse.json").write_text("{ pas du json")
+    assert [r.run_id for r in list_runs(tmp_path)] == [record.run_id]
+
+
+def test_lister_ignore_un_fichier_json_valide_mais_hors_schema(tmp_path: Path):
+    record = create_run(_config(), tmp_path)
+    (tmp_path / "incomplet.json").write_text('{"run_id": "x"}')
     assert [r.run_id for r in list_runs(tmp_path)] == [record.run_id]
 
 
