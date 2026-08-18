@@ -308,8 +308,8 @@ dérivé, régénérable.
 | `GET` | `/api/scenarios` | tous les scénarios, tous runs, triés et filtrés |
 | `POST` | `/api/scenarios/{run_id}/{scenario_id}/select` | retenir / relâcher (§7) |
 
-`GET /api/scenarios` accepte `?run_id=`, `?judge=`, `?passes_all=true`, `?selected=true`,
-`?sort=`.
+`GET /api/scenarios` accepte `?run_id=`, `?passes_all=true` et `?selected=true`. Le tri n'est pas
+paramétrable : il n'y a qu'un ordre utile, décrit ci-dessous.
 
 Tri par défaut : `passes_all` décroissant, puis **marge moyenne au seuil** décroissante, puis date
 de création décroissante.

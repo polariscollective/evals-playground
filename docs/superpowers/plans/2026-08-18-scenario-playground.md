@@ -2272,6 +2272,34 @@ def test_run_inconnu_renvoie_404(client: TestClient):
     assert client.get("/api/runs/absent").status_code == 404
 
 
+def test_annuler_un_run_termine_le_sous_process(client: TestClient, monkeypatch):
+    class FauxProcessus:
+        def __init__(self):
+            self.termine = False
+
+        def poll(self):
+            return None if not self.termine else 0
+
+        def terminate(self):
+            self.termine = True
+
+    faux = FauxProcessus()
+    monkeypatch.setattr(
+        api, "_lancer_sous_process", lambda run_id: api._PROCESSUS.__setitem__(run_id, faux)
+    )
+
+    run_id = client.post("/api/runs", json=_payload()).json()["run_id"]
+    reponse = client.post(f"/api/runs/{run_id}/cancel")
+
+    assert reponse.status_code == 200
+    assert reponse.json()["status"] == "cancelled"
+    assert faux.termine is True
+
+
+def test_annuler_un_run_inconnu_renvoie_404(client: TestClient):
+    assert client.post("/api/runs/absent/cancel").status_code == 404
+
+
 def test_retenir_puis_relacher_un_scenario(client: TestClient, tmp_path: Path):
     run_id = client.post("/api/runs", json=_payload()).json()["run_id"]
     record = read_run(run_id, tmp_path / "runs")
@@ -2407,6 +2435,7 @@ from playground.store import (
     read_run,
     select_scenario,
     unselect_scenario,
+    write_run,
 )
 
 load_dotenv()
@@ -2456,13 +2485,24 @@ class ScenarioView(Scenario):
     selected: bool = False
 
 
+_PROCESSUS: dict[str, subprocess.Popen] = {}
+"""Les sous-process en cours, par run_id, pour pouvoir les annuler.
+
+En mémoire seulement : redémarrer l'API perd la main sur un run en cours, qui
+ira alors jusqu'au bout. Acceptable en local, et sans conséquence sur les
+données puisque le sous-process écrit lui-même son résultat.
+"""
+
+
 def _lancer_sous_process(run_id: str) -> None:
     """Lance l'exécution d'un run dans un process séparé.
 
     Remplacé par un stub dans les tests : rien de ce module ne doit lancer un
     vrai run pendant la suite.
     """
-    subprocess.Popen([sys.executable, "-m", "playground.job", run_id])
+    _PROCESSUS[run_id] = subprocess.Popen(
+        [sys.executable, "-m", "playground.job", run_id]
+    )
 
 
 @app.get("/api/catalog", response_model=list[ProviderInfo])
@@ -2557,9 +2597,10 @@ def cancel_run(run_id: str) -> RunRecord:
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Run inconnu : {run_id}")
     if record.status in ("pending", "running"):
+        processus = _PROCESSUS.pop(run_id, None)
+        if processus is not None and processus.poll() is None:
+            processus.terminate()
         record.status = "cancelled"
-        from playground.store import write_run
-
         write_run(record, RUNS_DIR)
     return record
 
@@ -2627,7 +2668,7 @@ def post_select(run_id: str, scenario_id: str, payload: SelectPayload) -> Scenar
 - [ ] **Step 4: Lancer le test pour vérifier qu'il passe**
 
 Run: `pytest tests/test_api.py -v`
-Attendu : 11 passed.
+Attendu : 13 passed.
 
 - [ ] **Step 5: Lancer le serveur à la main pour vérifier**
 
