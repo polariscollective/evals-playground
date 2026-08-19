@@ -78,3 +78,25 @@ export const previewJudgePrompt = (criterion: string) =>
     method: "POST",
     body: JSON.stringify({ criterion }),
   });
+
+/** URL d'un export CSV. Le navigateur télécharge : pas de fetch intermédiaire. */
+export function exportUrl(runId: string, kind: "matrix" | "details"): string {
+  return `${BASE}/api/eval-runs/${runId}/export/${kind}.csv`;
+}
+
+/** Le CSV de la matrice en texte, pour le presse-papier.
+ *
+ * Ne passe pas par `request`, qui attend du JSON. Le BOM que sert la route
+ * est là pour Excel ; collé dans un éditeur il apparaîtrait comme un
+ * caractère parasite en tête de fichier. */
+export async function matrixCsvText(runId: string): Promise<string> {
+  const response = await fetch(exportUrl(runId, "matrix"), { cache: "no-store" });
+  if (!response.ok) throw new Error(`Export failed (HTTP ${response.status})`);
+  return (await response.text()).replace(/^\ufeff/, "");
+}
+
+export const saveNotes = (runId: string, notes: string) =>
+  request<EvalRunRecord>(`/api/eval-runs/${runId}/notes`, {
+    method: "PUT",
+    body: JSON.stringify({ notes }),
+  });

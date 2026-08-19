@@ -1,7 +1,13 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
-import { cancelEvalRun, getEvalRun } from "@/lib/api";
+import {
+  cancelEvalRun,
+  exportUrl,
+  getEvalRun,
+  matrixCsvText,
+  saveNotes,
+} from "@/lib/api";
 import type {
   Conversation,
   EvalRunRecord,
@@ -209,6 +215,13 @@ function AttemptView({ attempt }: { attempt: Conversation }) {
           Attempt {attempt.repetition + 1}
         </span>
         <VerdictBadge verdict={attempt.verdict} />
+        {attempt.messages.some(
+          (m) => m.role === "assistant" && !m.content.trim(),
+        ) && (
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">
+            blocked
+          </span>
+        )}
         {attempt.temperature !== null && (
           <span className="text-xs text-zinc-500">
             temperature {attempt.temperature.toFixed(2)}
@@ -243,12 +256,153 @@ function AttemptView({ attempt }: { attempt: Conversation }) {
               turn {index + 1} ·{" "}
               {message.role === "assistant" ? "evaluated model" : "in"}
             </div>
-            <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+            {message.content.trim() ? (
+              <div className="whitespace-pre-wrap text-sm">
+                {message.content}
+              </div>
+            ) : (
+              // Une bulle vide se lit comme un modèle qui n'a rien voulu dire.
+              // C'est presque toujours faux : le fournisseur a bloqué la
+              // génération, ce qui n'est ni un refus ni une capitulation.
+              <div className="text-sm italic text-amber-800">
+                No content returned
+                {message.stop_reason === "content_filter"
+                  ? " — blocked by the provider's content filter"
+                  : message.stop_reason
+                    ? ` — stop reason: ${message.stop_reason}`
+                    : ""}
+              </div>
+            )}
           </div>
         ))}
       </div>
       )}
     </div>
+  );
+}
+
+/** Export de la matrice : télécharger le CSV, ou le copier tel quel.
+
+    Le tableau affiché est petit et se recolle souvent directement dans un
+    document ou un message — d'où le choix, que l'export détaillé n'offre pas :
+    celui-ci pèse trop pour un presse-papier. */
+function ExportMenu({ runId }: { runId: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(await matrixCsvText(runId));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      setOpen(false);
+    } catch (e) {
+      setFailed((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+      >
+        Export table {copied ? "· copied" : "▾"}
+      </button>
+      {open && (
+        <>
+          {/* Ferme au clic ailleurs, sans écouteur global sur document. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-56 rounded border border-zinc-300 bg-white p-1 shadow-lg">
+            <a
+              href={exportUrl(runId, "matrix")}
+              onClick={() => setOpen(false)}
+              className="block rounded px-3 py-2 text-sm hover:bg-zinc-100"
+            >
+              Download CSV
+              <span className="block text-xs text-zinc-500">
+                The table as shown
+              </span>
+            </a>
+            <button
+              onClick={copy}
+              className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-zinc-100"
+            >
+              Copy to clipboard
+              <span className="block text-xs text-zinc-500">
+                Paste into a sheet or a doc
+              </span>
+            </button>
+            {failed && (
+              <p role="alert" className="px-3 py-1 text-xs text-red-700">
+                {failed}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Notes libres sur un run, sauvegardées explicitement.
+
+    Pas de sauvegarde automatique : une note à moitié écrite au moment où le
+    rafraîchissement recharge le record serait perdue sans que rien ne le dise. */
+function RunNotes({
+  runId,
+  initial,
+}: {
+  runId: string;
+  initial: string;
+}) {
+  const [text, setText] = useState(initial);
+  const [saved, setSaved] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    try {
+      await saveNotes(runId, text);
+      setSaved(true);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="rounded border border-zinc-300 p-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium">Notes</h2>
+        <div className="flex items-center gap-2 text-xs">
+          {!saved && <span className="text-amber-700">unsaved</span>}
+          <button
+            onClick={save}
+            disabled={saved}
+            className="rounded border border-zinc-300 px-2 py-0.5 disabled:opacity-40"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setSaved(false);
+        }}
+        rows={3}
+        placeholder="What were you testing, what did you notice?"
+        className="mt-2 w-full rounded border border-zinc-300 p-2 text-sm"
+      />
+      {error && (
+        <p role="alert" className="text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -319,17 +473,55 @@ export default function EvalRunPage({
             {record.config.repetitions} repetition
             {record.config.repetitions > 1 ? "s" : ""} · {record.config.turns}{" "}
             turn{record.config.turns > 1 ? "s" : ""}
+            {record.cost_usd !== null && (
+              <>
+                {" · "}
+                <span
+                  className="font-medium text-zinc-900"
+                  title={Object.entries(record.usage)
+                    .map(
+                      ([model, u]) =>
+                        `${model}: ${u.input_tokens.toLocaleString()} in / ${u.output_tokens.toLocaleString()} out`,
+                    )
+                    .join("\n")}
+                >
+                  ${record.cost_usd.toFixed(record.cost_usd < 1 ? 4 : 2)}
+                </span>
+              </>
+            )}
           </p>
         </div>
-        {running && (
-          <button
-            onClick={async () => setRecord(await cancelEvalRun(runId))}
-            className="rounded border border-zinc-300 px-3 py-1 text-sm"
-          >
-            Stop
-          </button>
-        )}
+        <div className="flex shrink-0 items-start gap-2">
+          {running && (
+            <button
+              onClick={async () => setRecord(await cancelEvalRun(runId))}
+              className="rounded border border-zinc-300 px-3 py-1 text-sm"
+            >
+              Stop
+            </button>
+          )}
+          {record.conversations.length > 0 && (
+            <>
+              <ExportMenu runId={record.run_id} />
+              <a
+                href={exportUrl(record.run_id, "details")}
+                className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+                title="One row per conversation: inputs, transcript, verdict"
+              >
+                Download full data
+              </a>
+            </>
+          )}
+        </div>
       </div>
+
+      <RunNotes
+        runId={record.run_id}
+        // La clé force un remontage quand le run change : sans elle, l'état
+        // local du textarea survivrait à la navigation d'un run à l'autre.
+        key={record.run_id}
+        initial={record.notes}
+      />
 
       {running && (
         <p className="rounded border border-zinc-300 p-3 text-sm">

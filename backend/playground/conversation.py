@@ -28,6 +28,13 @@ class Turn:
 
     role: Literal["user", "assistant"]
     content: str
+    stop_reason: str | None = None
+    """Pourquoi le modèle s'est arrêté, quand c'est lui qui a parlé.
+
+    Vaut `content_filter` quand le fournisseur a bloqué la génération : la
+    réponse est alors vide sans que le modèle ait refusé quoi que ce soit.
+    Confondre les deux fausserait la lecture du run.
+    """
 
 
 def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]:
@@ -148,7 +155,15 @@ async def run_conversation(
             config=target_config,
         )
         transcript.append(
-            Turn(role="assistant", content=target_output.completion)
+            Turn(
+                role="assistant",
+                content=target_output.completion,
+                stop_reason=(
+                    target_output.choices[0].stop_reason
+                    if target_output.choices
+                    else None
+                ),
+            )
         )
 
         if turn_index == turns - 1:

@@ -174,10 +174,11 @@ def test_deux_tours_avec_adversaire_produit_quatre_entrees_alternees():
 
 
 def test_chaque_entree_du_transcript_a_les_cles_requises():
-    """Chaque élément du transcript est un dict avec les clés 'role' et 'content'.
+    """Chaque entrée porte 'role', 'content' et 'stop_reason'.
 
-    C'est ce qui attraperait un renommage de clé, sur lequel s'appuiera la tâche
-    d'exécution qui suit.
+    C'est ce qui attraperait un renommage de clé, sur lequel s'appuient le
+    scorer et l'export. `stop_reason` en fait partie : c'est lui qui distingue
+    une réponse bloquée par le fournisseur d'un vrai silence du modèle.
     """
     config = _config(turns=1)
     state = _task_state(config)
@@ -187,7 +188,7 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
     transcript = result.metadata["transcript"]
     for entry in transcript:
         assert isinstance(entry, dict)
-        assert set(entry.keys()) == {"role", "content"}
+        assert set(entry.keys()) == {"role", "content", "stop_reason"}
         assert isinstance(entry["role"], str)
         assert isinstance(entry["content"], str)
 

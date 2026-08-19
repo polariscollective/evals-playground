@@ -48,6 +48,23 @@ export interface TemperatureSpec {
   max?: number | null;
 }
 
+export interface ScenarioSource {
+  kind: "manual" | "csv";
+  file_name: string;
+  column_title: string;
+  column_system_prompt: string;
+  column_opening_message: string;
+  skipped_rows: number;
+}
+
+export interface ModelUsage {
+  input_tokens: number;
+  output_tokens: number;
+  input_tokens_cache_read: number;
+  input_tokens_cache_write: number;
+  reasoning_tokens: number;
+}
+
 export interface EvalRunConfig {
   scenarios: EvalScenario[];
   criterion: string;
@@ -57,11 +74,14 @@ export interface EvalRunConfig {
   adversary_prompt: string;
   temperature?: TemperatureSpec | null;
   label?: string | null;
+  source?: ScenarioSource | null;
 }
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
+  /** `content_filter` quand le fournisseur a bloqué la génération. */
+  stop_reason: string | null;
 }
 
 export interface Conversation {
@@ -90,6 +110,12 @@ export interface EvalRunRecord {
   progress: { completed: number; total: number };
   error: string | null;
   log_path: string | null;
+  /** Notes libres saisies depuis la page du run. */
+  notes: string;
+  /** Jetons réellement consommés, par modèle. Vide tant que le run n'a rien produit. */
+  usage: Record<string, ModelUsage>;
+  /** Coût réel en dollars, ou null si un modèle employé n'a pas de tarif connu. */
+  cost_usd: number | null;
   /** Une entrée par scénario, alignée sur config.scenarios. */
   tallies: Record<string, Tally>[];
   conversations: Conversation[];

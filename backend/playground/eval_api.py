@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from playground.eval_schemas import EvalRunConfig, EvalRunRecord
@@ -22,6 +23,7 @@ from playground.eval_store import (
     read_eval_run,
     write_eval_run,
 )
+from playground.exports import details_csv, matrix_csv
 from playground.pricing import CostEstimate, estimate_cost
 from playground.store import SELECTED_DIR as _DEFAULT_SELECTED_DIR
 from playground.verdict import JUDGE_SYSTEM, render_transcript, verdict_prompt
@@ -157,6 +159,61 @@ def get_eval_run(run_id: str) -> EvalRunRecord:
         # le handle laissé dans _EVAL_PROCESSES est purgé.
         _EVAL_PROCESSES.pop(run_id, None)
     return record
+
+
+class NotesUpdate(BaseModel):
+    notes: str
+
+
+@router.put("/api/eval-runs/{run_id}/notes", response_model=EvalRunRecord)
+def put_eval_run_notes(run_id: str, update: NotesUpdate) -> EvalRunRecord:
+    """Remplace les notes d'un run.
+
+    Relit le record avant d'écrire : un run en cours est réécrit par son
+    sous-process, et sauvegarder une copie devenue périmée effacerait les
+    conversations arrivées entre-temps.
+    """
+    try:
+        record = read_eval_run(run_id, Path(EVAL_RUNS_DIR))
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown run: {run_id}")
+    record.notes = update.notes
+    write_eval_run(record, Path(EVAL_RUNS_DIR))
+    return record
+
+
+def _csv_response(body: str, filename: str) -> PlainTextResponse:
+    """Un CSV que le navigateur enregistre au lieu de l'afficher.
+
+    Le BOM UTF-8 est là pour Excel, qui sans lui lit les accents en latin-1 et
+    affiche « Accès données » en mojibake.
+    """
+    return PlainTextResponse(
+        content="\ufeff" + body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _run_for_export(run_id: str) -> EvalRunRecord:
+    try:
+        return read_eval_run(run_id, Path(EVAL_RUNS_DIR))
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown run: {run_id}")
+
+
+@router.get("/api/eval-runs/{run_id}/export/matrix.csv")
+def get_matrix_csv(run_id: str) -> PlainTextResponse:
+    """La matrice telle qu'affichée."""
+    record = _run_for_export(run_id)
+    return _csv_response(matrix_csv(record), f"matrix-{run_id}.csv")
+
+
+@router.get("/api/eval-runs/{run_id}/export/details.csv")
+def get_details_csv(run_id: str) -> PlainTextResponse:
+    """Une ligne par conversation, transcript et paramètres d'entrée compris."""
+    record = _run_for_export(run_id)
+    return _csv_response(details_csv(record), f"details-{run_id}.csv")
 
 
 @router.post("/api/eval-runs/{run_id}/cancel", response_model=EvalRunRecord)

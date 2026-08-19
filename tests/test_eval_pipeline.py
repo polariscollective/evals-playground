@@ -167,6 +167,9 @@ def test_un_log_inspect_en_erreur_est_reporte_sans_etre_masque(
         location = None
         samples: list = []
 
+        class stats:
+            model_usage: dict = {}
+
         class eval:
             task_id = "t"
 
@@ -293,6 +296,9 @@ def test_un_log_inspect_annule_est_reporte_comme_cancelled(
         location = None
         samples: list = []
         error = None
+
+        class stats:
+            model_usage: dict = {}
 
         class eval:
             task_id = "t"

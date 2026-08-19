@@ -15,7 +15,13 @@ from typing import Any
 from inspect_ai import Task, eval as inspect_eval
 from inspect_ai.log import EvalLog
 
-from playground.eval_schemas import Conversation, EvalRunRecord, Message, Tally
+from playground.eval_schemas import (
+    Conversation,
+    EvalRunRecord,
+    Message,
+    ModelUsage,
+    Tally,
+)
 from playground.eval_store import (
     EVAL_RUNS_DIR,
     bump_eval_progress,
@@ -24,6 +30,7 @@ from playground.eval_store import (
     write_eval_run,
 )
 from playground.eval_task import conversation_solver, eval_dataset
+from playground.pricing import actual_cost
 from playground.store import safe_id_component
 from playground.verdict import verdict_judge
 
@@ -55,6 +62,7 @@ def conversations_from_log(log: EvalLog) -> list[Conversation]:
                     Message(
                         role=message.get("role", "user"),
                         content=str(message.get("content", "")),
+                        stop_reason=message.get("stop_reason"),
                     )
                     for message in raw_messages
                 ],
@@ -70,6 +78,39 @@ def conversations_from_log(log: EvalLog) -> list[Conversation]:
             conversation.repetition,
         ),
     )
+
+
+def usage_from_log(log: EvalLog) -> dict[str, ModelUsage]:
+    """Les jetons réellement consommés, par modèle.
+
+    Inspect agrège ces compteurs depuis les réponses des fournisseurs : ce sont
+    les nombres facturés, pas une estimation. Les champs absents valent zéro —
+    tous les fournisseurs ne rapportent pas le cache ni le raisonnement.
+    """
+    return {
+        model: ModelUsage(
+            input_tokens=counts.input_tokens or 0,
+            output_tokens=counts.output_tokens or 0,
+            input_tokens_cache_read=counts.input_tokens_cache_read or 0,
+            input_tokens_cache_write=counts.input_tokens_cache_write or 0,
+            reasoning_tokens=counts.reasoning_tokens or 0,
+        )
+        for model, counts in (log.stats.model_usage or {}).items()
+    }
+
+
+def record_usage(record: EvalRunRecord, log: EvalLog) -> None:
+    """Reporte la consommation du log dans le record, et le coût qui en découle.
+
+    Appelé aussi sur un run échoué ou annulé : les jetons déjà consommés ont
+    été facturés, et ne pas les enregistrer laisserait croire le run gratuit.
+
+    `cost_usd` reste `None` si un modèle employé n'a pas de tarif connu : un
+    total amputé d'un modèle serait plus trompeur qu'une absence de total.
+    """
+    record.usage = usage_from_log(log)
+    cost, unpriced = actual_cost(record.usage)
+    record.cost_usd = None if unpriced else cost
 
 
 def tallies_of(
@@ -160,6 +201,8 @@ def run_eval_job(
                 " sans message d'erreur."
             )
             record.progress.completed = read_eval_progress(run_id, runs_dir)
+            record.log_path = str(log.location) if log.location else None
+            record_usage(record, log)
             write_eval_run(record, runs_dir)
             return record
 
@@ -168,6 +211,7 @@ def run_eval_job(
             record.conversations, len(record.config.scenarios)
         )
         record.log_path = str(log.location) if log.location else None
+        record_usage(record, log)
         # Le compteur alimente la progression pendant le run ; une fois
         # terminé, le nombre réel de conversations produites est la valeur
         # exacte. Les deux régimes coexistent : remplacer l'un par l'autre

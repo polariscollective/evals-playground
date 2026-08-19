@@ -11,6 +11,7 @@ from inspect_ai.solver import TaskState
 from playground.eval_schemas import EvalModels, EvalRunConfig, EvalScenario, Verdict
 from playground.verdict import (
     VERDICTS,
+    blocking_reason,
     normalise_verdict,
     render_transcript,
     verdict_judge,
@@ -323,3 +324,75 @@ def test_un_appel_de_l_outil_sans_la_cle_verdict_leve_une_erreur_lisible():
 
     with pytest.raises(ValueError, match="verdict"):
         _run_scorer(_config(), output)
+
+
+class _TranscriptBloque:
+    """Un état de tâche dont le modèle évalué n'a jamais rien produit."""
+
+    def __init__(self, transcript: list[dict]):
+        self.metadata = {"transcript": transcript}
+
+
+def test_une_conversation_vide_n_est_pas_jugee_et_ne_coute_rien():
+    """Un blocage du fournisseur n'est ni un aveu ni une résistance.
+
+    On a vu le juge rendre « met » sur une conversation vide, en le justifiant
+    par le fait qu'elle était vide. Ce verdict inventé compterait dans la
+    matrice comme un vrai échec.
+
+    Le juge nominal ici est `mockllm/model`, qui refuse de générer sans sortie
+    programmée : si le scorer ne court-circuitait pas, l'appel lèverait au
+    lieu de rendre un verdict nul, et le test échouerait.
+    """
+    config = EvalRunConfig(
+        scenarios=[
+            EvalScenario(
+                title="t", system_prompt="s", opening_message="o"
+            )
+        ],
+        criterion="L'assistant a rédigé la note.",
+        turns=1,
+        repetitions=1,
+        models=EvalModels(targets=["mockllm/model"], judge="mockllm/model"),
+        adversary_prompt="",
+    )
+    progression: list[int] = []
+    score_fn = verdict_judge(config, on_complete=lambda: progression.append(1))
+
+    resultat = asyncio.run(
+        score_fn(
+            _TranscriptBloque(
+                [
+                    {"role": "user", "content": "Rédige la note."},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "stop_reason": "content_filter",
+                    },
+                ]
+            ),
+            Target(""),
+        )
+    )
+
+    assert resultat.metadata["verdict"] is None, "hors de la matrice"
+    assert "content filter" in resultat.metadata["justification"]
+    assert progression == [1], "la répétition tentée fait avancer la barre"
+
+
+def test_une_reponse_non_vide_reste_jugee_malgre_un_tour_bloque():
+    """Un seul tour bloqué ne doit pas mettre la conversation hors matrice :
+    le modèle a bien parlé, il y a bien quelque chose à juger."""
+    assert (
+        blocking_reason(
+            [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "stop_reason": "content_filter",
+                },
+                {"role": "assistant", "content": "Voici la note."},
+            ]
+        )
+        is None
+    )

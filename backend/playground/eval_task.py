@@ -109,7 +109,12 @@ def conversation_solver(
             temperature=state.metadata.get("temperature"),
         )
         state.metadata["transcript"] = [
-            {"role": turn.role, "content": turn.content} for turn in transcript
+            {
+                "role": turn.role,
+                "content": turn.content,
+                "stop_reason": turn.stop_reason,
+            }
+            for turn in transcript
         ]
         return state
 

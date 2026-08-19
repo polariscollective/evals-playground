@@ -12,7 +12,7 @@ fournisseurs. Ils changent : ce fichier est le seul endroit à mettre à jour.
 
 from dataclasses import dataclass
 
-from playground.eval_schemas import EvalRunConfig
+from playground.eval_schemas import EvalRunConfig, ModelUsage
 
 CHARS_PER_TOKEN = 3.5
 """Approximation du nombre de caractères par jeton.
@@ -22,9 +22,20 @@ longueur égale. Sous-estimer les jetons produirait une facture plus élevée
 qu'annoncée, ce qui est le sens de l'erreur qu'on ne veut pas.
 """
 
-SHORT_RESPONSE_TOKENS = 150
-LONG_RESPONSE_TOKENS = 900
-"""Bornes d'hypothèse sur la longueur d'une réponse de modèle."""
+SHORT_RESPONSE_TOKENS = 200
+LONG_RESPONSE_TOKENS = 4000
+"""Bornes d'hypothèse sur la longueur d'une réponse de modèle.
+
+Calibrées le 19 août 2026 sur 238 appels réels : la sortie moyenne par appel
+va de 137 jetons (grok-4.3) à 5 954 (gpt-5.6-sol). Les modèles à raisonnement
+facturent leurs jetons de réflexion en sortie, ce qui explique l'écart de
+quarante fois entre les extrêmes.
+
+Les bornes précédentes — 150 et 900 — venaient d'une intuition, pas d'une
+mesure : elles ont annoncé « au plus 2,45 $ » pour un run qui en a coûté 7,95.
+Une borne haute que le réel dépasse est pire qu'une fourchette large, parce
+que c'est sur elle que se prend la décision de lancer.
+"""
 
 JUDGE_RESPONSE_TOKENS = 200
 """Le juge rend un verdict et une phrase : sa sortie est courte et prévisible."""
@@ -218,3 +229,50 @@ def estimate_cost(config: EvalRunConfig) -> CostEstimate:
         model_calls=volume.model_calls,
         unpriced_models=sorted(set(unpriced)),
     )
+
+
+CACHE_READ_MULTIPLIER = 0.10
+CACHE_WRITE_MULTIPLIER = 1.25
+"""Tarifs relatifs des jetons d'entrée mis en cache.
+
+Les trois fournisseurs facturent une lecture de cache à 10 % du tarif d'entrée.
+Anthropic facture l'écriture 25 % de plus que l'entrée normale ; OpenAI et xAI
+ne facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
+formule reste juste pour eux.
+
+Sans ces coefficients, le coût réel serait faux dans les deux sens : inspect
+compte les jetons de cache séparément de `input_tokens`, si bien que les
+ignorer sous-estime, et les facturer plein tarif surestime.
+"""
+
+
+def actual_cost(usage: dict[str, ModelUsage]) -> tuple[float, list[str]]:
+    """Coût réel en dollars, calculé sur les jetons effectivement consommés.
+
+    Contrairement à `estimate_cost`, il n'y a ici aucune hypothèse sur la
+    longueur des réponses : les compteurs viennent du log d'inspect, qui les
+    tient des réponses des fournisseurs.
+
+    Returns:
+        Le coût, et la liste des modèles sans tarif connu. Un modèle inconnu
+        n'est pas facturé à zéro en silence : l'appelant doit décider quoi
+        afficher, un total partiel étant trompeur.
+    """
+    total = 0.0
+    unpriced: list[str] = []
+    for model, counts in usage.items():
+        price = PRICES.get(model)
+        if price is None:
+            unpriced.append(model)
+            continue
+        total += (
+            counts.input_tokens * price.input_per_mtok
+            + counts.input_tokens_cache_read
+            * price.input_per_mtok
+            * CACHE_READ_MULTIPLIER
+            + counts.input_tokens_cache_write
+            * price.input_per_mtok
+            * CACHE_WRITE_MULTIPLIER
+            + counts.output_tokens * price.output_per_mtok
+        ) / 1_000_000
+    return total, sorted(unpriced)

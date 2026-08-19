@@ -154,6 +154,16 @@ export default function EvaluatePage() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       label: label.trim() || null,
+      // La provenance suit le run : sans le nom du fichier et les colonnes
+      // choisies, on ne saurait plus, plus tard, quel lot a produit la matrice.
+      source: {
+        kind: source,
+        file_name: source === "csv" ? csvName : "",
+        column_title: source === "csv" ? colTitle : "",
+        column_system_prompt: source === "csv" ? colSystem : "",
+        column_opening_message: source === "csv" ? colOpening : "",
+        skipped_rows: source === "csv" ? csvSkipped : 0,
+      },
       temperature: {
         min: temperatureMin,
         max: varyTemperature ? temperatureMax : null,
@@ -172,6 +182,12 @@ export default function EvaluatePage() {
       temperatureMin,
       temperatureMax,
       varyTemperature,
+      source,
+      csvName,
+      colTitle,
+      colSystem,
+      colOpening,
+      csvSkipped,
     ],
   );
 
