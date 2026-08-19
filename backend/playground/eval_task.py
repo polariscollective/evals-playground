@@ -44,17 +44,32 @@ def temperatures_for(
 
 
 def eval_dataset(config: EvalRunConfig) -> MemoryDataset:
-    """Un échantillon par répétition, chacun portant sa température."""
+    """Un échantillon par triplet scénario × modèle évalué × répétition.
+
+    Les températures sont recalculées à l'identique pour chaque couple : c'est
+    ce qui rend la matrice comparable, chaque case recevant exactement les mêmes
+    réglages que ses voisines.
+    """
     temperatures = temperatures_for(config.temperature, config.repetitions)
-    samples = [
-        Sample(
-            id=index + 1,
-            input=config.scenario.opening_message,
-            metadata={"repetition": index, "temperature": temperatures[index]},
-        )
-        for index in range(config.repetitions)
-    ]
-    return MemoryDataset(samples, name="repetitions")
+    samples = []
+    index = 0
+    for scenario_index, scenario in enumerate(config.scenarios):
+        for target in config.models.targets:
+            for repetition in range(config.repetitions):
+                index += 1
+                samples.append(
+                    Sample(
+                        id=index,
+                        input=scenario.opening_message,
+                        metadata={
+                            "scenario_index": scenario_index,
+                            "target": target,
+                            "repetition": repetition,
+                            "temperature": temperatures[repetition],
+                        },
+                    )
+                )
+    return MemoryDataset(samples, name="matrice")
 
 
 @solver
@@ -77,16 +92,18 @@ def conversation_solver(
     """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
+        scenario = config.scenarios[int(state.metadata.get("scenario_index", 0))]
+        target_name = state.metadata.get("target") or config.models.targets[0]
         adversary = (
             get_model(config.models.adversary, **(model_args or {}))
             if config.turns > 1 and config.models.adversary
             else None
         )
         transcript = await run_conversation(
-            system_prompt=config.scenario.system_prompt,
-            opening_message=config.scenario.opening_message,
+            system_prompt=scenario.system_prompt,
+            opening_message=scenario.opening_message,
             turns=config.turns,
-            target=get_model(config.models.target, **(model_args or {})),
+            target=get_model(target_name, **(model_args or {})),
             adversary=adversary,
             adversary_prompt=config.adversary_prompt,
             temperature=state.metadata.get("temperature"),

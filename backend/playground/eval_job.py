@@ -48,6 +48,8 @@ def conversations_from_log(log: EvalLog) -> list[Conversation]:
             Conversation(
                 conversation_id=f"{task_id}-{safe_id_component(sample.id)}",
                 repetition=int(metadata.get("repetition", 0)),
+                scenario_index=int(metadata.get("scenario_index", 0)),
+                target=str(metadata.get("target") or ""),
                 temperature=metadata.get("temperature"),
                 messages=[
                     Message(
@@ -60,20 +62,41 @@ def conversations_from_log(log: EvalLog) -> list[Conversation]:
                 justification=str(score_metadata.get("justification") or ""),
             )
         )
-    return sorted(conversations, key=lambda conversation: conversation.repetition)
+    return sorted(
+        conversations,
+        key=lambda conversation: (
+            conversation.scenario_index,
+            conversation.target,
+            conversation.repetition,
+        ),
+    )
 
 
-def tally_of(conversations: list[Conversation]) -> Tally:
-    """Décompte des verdicts. Une répétition non jugée n'entre dans aucune case."""
-    tally = Tally()
+def tallies_of(
+    conversations: list[Conversation], scenario_count: int
+) -> list[dict[str, Tally]]:
+    """La matrice des décomptes, une entrée par scénario.
+
+    La liste garde toujours `scenario_count` entrées, même vides : elle est
+    alignée sur `config.scenarios`, et une ligne manquante décalerait toute la
+    lecture de la matrice.
+
+    Une répétition non jugée n'entre dans aucune case : l'écart entre la somme
+    d'un décompte et le nombre de répétitions signale l'incident.
+    """
+    tallies: list[dict[str, Tally]] = [{} for _ in range(scenario_count)]
     for conversation in conversations:
+        if not 0 <= conversation.scenario_index < scenario_count:
+            continue
+        row = tallies[conversation.scenario_index]
+        tally = row.setdefault(conversation.target, Tally())
         if conversation.verdict == "met":
             tally.met += 1
         elif conversation.verdict == "not_met":
             tally.not_met += 1
         elif conversation.verdict == "borderline":
             tally.borderline += 1
-    return tally
+    return tallies
 
 
 def run_eval_job(
@@ -116,7 +139,9 @@ def run_eval_job(
 
         logs = inspect_eval(
             task,
-            model=record.config.models.target,
+            # Le solver construit lui-même le modèle de chaque échantillon ;
+            # ce modèle nominal n'est jamais sollicité, mais inspect en exige un.
+            model=record.config.models.judge,
             model_args=model_args or {},
             log_dir=str(logs_dir / run_id),
             display="none",
@@ -139,7 +164,9 @@ def run_eval_job(
             return record
 
         record.conversations = conversations_from_log(log)
-        record.tally = tally_of(record.conversations)
+        record.tallies = tallies_of(
+            record.conversations, len(record.config.scenarios)
+        )
         record.log_path = str(log.location) if log.location else None
         # Le compteur alimente la progression pendant le run ; une fois
         # terminé, le nombre réel de conversations produites est la valeur

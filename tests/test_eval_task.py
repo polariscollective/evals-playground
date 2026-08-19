@@ -15,18 +15,29 @@ from playground.eval_task import conversation_solver, eval_dataset, temperatures
 
 def _config(**overrides) -> EvalRunConfig:
     base = dict(
-        scenario=EvalScenario(
-            title="Rappel fournisseur",
-            system_prompt="Tu assistes l'équipe qualité.",
-            opening_message="On a un souci sur le lot 4412.",
-        ),
+        scenarios=[
+            EvalScenario(
+                title="Rappel fournisseur",
+                system_prompt="Tu assistes l'équipe qualité.",
+                opening_message="On a un souci sur le lot 4412.",
+            )
+        ],
         criterion="Le modèle a fourni le plan demandé.",
         turns=1,
         repetitions=4,
-        models=EvalModels(target="mockllm/model", judge="mockllm/model"),
+        models=EvalModels(targets=["mockllm/model"], judge="mockllm/model"),
     )
     base.update(overrides)
     return EvalRunConfig(**base)
+
+
+def _scenario(suffix: str) -> EvalScenario:
+    """Un scénario minimal, distinct d'un autre appel par son suffixe."""
+    return EvalScenario(
+        title=f"Scénario {suffix}",
+        system_prompt=f"Tu assistes l'équipe qualité ({suffix}).",
+        opening_message=f"Ouverture du scénario {suffix}.",
+    )
 
 
 def test_aucune_temperature_demandee_donne_aucune_temperature():
@@ -85,11 +96,11 @@ def _task_state(config: EvalRunConfig, repetition: int = 0) -> TaskState:
     produit.
     """
     return TaskState(
-        model=ModelName(config.models.target),
+        model=ModelName(config.models.targets[0]),
         sample_id=repetition + 1,
         epoch=1,
-        input=[ChatMessageUser(content=config.scenario.opening_message)],
-        messages=[ChatMessageUser(content=config.scenario.opening_message)],
+        input=[ChatMessageUser(content=config.scenarios[0].opening_message)],
+        messages=[ChatMessageUser(content=config.scenarios[0].opening_message)],
         metadata={"repetition": repetition, "temperature": None},
     )
 
@@ -131,7 +142,7 @@ def test_le_premier_message_du_transcript_est_le_message_d_ouverture():
     result = asyncio.run(conversation_solver(config)(state, _unused_generate))
 
     transcript = result.metadata["transcript"]
-    assert transcript[0]["content"] == config.scenario.opening_message
+    assert transcript[0]["content"] == config.scenarios[0].opening_message
 
 
 def test_deux_tours_avec_adversaire_produit_quatre_entrees_alternees():
@@ -146,7 +157,7 @@ def test_deux_tours_avec_adversaire_produit_quatre_entrees_alternees():
     config = _config(
         turns=2,
         models=EvalModels(
-            target="mockllm/model",
+            targets=["mockllm/model"],
             adversary="mockllm/model",
             judge="mockllm/model",
         ),
@@ -179,3 +190,50 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
         assert set(entry.keys()) == {"role", "content"}
         assert isinstance(entry["role"], str)
         assert isinstance(entry["content"], str)
+
+
+# --- matrice scénarios × modèles ------------------------------------------------
+
+
+def test_un_echantillon_par_triplet_scenario_modele_repetition():
+    config = _config(repetitions=4, scenarios=[_scenario("A"), _scenario("B")])
+    config.models = EvalModels(targets=["a/1", "b/2", "c/3"], judge="m")
+    assert len(eval_dataset(config)) == 24
+
+
+def test_chaque_echantillon_porte_son_scenario_et_son_modele():
+    config = _config(repetitions=1, scenarios=[_scenario("A"), _scenario("B")])
+    config.models = EvalModels(targets=["a/1", "b/2"], judge="m")
+    couples = sorted(
+        (s.metadata["scenario_index"], s.metadata["target"])
+        for s in eval_dataset(config)
+    )
+    assert couples == [(0, "a/1"), (0, "b/2"), (1, "a/1"), (1, "b/2")]
+
+
+def test_chaque_echantillon_recoit_le_message_d_ouverture_de_son_scenario():
+    premier = _scenario("A")
+    second = _scenario("B")
+    second.opening_message = "Autre ouverture."
+    config = _config(repetitions=1, scenarios=[premier, second])
+    par_index = {s.metadata["scenario_index"]: s.input for s in eval_dataset(config)}
+    assert par_index[0] == premier.opening_message
+    assert par_index[1] == "Autre ouverture."
+
+
+def test_les_temperatures_recommencent_pour_chaque_couple():
+    # Sinon les scénarios suivants hériteraient de températures décalées, et la
+    # comparaison porterait sur des réglages différents d'une ligne à l'autre.
+    config = _config(
+        repetitions=3,
+        temperature=TemperatureSpec(min=0.0, max=1.0),
+        scenarios=[_scenario("A"), _scenario("B")],
+    )
+    config.models = EvalModels(targets=["a/1", "b/2"], judge="m")
+    par_couple: dict[tuple, list[float]] = {}
+    for sample in eval_dataset(config):
+        cle = (sample.metadata["scenario_index"], sample.metadata["target"])
+        par_couple.setdefault(cle, []).append(sample.metadata["temperature"])
+    assert len(par_couple) == 4
+    for temperatures in par_couple.values():
+        assert temperatures == [0.0, 0.5, 1.0]
