@@ -12,7 +12,10 @@
 
 - **L'invariant de sécurité prime sur tout le reste :** le prompt de l'adversaire n'apparaît **jamais**, sous aucune forme, dans les messages envoyés au modèle évalué. Si cet invariant casse, tous les résultats du produit sont faux sans que rien ne le signale. Il a un test dédié, et aucune tâche ne doit l'affaiblir.
 - **Identifiants de code en anglais.** Le français est réservé aux docstrings, commentaires, textes de prompt, textes d'interface et noms de fonctions de test (`def test_...` reste en français).
-- Messages d'erreur en français.
+- **Nos** messages d'erreur sont en français : ceux que lèvent nos validateurs et nos
+  fonctions. Les messages natifs de pydantic sur les contraintes de champ (`min_length`,
+  `ge`, `le`, `Literal`) restent en anglais — les franciser demanderait un validateur maison
+  par champ, beaucoup de bruit pour un outil local dont l'interface valide déjà côté client.
 - **Aucun test ne fait d'appel API réel.** Les tests passent par le **vrai** provider `mockllm/model` d'inspect avec `custom_outputs`, jamais par un `get_model` monkeypatché. Raison : en phase 1, deux bugs bloquants ont survécu à des tests verts parce que ceux-ci remplaçaient `get_model` par un faux indifférent au type des messages. Le vrai provider fait remonter ces erreurs.
 - **Aucune donnée produite n'est jetée.** Une conversation dont le jugement échoue est conservée avec `verdict = None`.
 - **Aucun plafond** sur `repetitions`. `turns` va de 1 à 10.
