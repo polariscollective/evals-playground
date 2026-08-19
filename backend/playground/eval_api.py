@@ -96,7 +96,7 @@ def get_eval_run(run_id: str) -> EvalRunRecord:
     try:
         record = read_eval_run(run_id, Path(EVAL_RUNS_DIR))
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Run inconnu : {run_id}")
+        raise HTTPException(status_code=404, detail=f"Unknown run: {run_id}")
     if record.status == "running":
         record.progress.completed = read_eval_progress(run_id, Path(EVAL_RUNS_DIR))
     elif record.status in ("done", "error", "cancelled"):
@@ -113,7 +113,7 @@ def cancel_eval_run(run_id: str) -> EvalRunRecord:
     try:
         record = read_eval_run(run_id, Path(EVAL_RUNS_DIR))
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Run inconnu : {run_id}")
+        raise HTTPException(status_code=404, detail=f"Unknown run: {run_id}")
     if record.status in ("pending", "running"):
         process = _EVAL_PROCESSES.pop(run_id, None)
         if process is not None and process.poll() is None:

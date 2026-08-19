@@ -132,7 +132,7 @@ async def run_conversation(
     # requête API serait envoyée et facturée inutilement.
     if turns > 1 and adversary is None:
         raise ValueError(
-            "Un modèle adversaire est requis pour dépasser un tour."
+            "An adversary model is required to go beyond one turn."
         )
 
     transcript: list[Turn] = [Turn(role="user", content=opening_message)]

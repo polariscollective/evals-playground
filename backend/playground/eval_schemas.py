@@ -38,33 +38,46 @@ class TemperatureSpec(BaseModel):
     def _bornes_coherentes(self) -> "TemperatureSpec":
         if self.max is not None and self.max < self.min:
             raise ValueError(
-                "La borne haute de température est inférieure à la borne basse."
+                "The temperature upper bound is below the lower bound."
             )
         return self
 
 
 class EvalModels(BaseModel):
-    """Les trois rôles de modèle d'un run d'évaluation."""
+    """Les rôles de modèle d'un run d'évaluation.
 
-    target: str = Field(min_length=1)
+    Seul le modèle évalué est multiple : c'est lui qu'on compare. L'adversaire
+    et le juge restent uniques pour tout le run, sans quoi un écart entre deux
+    cases de la matrice ne serait plus attribuable au modèle évalué.
+    """
+
+    targets: list[str] = Field(min_length=1)
     adversary: str | None = None
     judge: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _modeles_evalues_valides(self) -> "EvalModels":
+        if any(not target.strip() for target in self.targets):
+            raise ValueError("A target model identifier is empty.")
+        if len(set(self.targets)) != len(self.targets):
+            raise ValueError("The same target model appears more than once.")
+        return self
 
     @field_validator("adversary")
     @classmethod
     def _adversary_non_vide(cls, v: str | None) -> str | None:
         """Si adversary est fourni (non None), il ne doit pas être vide."""
         if v is not None and not v.strip():
-            raise ValueError(
-                "L'identifiant du modèle adversaire ne doit pas être vide."
-            )
+            raise ValueError("The adversary model identifier must not be empty.")
         return v
 
 
 class EvalRunConfig(BaseModel):
     """Ce que l'utilisateur remplit dans l'écran d'évaluation."""
 
-    scenario: EvalScenario
+    scenarios: list[EvalScenario] = Field(min_length=1)
+    """Les scénarios à évaluer, chacun formant une ligne de la matrice."""
+
     criterion: str = Field(min_length=1)
     turns: int = Field(ge=1, le=10)
     repetitions: int = Field(ge=1)
@@ -83,11 +96,11 @@ class EvalRunConfig(BaseModel):
         if self.turns > 1:
             if not self.models.adversary:
                 raise ValueError(
-                    "Un modèle adversaire est requis dès que turns dépasse 1."
+                    "An adversary model is required once turns exceeds 1."
                 )
             if not self.adversary_prompt.strip():
                 raise ValueError(
-                    "Un prompt d'adversaire est requis dès que turns dépasse 1."
+                    "An adversary prompt is required once turns exceeds 1."
                 )
         return self
 
@@ -104,6 +117,13 @@ class Conversation(BaseModel):
 
     conversation_id: str
     repetition: int
+
+    scenario_index: int = 0
+    """Rang du scénario dans `config.scenarios` — la ligne de la matrice."""
+
+    target: str = ""
+    """Le modèle évalué qui a produit cette conversation — la colonne."""
+
     temperature: float | None = None
     messages: list[Message] = Field(default_factory=list)
     verdict: Verdict | None = None
@@ -138,5 +158,12 @@ class EvalRunRecord(BaseModel):
     progress: EvalProgress = Field(default_factory=EvalProgress)
     error: str | None = None
     log_path: str | None = None
-    tally: Tally = Field(default_factory=Tally)
+    tallies: list[dict[str, Tally]] = Field(default_factory=list)
+    """La matrice des décomptes : une entrée par scénario, dans l'ordre de
+    `config.scenarios`, associant chaque modèle évalué à son décompte.
+
+    Une liste plutôt qu'un dictionnaire indexé par titre : deux scénarios
+    peuvent porter le même titre, en particulier lorsqu'ils viennent d'un CSV.
+    """
+
     conversations: list[Conversation] = Field(default_factory=list)

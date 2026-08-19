@@ -208,7 +208,7 @@ def test_depasser_un_tour_sans_adversaire_leve_une_erreur():
             )
         )
     except ValueError as erreur:
-        assert "adversaire" in str(erreur)
+        assert "adversary" in str(erreur).lower()
         # Vérification critique : aucun appel au modèle évalué ne doit avoir
         # été fait avant la levée de l'exception. La validation doit avoir lieu
         # avant la première itération de la boucle, sinon une vraie requête API

@@ -59,7 +59,7 @@ def read_eval_run(run_id: str, runs_dir: Path = EVAL_RUNS_DIR) -> EvalRunRecord:
     """
     path = _run_path(run_id, runs_dir)
     if not path.exists():
-        raise KeyError(f"Run d'évaluation inconnu : {run_id!r}")
+        raise KeyError(f"Unknown evaluation run: {run_id!r}")
     return EvalRunRecord.model_validate_json(path.read_text(encoding="utf-8"))
 
 

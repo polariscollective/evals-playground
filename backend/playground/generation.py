@@ -168,12 +168,12 @@ def tool_call_arguments(
                 missing = [key for key in required if key not in call.arguments]
                 if missing:
                     raise ValueError(
-                        f"L'appel à l'outil {function_name!r} ne fournit pas "
-                        f"les clés attendues : {', '.join(missing)}."
+                        f"The call to tool {function_name!r} is missing "
+                        f"the expected keys: {', '.join(missing)}."
                     )
                 return call.arguments
     raise ValueError(
-        f"Le modèle n'a pas appelé {function_name!r} : "
+        f"The model did not call {function_name!r}: "
         f"{output.completion[:200]!r}"
     )
 
