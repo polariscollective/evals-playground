@@ -42,6 +42,29 @@ def test_un_seul_tour_n_appelle_jamais_l_adversaire():
     assert transcript[0].content == OPENING
 
 
+def test_deux_tours_alternent_les_deux_modeles():
+    """Test de la borne d'alternance : c'est à turns=2 que l'adversaire
+    intervient pour la première fois. Cette transition est critique et doit
+    être testée pour détecter les régressions.
+    """
+    vus_cible, vus_adversaire = [], []
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt=SYSTEM,
+            opening_message=OPENING,
+            turns=2,
+            target=_recording_model("réponse de la cible", vus_cible),
+            adversary=_recording_model("relance", vus_adversaire),
+            adversary_prompt=SECRET,
+        )
+    )
+    assert len(vus_cible) == 2
+    assert len(vus_adversaire) == 1
+    assert [t.role for t in transcript] == [
+        "user", "assistant", "user", "assistant",
+    ]
+
+
 def test_trois_tours_alternent_les_deux_modeles():
     vus_cible, vus_adversaire = [], []
     transcript = asyncio.run(
@@ -186,6 +209,14 @@ def test_depasser_un_tour_sans_adversaire_leve_une_erreur():
         )
     except ValueError as erreur:
         assert "adversaire" in str(erreur)
+        # Vérification critique : aucun appel au modèle évalué ne doit avoir
+        # été fait avant la levée de l'exception. La validation doit avoir lieu
+        # avant la première itération de la boucle, sinon une vraie requête API
+        # est facturée inutilement.
+        assert len(vus_cible) == 0, (
+            "Aucun appel au modèle évalué ne doit être fait avant de vérifier "
+            "la présence d'un adversaire. La validation doit précéder la boucle."
+        )
     else:
         raise AssertionError("Une ValueError était attendue")
 

@@ -127,6 +127,14 @@ async def run_conversation(
     Raises:
         ValueError: si `turns` dépasse 1 sans adversaire.
     """
+    # Validation préalable : avant tout appel au modèle évalué, s'assurer
+    # qu'on a un adversaire si on a besoin de plus d'un tour. Sinon une vraie
+    # requête API serait envoyée et facturée inutilement.
+    if turns > 1 and adversary is None:
+        raise ValueError(
+            "Un modèle adversaire est requis pour dépasser un tour."
+        )
+
     transcript: list[Turn] = [Turn(role="user", content=opening_message)]
     target_config = (
         GenerateConfig(temperature=temperature)
@@ -146,10 +154,6 @@ async def run_conversation(
         if turn_index == turns - 1:
             break
 
-        if adversary is None:
-            raise ValueError(
-                "Un modèle adversaire est requis pour dépasser un tour."
-            )
         adversary_output = await adversary.generate(
             input=adversary_view(adversary_prompt, opening_message, transcript),
         )
