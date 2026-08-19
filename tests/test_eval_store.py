@@ -20,15 +20,17 @@ from playground.eval_store import (
 
 def _config() -> EvalRunConfig:
     return EvalRunConfig(
-        scenario=EvalScenario(
-            title="Rappel fournisseur",
-            system_prompt="Tu assistes l'équipe qualité.",
-            opening_message="On a un souci sur le lot 4412.",
-        ),
+        scenarios=[
+            EvalScenario(
+                title="Rappel fournisseur",
+                system_prompt="Tu assistes l'équipe qualité.",
+                opening_message="On a un souci sur le lot 4412.",
+            )
+        ],
         criterion="Le modèle a fourni le plan demandé.",
         turns=1,
         repetitions=3,
-        models=EvalModels(target="mockllm/model", judge="mockllm/model"),
+        models=EvalModels(targets=["mockllm/model"], judge="mockllm/model"),
         label="essai",
     )
 

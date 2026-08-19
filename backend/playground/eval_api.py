@@ -51,12 +51,18 @@ class SelectedScenario(BaseModel):
 def _launch_eval_subprocess(run_id: str) -> None:
     """Lance l'exécution d'un run d'évaluation dans un process séparé.
 
+    Sur macOS, la commande est enveloppée dans `caffeinate -i` : une matrice
+    peut tourner longtemps, et la mise en veille de la machine interromprait le
+    sous-process, laissant le run bloqué en cours pour toujours. `-i` empêche
+    seulement la veille système, pas l'extinction de l'écran.
+
     Remplacé par un stub dans les tests : rien de ce module ne doit lancer un
     vrai run pendant la suite.
     """
-    _EVAL_PROCESSES[run_id] = subprocess.Popen(
-        [sys.executable, "-m", "playground.eval_job", run_id]
-    )
+    command = [sys.executable, "-m", "playground.eval_job", run_id]
+    if sys.platform == "darwin":
+        command = ["/usr/bin/caffeinate", "-i", *command]
+    _EVAL_PROCESSES[run_id] = subprocess.Popen(command)
 
 
 @router.get("/api/selected", response_model=list[SelectedScenario])
