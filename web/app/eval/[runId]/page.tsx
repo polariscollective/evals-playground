@@ -148,9 +148,17 @@ function DetailModal({
 }
 
 function AttemptView({ attempt }: { attempt: Conversation }) {
+  // Repliée par défaut : dix répétitions de dix tours feraient un mur de texte
+  // où l'on ne retrouve plus la tentative qu'on cherchait.
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="space-y-2 rounded border border-zinc-300 p-3">
-      <div className="flex items-center gap-3">
+    <div className="rounded border border-zinc-300">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-3 p-3 text-left"
+      >
+        <span className="text-zinc-400">{open ? "−" : "+"}</span>
         <span className="text-sm font-medium">
           Attempt {attempt.repetition + 1}
         </span>
@@ -160,9 +168,22 @@ function AttemptView({ attempt }: { attempt: Conversation }) {
             temperature {attempt.temperature.toFixed(2)}
           </span>
         )}
-      </div>
+        <span className="ml-auto text-xs text-zinc-500">
+          {attempt.messages.length} message
+          {attempt.messages.length > 1 ? "s" : ""}
+        </span>
+      </button>
 
-      <div className="space-y-2">
+      {/* La justification du juge reste visible repliée : c'est elle qui dit
+          si cette tentative mérite qu'on l'ouvre. */}
+      {attempt.justification && (
+        <p className="px-3 pb-3 text-sm text-zinc-700">
+          <span className="font-medium">Judge:</span> {attempt.justification}
+        </p>
+      )}
+
+      {open && (
+      <div className="space-y-2 border-t border-zinc-200 p-3">
         {attempt.messages.map((message, index) => (
           <div
             key={index}
@@ -180,11 +201,6 @@ function AttemptView({ attempt }: { attempt: Conversation }) {
           </div>
         ))}
       </div>
-
-      {attempt.justification && (
-        <p className="border-t border-zinc-200 pt-2 text-sm text-zinc-700">
-          <span className="font-medium">Judge:</span> {attempt.justification}
-        </p>
       )}
     </div>
   );
