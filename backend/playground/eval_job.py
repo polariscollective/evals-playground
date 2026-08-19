@@ -103,7 +103,7 @@ def run_eval_job(
     try:
         task = Task(
             dataset=eval_dataset(record.config),
-            solver=conversation_solver(record.config),
+            solver=conversation_solver(record.config, model_args=model_args),
             scorer=verdict_judge(
                 record.config,
                 on_complete=lambda: bump_eval_progress(run_id, runs_dir),

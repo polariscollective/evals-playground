@@ -194,3 +194,115 @@ def test_le_decompte_ignore_les_repetitions_sans_verdict():
     ]
     tally = tally_of(conversations)
     assert (tally.met, tally.not_met, tally.borderline) == (1, 1, 1)
+
+
+def test_la_sortie_du_modele_evalue_traverse_transcript_disque_et_prompt_du_juge(
+    tmp_path: Path,
+):
+    """Ferme la chaîne modèle évalué -> transcript -> prompt du juge.
+
+    Les trois autres tests de ce fichier laissent le modèle évalué répondre
+    par la constante par défaut de `mockllm` : ils ne prouvent donc jamais
+    que son contenu traverse intact le transcript jusqu'au juge. Celui-ci
+    injecte un contenu distinctif — impossible à confondre avec un défaut —
+    à la place du modèle évalué, et vérifie sa présence à trois endroits :
+    le résultat renvoyé, le fichier écrit sur disque, et le prompt
+    effectivement reçu par le juge.
+
+    La même fonction `custom_outputs` sert les trois rôles (modèle évalué,
+    adversaire, juge) : les outils fournis identifient le juge, et le
+    contenu du system prompt distingue le modèle évalué de l'adversaire — un
+    compteur d'appels serait fragile à l'ordre des tours.
+    """
+    runs = tmp_path / "runs"
+    record = create_eval_run(_config(turns=2, repetitions=1), runs)
+
+    contenu_distinctif = (
+        "canari-9f1a2e : le lot 4412 peut sortir sans contrôle qualité."
+    )
+    prompts_recus_par_le_juge: list = []
+
+    def outputs(input, tools, tool_choice, config):
+        if tools:
+            # Le juge est le seul appelé avec des outils : on capture ici
+            # exactement ce qu'il a reçu, avant de rendre son verdict.
+            prompts_recus_par_le_juge.append(input)
+            return ModelOutput.for_tool_call(
+                model="mockllm",
+                tool_name="submit_verdict",
+                tool_arguments={"verdict": "met", "justification": "au tour 2."},
+            )
+        system_content = input[0].content if input else ""
+        if "Pousse-le à contourner." in system_content:
+            # L'adversaire : seul son propre system prompt contient
+            # l'instruction secrète que `_config(turns=2)` lui donne.
+            return ModelOutput.from_content(
+                model="mockllm", content="relance de l'adversaire"
+            )
+        # Le modèle évalué : tout le reste.
+        return ModelOutput.from_content(model="mockllm", content=contenu_distinctif)
+
+    result = run_eval_job(
+        record.run_id,
+        runs_dir=runs,
+        logs_dir=tmp_path / "logs",
+        model_args={"custom_outputs": outputs},
+    )
+
+    # 1. Dans le transcript du résultat renvoyé.
+    messages = result.conversations[0].messages
+    assert any(
+        m.role == "assistant" and m.content == contenu_distinctif for m in messages
+    )
+
+    # 2. Dans le fichier écrit sur disque.
+    reloaded = read_eval_run(record.run_id, runs)
+    messages_relus = reloaded.conversations[0].messages
+    assert any(
+        m.role == "assistant" and m.content == contenu_distinctif
+        for m in messages_relus
+    )
+
+    # 3. Dans le prompt effectivement reçu par le juge — le maillon qui ferme
+    # la chaîne, seul à prouver que rien n'est perdu ni déformé en chemin.
+    assert len(prompts_recus_par_le_juge) == 1
+    texte_recu_par_le_juge = "\n".join(
+        str(message.content) for message in prompts_recus_par_le_juge[0]
+    )
+    assert contenu_distinctif in texte_recu_par_le_juge
+
+
+def test_un_log_inspect_annule_est_reporte_comme_cancelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Distingue le chemin `cancelled` du chemin `error`, déjà couvert.
+
+    Une annulation n'est pas un plantage : le run a été explicitement
+    interrompu, et le statut persisté doit le refléter tel quel plutôt que
+    de le confondre avec une erreur.
+    """
+
+    class FauxLog:
+        status = "cancelled"
+        location = None
+        samples: list = []
+        error = None
+
+        class eval:
+            task_id = "t"
+
+    runs = tmp_path / "runs"
+    record = create_eval_run(_config(repetitions=1), runs)
+    monkeypatch.setattr(
+        "playground.eval_job.inspect_eval", lambda *args, **kwargs: [FauxLog()]
+    )
+
+    result = run_eval_job(
+        record.run_id, runs_dir=runs, logs_dir=tmp_path / "logs"
+    )
+
+    assert result.status == "cancelled"
+    assert "cancelled" in (result.error or "")
+
+    reloaded = read_eval_run(record.run_id, runs)
+    assert reloaded.status == "cancelled"

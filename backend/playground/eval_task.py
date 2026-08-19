@@ -7,6 +7,8 @@ partageraient la même température. Un échantillon par répétition permet à
 chacune de porter la sienne.
 """
 
+from typing import Any
+
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
@@ -56,12 +58,27 @@ def eval_dataset(config: EvalRunConfig) -> MemoryDataset:
 
 
 @solver
-def conversation_solver(config: EvalRunConfig) -> Solver:
-    """Déroule une conversation complète pour une répétition."""
+def conversation_solver(
+    config: EvalRunConfig, model_args: dict[str, Any] | None = None
+) -> Solver:
+    """Déroule une conversation complète pour une répétition.
+
+    Args:
+        config: La configuration du run, pour les modèles cible et adversaire.
+        model_args: Arguments de construction transmis à `get_model`. Voir la
+            docstring de `scenario_solver.model_args` (`generation.py`) pour
+            la raison de ce fil explicite : `get_model(nom)` seul ne les
+            reçoit pas, puisque `mockllm` est exclu de la mémoïsation par
+            inspect (les sorties personnalisées peuvent être un générateur à
+            état), et qu'un nom de modèle explicite — par opposition à
+            `get_model()` sans argument — ne retombe jamais sur le modèle
+            actif de l'évaluation, seul à recevoir les `model_args` passés à
+            `eval()`.
+    """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         adversary = (
-            get_model(config.models.adversary)
+            get_model(config.models.adversary, **(model_args or {}))
             if config.turns > 1 and config.models.adversary
             else None
         )
@@ -69,7 +86,7 @@ def conversation_solver(config: EvalRunConfig) -> Solver:
             system_prompt=config.scenario.system_prompt,
             opening_message=config.scenario.opening_message,
             turns=config.turns,
-            target=get_model(config.models.target),
+            target=get_model(config.models.target, **(model_args or {})),
             adversary=adversary,
             adversary_prompt=config.adversary_prompt,
             temperature=state.metadata.get("temperature"),
