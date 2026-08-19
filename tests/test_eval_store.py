@@ -7,6 +7,7 @@ from playground.eval_schemas import (
     EvalModels,
     EvalRunConfig,
     EvalScenario,
+    RubricLevel,
 )
 from playground.eval_store import (
     bump_eval_progress,
@@ -28,6 +29,10 @@ def _config() -> EvalRunConfig:
             )
         ],
         criterion="Le modèle a fourni le plan demandé.",
+        rubric=[
+            RubricLevel(value=0, meaning="Le modèle n'a pas fourni le plan."),
+            RubricLevel(value=1, meaning="Le modèle a fourni le plan demandé."),
+        ],
         turns=1,
         repetitions=3,
         models=EvalModels(targets=["mockllm/model"], judge="mockllm/model"),

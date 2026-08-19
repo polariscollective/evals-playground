@@ -4,8 +4,21 @@ from playground.eval_schemas import (
     EvalModels,
     EvalRunConfig,
     EvalScenario,
+    RubricLevel,
 )
-from playground.pricing import PRICES, estimate_cost, estimate_tokens
+from playground.pricing import (
+    DEFAULT_RESPONSE_TOKENS,
+    OUTPUT_TOKENS_PER_CALL,
+    PRICES,
+    estimate_cost,
+    estimate_tokens,
+    response_tokens_for,
+)
+
+RUBRIC = [
+    RubricLevel(value=0, meaning="R" * 40),
+    RubricLevel(value=1, meaning="R" * 40),
+]
 
 
 def _scenario(title: str = "T") -> EvalScenario:
@@ -20,6 +33,7 @@ def _config(**overrides) -> EvalRunConfig:
     base = dict(
         scenarios=[_scenario()],
         criterion="C" * 200,
+        rubric=RUBRIC,
         turns=1,
         repetitions=1,
         models=EvalModels(targets=["anthropic/claude-haiku-4-5"], judge="anthropic/claude-haiku-4-5"),
@@ -133,6 +147,7 @@ def _config_reglable(turns: int = 1) -> EvalRunConfig:
             )
         ],
         criterion="c" * 100,
+        rubric=RUBRIC,
         turns=turns,
         repetitions=5,
         models=EvalModels(
@@ -142,6 +157,88 @@ def _config_reglable(turns: int = 1) -> EvalRunConfig:
         ),
         adversary_prompt="z" * 400 if turns > 1 else "",
     )
+
+
+# --- la longueur de réponse, par modèle --------------------------------------
+
+
+def test_chaque_modele_mesure_prend_sa_propre_longueur_de_reponse():
+    # C'est tout l'objet de la calibration : une moyenne commune effacerait
+    # l'écart de quarante fois entre le plus bavard et le plus laconique.
+    assert response_tokens_for("openai/gpt-5.6-sol") == OUTPUT_TOKENS_PER_CALL[
+        "openai/gpt-5.6-sol"
+    ]
+    assert response_tokens_for("grok/grok-4.3") != response_tokens_for(
+        "openai/gpt-5.6-sol"
+    )
+
+
+def test_un_modele_jamais_mesure_prend_la_moyenne_generale():
+    assert response_tokens_for("labo/modele-interne") == DEFAULT_RESPONSE_TOKENS
+
+
+def test_une_longueur_imposee_ecrase_la_calibration_de_chaque_modele():
+    assert response_tokens_for("openai/gpt-5.6-sol", 500) == 500
+    assert response_tokens_for("grok/grok-4.3", 500) == 500
+
+
+def test_un_modele_bavard_coute_plus_qu_un_modele_laconique_a_tarif_egal():
+    """Le devis doit voir la différence que la moyenne commune effaçait.
+
+    Les deux modèles comparés ici sont facturés au même tarif : tout écart de
+    coût ne peut venir que de la longueur de réponse mesurée pour chacun.
+    """
+    bavard = estimate_cost(
+        _config(
+            models=EvalModels(
+                targets=["anthropic/claude-sonnet-5"],
+                judge="anthropic/claude-haiku-4-5",
+            )
+        )
+    )
+    laconique = estimate_cost(
+        _config(
+            models=EvalModels(
+                targets=["anthropic/claude-haiku-4-5"],
+                judge="anthropic/claude-haiku-4-5",
+            )
+        )
+    )
+    assert bavard.usd > laconique.usd
+
+
+def test_le_detail_par_modele_totalise_le_prix_annonce():
+    config = _config(
+        models=EvalModels(
+            targets=["anthropic/claude-sonnet-5", "grok/grok-4.3"],
+            judge="anthropic/claude-haiku-4-5",
+        )
+    )
+    cost = estimate_cost(config)
+
+    assert {c.model for c in cost.per_model} == {
+        "anthropic/claude-sonnet-5",
+        "grok/grok-4.3",
+        "anthropic/claude-haiku-4-5",
+    }
+    assert sum(c.usd for c in cost.per_model) == pytest.approx(cost.usd, rel=1e-3)
+    # Du plus cher au moins cher : c'est le premier de la liste qui explique
+    # une facture, et c'est lui qu'on veut lire en premier.
+    montants = [c.usd for c in cost.per_model]
+    assert montants == sorted(montants, reverse=True)
+
+
+def test_un_modele_a_la_fois_evalue_et_juge_n_est_compte_qu_une_fois():
+    # Le même modèle dans deux rôles est facturé une fois, sur son total.
+    cost = estimate_cost(
+        _config(
+            models=EvalModels(
+                targets=["anthropic/claude-haiku-4-5"],
+                judge="anthropic/claude-haiku-4-5",
+            )
+        )
+    )
+    assert [c.model for c in cost.per_model] == ["anthropic/claude-haiku-4-5"]
 
 
 def test_allonger_la_reponse_supposee_augmente_le_prix_annonce():
@@ -185,6 +282,11 @@ def test_le_prix_croit_plus_vite_que_le_nombre_de_tours():
     facteur = cinq_tours / un_tour
     assert facteur > 5, "sinon la croissance serait au plus linéaire"
     assert facteur < 25, "et elle reste sous la croissance purement quadratique"
+
+
+def test_sans_hypothese_imposee_le_devis_le_dit():
+    # `None` n'est pas « zéro jeton » : c'est « chaque modèle prend la sienne ».
+    assert estimate_cost(_config_reglable()).response_tokens is None
 
 
 def test_les_bornes_ne_bougent_pas_avec_l_hypothese():

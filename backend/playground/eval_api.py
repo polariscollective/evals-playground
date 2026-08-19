@@ -14,19 +14,28 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from playground.eval_schemas import EvalRunConfig, EvalRunRecord
+from playground.eval_schemas import (
+    EvalRunConfig,
+    EvalRunRecord,
+    RejudgeRequest,
+    RubricLevel,
+)
 from playground.eval_store import (
     EVAL_RUNS_DIR as _DEFAULT_EVAL_RUNS_DIR,
     create_eval_run,
     list_eval_runs,
     read_eval_progress,
     read_eval_run,
+    read_source_csv,
+    reset_eval_progress,
     write_eval_run,
+    write_rejudge_request,
+    write_source_csv,
 )
 from playground.exports import details_csv, matrix_csv
 from playground.pricing import CostEstimate, estimate_cost
+from playground.scoring import JUDGE_SYSTEM, render_transcript, score_prompt
 from playground.store import SELECTED_DIR as _DEFAULT_SELECTED_DIR
-from playground.verdict import JUDGE_SYSTEM, render_transcript, verdict_prompt
 
 router = APIRouter()
 
@@ -54,6 +63,7 @@ class SelectedScenario(BaseModel):
 
 class JudgePromptRequest(BaseModel):
     criterion: str = ""
+    rubric: list[RubricLevel] = []
 
 
 class JudgePromptPreview(BaseModel):
@@ -61,6 +71,18 @@ class JudgePromptPreview(BaseModel):
 
     system_message: str
     user_message: str
+
+
+class EvalRunLaunch(BaseModel):
+    """Ce qu'envoie le formulaire pour lancer un run.
+
+    Le CSV téléversé voyage à côté de la configuration plutôt que dedans : il
+    est conservé en fichier, et le faire entrer dans le record ferait grossir
+    chaque lecture de run de tout le lot de scénarios une seconde fois.
+    """
+
+    config: EvalRunConfig
+    csv_text: str | None = None
 
 
 def _launch_eval_subprocess(run_id: str) -> None:
@@ -74,7 +96,12 @@ def _launch_eval_subprocess(run_id: str) -> None:
     Remplacé par un stub dans les tests : rien de ce module ne doit lancer un
     vrai run pendant la suite.
     """
-    command = [sys.executable, "-m", "playground.eval_job", run_id]
+    _launch_subprocess("playground.eval_job", run_id)
+
+
+def _launch_subprocess(module: str, run_id: str) -> None:
+    """Lance un module du paquet sur un run, dans un process séparé."""
+    command = [sys.executable, "-m", module, run_id]
     if sys.platform == "darwin":
         command = ["/usr/bin/caffeinate", "-i", *command]
     _EVAL_PROCESSES[run_id] = subprocess.Popen(command)
@@ -104,10 +131,9 @@ def get_selected() -> list[SelectedScenario]:
 def post_judge_prompt_preview(request: JudgePromptRequest) -> JudgePromptPreview:
     """Rend le prompt du juge visible avant de lancer un run.
 
-    L'utilisateur remplit un critère qui atterrit dans un prompt qu'il ne voit
-    pas. Lui montrer ce prompt est le seul moyen qu'il comprenne ce que son
-    texte va produire — en particulier que `met` signifie que le comportement
-    décrit s'est produit.
+    L'utilisateur écrit une question et des paliers qui atterrissent dans un
+    prompt qu'il ne voit pas. Lui montrer ce prompt est le seul moyen qu'il
+    comprenne ce que son texte va produire.
     """
     transcript = render_transcript(
         [
@@ -117,13 +143,18 @@ def post_judge_prompt_preview(request: JudgePromptRequest) -> JudgePromptPreview
     )
     return JudgePromptPreview(
         system_message=JUDGE_SYSTEM,
-        user_message=verdict_prompt(transcript, request.criterion),
+        user_message=score_prompt(transcript, request.criterion, request.rubric),
     )
 
 
 @router.post("/api/eval-runs", response_model=EvalRunRecord, status_code=201)
-def post_eval_run(config: EvalRunConfig) -> EvalRunRecord:
-    record = create_eval_run(config, Path(EVAL_RUNS_DIR))
+def post_eval_run(launch: EvalRunLaunch) -> EvalRunRecord:
+    record = create_eval_run(launch.config, Path(EVAL_RUNS_DIR))
+    if launch.csv_text is not None:
+        # Conservé avant le lancement : c'est ce qui permettra de retélécharger
+        # le lot et de relancer le run depuis la même source.
+        write_source_csv(record.run_id, launch.csv_text, Path(EVAL_RUNS_DIR))
+        record.source_csv_available = True
     _launch_eval_subprocess(record.run_id)
     return record
 
@@ -221,6 +252,65 @@ def get_details_csv(run_id: str) -> PlainTextResponse:
     """Une ligne par conversation, transcript et paramètres d'entrée compris."""
     record = _run_for_export(run_id)
     return _csv_response(details_csv(record), f"details-{run_id}.csv")
+
+
+@router.get("/api/eval-runs/{run_id}/source.csv")
+def get_source_csv(run_id: str) -> PlainTextResponse:
+    """Le CSV téléversé au lancement, tel quel.
+
+    Un 404 pour les runs lancés avant que ce fichier ne soit conservé : c'est
+    une absence, pas une panne, et l'interface ne propose le lien que lorsque
+    le fichier existe.
+    """
+    _run_for_export(run_id)
+    content = read_source_csv(run_id, Path(EVAL_RUNS_DIR))
+    if content is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No source CSV was kept for run {run_id}.",
+        )
+    return _csv_response(content, f"source-{run_id}.csv")
+
+
+@router.post("/api/eval-runs/{run_id}/rejudge", response_model=EvalRunRecord)
+def post_rejudge(run_id: str, request: RejudgeRequest) -> EvalRunRecord:
+    """Rejoue le juge sur toutes les conversations d'un run.
+
+    La question et l'échelle demandées attendent sur disque : c'est le
+    sous-process qui les fera entrer dans la configuration du run, et seulement
+    si la passe aboutit. Un run dont la passe échoue reste décrit par la
+    question qui a réellement produit ses notes.
+
+    Le statut passe à `running` ici plutôt qu'au démarrage du sous-process :
+    entre les deux, l'interface interrogerait un run encore marqué terminé et
+    afficherait des notes que l'on vient de décider de remplacer.
+    """
+    try:
+        record = read_eval_run(run_id, Path(EVAL_RUNS_DIR))
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown run: {run_id}")
+
+    if record.status in ("pending", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail="This run is still going. Wait for it to finish, or stop it.",
+        )
+    if not record.conversations:
+        raise HTTPException(
+            status_code=409,
+            detail="This run has no conversation to judge.",
+        )
+
+    write_rejudge_request(request, run_id, Path(EVAL_RUNS_DIR))
+    reset_eval_progress(run_id, Path(EVAL_RUNS_DIR))
+    record.status = "running"
+    record.error = None
+    record.progress.completed = 0
+    record.progress.total = len(record.conversations)
+    write_eval_run(record, Path(EVAL_RUNS_DIR))
+
+    _launch_subprocess("playground.rejudge_job", run_id)
+    return record
 
 
 @router.post("/api/eval-runs/{run_id}/cancel", response_model=EvalRunRecord)

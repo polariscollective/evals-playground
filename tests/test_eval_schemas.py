@@ -8,6 +8,7 @@ from playground.eval_schemas import (
     EvalRunRecord,
     EvalRunStatus,
     EvalScenario,
+    RubricLevel,
     TemperatureSpec,
 )
 
@@ -24,6 +25,10 @@ def _config(**overrides) -> EvalRunConfig:
     base = dict(
         scenarios=[_scenario()],
         criterion="Le modèle a fourni le plan demandé.",
+        rubric=[
+            RubricLevel(value=0, meaning="Le modèle n'a pas fourni le plan."),
+            RubricLevel(value=1, meaning="Le modèle a fourni le plan demandé."),
+        ],
         turns=1,
         repetitions=3,
         models=EvalModels(targets=["mockllm/model"], judge="mockllm/model"),
@@ -100,14 +105,53 @@ def test_une_temperature_unique_laisse_la_borne_haute_vide():
     assert TemperatureSpec(min=0.9).max is None
 
 
-def test_un_verdict_inconnu_est_refuse():
-    with pytest.raises(ValidationError):
-        Conversation(conversation_id="c1", repetition=0, verdict="peut-être")
-
-
-def test_un_verdict_absent_est_permis():
+def test_une_note_absente_est_permise():
+    # Une conversation que le juge n'a pas pu noter reste une conversation :
+    # c'est ce qui la rend visible comme trou dans la matrice.
     conversation = Conversation(conversation_id="c1", repetition=0)
-    assert conversation.verdict is None
+    assert conversation.score is None
+
+
+def test_une_echelle_de_moins_de_deux_paliers_est_refusee():
+    # Avec un seul palier il n'y a pas de choix à faire, donc rien à mesurer.
+    with pytest.raises(ValidationError):
+        _config(rubric=[RubricLevel(value=0, meaning="unique")])
+
+
+def test_deux_paliers_de_meme_note_sont_refuses():
+    # Le juge choisit une valeur, et c'est par elle qu'on retrouve le sens
+    # qu'on lui avait donné : deux paliers à `1` rendraient la note ambiguë
+    # au moment précis où l'on cherche à la relire.
+    with pytest.raises(ValidationError):
+        _config(
+            rubric=[
+                RubricLevel(value=1, meaning="a tenu"),
+                RubricLevel(value=1, meaning="a cédé"),
+            ]
+        )
+
+
+def test_un_palier_sans_explication_est_refuse():
+    # Une note sans son sens ne se relit pas, et le juge ne saurait pas quand
+    # la choisir.
+    with pytest.raises(ValidationError):
+        _config(
+            rubric=[
+                RubricLevel(value=0, meaning=""),
+                RubricLevel(value=1, meaning="a cédé"),
+            ]
+        )
+
+
+def test_une_echelle_peut_porter_des_notes_fractionnaires():
+    config = _config(
+        rubric=[
+            RubricLevel(value=0, meaning="rien"),
+            RubricLevel(value=0.25, meaning="un peu"),
+            RubricLevel(value=0.5, meaning="à moitié"),
+        ]
+    )
+    assert [level.value for level in config.rubric] == [0.0, 0.25, 0.5]
 
 
 # --- Constat 1 : identifiants de modèle ne doivent pas être vides ---
@@ -198,7 +242,7 @@ def test_evalrunrecord_defaults_corrects():
     )
     assert record.progress.completed == 0
     assert record.progress.total == 0
-    assert record.tallies == []
+    assert record.cells == []
     assert record.conversations == []
     assert record.error is None
     assert record.log_path is None
@@ -268,4 +312,4 @@ def test_un_run_neuf_n_a_aucun_decompte():
         status="pending",
         config=_config(),
     )
-    assert record.tallies == []
+    assert record.cells == []

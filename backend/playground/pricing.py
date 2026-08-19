@@ -14,44 +14,61 @@ from dataclasses import dataclass
 
 from playground.eval_schemas import EvalRunConfig, ModelUsage
 
-CHARS_PER_TOKEN = 3.5
-"""Approximation du nombre de caractères par jeton.
+CHARS_PER_TOKEN = 2.5
+"""Approximation du nombre de caractères par jeton, pour les textes saisis.
 
-Volontairement basse — le français consomme plus de jetons que l'anglais à
-longueur égale. Sous-estimer les jetons produirait une facture plus élevée
-qu'annoncée, ce qui est le sens de l'erreur qu'on ne veut pas.
+Mesurée sur les réponses réelles d'un run en français : 7 293 caractères pour
+3 608 jetons facturés, soit 2,0 caractère par jeton. Le français en consomme
+nettement plus que l'anglais, et la valeur précédente — 3,5 — sous-estimait
+donc les jetons d'entrée de près de moitié, dans le sens de l'erreur qu'on ne
+veut pas : une facture plus élevée qu'annoncée.
+
+Ne sert qu'à l'entrée : les prompts, le message d'ouverture, la question posée
+au juge. Les sorties, elles, ne sont plus déduites d'une longueur de texte mais
+de `OUTPUT_TOKENS_PER_CALL`.
 """
 
 SHORT_RESPONSE_TOKENS = 200
-LONG_RESPONSE_TOKENS = 4000
+LONG_RESPONSE_TOKENS = 6000
 """Bornes d'hypothèse sur la longueur d'une réponse de modèle.
 
-Calibrées le 19 août 2026 sur 238 appels réels : la sortie moyenne par appel
-va de 137 jetons (grok-4.3) à 5 954 (gpt-5.6-sol). Les modèles à raisonnement
-facturent leurs jetons de réflexion en sortie, ce qui explique l'écart de
-quarante fois entre les extrêmes.
-
-Les bornes précédentes — 150 et 900 — venaient d'une intuition, pas d'une
-mesure : elles ont annoncé « au plus 2,45 $ » pour un run qui en a coûté 7,95.
-Une borne haute que le réel dépasse est pire qu'une fourchette large, parce
-que c'est sur elle que se prend la décision de lancer.
+Elles encadrent le devis en supposant que *tous* les modèles répondent très
+court, puis très long. Le haut est calé sur le modèle le plus bavard mesuré,
+`gpt-5.6-sol` et ses 5 954 jetons par appel : une borne haute que le réel
+dépasse est pire qu'une fourchette large, parce que c'est sur elle que se prend
+la décision de lancer.
 """
 
 DEFAULT_RESPONSE_TOKENS = 1100
-"""Longueur moyenne supposée d'une réponse, en jetons.
+"""Longueur supposée d'une réponse pour un modèle jamais mesuré.
 
-C'est la moyenne mesurée sur 238 appels réels le 19 août 2026, tous modèles
-confondus. Elle est modifiable depuis le formulaire, parce qu'elle dépend
-surtout du modèle évalué : de 137 jetons par appel pour grok-4.3 à 5 954 pour
-gpt-5.6-sol, dont le raisonnement est facturé en sortie.
+C'est la moyenne tous modèles confondus relevée le 19 août 2026. Elle ne sert
+plus qu'aux modèles absents de `OUTPUT_TOKENS_PER_CALL` : pour les autres, une
+moyenne globale est une mauvaise réponse à une question qui varie d'un facteur
+quarante d'un modèle à l'autre.
+"""
 
-Le coût croît à peu près linéairement avec cette valeur, et entre linéaire et
-quadratique avec le nombre de tours — l'historique complet étant renvoyé à
-chaque tour, l'entrée croît en carré tandis que la sortie reste linéaire.
+OUTPUT_TOKENS_PER_CALL: dict[str, int] = {
+    # Jetons de sortie facturés par appel, relevés sur les runs réels du
+    # 19 août 2026. Ce sont les nombres du fournisseur, jetons de raisonnement
+    # compris — c'est ce qui explique l'écart de quarante fois entre les
+    # extrêmes, et c'est ce qui est facturé.
+    "openai/gpt-5.6-sol": 5954,
+    "anthropic/claude-sonnet-5": 3608,
+    "openai/gpt-5.6-luna": 401,
+    "anthropic/claude-haiku-4-5": 320,
+    "grok/grok-4.3": 137,
+}
+"""Longueur de réponse mesurée, par modèle.
+
+Un modèle absent d'ici prend `DEFAULT_RESPONSE_TOKENS` : mieux vaut une valeur
+moyenne assumée qu'une mesure inventée. `claude-opus-5` en fait partie — ses
+réponses ont toutes été bloquées par le filtre du fournisseur dans le seul run
+où il a été évalué, ce qui ne mesure rien.
 """
 
 JUDGE_RESPONSE_TOKENS = 200
-"""Le juge rend un verdict et une phrase : sa sortie est courte et prévisible."""
+"""Le juge rend une note et une phrase : sa sortie est courte et prévisible."""
 
 USD_TO_EUR = 0.92
 """Taux de conversion indicatif. Une estimation, pas une conversion comptable."""
@@ -83,41 +100,83 @@ PRICES: dict[str, ModelPrice] = {
 }
 
 
+def response_tokens_for(model: str, override: int | None = None) -> int:
+    """Longueur de réponse supposée pour un modèle.
+
+    Args:
+        model: L'identifiant complet du modèle.
+        override: Une longueur imposée depuis le formulaire, qui s'applique
+            alors à tous les modèles. `None` laisse chacun prendre la sienne.
+    """
+    if override is not None:
+        return override
+    return OUTPUT_TOKENS_PER_CALL.get(model, DEFAULT_RESPONSE_TOKENS)
+
+
+@dataclass
+class ModelTokens:
+    """Jetons attribués à un modèle, tous ses rôles confondus.
+
+    Un même modèle peut être à la fois évalué et juge dans un run : c'est son
+    total qui est facturé, pas celui d'un de ses rôles.
+    """
+
+    input: int = 0
+    output: int = 0
+    response_tokens: int = 0
+    """Longueur supposée de ses propres réponses, celle qui a produit `output`.
+
+    Pour un modèle qui n'est que juge, c'est `JUDGE_RESPONSE_TOKENS`. Pour un
+    modèle qui cumule les rôles, c'est celle de ses réponses de modèle évalué :
+    c'est elle qui pèse, celle du juge étant une constante courte.
+    """
+
+
 @dataclass(frozen=True)
 class TokenEstimate:
     """Volume d'un run, indépendamment des tarifs."""
 
     conversations: int
     model_calls: int
-    target_input: int
-    target_output: int
-    adversary_input: int
-    adversary_output: int
-    judge_input: int
-    judge_output: int
+    per_model: dict[str, ModelTokens]
+
+
+@dataclass(frozen=True)
+class ModelCost:
+    """Ce qu'un modèle coûte dans un run, et sur quelle hypothèse."""
+
+    model: str
+    input_tokens: int
+    output_tokens: int
+    response_tokens: int
+    usd: float | None
+    """`None` si le modèle n'a pas de tarif connu."""
 
 
 @dataclass(frozen=True)
 class CostEstimate:
     """Coût attendu d'un run et son encadrement."""
 
-    response_tokens: int
-    """L'hypothèse de longueur de réponse qui produit `usd`."""
+    response_tokens: int | None
+    """La longueur imposée à tous les modèles, ou `None` si chacun prend la sienne."""
 
     usd: float
     eur: float
-    """Coût pour cette hypothèse. C'est le chiffre à lire."""
+    """Coût attendu. C'est le chiffre à lire."""
 
     min_usd: float
     max_usd: float
     min_eur: float
     max_eur: float
-    """Encadrement par les extrêmes du catalogue, indépendant de l'hypothèse."""
+    """Encadrement : tous les modèles très courts, puis tous très longs."""
 
     conversations: int
     model_calls: int
     input_tokens: int
     output_tokens: int
+    per_model: list[ModelCost]
+    """Le détail, du plus cher au moins cher. C'est lui qui explique un total."""
+
     unpriced_models: list[str]
 
 
@@ -125,133 +184,180 @@ def _tokens(text: str) -> int:
     return max(1, int(len(text) / CHARS_PER_TOKEN))
 
 
-def _estimate_one_conversation(
-    config: EvalRunConfig, scenario_index: int, response_tokens: int
-) -> tuple[int, int, int, int, int, int]:
-    """Jetons d'une conversation, pour une hypothèse de longueur de réponse.
+def _rubric_tokens(config: EvalRunConfig) -> int:
+    """Jetons de l'échelle telle qu'elle est écrite au juge."""
+    return sum(_tokens(level.meaning) + 4 for level in config.rubric)
 
-    Renvoie, dans l'ordre : entrée et sortie du modèle évalué, entrée et sortie
-    de l'adversaire, entrée et sortie du juge.
 
-    L'historique est renvoyé en entier à chaque tour : c'est ce qui fait croître
-    le coût plus vite que le nombre de tours.
+def _add(
+    per_model: dict[str, ModelTokens],
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    response_tokens: int,
+) -> None:
+    """Ajoute un volume au compte d'un modèle, en créant son entrée au besoin.
+
+    `response_tokens` n'est retenu qu'à la première attribution : les rôles sont
+    parcourus du modèle évalué vers le juge, si bien qu'un modèle qui cumule
+    garde l'hypothèse de ses réponses de modèle évalué — la seule qui pèse.
     """
-    scenario = config.scenarios[scenario_index]
-    system = _tokens(scenario.system_prompt)
-    opening = _tokens(scenario.opening_message)
-
-    target_input = target_output = 0
-    adversary_input = adversary_output = 0
-    history = opening
-
-    for turn in range(config.turns):
-        target_input += system + history
-        target_output += response_tokens
-        history += response_tokens
-
-        if turn < config.turns - 1:
-            adversary_input += _tokens(config.adversary_prompt) + opening + history
-            adversary_output += response_tokens
-            history += response_tokens
-
-    judge_input = _tokens(config.criterion) + history + system
-    judge_output = JUDGE_RESPONSE_TOKENS
-
-    return (
-        target_input,
-        target_output,
-        adversary_input,
-        adversary_output,
-        judge_input,
-        judge_output,
-    )
+    entry = per_model.setdefault(model, ModelTokens())
+    if entry.response_tokens == 0:
+        entry.response_tokens = response_tokens
+    entry.input += input_tokens
+    entry.output += output_tokens
 
 
 def estimate_tokens(
-    config: EvalRunConfig, response_tokens: int = SHORT_RESPONSE_TOKENS
+    config: EvalRunConfig, response_tokens: int | None = None
 ) -> TokenEstimate:
-    """Volume total d'un run, pour une hypothèse de longueur de réponse."""
+    """Volume total d'un run, réparti par modèle.
+
+    Chaque modèle évalué est déroulé avec sa propre longueur de réponse, et non
+    avec une moyenne commune : comme l'historique complet est renvoyé à chaque
+    tour, un modèle bavard enfle aussi l'entrée de l'adversaire et celle du
+    juge. Répartir un volume commun à parts égales, ce que faisait la version
+    précédente, effaçait précisément l'écart qu'on cherche à chiffrer.
+
+    Args:
+        config: Le run à estimer.
+        response_tokens: Longueur imposée à tous les modèles, ou `None` pour
+            laisser chacun prendre la sienne.
+    """
+    per_model: dict[str, ModelTokens] = {}
+    judge = config.models.judge
+    adversary = config.models.adversary if config.turns > 1 else None
+    adversary_response = (
+        response_tokens_for(adversary, response_tokens) if adversary else 0
+    )
+    question = _tokens(config.criterion) + _rubric_tokens(config)
+    adversary_prompt = _tokens(config.adversary_prompt)
+
+    for scenario in config.scenarios:
+        system = _tokens(scenario.system_prompt)
+        opening = _tokens(scenario.opening_message)
+
+        for target in config.models.targets:
+            target_response = response_tokens_for(target, response_tokens)
+            target_input = target_output = 0
+            adversary_input = adversary_output = 0
+            history = opening
+
+            for turn in range(config.turns):
+                target_input += system + history
+                target_output += target_response
+                history += target_response
+
+                if turn < config.turns - 1:
+                    # L'historique contient déjà le message d'ouverture : ne
+                    # compter que le prompt de l'adversaire en plus.
+                    adversary_input += adversary_prompt + history
+                    adversary_output += adversary_response
+                    history += adversary_response
+
+            judge_input = question + system + history
+
+            weight = config.repetitions
+            _add(
+                per_model,
+                target,
+                target_input * weight,
+                target_output * weight,
+                target_response,
+            )
+            if adversary and adversary_input:
+                _add(
+                    per_model,
+                    adversary,
+                    adversary_input * weight,
+                    adversary_output * weight,
+                    adversary_response,
+                )
+            _add(
+                per_model,
+                judge,
+                judge_input * weight,
+                JUDGE_RESPONSE_TOKENS * weight,
+                JUDGE_RESPONSE_TOKENS,
+            )
+
     conversations = (
         len(config.scenarios) * len(config.models.targets) * config.repetitions
     )
     calls_per_conversation = config.turns + max(config.turns - 1, 0) + 1
 
-    totals = [0] * 6
-    for scenario_index in range(len(config.scenarios)):
-        parts = _estimate_one_conversation(config, scenario_index, response_tokens)
-        weight = len(config.models.targets) * config.repetitions
-        totals = [total + part * weight for total, part in zip(totals, parts)]
-
     return TokenEstimate(
         conversations=conversations,
         model_calls=conversations * calls_per_conversation,
-        target_input=totals[0],
-        target_output=totals[1],
-        adversary_input=totals[2],
-        adversary_output=totals[3],
-        judge_input=totals[4],
-        judge_output=totals[5],
+        per_model=per_model,
     )
 
 
-def _price_of(name: str) -> ModelPrice | None:
-    return PRICES.get(name)
-
-
-def _cost_for(config: EvalRunConfig, response_tokens: int) -> tuple[float, list[str]]:
-    """Coût en dollars pour une hypothèse de longueur, et les modèles sans tarif."""
+def _costs_for(
+    config: EvalRunConfig, response_tokens: int | None
+) -> tuple[list[ModelCost], float, list[str]]:
+    """Coût par modèle, total, et modèles sans tarif connu."""
     estimate = estimate_tokens(config, response_tokens)
-    unpriced: list[str] = []
+    costs: list[ModelCost] = []
     total = 0.0
+    unpriced: list[str] = []
 
-    # Le volume du modèle évalué se répartit également entre les modèles cochés.
-    per_target_input = estimate.target_input / len(config.models.targets)
-    per_target_output = estimate.target_output / len(config.models.targets)
-    for target in config.models.targets:
-        price = _price_of(target)
+    for model, tokens in estimate.per_model.items():
+        price = PRICES.get(model)
         if price is None:
-            unpriced.append(target)
-            continue
-        total += per_target_input / 1e6 * price.input_per_mtok
-        total += per_target_output / 1e6 * price.output_per_mtok
-
-    if config.models.adversary and estimate.adversary_input:
-        price = _price_of(config.models.adversary)
-        if price is None:
-            unpriced.append(config.models.adversary)
+            unpriced.append(model)
+            usd = None
         else:
-            total += estimate.adversary_input / 1e6 * price.input_per_mtok
-            total += estimate.adversary_output / 1e6 * price.output_per_mtok
+            usd = (
+                tokens.input / 1e6 * price.input_per_mtok
+                + tokens.output / 1e6 * price.output_per_mtok
+            )
+            total += usd
+        costs.append(
+            ModelCost(
+                model=model,
+                input_tokens=tokens.input,
+                output_tokens=tokens.output,
+                response_tokens=tokens.response_tokens,
+                usd=None if usd is None else round(usd, 4),
+            )
+        )
 
-    price = _price_of(config.models.judge)
-    if price is None:
-        unpriced.append(config.models.judge)
-    else:
-        total += estimate.judge_input / 1e6 * price.input_per_mtok
-        total += estimate.judge_output / 1e6 * price.output_per_mtok
-
-    return total, unpriced
+    costs.sort(key=lambda cost: (cost.usd or 0.0), reverse=True)
+    return costs, total, sorted(set(unpriced))
 
 
 def estimate_cost(
     config: EvalRunConfig, response_tokens: int | None = None
 ) -> CostEstimate:
-    """Coût d'un run, pour une longueur de réponse supposée, et sa fourchette.
+    """Coût d'un run et sa fourchette.
 
-    `usd` est le chiffre à lire : le coût si les réponses font en moyenne
-    `response_tokens` jetons. Les bornes encadrent ce chiffre en supposant des
-    réponses très courtes puis très longues ; elles ne bougent pas quand on
-    change la moyenne, ce sont les extrêmes du catalogue.
+    `usd` est le chiffre à lire : le coût si chaque modèle répond de la longueur
+    qu'on lui connaît. Les bornes l'encadrent en supposant que tous répondent
+    très court, puis très long ; elles ne bougent pas avec l'hypothèse retenue.
+
+    Ce que ce devis n'inclut pas, et qu'il vaut mieux dire que deviner :
+    l'écriture de cache d'Anthropic, facturée 1,25 fois le tarif d'entrée. Sur
+    le run mesuré, elle pesait 11 % de la facture d'Opus. La chiffrer exigerait
+    de supposer un taux de mise en cache que rien ici ne permet de connaître.
 
     Un modèle absent du tarif est signalé plutôt qu'ignoré : une estimation qui
     oublie silencieusement un modèle est pire que pas d'estimation du tout.
-    """
-    assumed = DEFAULT_RESPONSE_TOKENS if response_tokens is None else response_tokens
-    assumed = max(1, min(assumed, 100_000))
 
-    expected, unpriced = _cost_for(config, assumed)
-    low, _ = _cost_for(config, SHORT_RESPONSE_TOKENS)
-    high, _ = _cost_for(config, LONG_RESPONSE_TOKENS)
+    Args:
+        config: Le run à estimer.
+        response_tokens: Longueur de réponse imposée à tous les modèles. `None`
+            — le cas normal — laisse chacun prendre la longueur mesurée pour
+            lui.
+    """
+    assumed = (
+        None if response_tokens is None else max(1, min(response_tokens, 100_000))
+    )
+
+    costs, expected, unpriced = _costs_for(config, assumed)
+    _, low, _ = _costs_for(config, SHORT_RESPONSE_TOKENS)
+    _, high, _ = _costs_for(config, LONG_RESPONSE_TOKENS)
     volume = estimate_tokens(config, assumed)
 
     return CostEstimate(
@@ -264,13 +370,10 @@ def estimate_cost(
         max_eur=round(high * USD_TO_EUR, 4),
         conversations=volume.conversations,
         model_calls=volume.model_calls,
-        output_tokens=volume.target_output
-        + volume.adversary_output
-        + volume.judge_output,
-        input_tokens=volume.target_input
-        + volume.adversary_input
-        + volume.judge_input,
-        unpriced_models=sorted(set(unpriced)),
+        input_tokens=sum(tokens.input for tokens in volume.per_model.values()),
+        output_tokens=sum(tokens.output for tokens in volume.per_model.values()),
+        per_model=costs,
+        unpriced_models=unpriced,
     )
 
 

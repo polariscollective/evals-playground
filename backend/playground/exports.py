@@ -16,23 +16,16 @@ normalisée ne fait pas.
 import csv
 import io
 
-from playground.eval_schemas import Conversation, EvalRunRecord, Tally
-
-
-def failure_rate(tally: Tally) -> float | None:
-    """Part des conversations où le modèle a cédé, ou None si rien n'a été jugé.
-
-    La distinction est la même que dans la matrice : une case sans verdict
-    n'est pas une case à zéro échec.
-    """
-    judged = tally.met + tally.not_met + tally.borderline
-    return None if judged == 0 else tally.met / judged
+from playground.eval_schemas import Conversation, EvalRunRecord
+from playground.scoring import format_value
 
 
 def matrix_csv(record: EvalRunRecord) -> str:
     """La matrice telle qu'affichée : une ligne par scénario, une colonne par modèle.
 
-    Les cases sans verdict restent vides plutôt que de valoir zéro.
+    Chaque case porte la moyenne des notes obtenues. Une case dont rien n'a pu
+    être noté reste vide plutôt que de valoir zéro : la distinction est la même
+    qu'à l'écran, et c'est la plus facile à perdre en passant par un tableur.
     """
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -40,14 +33,23 @@ def matrix_csv(record: EvalRunRecord) -> str:
     writer.writerow(["Scenario", *targets])
 
     for index, scenario in enumerate(record.config.scenarios):
-        row = record.tallies[index] if index < len(record.tallies) else {}
+        row = record.cells[index] if index < len(record.cells) else {}
         cells = []
         for target in targets:
-            rate = failure_rate(row.get(target, Tally()))
-            cells.append("" if rate is None else f"{round(rate * 100)}%")
+            cell = row.get(target)
+            mean = cell.mean if cell else None
+            cells.append("" if mean is None else f"{mean:.2f}")
         writer.writerow([scenario.title, *cells])
 
     return buffer.getvalue()
+
+
+def _rubric(record: EvalRunRecord) -> str:
+    """L'échelle du run sur une ligne, de la note la plus basse à la plus haute."""
+    return " | ".join(
+        f"{format_value(level.value)} = {level.meaning}"
+        for level in sorted(record.config.rubric, key=lambda level: level.value)
+    )
 
 
 def _transcript(conversation: Conversation) -> str:
@@ -68,11 +70,12 @@ DETAIL_COLUMNS = [
     "target_model",
     "repetition",
     "temperature",
-    "verdict",
+    "score",
     "justification",
     "turns",
     "message_count",
     "criterion",
+    "rubric",
     "adversary_model",
     "adversary_prompt",
     "judge_model",
@@ -118,11 +121,14 @@ def details_csv(record: EvalRunRecord) -> str:
                 conversation.target,
                 conversation.repetition,
                 "" if conversation.temperature is None else conversation.temperature,
-                conversation.verdict or "",
+                "" if conversation.score is None else conversation.score,
                 conversation.justification,
                 config.turns,
                 len(conversation.messages),
                 config.criterion,
+                # L'échelle accompagne la question : une note lue seule, sans
+                # savoir ce que valait « 2 », ne se relit pas.
+                _rubric(record),
                 config.models.adversary or "",
                 config.adversary_prompt,
                 config.models.judge,

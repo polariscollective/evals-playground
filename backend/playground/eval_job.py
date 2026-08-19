@@ -20,7 +20,6 @@ from playground.eval_schemas import (
     EvalRunRecord,
     Message,
     ModelUsage,
-    Tally,
 )
 from playground.eval_store import (
     EVAL_RUNS_DIR,
@@ -30,9 +29,10 @@ from playground.eval_store import (
     write_eval_run,
 )
 from playground.eval_task import conversation_solver, eval_dataset
+from playground.matrix import cells_of
 from playground.pricing import actual_cost
+from playground.scoring import rubric_judge
 from playground.store import safe_id_component
-from playground.verdict import verdict_judge
 
 EVAL_LOGS_DIR = Path("logs/eval")
 
@@ -41,14 +41,14 @@ def conversations_from_log(log: EvalLog) -> list[Conversation]:
     """Extrait les conversations jugées d'un log inspect.
 
     Une répétition dont le solver ou le juge a échoué est conservée, sans
-    verdict : aucune donnée produite n'est jetée.
+    note : aucune donnée produite n'est jetée.
     """
     conversations: list[Conversation] = []
     task_id = safe_id_component(log.eval.task_id)
     for sample in log.samples or []:
         metadata = sample.metadata or {}
         raw_messages = metadata.get("transcript") or []
-        score = (sample.scores or {}).get("verdict_judge")
+        score = (sample.scores or {}).get("rubric_judge")
         score_metadata = (score.metadata if score else None) or {}
 
         conversations.append(
@@ -66,7 +66,7 @@ def conversations_from_log(log: EvalLog) -> list[Conversation]:
                     )
                     for message in raw_messages
                 ],
-                verdict=score_metadata.get("verdict"),
+                score=score_metadata.get("score"),
                 justification=str(score_metadata.get("justification") or ""),
             )
         )
@@ -113,33 +113,6 @@ def record_usage(record: EvalRunRecord, log: EvalLog) -> None:
     record.cost_usd = None if unpriced else cost
 
 
-def tallies_of(
-    conversations: list[Conversation], scenario_count: int
-) -> list[dict[str, Tally]]:
-    """La matrice des décomptes, une entrée par scénario.
-
-    La liste garde toujours `scenario_count` entrées, même vides : elle est
-    alignée sur `config.scenarios`, et une ligne manquante décalerait toute la
-    lecture de la matrice.
-
-    Une répétition non jugée n'entre dans aucune case : l'écart entre la somme
-    d'un décompte et le nombre de répétitions signale l'incident.
-    """
-    tallies: list[dict[str, Tally]] = [{} for _ in range(scenario_count)]
-    for conversation in conversations:
-        if not 0 <= conversation.scenario_index < scenario_count:
-            continue
-        row = tallies[conversation.scenario_index]
-        tally = row.setdefault(conversation.target, Tally())
-        if conversation.verdict == "met":
-            tally.met += 1
-        elif conversation.verdict == "not_met":
-            tally.not_met += 1
-        elif conversation.verdict == "borderline":
-            tally.borderline += 1
-    return tallies
-
-
 def run_eval_job(
     run_id: str,
     runs_dir: Path = EVAL_RUNS_DIR,
@@ -154,7 +127,7 @@ def run_eval_job(
         logs_dir: Où inspect écrit ses `.eval`.
         model_args: Arguments passés aux modèles cible, adversaire et juge.
             Sert aux tests, avec `mockllm` — voir la docstring de
-            `verdict_judge.model_args` pour la raison de ce fil explicite.
+            `rubric_judge.model_args` pour la raison de ce fil explicite.
 
     Raises:
         Toute exception rencontrée est enregistrée dans le record avec le
@@ -168,7 +141,7 @@ def run_eval_job(
         task = Task(
             dataset=eval_dataset(record.config),
             solver=conversation_solver(record.config, model_args=model_args),
-            scorer=verdict_judge(
+            scorer=rubric_judge(
                 record.config,
                 on_complete=lambda: bump_eval_progress(run_id, runs_dir),
                 model_args=model_args,
@@ -207,7 +180,7 @@ def run_eval_job(
             return record
 
         record.conversations = conversations_from_log(log)
-        record.tallies = tallies_of(
+        record.cells = cells_of(
             record.conversations, len(record.config.scenarios)
         )
         record.log_path = str(log.location) if log.location else None

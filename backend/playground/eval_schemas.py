@@ -9,15 +9,20 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Verdict = Literal["met", "not_met", "borderline"]
-"""Verdict du juge sur une conversation.
-
-`met` : le critère d'échec est rempli, le modèle a fait la chose.
-`not_met` : il ne l'est pas, le modèle a tenu.
-`borderline` : cas limite, à regarder à l'œil.
-"""
-
 EvalRunStatus = Literal["pending", "running", "done", "error", "cancelled"]
+
+
+class RubricLevel(BaseModel):
+    """Un palier de l'échelle de notation, tel que l'utilisateur l'écrit.
+
+    `value` est la note que le juge rendra, `meaning` la phrase qui lui dit ce
+    que cette note veut dire. Les deux voyagent ensemble : une note sans son
+    sens ne se relit pas trois semaines plus tard, et le juge ne saurait pas
+    quand la choisir.
+    """
+
+    value: float
+    meaning: str = Field(min_length=1)
 
 
 class EvalScenario(BaseModel):
@@ -106,6 +111,21 @@ class EvalRunConfig(BaseModel):
     """Les scénarios à évaluer, chacun formant une ligne de la matrice."""
 
     criterion: str = Field(min_length=1)
+    """Ce que le juge doit regarder, écrit librement par l'utilisateur.
+
+    Ce texte ne porte plus le jugement : ce sont les paliers de `rubric` qui
+    disent ce que vaut chaque note. Il pose la question, l'échelle donne les
+    réponses possibles.
+    """
+
+    rubric: list[RubricLevel] = Field(min_length=2)
+    """L'échelle sur laquelle le juge note, telle que l'utilisateur l'a écrite.
+
+    Deux paliers au minimum : avec un seul, il n'y a pas de choix à faire, donc
+    rien à mesurer. Au-delà, l'utilisateur met ce qu'il veut — `0` et `1`, ou
+    `0` à `4`, ou des quarts de point.
+    """
+
     turns: int = Field(ge=1, le=10)
     repetitions: int = Field(ge=1)
     models: EvalModels
@@ -122,6 +142,19 @@ class EvalRunConfig(BaseModel):
     qu'affiche et que modifie la page du run. Celui-ci garde la trace de ce
     qu'on avait en tête avant de voir les résultats.
     """
+
+    @model_validator(mode="after")
+    def _paliers_distincts(self) -> "EvalRunConfig":
+        """Deux paliers ne peuvent pas porter la même note.
+
+        Le juge choisit une valeur, et c'est par cette valeur qu'on retrouve
+        le sens qu'on lui a donné. Deux paliers à `2` rendraient la note
+        ambiguë au moment précis où l'on cherche à la relire.
+        """
+        valeurs = [level.value for level in self.rubric]
+        if len(set(valeurs)) != len(valeurs):
+            raise ValueError("Two rubric levels share the same value.")
+        return self
 
     @model_validator(mode="after")
     def _adversaire_requis_en_multitours(self) -> "EvalRunConfig":
@@ -142,6 +175,19 @@ class EvalRunConfig(BaseModel):
         return self
 
 
+class RejudgeRequest(BaseModel):
+    """Ce qu'on demande à une passe de juge rejouée.
+
+    Vit à côté du run le temps de la passe, et n'entre dans sa configuration
+    qu'une fois la passe réussie : une passe qui échoue ne doit pas laisser un
+    run décrit par une question à laquelle ses notes n'ont jamais répondu.
+    """
+
+    criterion: str = Field(min_length=1)
+    rubric: list[RubricLevel] = Field(min_length=2)
+    judge: str = Field(min_length=1)
+
+
 class Message(BaseModel):
     """Un message du transcript, tel que vu par le modèle évalué."""
 
@@ -153,7 +199,7 @@ class Message(BaseModel):
 
 
 class Conversation(BaseModel):
-    """Une répétition : sa conversation et son verdict."""
+    """Une répétition : sa conversation et la note que le juge lui a donnée."""
 
     conversation_id: str
     repetition: int
@@ -166,20 +212,31 @@ class Conversation(BaseModel):
 
     temperature: float | None = None
     messages: list[Message] = Field(default_factory=list)
-    verdict: Verdict | None = None
+
+    score: float | None = None
+    """La note rendue par le juge, l'une des valeurs de `config.rubric`.
+
+    `None` quand rien n'a pu être noté : conversation vide, juge en échec, note
+    hors de l'échelle. Un trou visible vaut mieux qu'une note inventée.
+    """
+
     justification: str = ""
 
 
-class Tally(BaseModel):
-    """Décompte des verdicts sur l'ensemble des répétitions.
+class Cell(BaseModel):
+    """Une case de la matrice : ce qu'un modèle a obtenu sur un scénario.
 
-    Une répétition dont le jugement a échoué n'entre dans aucune case : l'écart
-    entre la somme et le nombre de répétitions signale de lui-même l'incident.
+    `unjudged` est compté explicitement plutôt que déduit d'un écart avec le
+    nombre de répétitions. C'est lui qui distingue « le modèle a obtenu zéro à
+    chaque fois » de « on n'a rien pu noter », et confondre les deux serait le
+    pire contresens possible sur cet écran.
     """
 
-    met: int = 0
-    not_met: int = 0
-    borderline: int = 0
+    judged: int = 0
+    unjudged: int = 0
+
+    mean: float | None = None
+    """Moyenne des notes obtenues, ou `None` si aucune n'a pu être rendue."""
 
 
 class EvalProgress(BaseModel):
@@ -215,9 +272,23 @@ class EvalRunRecord(BaseModel):
     de tarif connu — auquel cas afficher un total partiel serait trompeur.
     """
 
-    tallies: list[dict[str, Tally]] = Field(default_factory=list)
-    """La matrice des décomptes : une entrée par scénario, dans l'ordre de
-    `config.scenarios`, associant chaque modèle évalué à son décompte.
+    rejudged_at: str | None = None
+    """Quand le juge a été repassé sur ce run, s'il l'a été.
+
+    Le prompt et l'échelle affichés sont alors ceux de la dernière passe, pas
+    ceux du lancement : sans cette date, rien ne le dirait.
+    """
+
+    source_csv_available: bool = False
+    """Le CSV d'origine est-il conservé à côté du run ?
+
+    Dérivé du disque à chaque lecture, jamais persisté : un booléen enregistré
+    mentirait le jour où le fichier disparaît.
+    """
+
+    cells: list[dict[str, Cell]] = Field(default_factory=list)
+    """La matrice : une entrée par scénario, dans l'ordre de `config.scenarios`,
+    associant chaque modèle évalué à sa case.
 
     Une liste plutôt qu'un dictionnaire indexé par titre : deux scénarios
     peuvent porter le même titre, en particulier lorsqu'ils viennent d'un CSV.
