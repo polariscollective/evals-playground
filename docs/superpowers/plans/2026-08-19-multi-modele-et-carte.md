@@ -27,57 +27,6 @@ La question qu'on pose n'est pas « ce modèle tient-il sur ce scénario » mais
 
 ---
 
-### Task 0: Passer l'interface existante en anglais
-
-**Files:**
-- Modify: `web/app/layout.tsx`, `web/app/page.tsx`, `web/app/eval/[runId]/page.tsx`
-- Modify: `backend/playground/eval_schemas.py`, `backend/playground/eval_api.py`, `backend/playground/conversation.py`, `backend/playground/judges.py`, `backend/playground/store.py`, `backend/playground/eval_store.py`, `backend/playground/generation.py`
-- Modify: les tests qui assertent sur le texte d'un message d'erreur
-
-**Pourquoi en premier.** Toutes les tâches suivantes ajoutent de l'interface. Les écrire en anglais tout en laissant l'existant en français produirait un tableau de bord bilingue qu'il faudrait rattraper ensuite, ligne par ligne.
-
-- [ ] **Step 1: Traduire les textes visibles du front**
-
-Dans `web/app/layout.tsx`, `web/app/page.tsx` et `web/app/eval/[runId]/page.tsx`, traduis en anglais **tout ce qui s'affiche** : noms d'onglets, titres, libellés de champs, textes d'aide, placeholders, libellés de boutons, messages de validation, états d'un run, libellés de verdict.
-
-Un texte mérite une attention particulière : l'avertissement du bloc de l'adversaire. Il porte la compréhension de l'asymétrie, et c'est le seul endroit de l'écran où un contresens invalide silencieusement un résultat. Traduis-le pour qu'il reste aussi explicite : ce texte n'est **jamais** montré au modèle évalué, qui ne voit que les messages que l'adversaire lui adresse, comme s'ils venaient d'un humain.
-
-Ne touche ni aux commentaires, ni aux noms de variables.
-
-- [ ] **Step 2: Traduire les messages d'erreur qui remontent à l'interface**
-
-Ces messages traversent l'API et s'affichent dans le tableau de bord. Traduis-les en anglais :
-
-- les `ValueError` des validateurs pydantic dans `eval_schemas.py` ;
-- les `detail` des `HTTPException` dans `eval_api.py` ;
-- les `ValueError` levées par `conversation.py` pendant un run, qui finissent dans le champ d'erreur du run ;
-- les `KeyError` et `ValueError` de `judges.py`, `store.py`, `eval_store.py` et `generation.py` qui peuvent atteindre l'utilisateur.
-
-**Les docstrings et commentaires de ces mêmes fichiers restent en français.** Seule la chaîne de caractères levée change de langue.
-
-- [ ] **Step 3: Adapter les tests qui assertent sur ces textes**
-
-Plusieurs tests vérifient qu'un message d'erreur contient un mot français — « adversaire », « inconnu », « inférieure ». Adapte-les au nouveau texte. **N'affaiblis aucune assertion** : un test qui vérifiait qu'un message nomme la clé manquante doit continuer à le vérifier, en anglais. Les noms des fonctions de test restent en français.
-
-- [ ] **Step 4: Vérifier qu'il ne reste rien de visible en français**
-
-Run: `.venv/bin/pytest -v`
-Attendu : tous les tests verts.
-
-Run: `npm --prefix web run lint`
-Attendu : aucune erreur.
-
-Puis, à la main, parcours les deux écrans existants et vérifie qu'aucun texte affiché n'est resté en français — y compris les états rares : run en erreur, run annulé, aucune clé d'API configurée, champ hors bornes.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add web backend tests
-git commit -m "feat: interface et messages d'erreur en anglais"
-```
-
----
-
 ### Task 1: Schémas — deux listes et un décompte matriciel
 
 **Files:**
@@ -224,16 +173,34 @@ Dans `EvalRunRecord`, remplacer `tally` par :
     """
 ```
 
-- [ ] **Step 4: Lancer les tests pour vérifier qu'ils passent**
+- [ ] **Step 4: Passer en anglais les messages d'erreur qui atteignent l'utilisateur**
 
-Run: `.venv/bin/pytest tests/test_eval_schemas.py -v`
-Attendu : tous verts.
+L'interface est en anglais, et ces messages s'y affichent : un formulaire anglais
+qui renvoie une erreur en français serait incohérent. Traduis les chaînes levées
+par les validateurs de `eval_schemas.py` — celles que tu viens d'écrire comprises.
 
-- [ ] **Step 5: Commit**
+Fais de même dans `backend/playground/eval_api.py`, `backend/playground/conversation.py`,
+`backend/playground/eval_store.py`, `backend/playground/verdict.py` et
+`backend/playground/generation.py` : seules les chaînes levées ou renvoyées à
+l'utilisateur changent de langue.
+
+**Les docstrings, les commentaires et les noms de fonctions de test restent en
+français.** Le produit est anglais, le dépôt est documenté en français.
+
+Adapte les tests qui assertent sur un mot français d'un message — sans affaiblir
+aucune assertion : un test qui vérifiait qu'un message nomme la clé manquante doit
+continuer à le vérifier, en anglais.
+
+- [ ] **Step 5: Lancer toute la suite**
+
+Run: `.venv/bin/pytest -v`
+Attendu : tous les tests verts.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/playground/eval_schemas.py tests/test_eval_schemas.py
-git commit -m "feat: scénarios et modèles évalués deviennent des listes"
+git add backend tests
+git commit -m "feat: scénarios et modèles évalués deviennent des listes, messages en anglais"
 ```
 
 ---
@@ -1032,6 +999,12 @@ git commit -m "feat: estimation du coût d'un run avant lancement"
 - Modify: `web/app/page.tsx`
 
 **Note :** invoque la skill `frontend-design` avant d'écrire. **Tous les textes affichés sont en anglais.** L'identité visuelle est posée — papier chaud et zinc, sarcelle pour l'action ordinaire, rouge **réservé exclusivement** à ce qui touche à l'adversaire. Prolonge-la.
+
+- [ ] **Step 0: Passer la navigation en anglais**
+
+Dans `web/app/layout.tsx`, traduis les quatre onglets. Les deux écrans existants
+sont réécrits par cette tâche et la suivante, entièrement en anglais : la
+navigation est le seul texte survivant qu'il faut traduire à part.
 
 - [ ] **Step 1: Adapter `web/lib/types.ts`**
 
