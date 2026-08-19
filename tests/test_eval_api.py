@@ -76,6 +76,30 @@ def test_lancer_un_run_d_evaluation(client: TestClient):
     assert client.get(f"/api/eval-runs/{run_id}").json()["status"] == "pending"
 
 
+def test_l_estimation_ne_lance_aucun_run(client: TestClient, tmp_path):
+    # Modèles tarifés du catalogue : "mockllm/model", le défaut de _payload(),
+    # n'a pas de tarif et rendrait les deux bornes nulles.
+    payload = _payload(
+        models={
+            "targets": ["anthropic/claude-haiku-4-5"],
+            "judge": "anthropic/claude-haiku-4-5",
+        }
+    )
+    response = client.post("/api/eval-runs/estimate", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["min_usd"] < body["max_usd"]
+    assert body["conversations"] == 3
+    # Aucun run ne doit avoir été créé sur disque.
+    assert client.get("/api/eval-runs").json() == []
+
+
+def test_l_estimation_refuse_une_configuration_invalide(client: TestClient):
+    payload = _payload()
+    payload["scenarios"] = []
+    assert client.post("/api/eval-runs/estimate", json=payload).status_code == 422
+
+
 def test_un_multitours_sans_adversaire_est_refuse(client: TestClient):
     response = client.post("/api/eval-runs", json=_payload(turns=3))
     assert response.status_code == 422

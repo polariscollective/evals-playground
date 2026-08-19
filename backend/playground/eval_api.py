@@ -22,6 +22,7 @@ from playground.eval_store import (
     read_eval_run,
     write_eval_run,
 )
+from playground.pricing import CostEstimate, estimate_cost
 from playground.store import SELECTED_DIR as _DEFAULT_SELECTED_DIR
 
 router = APIRouter()
@@ -90,6 +91,17 @@ def post_eval_run(config: EvalRunConfig) -> EvalRunRecord:
     record = create_eval_run(config, Path(EVAL_RUNS_DIR))
     _launch_eval_subprocess(record.run_id)
     return record
+
+
+@router.post("/api/eval-runs/estimate", response_model=CostEstimate)
+def post_estimate(config: EvalRunConfig) -> CostEstimate:
+    """Estime le coût d'un run sans rien lancer.
+
+    Même schéma d'entrée que le lancement : l'interface peut donc estimer
+    exactement ce qu'elle s'apprête à envoyer, sans transformation
+    intermédiaire susceptible de diverger.
+    """
+    return estimate_cost(config)
 
 
 @router.get("/api/eval-runs", response_model=list[EvalRunRecord])
