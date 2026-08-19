@@ -111,6 +111,111 @@ def test_annuler_un_run_inconnu_renvoie_404(client: TestClient):
     assert client.post("/api/eval-runs/absent/cancel").status_code == 404
 
 
+def test_annuler_un_run_conserve_la_progression_deja_accomplie(
+    client: TestClient, tmp_path: Path
+):
+    """Un run annulé aux deux tiers doit garder ses répétitions déjà comptées,
+
+    à la fois dans la réponse d'annulation et dans une relecture ultérieure.
+    """
+    run_id = client.post("/api/eval-runs", json=_payload()).json()["run_id"]
+    runs_dir = tmp_path / "eval-runs"
+    record = read_eval_run(run_id, runs_dir)
+    record.status = "running"
+    write_eval_run(record, runs_dir)
+    (runs_dir / f"{run_id}.progress").write_text("1\n1\n")
+
+    reponse_annulation = client.post(f"/api/eval-runs/{run_id}/cancel")
+    assert reponse_annulation.json()["progress"]["completed"] == 2
+
+    relecture = client.get(f"/api/eval-runs/{run_id}")
+    assert relecture.json()["progress"]["completed"] == 2
+
+
+def test_annuler_un_run_deja_termine_ne_fait_rien(
+    client: TestClient, tmp_path: Path
+):
+    """Un run `done` ignore l'annulation : ni changement de statut, ni tentative de terminaison."""
+
+    class FakeProcess:
+        def __init__(self):
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+    fake = FakeProcess()
+    run_id = client.post("/api/eval-runs", json=_payload()).json()["run_id"]
+    eval_api._EVAL_PROCESSES[run_id] = fake
+
+    runs_dir = tmp_path / "eval-runs"
+    record = read_eval_run(run_id, runs_dir)
+    record.status = "done"
+    write_eval_run(record, runs_dir)
+
+    response = client.post(f"/api/eval-runs/{run_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "done"
+    assert fake.terminated is False
+
+
+def test_annuler_deux_fois_le_meme_run_est_sans_second_effet(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Une seconde annulation ne doit pas retenter de terminer le sous-process."""
+
+    class FakeProcess:
+        def __init__(self):
+            self.terminate_calls = 0
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminate_calls += 1
+
+    fake = FakeProcess()
+    monkeypatch.setattr(
+        eval_api,
+        "_launch_eval_subprocess",
+        lambda run_id: eval_api._EVAL_PROCESSES.__setitem__(run_id, fake),
+    )
+
+    run_id = client.post("/api/eval-runs", json=_payload()).json()["run_id"]
+    premiere = client.post(f"/api/eval-runs/{run_id}/cancel")
+    seconde = client.post(f"/api/eval-runs/{run_id}/cancel")
+
+    assert premiere.json()["status"] == "cancelled"
+    assert seconde.json()["status"] == "cancelled"
+    assert fake.terminate_calls == 1
+
+
+def test_la_lecture_d_un_run_termine_purge_le_handle_de_process(
+    client: TestClient, tmp_path: Path
+):
+    """Consulter un run terminé libère le handle de sous-process laissé en mémoire."""
+
+    class FakeProcess:
+        def poll(self):
+            return 0
+
+    run_id = client.post("/api/eval-runs", json=_payload()).json()["run_id"]
+    eval_api._EVAL_PROCESSES[run_id] = FakeProcess()
+
+    runs_dir = tmp_path / "eval-runs"
+    record = read_eval_run(run_id, runs_dir)
+    record.status = "done"
+    write_eval_run(record, runs_dir)
+
+    client.get(f"/api/eval-runs/{run_id}")
+
+    assert run_id not in eval_api._EVAL_PROCESSES
+
+
 def test_la_progression_est_rafraichie_pendant_un_run(
     client: TestClient, tmp_path: Path
 ):

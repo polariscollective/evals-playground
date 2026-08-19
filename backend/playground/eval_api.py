@@ -99,6 +99,12 @@ def get_eval_run(run_id: str) -> EvalRunRecord:
         raise HTTPException(status_code=404, detail=f"Run inconnu : {run_id}")
     if record.status == "running":
         record.progress.completed = read_eval_progress(run_id, Path(EVAL_RUNS_DIR))
+    elif record.status in ("done", "error", "cancelled"):
+        # Le sous-process écrit lui-même son résultat pour un run qui va au
+        # bout : rien n'appelle cancel_eval_run dans ce cas, donc c'est ici,
+        # à la prochaine lecture, que l'on constate le statut terminal et que
+        # le handle laissé dans _EVAL_PROCESSES est purgé.
+        _EVAL_PROCESSES.pop(run_id, None)
     return record
 
 
@@ -112,6 +118,11 @@ def cancel_eval_run(run_id: str) -> EvalRunRecord:
         process = _EVAL_PROCESSES.pop(run_id, None)
         if process is not None and process.poll() is None:
             process.terminate()
+        # Comme dans eval_job.py quand inspect termine lui-même sur un statut
+        # d'annulation : on capture la progression réelle depuis le compteur
+        # avant d'écraser le statut, pour ne pas figer un run interrompu à
+        # zéro pour toujours.
+        record.progress.completed = read_eval_progress(run_id, Path(EVAL_RUNS_DIR))
         record.status = "cancelled"
         write_eval_run(record, Path(EVAL_RUNS_DIR))
     return record
