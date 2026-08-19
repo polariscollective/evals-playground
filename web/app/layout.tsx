@@ -29,6 +29,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Link href="/" className="font-medium">
             Evaluate
           </Link>
+          <Link href="/runs" className="font-medium">
+            Runs
+          </Link>
           <Link href="/creer" className="font-medium">
             Create
           </Link>

@@ -32,6 +32,7 @@ export default function EvaluatePage() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [selected, setSelected] = useState<SelectedScenario[]>([]);
 
+  const [label, setLabel] = useState("");
   const [source, setSource] = useState<Source>("manual");
   const [title, setTitle] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -152,12 +153,14 @@ export default function EvaluatePage() {
         judge,
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
+      label: label.trim() || null,
       temperature: {
         min: temperatureMin,
         max: varyTemperature ? temperatureMax : null,
       },
     }),
     [
+      label,
       scenarios,
       criterion,
       turns,
@@ -285,6 +288,21 @@ export default function EvaluatePage() {
           {error}
         </p>
       )}
+
+      <label className="block space-y-1">
+        <span className="text-sm font-medium">
+          Run name{" "}
+          <span className="font-normal text-zinc-500">
+            — how you will recognise this batch later
+          </span>
+        </span>
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Procedure pressure — three models"
+          className="w-full rounded border border-zinc-300 p-2"
+        />
+      </label>
 
       {/* ---------------- Scenarios ---------------- */}
       <section className="space-y-4">
