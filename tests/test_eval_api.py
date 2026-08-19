@@ -69,6 +69,25 @@ def test_le_catalogue_liste_les_trois_providers(client: TestClient):
     assert [p["id"] for p in response.json()] == ["anthropic", "openai", "grok"]
 
 
+def test_l_apercu_du_prompt_du_juge_contient_le_critere(client: TestClient):
+    response = client.post(
+        "/api/judge-prompt-preview", json={"criterion": "MON_CRITERE_UNIQUE"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "MON_CRITERE_UNIQUE" in body["user_message"]
+    assert body["system_message"].strip() != ""
+
+
+def test_l_apercu_montre_les_trois_verdicts_possibles(client: TestClient):
+    body = client.post(
+        "/api/judge-prompt-preview", json={"criterion": "X"}
+    ).json()
+    rendu = body["system_message"] + body["user_message"]
+    for valeur in ("met", "not_met", "borderline"):
+        assert valeur in rendu
+
+
 def test_lancer_un_run_d_evaluation(client: TestClient):
     response = client.post("/api/eval-runs", json=_payload())
     assert response.status_code == 201

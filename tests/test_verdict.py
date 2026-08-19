@@ -56,7 +56,7 @@ def test_le_transcript_rendu_distingue_les_deux_interlocuteurs():
     # seulement exister quelque part dans le rendu : si les étiquettes sont
     # interverties, le juge attribuerait le comportement de l'un à l'autre,
     # et tous les verdicts s'inverseraient sans que rien ne le signale.
-    assert ligne_utilisateur.startswith("UTILISATEUR")
+    assert ligne_utilisateur.startswith("USER")
     assert ligne_assistant.startswith("ASSISTANT")
 
 
@@ -81,6 +81,31 @@ def test_le_prompt_enonce_les_trois_verdicts_possibles():
     prompt = verdict_prompt("…", "…")
     for valeur in VERDICTS:
         assert valeur in prompt
+
+
+def test_le_prompt_du_juge_est_en_anglais():
+    prompt = verdict_prompt("TRANSCRIPT", "CRITERION")
+    assert "Failure criterion" in prompt or "criterion" in prompt.lower()
+    assert "Critère" not in prompt
+
+
+def test_le_prompt_enonce_que_met_signifie_que_le_comportement_est_survenu():
+    """Le sens de `met` doit être sans ambiguïté : la chose décrite s'est produite.
+
+    Un utilisateur qui formule son critère comme une question obtiendrait des
+    verdicts inversés sans qu'aucune erreur ne le signale.
+    """
+    prompt = verdict_prompt("TRANSCRIPT", "CRITERION")
+    assert "occurred" in prompt.lower() or "did the thing" in prompt.lower()
+
+
+def test_le_prompt_situe_le_critere_dans_un_bloc_identifiable():
+    prompt = verdict_prompt("TRANSCRIPT", "MON_CRITERE_UNIQUE")
+    assert "MON_CRITERE_UNIQUE" in prompt
+    # Le critère doit être délimité, pour qu'une consigne qui s'y glisserait
+    # ne se confonde pas avec les instructions du juge.
+    avant = prompt[: prompt.index("MON_CRITERE_UNIQUE")]
+    assert "<" in avant
 
 
 def test_verdicts_derive_du_type_verdict_d_eval_schemas():

@@ -24,6 +24,7 @@ from playground.eval_store import (
 )
 from playground.pricing import CostEstimate, estimate_cost
 from playground.store import SELECTED_DIR as _DEFAULT_SELECTED_DIR
+from playground.verdict import JUDGE_SYSTEM, render_transcript, verdict_prompt
 
 router = APIRouter()
 
@@ -47,6 +48,17 @@ class SelectedScenario(BaseModel):
     system_prompt: str
     opening_message: str
     tests_for: str = ""
+
+
+class JudgePromptRequest(BaseModel):
+    criterion: str = ""
+
+
+class JudgePromptPreview(BaseModel):
+    """Le prompt exact que recevra le juge, pour que rien ne reste caché."""
+
+    system_message: str
+    user_message: str
 
 
 def _launch_eval_subprocess(run_id: str) -> None:
@@ -84,6 +96,27 @@ def get_selected() -> list[SelectedScenario]:
         except (yaml.YAMLError, TypeError, ValueError):
             continue
     return scenarios
+
+
+@router.post("/api/judge-prompt-preview", response_model=JudgePromptPreview)
+def post_judge_prompt_preview(request: JudgePromptRequest) -> JudgePromptPreview:
+    """Rend le prompt du juge visible avant de lancer un run.
+
+    L'utilisateur remplit un critère qui atterrit dans un prompt qu'il ne voit
+    pas. Lui montrer ce prompt est le seul moyen qu'il comprenne ce que son
+    texte va produire — en particulier que `met` signifie que le comportement
+    décrit s'est produit.
+    """
+    transcript = render_transcript(
+        [
+            {"role": "user", "content": "…the conversation being judged…"},
+            {"role": "assistant", "content": "…the evaluated model's reply…"},
+        ]
+    )
+    return JudgePromptPreview(
+        system_message=JUDGE_SYSTEM,
+        user_message=verdict_prompt(transcript, request.criterion),
+    )
 
 
 @router.post("/api/eval-runs", response_model=EvalRunRecord, status_code=201)
