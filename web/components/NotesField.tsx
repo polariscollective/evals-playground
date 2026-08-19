@@ -14,11 +14,15 @@ export function NotesField({
   onChange,
   onSave,
   hint = "What are you testing, what did you notice?",
+  rows = 4,
 }: {
   value: string;
   onChange: (next: string) => void;
   onSave?: (next: string) => Promise<void>;
   hint?: string;
+  /** Hauteur de la zone d'édition. Plus grande sur la page d'un run, où l'on
+      écrit ses conclusions, que sur le formulaire, où l'on note une intention. */
+  rows?: number;
 }) {
   // On ouvre en édition quand il n'y a rien à lire : afficher un bloc vide
   // avec un bouton « Edit » demanderait un clic pour rien.
@@ -68,7 +72,7 @@ export function NotesField({
           <textarea
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            rows={4}
+            rows={rows}
             placeholder={hint}
             className="mt-2 w-full rounded border border-zinc-300 p-2 font-mono text-sm"
           />

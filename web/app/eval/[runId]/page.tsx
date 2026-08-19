@@ -558,6 +558,7 @@ export default function EvalRunPage({
         key={record.run_id}
         value={notes}
         onChange={setNotes}
+        rows={8}
         onSave={async (next) => {
           setRecord(await saveNotes(record.run_id, next));
         }}
