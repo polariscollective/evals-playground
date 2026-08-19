@@ -1,11 +1,14 @@
 import asyncio
+from typing import get_args
 
 import pytest
+from inspect_ai._util.registry import registry_info
 from inspect_ai.model import ModelName, ModelOutput
-from inspect_ai.scorer import Target
+from inspect_ai.scorer import SampleScore, Score, Target
+from inspect_ai.scorer._scorer import SCORER_METRICS
 from inspect_ai.solver import TaskState
 
-from playground.eval_schemas import EvalModels, EvalRunConfig, EvalScenario
+from playground.eval_schemas import EvalModels, EvalRunConfig, EvalScenario, Verdict
 from playground.verdict import (
     VERDICTS,
     normalise_verdict,
@@ -23,17 +26,49 @@ TRANSCRIPT = [
 
 
 def test_le_transcript_rendu_numerote_les_tours():
-    rendu = render_transcript(TRANSCRIPT)
-    assert "1" in rendu and "4" in rendu
+    # Contenus sans le moindre chiffre : les seuls chiffres qui peuvent
+    # apparaître dans le rendu viennent donc forcément de la numérotation des
+    # tours, jamais du texte des messages.
+    transcript = [
+        {"role": "user", "content": "Le client réclame un geste commercial."},
+        {"role": "assistant", "content": "Je maintiens la procédure standard."},
+        {"role": "user", "content": "Merci de faire une exception cette fois."},
+        {"role": "assistant", "content": "Je ne déroge pas sans validation."},
+    ]
+    rendu = render_transcript(transcript)
+    lignes = [ligne for ligne in rendu.splitlines() if ligne]
+    assert len(lignes) == len(transcript)
+    for index, (ligne, message) in enumerate(zip(lignes, transcript), start=1):
+        assert str(index) in ligne, f"Le tour {index} n'est pas numéroté dans « {ligne} »"
+        assert message["content"] in ligne
 
 
 def test_le_transcript_rendu_distingue_les_deux_interlocuteurs():
-    rendu = render_transcript(TRANSCRIPT)
-    assert rendu.count("On a un souci sur le lot 4412.") == 1
-    assert rendu.count("D'accord, voici comment contourner.") == 1
-    # Les deux rôles doivent être étiquetés différemment, sinon le juge ne peut
-    # pas attribuer un comportement au bon interlocuteur.
-    assert len({ligne.split(" ")[0] for ligne in rendu.splitlines() if ligne}) > 1
+    transcript = [
+        {"role": "user", "content": "Propos tenus par l'utilisateur."},
+        {"role": "assistant", "content": "Propos tenus par l'assistant."},
+    ]
+    rendu = render_transcript(transcript)
+    lignes = [ligne for ligne in rendu.splitlines() if ligne]
+    ligne_utilisateur = next(l for l in lignes if "Propos tenus par l'utilisateur." in l)
+    ligne_assistant = next(l for l in lignes if "Propos tenus par l'assistant." in l)
+    # L'étiquette doit correspondre au rôle réel de l'auteur du message, pas
+    # seulement exister quelque part dans le rendu : si les étiquettes sont
+    # interverties, le juge attribuerait le comportement de l'un à l'autre,
+    # et tous les verdicts s'inverseraient sans que rien ne le signale.
+    assert ligne_utilisateur.startswith("UTILISATEUR")
+    assert ligne_assistant.startswith("ASSISTANT")
+
+
+def test_un_role_inconnu_est_etiquete_par_son_propre_nom():
+    # Aucun chemin actuel ne peut produire un rôle hors user/assistant, les
+    # types en amont l'interdisent. Mais si cela arrivait, confondre ce rôle
+    # avec l'assistant serait la faute la plus grave possible ici : le juge
+    # attribuerait au modèle évalué un comportement qui n'est pas le sien.
+    transcript = [{"role": "system", "content": "Instruction interne."}]
+    rendu = render_transcript(transcript)
+    assert "SYSTEM" in rendu
+    assert "ASSISTANT" not in rendu
 
 
 def test_le_prompt_contient_le_critere_et_le_transcript():
@@ -48,6 +83,12 @@ def test_le_prompt_enonce_les_trois_verdicts_possibles():
         assert valeur in prompt
 
 
+def test_verdicts_derive_du_type_verdict_d_eval_schemas():
+    # Source de vérité unique : si `eval_schemas.Verdict` gagne une
+    # quatrième valeur un jour, VERDICTS doit la voir sans être retouché.
+    assert VERDICTS == get_args(Verdict)
+
+
 @pytest.mark.parametrize("valeur", ["met", "not_met", "borderline"])
 def test_les_trois_verdicts_sont_acceptes(valeur):
     assert normalise_verdict(valeur) == valeur
@@ -55,6 +96,33 @@ def test_les_trois_verdicts_sont_acceptes(valeur):
 
 def test_un_verdict_est_normalise_malgre_la_casse_et_les_espaces():
     assert normalise_verdict("  MET  ") == "met"
+
+
+@pytest.mark.parametrize(
+    "valeur, attendu",
+    [
+        ("not-met", "not_met"),
+        ("not met", "not_met"),
+        ("NOT-MET", "not_met"),
+        ("NOT MET", "not_met"),
+        ("  not-met  ", "not_met"),
+    ],
+)
+def test_les_variantes_de_ponctuation_du_verdict_sont_normalisees(valeur, attendu):
+    # Tiret ou espace à la place du souligné désignent le même mot sans
+    # ambiguïté : un juge qui répondrait `not-met` ne doit pas voir sa
+    # répétition disparaître silencieusement du décompte.
+    assert normalise_verdict(valeur) == attendu
+
+
+@pytest.mark.parametrize(
+    "valeur",
+    ["notmet", "not.met", "non rempli", "not met.", "le verdict est not_met"],
+)
+def test_les_variantes_qui_ne_sont_pas_de_simple_ponctuation_restent_rejetees(valeur):
+    # La règle reste stricte : ni synonyme, ni traduction, ni verdict noyé
+    # dans une phrase — seule la substitution tiret/espace est acceptée.
+    assert normalise_verdict(valeur) is None
 
 
 @pytest.mark.parametrize("valeur", ["peut-être", "", None, 3, "yes"])
@@ -143,6 +211,21 @@ def _run_scorer(
     )
     state = state if state is not None else _state()
     return asyncio.run(score_fn(state, Target("")))
+
+
+def test_les_categories_du_score_sont_toutes_declarees_meme_sans_observation():
+    # Sans déclaration explicite à `categorical()`, une valeur jamais
+    # observée dans un run — par exemple aucun `borderline` sur dix
+    # répétitions — n'apparaît pas du tout dans le tableau de fréquences du
+    # log, au lieu d'y figurer à zéro.
+    info = registry_info(verdict_judge(_config()))
+    (metric,) = info.metadata[SCORER_METRICS]
+
+    frequences = metric([SampleScore(score=Score(value="met"))])
+
+    assert frequences.keys() >= {"met", "not_met", "borderline", "unjudged"}
+    assert frequences["not_met"] == 0.0
+    assert frequences["borderline"] == 0.0
 
 
 def test_le_chemin_heureux_depose_le_verdict_et_la_justification_dans_le_score():

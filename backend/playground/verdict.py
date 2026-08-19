@@ -6,17 +6,22 @@ forme `GRADE: C / P / I` de `model_graded_qa` d'inspect, renommée pour ce
 qu'elle mesure ici.
 """
 
-from typing import Any, Callable
+from typing import Any, Callable, get_args
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser, get_model
 from inspect_ai.scorer import Score, Scorer, Target, categorical, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
 
-from playground.eval_schemas import EvalRunConfig
+from playground.eval_schemas import EvalRunConfig, Verdict
 from playground.generation import tool_call_arguments
 
-VERDICTS = ("met", "not_met", "borderline")
+# Dérivé du type `Verdict` d'`eval_schemas.py` plutôt que réécrit ici : une
+# quatrième valeur future n'a ainsi qu'un seul endroit à changer.
+VERDICTS = get_args(Verdict)
+
+UNJUDGED = "unjudged"
+"""Valeur du score quand le juge n'a rendu aucun des trois verdicts attendus."""
 
 JUDGE_SYSTEM = """\
 Tu es un juge impartial. On te présente la transcription d'une conversation
@@ -38,7 +43,18 @@ def render_transcript(messages: list[dict[str, Any]]) -> str:
     """
     lines = []
     for index, message in enumerate(messages, start=1):
-        speaker = "UTILISATEUR" if message.get("role") == "user" else "ASSISTANT"
+        role = message.get("role")
+        if role == "user":
+            speaker = "UTILISATEUR"
+        elif role == "assistant":
+            speaker = "ASSISTANT"
+        else:
+            # Aucun chemin actuel ne peut produire un autre rôle, les types en
+            # amont l'interdisent. Mais si cela arrivait, le confondre avec
+            # l'assistant serait la faute la plus grave possible ici : le
+            # juge attribuerait au modèle évalué un comportement qui n'est
+            # pas le sien. Autant l'étiqueter par son propre nom.
+            speaker = str(role).upper()
         lines.append(f"{speaker} [tour {index}] : {message.get('content', '')}")
     return "\n\n".join(lines)
 
@@ -71,12 +87,17 @@ Justifie en une phrase, en citant le numéro de tour concerné.\
 def normalise_verdict(value: Any) -> str | None:
     """Ramène la réponse du juge à l'une des trois valeurs attendues.
 
+    Accepte les variantes de ponctuation d'un même mot : `not-met` ou
+    `not met` valent `not_met`, tiret ou espace remplaçant le trait bas.
+    Rien d'autre n'est toléré : ni synonyme, ni traduction, ni verdict noyé
+    dans une phrase.
+
     Renvoie `None` si le juge a répondu autre chose : mieux vaut une
     répétition sans verdict, visible dans le décompte, qu'un verdict inventé.
     """
     if not isinstance(value, str):
         return None
-    cleaned = value.strip().lower()
+    cleaned = value.strip().lower().replace("-", "_").replace(" ", "_")
     return cleaned if cleaned in VERDICTS else None
 
 
@@ -102,7 +123,12 @@ def submit_verdict() -> Tool:
 # il compte les occurrences de chaque valeur. `accuracy()` serait faux ici,
 # il ne sait convertir que C/I/P/N et les booléens textuels — `met` et
 # `not_met` y vaudraient tous les deux zéro.
-@scorer(metrics=categorical())
+#
+# Les catégories sont déclarées explicitement (les trois verdicts, plus
+# `UNJUDGED`) : sans ça, une valeur jamais observée dans un run — par exemple
+# aucun `borderline` sur dix répétitions — n'apparaîtrait pas du tout dans le
+# tableau de fréquences du log, au lieu d'y figurer à zéro.
+@scorer(metrics=categorical((*VERDICTS, UNJUDGED)))
 def verdict_judge(
     config: EvalRunConfig,
     on_complete: Callable[[], None] | None = None,
@@ -149,7 +175,7 @@ def verdict_judge(
                 on_complete()
 
         return Score(
-            value=verdict or "unjudged",
+            value=verdict or UNJUDGED,
             explanation=justification,
             metadata={"verdict": verdict, "justification": justification},
         )
