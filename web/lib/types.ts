@@ -10,6 +10,9 @@ export type RunStatus =
 export interface ModelOption {
   id: string;
   label: string;
+  /** Prix en dollars par million de jetons, ou null si le modèle n'est pas tarifé. */
+  input_per_mtok: number | null;
+  output_per_mtok: number | null;
 }
 
 export interface ProviderInfo {

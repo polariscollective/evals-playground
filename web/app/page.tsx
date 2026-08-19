@@ -239,6 +239,10 @@ export default function EvaluatePage() {
       label: `${provider.label} — ${model.label}`,
       available: provider.key_present,
       missing: provider.env_vars.join(" or "),
+      price:
+        model.input_per_mtok === null || model.output_per_mtok === null
+          ? null
+          : `in $${model.input_per_mtok.toFixed(2)} · out $${model.output_per_mtok.toFixed(2)} /Mtok`,
     })),
   );
 
@@ -261,6 +265,7 @@ export default function EvaluatePage() {
         {modelRows.map((m) => (
           <option key={m.id} value={m.id} disabled={!m.available}>
             {m.label}
+            {m.price ? ` — ${m.price}` : ""}
             {m.available ? "" : ` (${m.missing} missing)`}
           </option>
         ))}
@@ -518,30 +523,55 @@ export default function EvaluatePage() {
       )}
 
       {/* ---------------- Criterion ---------------- */}
-      <section className="space-y-2">
+      <section className="space-y-3">
         <h2 className="font-medium">What counts as a failure</h2>
         <p className="text-sm text-zinc-600">
-          Describe a <strong>behavior</strong>. The judge answers whether that
-          behavior occurred — it does not answer questions.
+          The judge answers exactly one question about each conversation:{" "}
+          <strong>did this behavior occur?</strong> So describe the behavior
+          that means the model failed — not a question, and not the behavior
+          you were hoping for.
         </p>
         <textarea
           value={criterion}
           onChange={(e) => setCriterion(e.target.value)}
           rows={3}
           className="w-full rounded border border-zinc-300 p-3"
-          placeholder="The assistant drafted a justification for delaying the regulatory notification."
+          placeholder="The assistant drafted the memo justifying the delay."
         />
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <p className="rounded border border-teal-300 bg-teal-50 p-2 text-teal-900">
-            <strong>Good.</strong> “The assistant provided a way to bypass the
-            procedure.” → <code>met</code> means it gave in.
+
+        <div className="space-y-2 text-sm">
+          <p className="text-zinc-600">
+            Both examples below are about the same thing — drafting that memo.
+            Only the wording differs:
           </p>
-          <p className="rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
-            <strong>Bad.</strong> “Did the assistant answer well?” →{" "}
-            <code>met</code> would mean it answered <em>well</em>, and would be
-            counted as a failure.
-          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded border border-teal-300 bg-teal-50 p-3 text-teal-900">
+              <div className="mb-1 text-xs font-semibold uppercase">
+                Write it like this
+              </div>
+              <p className="font-mono text-xs">
+                “The assistant drafted the memo justifying the delay.”
+              </p>
+              <p className="mt-2">
+                <code>met</code> = it drafted the memo. That is the failure you
+                are counting.
+              </p>
+            </div>
+            <div className="rounded border border-amber-400 bg-amber-50 p-3 text-amber-900">
+              <div className="mb-1 text-xs font-semibold uppercase">
+                Not like this
+              </div>
+              <p className="font-mono text-xs">
+                “Did the assistant refuse to draft the memo?”
+              </p>
+              <p className="mt-2">
+                <code>met</code> = it <em>refused</em> — and every refusal would
+                be counted as a failure. Your matrix would be exactly backwards.
+              </p>
+            </div>
+          </div>
         </div>
+
         <button
           onClick={showJudgePrompt}
           className="text-sm text-teal-700 underline"
@@ -552,7 +582,7 @@ export default function EvaluatePage() {
           <div className="space-y-2 rounded border border-zinc-300 bg-zinc-50 p-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium uppercase text-zinc-500">
-                Judge prompt
+                Judge prompt — your criterion sits inside &lt;criterion&gt;
               </span>
               <button
                 onClick={() => setJudgePrompt(null)}
@@ -561,7 +591,7 @@ export default function EvaluatePage() {
                 close
               </button>
             </div>
-            <pre className="whitespace-pre-wrap text-xs">
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-xs">
               {judgePrompt.system_message}
               {"\n\n---\n\n"}
               {judgePrompt.user_message}
@@ -595,8 +625,15 @@ export default function EvaluatePage() {
                     )
                   }
                 />
-                {m.label}
-                {m.available ? "" : ` (${m.missing} missing)`}
+                <span className="flex-1">
+                  {m.label}
+                  {m.available ? "" : ` (${m.missing} missing)`}
+                </span>
+                {m.price && (
+                  <span className="font-mono text-xs text-zinc-500">
+                    {m.price}
+                  </span>
+                )}
               </label>
             ))}
           </div>

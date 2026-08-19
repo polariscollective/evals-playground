@@ -10,6 +10,8 @@ import os
 
 from pydantic import BaseModel
 
+from playground.pricing import PRICES
+
 
 class ModelOption(BaseModel):
     """Un modèle proposé dans un menu déroulant."""
@@ -19,6 +21,17 @@ class ModelOption(BaseModel):
 
     label: str
     """Libellé affiché."""
+
+    input_per_mtok: float | None = None
+    """Prix d'entrée en dollars par million de jetons, ou None si inconnu."""
+
+    output_per_mtok: float | None = None
+    """Prix de sortie en dollars par million de jetons, ou None si inconnu.
+
+    Exposé à côté du prix d'entrée parce que c'est lui qui varie le plus d'un
+    modèle à l'autre — d'un facteur vingt-cinq sur le catalogue actuel — et
+    donc lui qui pèse le plus sur la facture d'un run.
+    """
 
 
 class ProviderInfo(BaseModel):
@@ -74,7 +87,22 @@ def catalog() -> list[ProviderInfo]:
             label=provider["label"],
             env_vars=provider["env_vars"],
             key_present=any(os.environ.get(var) for var in provider["env_vars"]),
-            models=[ModelOption(**model) for model in provider["models"]],
+            models=[
+                ModelOption(
+                    **model,
+                    input_per_mtok=(
+                        PRICES[model["id"]].input_per_mtok
+                        if model["id"] in PRICES
+                        else None
+                    ),
+                    output_per_mtok=(
+                        PRICES[model["id"]].output_per_mtok
+                        if model["id"] in PRICES
+                        else None
+                    ),
+                )
+                for model in provider["models"]
+            ],
         )
         for provider in _PROVIDERS
     ]
