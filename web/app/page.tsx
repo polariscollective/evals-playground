@@ -24,6 +24,14 @@ const selectFieldClass =
 const numberFieldClass =
   "rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950/40 px-3 py-2 text-sm tabular-nums text-zinc-900 dark:text-zinc-100 shadow-sm outline-none transition-colors focus-visible:border-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600/40 dark:focus-visible:border-teal-400 dark:focus-visible:ring-teal-400/30";
 
+const fieldErrorClass = "text-xs text-red-600 dark:text-red-400";
+
+const MIN_TURNS = 1;
+const MAX_TURNS = 10;
+const MIN_REPETITIONS = 1;
+const MIN_TEMPERATURE = 0;
+const MAX_TEMPERATURE = 2;
+
 function ChevronDownIcon() {
   return (
     <svg
@@ -191,6 +199,29 @@ export default function EvaluerPage() {
     })),
   );
 
+  const turnsError =
+    turns < MIN_TURNS || turns > MAX_TURNS
+      ? `Le nombre de tours doit être compris entre ${MIN_TURNS} et ${MAX_TURNS}.`
+      : null;
+
+  const repetitionsError =
+    repetitions < MIN_REPETITIONS
+      ? `Le nombre de répétitions doit être d'au moins ${MIN_REPETITIONS}.`
+      : null;
+
+  const temperatureMinError =
+    temperatureMin < MIN_TEMPERATURE || temperatureMin > MAX_TEMPERATURE
+      ? `La température doit être comprise entre ${MIN_TEMPERATURE} et ${MAX_TEMPERATURE}.`
+      : null;
+
+  const temperatureMaxError = !varyTemperature
+    ? null
+    : temperatureMax < MIN_TEMPERATURE || temperatureMax > MAX_TEMPERATURE
+      ? `La température doit être comprise entre ${MIN_TEMPERATURE} et ${MAX_TEMPERATURE}.`
+      : temperatureMax < temperatureMin
+        ? "La borne haute ne peut pas être inférieure à la borne basse."
+        : null;
+
   const readyToLaunch =
     title.trim() !== "" &&
     systemPrompt.trim() !== "" &&
@@ -198,7 +229,11 @@ export default function EvaluerPage() {
     criterion.trim() !== "" &&
     target !== "" &&
     judge !== "" &&
-    (turns === 1 || (adversary !== "" && adversaryPrompt.trim() !== ""));
+    (turns === 1 || (adversary !== "" && adversaryPrompt.trim() !== "")) &&
+    turnsError === null &&
+    repetitionsError === null &&
+    temperatureMinError === null &&
+    temperatureMaxError === null;
 
   return (
     <div className="flex-1 bg-[#F3F2EE] dark:bg-zinc-950">
@@ -290,6 +325,7 @@ export default function EvaluerPage() {
                 onChange={(e) => setTurns(Number(e.target.value))}
                 className={`w-24 ${numberFieldClass}`}
               />
+              {turnsError && <span className={`block ${fieldErrorClass}`}>{turnsError}</span>}
             </label>
             <label className="space-y-1.5">
               <span className={`block ${fieldLabelClass}`}>Répétitions</span>
@@ -300,6 +336,9 @@ export default function EvaluerPage() {
                 onChange={(e) => setRepetitions(Number(e.target.value))}
                 className={`w-28 ${numberFieldClass}`}
               />
+              {repetitionsError && (
+                <span className={`block ${fieldErrorClass}`}>{repetitionsError}</span>
+              )}
             </label>
           </div>
           <p className={mutedClass}>
@@ -384,17 +423,22 @@ export default function EvaluerPage() {
 
         <section className={panelClass}>
           <h2 className={eyebrowClass}>Température du modèle évalué</h2>
-          <div className="flex flex-wrap items-center gap-4">
-            <input
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              value={temperatureMin}
-              onChange={(e) => setTemperatureMin(Number(e.target.value))}
-              className={`w-24 ${numberFieldClass}`}
-            />
-            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="space-y-1.5">
+              <input
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperatureMin}
+                onChange={(e) => setTemperatureMin(Number(e.target.value))}
+                className={`w-24 ${numberFieldClass}`}
+              />
+              {temperatureMinError && (
+                <span className={`block ${fieldErrorClass}`}>{temperatureMinError}</span>
+              )}
+            </div>
+            <label className="flex items-center gap-2 pt-2 text-sm text-zinc-700 dark:text-zinc-300">
               <input
                 type="checkbox"
                 checked={varyTemperature}
@@ -404,15 +448,20 @@ export default function EvaluerPage() {
               Faire varier jusqu&apos;à
             </label>
             {varyTemperature && (
-              <input
-                type="number"
-                min={0}
-                max={2}
-                step={0.1}
-                value={temperatureMax}
-                onChange={(e) => setTemperatureMax(Number(e.target.value))}
-                className={`w-24 ${numberFieldClass}`}
-              />
+              <div className="space-y-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={temperatureMax}
+                  onChange={(e) => setTemperatureMax(Number(e.target.value))}
+                  className={`w-24 ${numberFieldClass}`}
+                />
+                {temperatureMaxError && (
+                  <span className={`block ${fieldErrorClass}`}>{temperatureMaxError}</span>
+                )}
+              </div>
             )}
           </div>
           <p className={mutedClass}>

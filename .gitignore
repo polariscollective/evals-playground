@@ -16,6 +16,7 @@ next-env.d.ts
 
 # données et logs produits par les runs
 data/runs/
+data/eval-runs/
 data/selected/
 logs/
 
