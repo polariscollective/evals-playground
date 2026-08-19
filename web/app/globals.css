@@ -25,6 +25,35 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Tailwind v4 a retiré le `cursor: pointer` que les navigateurs mettaient sur
+   les contrôles. Sans cette règle, rien dans l'application ne signale au survol
+   qu'un élément est cliquable — et la moitié de ce qui est cliquable ici sont
+   des boutons, pas des liens. */
+button:not(:disabled),
+summary,
+label,
+select,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"]::file-selector-button {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+/* Un libellé qui n'entoure qu'une zone de saisie ne se clique pas : il y donne
+   le focus. Le curseur doit dire ce qui se passera, pas ce qui est cliquable. */
+label:has(input[type="text"]),
+label:has(input[type="number"]),
+label:has(textarea) {
+  cursor: auto;
+}
+
 /* Notes de run rendues depuis le markdown. Volontairement sobre : ces notes
    vivent au milieu d'un tableau de bord, pas dans un article. */
 .notes-prose h2,

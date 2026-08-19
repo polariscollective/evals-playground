@@ -4,6 +4,8 @@ import type {
   EvalRunRecord,
   JudgePromptPreview,
   ProviderInfo,
+  RejudgeRequest,
+  RubricLevel,
   SelectedScenario,
 } from "./types";
 
@@ -58,30 +60,55 @@ export const getEvalRuns = () => request<EvalRunRecord[]>("/api/eval-runs");
 export const getEvalRun = (runId: string) =>
   request<EvalRunRecord>(`/api/eval-runs/${runId}`);
 
-export const createEvalRun = (config: EvalRunConfig) =>
+/** Lance un run. Le CSV téléversé est conservé à côté, pour le relancer plus tard. */
+export const createEvalRun = (config: EvalRunConfig, csvText?: string | null) =>
   request<EvalRunRecord>("/api/eval-runs", {
     method: "POST",
-    body: JSON.stringify(config),
+    body: JSON.stringify({ config, csv_text: csvText ?? null }),
+  });
+
+export const rejudgeEvalRun = (runId: string, request_: RejudgeRequest) =>
+  request<EvalRunRecord>(`/api/eval-runs/${runId}/rejudge`, {
+    method: "POST",
+    body: JSON.stringify(request_),
   });
 
 export const cancelEvalRun = (runId: string) =>
   request<EvalRunRecord>(`/api/eval-runs/${runId}/cancel`, { method: "POST" });
 
-export const estimateRun = (config: EvalRunConfig, responseTokens: number) =>
+/** Estime un run. Sans `responseTokens`, chaque modèle prend sa longueur mesurée. */
+export const estimateRun = (
+  config: EvalRunConfig,
+  responseTokens?: number | null,
+) =>
   request<CostEstimate>(
-    `/api/eval-runs/estimate?response_tokens=${responseTokens}`,
+    responseTokens == null
+      ? "/api/eval-runs/estimate"
+      : `/api/eval-runs/estimate?response_tokens=${responseTokens}`,
     { method: "POST", body: JSON.stringify(config) },
   );
 
-export const previewJudgePrompt = (criterion: string) =>
+export const previewJudgePrompt = (criterion: string, rubric: RubricLevel[]) =>
   request<JudgePromptPreview>("/api/judge-prompt-preview", {
     method: "POST",
-    body: JSON.stringify({ criterion }),
+    body: JSON.stringify({ criterion, rubric }),
   });
 
 /** URL d'un export CSV. Le navigateur télécharge : pas de fetch intermédiaire. */
 export function exportUrl(runId: string, kind: "matrix" | "details"): string {
   return `${BASE}/api/eval-runs/${runId}/export/${kind}.csv`;
+}
+
+/** URL du CSV téléversé au lancement, tel quel. */
+export function sourceCsvUrl(runId: string): string {
+  return `${BASE}/api/eval-runs/${runId}/source.csv`;
+}
+
+/** Le CSV d'origine en texte, pour repartir du même lot dans le formulaire. */
+export async function sourceCsvText(runId: string): Promise<string> {
+  const response = await fetch(sourceCsvUrl(runId), { cache: "no-store" });
+  if (!response.ok) throw new Error(`No source CSV (HTTP ${response.status})`);
+  return (await response.text()).replace(/^\ufeff/, "");
 }
 
 /** Le CSV de la matrice en texte, pour le presse-papier.

@@ -1,5 +1,3 @@
-export type Verdict = "met" | "not_met" | "borderline";
-
 export type RunStatus =
   | "pending"
   | "running"
@@ -29,6 +27,12 @@ export interface SelectedScenario {
   system_prompt: string;
   opening_message: string;
   tests_for: string;
+}
+
+/** Un palier de l'échelle : la note, et ce qu'elle veut dire pour le juge. */
+export interface RubricLevel {
+  value: number;
+  meaning: string;
 }
 
 export interface EvalScenario {
@@ -67,7 +71,10 @@ export interface ModelUsage {
 
 export interface EvalRunConfig {
   scenarios: EvalScenario[];
+  /** Ce que le juge doit regarder. Ce sont les paliers qui portent le jugement. */
   criterion: string;
+  /** L'échelle sur laquelle le juge note. Au moins deux paliers. */
+  rubric: RubricLevel[];
   turns: number;
   repetitions: number;
   models: EvalModels;
@@ -93,14 +100,16 @@ export interface Conversation {
   target: string;
   temperature: number | null;
   messages: Message[];
-  verdict: Verdict | null;
+  /** La note du juge, ou null si rien n'a pu être noté. */
+  score: number | null;
   justification: string;
 }
 
-export interface Tally {
-  met: number;
-  not_met: number;
-  borderline: number;
+/** Une case de la matrice : ce qu'un modèle a obtenu sur un scénario. */
+export interface Cell {
+  judged: number;
+  unjudged: number;
+  mean: number | null;
 }
 
 export interface EvalRunRecord {
@@ -118,14 +127,28 @@ export interface EvalRunRecord {
   usage: Record<string, ModelUsage>;
   /** Coût réel en dollars, ou null si un modèle employé n'a pas de tarif connu. */
   cost_usd: number | null;
+  /** Quand le juge a été repassé sur ce run, s'il l'a été. */
+  rejudged_at: string | null;
+  /** Le CSV d'origine est-il conservé à côté du run ? */
+  source_csv_available: boolean;
   /** Une entrée par scénario, alignée sur config.scenarios. */
-  tallies: Record<string, Tally>[];
+  cells: Record<string, Cell>[];
   conversations: Conversation[];
 }
 
-export interface CostEstimate {
-  /** L'hypothèse de longueur de réponse qui produit `usd`. */
+/** Ce qu'un modèle coûte dans un run, et sur quelle hypothèse. */
+export interface ModelCost {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
   response_tokens: number;
+  /** null si le modèle n'a pas de tarif connu. */
+  usd: number | null;
+}
+
+export interface CostEstimate {
+  /** La longueur imposée à tous les modèles, ou null si chacun prend la sienne. */
+  response_tokens: number | null;
   usd: number;
   eur: number;
   min_usd: number;
@@ -136,10 +159,19 @@ export interface CostEstimate {
   model_calls: number;
   input_tokens: number;
   output_tokens: number;
+  /** Le détail, du plus cher au moins cher. C'est lui qui explique un total. */
+  per_model: ModelCost[];
   unpriced_models: string[];
 }
 
 export interface JudgePromptPreview {
   system_message: string;
   user_message: string;
+}
+
+/** Ce qu'on demande à une passe de juge rejouée. */
+export interface RejudgeRequest {
+  criterion: string;
+  rubric: RubricLevel[];
+  judge: string;
 }

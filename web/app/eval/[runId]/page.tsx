@@ -1,75 +1,68 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   cancelEvalRun,
   exportUrl,
   getEvalRun,
   matrixCsvText,
+  rejudgeEvalRun,
   saveNotes,
+  sourceCsvUrl,
 } from "@/lib/api";
 import { NotesField } from "@/components/NotesField";
-import type {
-  Conversation,
-  EvalRunRecord,
-  Tally,
-  Verdict,
-} from "@/lib/types";
+import { RubricEditor } from "@/components/RubricEditor";
+import {
+  cellStyle,
+  distribution,
+  formatMean,
+  formatValue,
+  rubricBounds,
+  sortedRubric,
+} from "@/lib/rubric";
+import type { Conversation, EvalRunRecord, RubricLevel } from "@/lib/types";
 
-const VERDICT_LABEL: Record<Verdict, string> = {
-  met: "gave in",
-  not_met: "held",
-  borderline: "borderline",
-};
+function shortModel(id: string): string {
+  return id.split("/").pop() ?? id;
+}
 
-const VERDICT_STYLE: Record<Verdict, string> = {
-  met: "bg-zinc-900 text-white",
-  not_met: "bg-teal-100 text-teal-900",
-  borderline: "bg-amber-100 text-amber-900",
-};
-
-function VerdictBadge({ verdict }: { verdict: Verdict | null }) {
-  if (verdict === null) {
+/** La note d'une tentative, avec le sens que l'échelle lui donne.
+ *
+ * Le nombre seul ne dit rien : c'est la phrase écrite à côté qui porte le
+ * jugement, et la relire ici évite de remonter à l'échelle à chaque tentative. */
+function ScoreBadge({
+  score,
+  rubric,
+}: {
+  score: number | null;
+  rubric: RubricLevel[];
+}) {
+  if (score === null) {
     return (
       <span className="rounded border border-dashed border-zinc-400 px-2 py-0.5 text-xs text-zinc-500">
         not judged
       </span>
     );
   }
+  const { min, max } = rubricBounds(rubric);
+  const meaning = rubric.find((level) => level.value === score)?.meaning;
+  const t = max > min ? (score - min) / (max - min) : 0;
+  const style =
+    t <= 0
+      ? "bg-teal-100 text-teal-900"
+      : t < 0.5
+        ? "bg-amber-100 text-amber-900"
+        : t < 1
+          ? "bg-amber-300 text-amber-950"
+          : "bg-zinc-900 text-white";
   return (
-    <span className={`rounded px-2 py-0.5 text-xs ${VERDICT_STYLE[verdict]}`}>
-      {VERDICT_LABEL[verdict]}
+    <span className={`rounded px-2 py-0.5 text-xs ${style}`} title={meaning}>
+      {formatValue(score)}
+      {meaning ? ` — ${meaning}` : ""}
     </span>
   );
 }
-
-/** Taux d'échec d'une case, ou null si rien n'a pu être jugé.
-
-   La distinction compte : `null` veut dire « on ne sait pas », zéro veut dire
-   « le modèle a tenu à chaque fois ». Les confondre serait le pire contresens
-   possible sur cet écran. */
-function failureRate(tally: Tally | undefined): number | null {
-  if (!tally) return null;
-  const judged = tally.met + tally.not_met + tally.borderline;
-  return judged === 0 ? null : tally.met / judged;
-}
-
-/** Échelle de chaleur : ambre vers brun. Le rouge est réservé à l'adversaire. */
-function cellStyle(rate: number | null): string {
-  if (rate === null) {
-    return "bg-[repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5_4px,#e4e4e7_4px,#e4e4e7_8px)] text-zinc-400";
-  }
-  if (rate === 0) return "bg-teal-50 text-teal-900";
-  if (rate < 0.25) return "bg-amber-100 text-amber-900";
-  if (rate < 0.5) return "bg-amber-200 text-amber-950";
-  if (rate < 0.75) return "bg-amber-400 text-amber-950";
-  return "bg-amber-700 text-amber-50";
-}
-
-function shortModel(id: string): string {
-  return id.split("/").pop() ?? id;
-}
-
 
 /** Copie un texte dans le presse-papier et le confirme brièvement.
 
@@ -116,6 +109,156 @@ function CopyId({ value }: { value: string }) {
   );
 }
 
+/** Ce qu'on a demandé au juge : la question, l'échelle, et qui a jugé.
+ *
+ * Rien de tout cela n'était visible une fois le run lancé, alors que c'est
+ * exactement ce qu'il faut relire pour interpréter une case de la matrice. */
+function JudgeBlock({ record }: { record: EvalRunRecord }) {
+  return (
+    <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-medium">What the judge was asked</h2>
+        <span className="font-mono text-xs text-zinc-500">
+          judged by {shortModel(record.config.models.judge)}
+          {record.rejudged_at && " · re-judged since the run"}
+        </span>
+      </div>
+
+      <p className="whitespace-pre-wrap text-sm text-zinc-800">
+        {record.config.criterion}
+      </p>
+
+      <table className="text-sm">
+        <tbody>
+          {sortedRubric(record.config.rubric).map((level) => (
+            <tr key={level.value}>
+              <td className="py-0.5 pr-3 text-right align-top font-mono text-xs text-zinc-500">
+                {formatValue(level.value)}
+              </td>
+              <td className="py-0.5 align-top">{level.meaning}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/** Repasser le juge sur un run terminé, avec une autre question.
+
+    Les transcripts sont déjà là : cette passe ne rappelle que le juge. C'est
+    ce qui permet de reformuler après avoir vu les résultats, ce qui est le cas
+    normal plutôt que l'exception. */
+function RejudgePanel({
+  record,
+  models,
+  onLaunched,
+  onClose,
+}: {
+  record: EvalRunRecord;
+  models: string[];
+  onLaunched: (record: EvalRunRecord) => void;
+  onClose: () => void;
+}) {
+  const [criterion, setCriterion] = useState(record.config.criterion);
+  const [rubric, setRubric] = useState<RubricLevel[]>(record.config.rubric);
+  const [judge, setJudge] = useState(record.config.models.judge);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const values = rubric.map((level) => level.value);
+  const ready =
+    criterion.trim() !== "" &&
+    rubric.length >= 2 &&
+    rubric.every(
+      (level) => Number.isFinite(level.value) && level.meaning.trim() !== "",
+    ) &&
+    new Set(values).size === values.length;
+
+  const launch = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      onLaunched(
+        await rejudgeEvalRun(record.run_id, { criterion, rubric, judge }),
+      );
+    } catch (e) {
+      setFailed((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="space-y-4 rounded border border-teal-400 bg-teal-50/40 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-medium">Judge this run again</h2>
+          <p className="mt-1 text-sm text-zinc-700">
+            This replaces every grade and every justification in this run. The
+            transcripts are not touched, and the evaluated models are not
+            called again — only the judge is, so this costs a fraction of the
+            run.
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="text-sm underline hover:text-zinc-900"
+        >
+          cancel
+        </button>
+      </div>
+
+      <label className="block space-y-1">
+        <span className="text-sm font-medium">
+          What the judge should look at
+        </span>
+        <textarea
+          value={criterion}
+          onChange={(e) => setCriterion(e.target.value)}
+          rows={3}
+          className="w-full rounded border border-zinc-300 bg-white p-3"
+        />
+      </label>
+
+      <div className="space-y-2">
+        <span className="text-sm font-medium">Grades</span>
+        <RubricEditor rubric={rubric} onChange={setRubric} />
+      </div>
+
+      <label className="block space-y-1">
+        <span className="text-sm font-medium">Judge</span>
+        <select
+          value={judge}
+          onChange={(e) => setJudge(e.target.value)}
+          className="block rounded border border-zinc-300 bg-white p-2 text-sm"
+        >
+          {models.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {failed && (
+        <p role="alert" className="text-sm text-red-700">
+          {failed}
+        </p>
+      )}
+
+      <button
+        onClick={launch}
+        disabled={!ready || busy}
+        className="rounded bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-700 disabled:opacity-40 disabled:hover:bg-zinc-900"
+      >
+        {busy
+          ? "Re-judging…"
+          : `Re-judge ${record.conversations.length} conversations`}
+      </button>
+    </section>
+  );
+}
+
 function DetailModal({
   record,
   scenarioIndex,
@@ -158,7 +301,10 @@ function DetailModal({
               {attempts.length > 1 ? "s" : ""}
             </p>
           </div>
-          <button onClick={onClose} className="text-sm underline">
+          <button
+            onClick={onClose}
+            className="text-sm underline hover:text-zinc-900"
+          >
             close
           </button>
         </div>
@@ -166,7 +312,7 @@ function DetailModal({
         <div className="rounded border border-zinc-300">
           <button
             onClick={() => setShowSystem(!showSystem)}
-            className="flex w-full items-center justify-between p-3 text-left text-sm font-medium"
+            className="flex w-full items-center justify-between p-3 text-left text-sm font-medium hover:bg-zinc-50"
           >
             System prompt given to the evaluated model
             <span>{showSystem ? "−" : "+"}</span>
@@ -193,14 +339,24 @@ function DetailModal({
         )}
 
         {attempts.map((attempt) => (
-          <AttemptView key={attempt.conversation_id} attempt={attempt} />
+          <AttemptView
+            key={attempt.conversation_id}
+            attempt={attempt}
+            rubric={record.config.rubric}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function AttemptView({ attempt }: { attempt: Conversation }) {
+function AttemptView({
+  attempt,
+  rubric,
+}: {
+  attempt: Conversation;
+  rubric: RubricLevel[];
+}) {
   // Repliée par défaut : dix répétitions de dix tours feraient un mur de texte
   // où l'on ne retrouve plus la tentative qu'on cherchait.
   const [open, setOpen] = useState(false);
@@ -209,13 +365,13 @@ function AttemptView({ attempt }: { attempt: Conversation }) {
     <div className="rounded border border-zinc-300">
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-3 p-3 text-left"
+        className="flex w-full items-center gap-3 p-3 text-left hover:bg-zinc-50"
       >
         <span className="text-zinc-400">{open ? "−" : "+"}</span>
         <span className="text-sm font-medium">
           Attempt {attempt.repetition + 1}
         </span>
-        <VerdictBadge verdict={attempt.verdict} />
+        <ScoreBadge score={attempt.score} rubric={rubric} />
         {attempt.messages.some(
           (m) => m.role === "assistant" && !m.content.trim(),
         ) && (
@@ -243,40 +399,40 @@ function AttemptView({ attempt }: { attempt: Conversation }) {
       )}
 
       {open && (
-      <div className="space-y-2 border-t border-zinc-200 p-3">
-        {attempt.messages.map((message, index) => (
-          <div
-            key={index}
-            className={
-              message.role === "assistant"
-                ? "rounded bg-teal-50 p-3"
-                : "rounded bg-zinc-100 p-3"
-            }
-          >
-            <div className="mb-1 text-xs font-medium text-zinc-600">
-              turn {index + 1} ·{" "}
-              {message.role === "assistant" ? "evaluated model" : "in"}
+        <div className="space-y-2 border-t border-zinc-200 p-3">
+          {attempt.messages.map((message, index) => (
+            <div
+              key={index}
+              className={
+                message.role === "assistant"
+                  ? "rounded bg-teal-50 p-3"
+                  : "rounded bg-zinc-100 p-3"
+              }
+            >
+              <div className="mb-1 text-xs font-medium text-zinc-600">
+                turn {index + 1} ·{" "}
+                {message.role === "assistant" ? "evaluated model" : "in"}
+              </div>
+              {message.content.trim() ? (
+                <div className="whitespace-pre-wrap text-sm">
+                  {message.content}
+                </div>
+              ) : (
+                // Une bulle vide se lit comme un modèle qui n'a rien voulu dire.
+                // C'est presque toujours faux : le fournisseur a bloqué la
+                // génération, ce qui n'est ni un refus ni une capitulation.
+                <div className="text-sm italic text-amber-800">
+                  No content returned
+                  {message.stop_reason === "content_filter"
+                    ? " — blocked by the provider's content filter"
+                    : message.stop_reason
+                      ? ` — stop reason: ${message.stop_reason}`
+                      : ""}
+                </div>
+              )}
             </div>
-            {message.content.trim() ? (
-              <div className="whitespace-pre-wrap text-sm">
-                {message.content}
-              </div>
-            ) : (
-              // Une bulle vide se lit comme un modèle qui n'a rien voulu dire.
-              // C'est presque toujours faux : le fournisseur a bloqué la
-              // génération, ce qui n'est ni un refus ni une capitulation.
-              <div className="text-sm italic text-amber-800">
-                No content returned
-                {message.stop_reason === "content_filter"
-                  ? " — blocked by the provider's content filter"
-                  : message.stop_reason
-                    ? ` — stop reason: ${message.stop_reason}`
-                    : ""}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -354,9 +510,11 @@ export default function EvalRunPage({
   params: Promise<{ runId: string }>;
 }) {
   const { runId } = use(params);
+  const router = useRouter();
   const [record, setRecord] = useState<EvalRunRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [rejudging, setRejudging] = useState(false);
   const [open, setOpen] = useState<{ scenario: number; target: string } | null>(
     null,
   );
@@ -389,7 +547,7 @@ export default function EvalRunPage({
 
   if (error) {
     return (
-      <main className="mx-auto max-w-4xl p-8">
+      <main className="mx-auto max-w-5xl p-8">
         <p
           role="alert"
           className="rounded border border-red-400 bg-red-50 p-3 text-red-800"
@@ -400,13 +558,21 @@ export default function EvalRunPage({
     );
   }
 
-  if (!record) return <main className="mx-auto max-w-4xl p-8">Loading…</main>;
+  if (!record) return <main className="mx-auto max-w-5xl p-8">Loading…</main>;
 
   const running = record.status === "running" || record.status === "pending";
   const targets = record.config.models.targets;
+  const rubric = record.config.rubric;
+  const { min, max } = rubricBounds(rubric);
+
+  /** Les notes obtenues dans une case, pour l'infobulle. */
+  const scoresOf = (scenarioIndex: number, target: string) =>
+    record.conversations
+      .filter((c) => c.scenario_index === scenarioIndex && c.target === target)
+      .map((c) => c.score);
 
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-8">
+    <main className="mx-auto max-w-5xl space-y-6 p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -415,11 +581,10 @@ export default function EvalRunPage({
           <p className="text-sm text-zinc-600">
             <CopyId value={record.run_id} /> ·{" "}
             {record.config.scenarios.length} scenario
-            {record.config.scenarios.length > 1 ? "s" : ""} ·{" "}
-            {targets.length} model{targets.length > 1 ? "s" : ""} ·{" "}
-            {record.config.repetitions} repetition
-            {record.config.repetitions > 1 ? "s" : ""} · {record.config.turns}{" "}
-            turn{record.config.turns > 1 ? "s" : ""}
+            {record.config.scenarios.length > 1 ? "s" : ""} · {targets.length}{" "}
+            model{targets.length > 1 ? "s" : ""} · {record.config.repetitions}{" "}
+            repetition{record.config.repetitions > 1 ? "s" : ""} ·{" "}
+            {record.config.turns} turn{record.config.turns > 1 ? "s" : ""}
             {record.cost_usd !== null && (
               <>
                 {" · "}
@@ -438,14 +603,39 @@ export default function EvalRunPage({
             )}
           </p>
         </div>
-        <div className="flex shrink-0 items-start gap-2">
+        <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
           {running && (
             <button
               onClick={async () => setRecord(await cancelEvalRun(runId))}
-              className="rounded border border-zinc-300 px-3 py-1 text-sm"
+              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
             >
               Stop
             </button>
+          )}
+          <button
+            onClick={() => router.push(`/?from=${record.run_id}`)}
+            title="Open the form filled in with exactly these settings"
+            className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+          >
+            Relaunch
+          </button>
+          {!running && record.conversations.length > 0 && (
+            <button
+              onClick={() => setRejudging((v) => !v)}
+              title="Ask a different question of the same transcripts"
+              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            >
+              Re-judge
+            </button>
+          )}
+          {record.source_csv_available && (
+            <a
+              href={sourceCsvUrl(record.run_id)}
+              title="The CSV that was uploaded when this run was launched"
+              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            >
+              Source CSV
+            </a>
           )}
           {record.conversations.length > 0 && (
             <>
@@ -453,7 +643,7 @@ export default function EvalRunPage({
               <a
                 href={exportUrl(record.run_id, "details")}
                 className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-                title="One row per conversation: inputs, transcript, verdict"
+                title="One row per conversation: inputs, transcript, grade"
               >
                 Download full data
               </a>
@@ -461,7 +651,6 @@ export default function EvalRunPage({
           )}
         </div>
       </div>
-
 
       {running && (
         <p className="rounded border border-zinc-300 p-3 text-sm">
@@ -485,11 +674,25 @@ export default function EvalRunPage({
         </p>
       )}
 
-      {record.tallies.length > 0 && (
+      {rejudging && !running && (
+        <RejudgePanel
+          record={record}
+          models={targets
+            .concat(record.config.models.judge)
+            .filter((m, i, all) => all.indexOf(m) === i)}
+          onLaunched={(updated) => {
+            setRecord(updated);
+            setRejudging(false);
+          }}
+          onClose={() => setRejudging(false)}
+        />
+      )}
+
+      <JudgeBlock record={record} />
+
+      {record.cells.length > 0 && (
         <section className="space-y-3">
-          <h2 className="font-medium">
-            How often each model gave in
-          </h2>
+          <h2 className="font-medium">Average grade per scenario and model</h2>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -514,27 +717,21 @@ export default function EvalRunPage({
                       {scenario.title}
                     </td>
                     {targets.map((target) => {
-                      const tally = record.tallies[index]?.[target];
-                      const rate = failureRate(tally);
+                      const cell = record.cells[index]?.[target];
                       return (
-                        <td
-                          key={target}
-                          className="border-b border-zinc-200 p-1"
-                        >
+                        <td key={target} className="border-b border-zinc-200 p-1">
                           <button
-                            onClick={() =>
-                              setOpen({ scenario: index, target })
-                            }
-                            className={`w-full rounded p-2 text-center text-sm ${cellStyle(rate)}`}
+                            onClick={() => setOpen({ scenario: index, target })}
+                            className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric)}`}
                             title={
-                              rate === null
+                              !cell || cell.mean === null
                                 ? "nothing judged"
-                                : `${tally?.met ?? 0} of ${(tally?.met ?? 0) + (tally?.not_met ?? 0) + (tally?.borderline ?? 0)} gave in`
+                                : `${distribution(scoresOf(index, target))} — average ${formatMean(cell.mean)}`
                             }
                           >
-                            {rate === null
+                            {!cell || cell.mean === null
                               ? "—"
-                              : `${Math.round(rate * 100)}%`}
+                              : formatMean(cell.mean)}
                           </button>
                         </td>
                       );
@@ -545,9 +742,12 @@ export default function EvalRunPage({
             </table>
           </div>
           <p className="text-sm text-zinc-600">
-            Share of repetitions where the model gave in, out of{" "}
-            {record.config.repetitions}. A hatched cell means nothing could be
-            judged — which is not the same as 0%.
+            Average of the grades the judge gave, over{" "}
+            {record.config.repetitions} repetition
+            {record.config.repetitions > 1 ? "s" : ""}, on your{" "}
+            {formatValue(min)}–{formatValue(max)} scale. The top of the scale is
+            the dark end. A hatched cell means nothing could be judged — which
+            is not the same as {formatValue(min)}.
           </p>
         </section>
       )}

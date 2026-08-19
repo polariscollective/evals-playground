@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getEvalRuns } from "@/lib/api";
-import type { EvalRunRecord, Tally } from "@/lib/types";
+import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
+import type { Cell, EvalRunRecord } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "queued",
@@ -21,19 +22,29 @@ const STATUS_STYLE: Record<string, string> = {
   cancelled: "bg-amber-100 text-amber-900",
 };
 
-/** Part des conversations où le modèle a cédé, tous scénarios et modèles
-    confondus, ou null si rien n'a pu être jugé. La distinction compte : rien
-    de jugé n'est pas la même chose qu'un run sans échec. */
-function overallRate(record: EvalRunRecord): number | null {
-  let met = 0;
-  let judged = 0;
-  for (const row of record.tallies) {
-    for (const tally of Object.values(row) as Tally[]) {
-      met += tally.met;
-      judged += tally.met + tally.not_met + tally.borderline;
-    }
+/** Moyenne des notes d'un run entier, ou null si rien n'a pu être noté.
+
+    La distinction compte : rien de noté n'est pas la même chose qu'un run
+    entièrement au bas de son échelle.
+
+    Les cases portent déjà des moyennes, mais on repart des conversations : une
+    moyenne de moyennes donnerait le même poids à une case notée dix fois et à
+    une case notée une seule. */
+function overallMean(record: EvalRunRecord): number | null {
+  const notes = record.conversations
+    .map((c) => c.score)
+    .filter((score): score is number => score !== null);
+  if (notes.length > 0) {
+    return notes.reduce((sum, note) => sum + note, 0) / notes.length;
   }
-  return judged === 0 ? null : met / judged;
+  // Un run dont les conversations n'ont pas été chargées garde ses cases : on
+  // s'en contente plutôt que d'afficher un tiret trompeur.
+  const cells = record.cells.flatMap((row) => Object.values(row) as Cell[]);
+  const judged = cells.reduce((sum, cell) => sum + cell.judged, 0);
+  if (judged === 0) return null;
+  return (
+    cells.reduce((sum, cell) => sum + (cell.mean ?? 0) * cell.judged, 0) / judged
+  );
 }
 
 function formatDate(iso: string): string {
@@ -43,6 +54,7 @@ function formatDate(iso: string): string {
     : date.toLocaleString(undefined, {
         day: "2-digit",
         month: "short",
+        year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
       });
@@ -122,7 +134,7 @@ export default function RunsPage() {
 
   if (error) {
     return (
-      <main className="mx-auto max-w-4xl p-8">
+      <main className="mx-auto max-w-6xl p-8">
         <p
           role="alert"
           className="rounded border border-red-400 bg-red-50 p-3 text-red-800"
@@ -133,10 +145,10 @@ export default function RunsPage() {
     );
   }
 
-  if (!runs) return <main className="mx-auto max-w-4xl p-8">Loading…</main>;
+  if (!runs) return <main className="mx-auto max-w-6xl p-8">Loading…</main>;
 
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-8">
+    <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
         <p className="mt-1 text-sm text-zinc-600">
@@ -155,32 +167,43 @@ export default function RunsPage() {
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-300 text-left">
-              <th className="py-2 font-medium">Run</th>
-              <th className="py-2 font-medium">Shape</th>
-              <th className="py-2 font-medium">Status</th>
-              <th className="py-2 font-medium">Gave in</th>
+            <tr className="border-b border-zinc-300 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <th className="py-3 pr-8 font-medium">Run</th>
+              <th className="py-3 pr-8 font-medium">Launched</th>
+              <th className="py-3 pr-8 font-medium">Shape</th>
+              <th className="py-3 pr-8 font-medium">Status</th>
+              <th className="py-3 pr-8 text-right font-medium">Cost</th>
+              <th className="py-3 text-right font-medium">Average grade</th>
             </tr>
           </thead>
           <tbody>
             {runs.map((run) => {
-              const rate = overallRate(run);
+              const mean = overallMean(run);
+              const { min, max } = rubricBounds(run.config.rubric);
               const running =
                 run.status === "running" || run.status === "pending";
               return (
-                <tr key={run.run_id} className="border-b border-zinc-200">
-                  <td className="py-2">
+                <tr
+                  key={run.run_id}
+                  className="border-b border-zinc-200 align-top hover:bg-zinc-50"
+                >
+                  {/* La colonne du titre prend la place restante : c'est par lui
+                      qu'on retrouve un run, pas par sa forme ni son statut. */}
+                  <td className="w-full py-3 pr-8">
                     <Link
                       href={`/eval/${run.run_id}`}
-                      className="font-medium underline"
+                      className="font-medium underline hover:text-teal-800"
                     >
                       {run.label ?? run.config.scenarios[0]?.title ?? run.run_id}
                     </Link>
                     <div className="text-xs text-zinc-500">
-                      {formatDate(run.created_at)} · <CopyId value={run.run_id} />
+                      <CopyId value={run.run_id} />
                     </div>
                   </td>
-                  <td className="py-2 text-zinc-700">
+                  <td className="whitespace-nowrap py-3 pr-8 text-zinc-600">
+                    {formatDate(run.created_at)}
+                  </td>
+                  <td className="whitespace-nowrap py-3 pr-8 text-zinc-700">
                     {run.config.scenarios.length} ×{" "}
                     {run.config.models.targets.length} ×{" "}
                     {run.config.repetitions}
@@ -188,7 +211,7 @@ export default function RunsPage() {
                       scenarios × models × reps
                     </div>
                   </td>
-                  <td className="py-2">
+                  <td className="whitespace-nowrap py-3 pr-8">
                     <span
                       className={`rounded px-2 py-0.5 text-xs ${STATUS_STYLE[run.status] ?? ""}`}
                     >
@@ -200,13 +223,27 @@ export default function RunsPage() {
                       </div>
                     )}
                   </td>
-                  <td className="py-2">
-                    {rate === null ? (
+                  <td className="whitespace-nowrap py-3 pr-8 text-right text-zinc-700">
+                    {run.cost_usd === null
+                      ? "—"
+                      : `$${run.cost_usd.toFixed(run.cost_usd < 1 ? 3 : 2)}`}
+                  </td>
+                  {/* La moyenne porte son échelle : chaque run a la sienne, et
+                      un chiffre nu se comparerait à tort d'une ligne à l'autre. */}
+                  <td className="whitespace-nowrap py-3 text-right">
+                    {mean === null ? (
                       <span className="text-zinc-400">—</span>
                     ) : (
-                      <span className="font-medium">
-                        {Math.round(rate * 100)}%
-                      </span>
+                      <>
+                        <span className="font-medium">{formatMean(mean)}</span>
+                        <span className="text-xs text-zinc-500">
+                          {" "}
+                          / {formatValue(max)}
+                        </span>
+                        <div className="text-xs text-zinc-500">
+                          scale {formatValue(min)}–{formatValue(max)}
+                        </div>
+                      </>
                     )}
                   </td>
                 </tr>

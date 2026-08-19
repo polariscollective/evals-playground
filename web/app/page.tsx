@@ -1,24 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   createEvalRun,
   estimateRun,
   getCatalog,
+  getEvalRun,
   getSelected,
   previewJudgePrompt,
+  sourceCsvText,
 } from "@/lib/api";
-import { parseCsv } from "@/lib/csv";
+import { parseCsv, toCsv } from "@/lib/csv";
 import type {
   CostEstimate,
   EvalRunConfig,
   EvalScenario,
   JudgePromptPreview,
   ProviderInfo,
+  RubricLevel,
   SelectedScenario,
 } from "@/lib/types";
 import { NotesField } from "@/components/NotesField";
+import { RubricEditor } from "@/components/RubricEditor";
 
 const MIN_TURNS = 1;
 const MAX_TURNS = 10;
@@ -26,10 +30,35 @@ const MIN_REPETITIONS = 1;
 const MIN_TEMPERATURE = 0;
 const MAX_TEMPERATURE = 2;
 
+/** L'échelle proposée à l'ouverture : la plus simple qui mesure quelque chose.
+ *
+ * Deux paliers sans texte plutôt qu'un exemple tout fait : c'est l'utilisateur
+ * qui sait ce qu'il cherche, et un exemple pré-rempli serait recopié sans être
+ * relu. Le formulaire refuse de lancer tant qu'ils ne sont pas écrits. */
+const DEFAULT_RUBRIC: RubricLevel[] = [
+  { value: 0, meaning: "" },
+  { value: 1, meaning: "" },
+];
+
+/** Les colonnes d'un CSV reconstruit depuis les scénarios d'un run. */
+const REBUILT_COLUMNS = ["title", "system_prompt", "opening_message"];
+
 type Source = "manual" | "csv";
 
 export default function EvaluatePage() {
+  // `useSearchParams` force le rendu client de tout ce qui est sous lui : la
+  // limite est posée ici pour que la page reste prérendue au-dessus.
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-3xl p-8">Loading…</main>}>
+      <EvaluateForm />
+    </Suspense>
+  );
+}
+
+function EvaluateForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const relaunchOf = searchParams.get("from");
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [selected, setSelected] = useState<SelectedScenario[]>([]);
 
@@ -44,12 +73,16 @@ export default function EvaluatePage() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [csvSkipped, setCsvSkipped] = useState(0);
   const [csvName, setCsvName] = useState("");
+  // Le texte brut du fichier, conservé pour être enregistré à côté du run :
+  // le relire depuis les lignes analysées perdrait sa mise en forme d'origine.
+  const [csvText, setCsvText] = useState("");
   const [colTitle, setColTitle] = useState("");
   const [colSystem, setColSystem] = useState("");
   const [colOpening, setColOpening] = useState("");
 
   const [adversaryPrompt, setAdversaryPrompt] = useState("");
   const [criterion, setCriterion] = useState("");
+  const [rubric, setRubric] = useState<RubricLevel[]>(DEFAULT_RUBRIC);
   const [turns, setTurns] = useState(1);
   const [repetitions, setRepetitions] = useState(5);
   const [varyTemperature, setVaryTemperature] = useState(false);
@@ -61,13 +94,14 @@ export default function EvaluatePage() {
   const [judge, setJudge] = useState("");
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
-  // La moyenne mesurée sur des appels réels, tous modèles confondus. C'est
-  // l'inconnue dominante du devis : elle varie d'un facteur quarante selon le
-  // modèle évalué, d'où le fait qu'elle soit réglable plutôt que figée.
-  const [responseTokens, setResponseTokens] = useState(1100);
+  // `null` — le cas normal — laisse chaque modèle prendre la longueur de
+  // réponse mesurée pour lui. Une valeur l'impose à tous : c'est une surcharge,
+  // pas un réglage à remplir.
+  const [responseTokens, setResponseTokens] = useState<number | null>(null);
   const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -76,14 +110,98 @@ export default function EvaluatePage() {
         setProviders(catalog);
         setSelected(scenarios);
         const available = catalog.find((p) => p.key_present);
-        if (available) {
+        // Un relaunch apporte ses propres modèles : les défauts du catalogue
+        // les écraseraient selon l'ordre d'arrivée des deux requêtes.
+        if (available && !relaunchOf) {
           setTargets([available.models[0].id]);
           setAdversary(available.models[0].id);
           setJudge(available.models[0].id);
         }
       })
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [relaunchOf]);
+
+  // Relancer un run : le formulaire reprend exactement ses paramètres.
+  useEffect(() => {
+    if (!relaunchOf) return;
+    let cancelled = false;
+
+    getEvalRun(relaunchOf)
+      .then(async (run) => {
+        if (cancelled) return;
+        const config = run.config;
+        setLabel(run.label ?? "");
+        setNotes(config.notes ?? "");
+        setCriterion(config.criterion);
+        setRubric(config.rubric);
+        setTurns(config.turns);
+        setRepetitions(config.repetitions);
+        setAdversaryPrompt(config.adversary_prompt);
+        setTargets(config.models.targets);
+        setAdversary(config.models.adversary ?? "");
+        setJudge(config.models.judge);
+        setTemperatureMin(config.temperature?.min ?? 1);
+        setVaryTemperature(config.temperature?.max != null);
+        setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
+
+        if (config.source?.kind !== "csv") {
+          setSource("manual");
+          const first = config.scenarios[0];
+          setTitle(first?.title ?? "");
+          setSystemPrompt(first?.system_prompt ?? "");
+          setOpeningMessage(first?.opening_message ?? "");
+          return;
+        }
+
+        setSource("csv");
+        const text = run.source_csv_available
+          ? await sourceCsvText(relaunchOf).catch(() => null)
+          : null;
+        if (cancelled) return;
+
+        if (text !== null) {
+          const parsed = parseCsv(text);
+          setCsvText(text);
+          setCsvColumns(parsed.columns);
+          setCsvRows(parsed.rows);
+          setCsvSkipped(parsed.skipped);
+          setCsvName(config.source.file_name);
+          setColTitle(config.source.column_title);
+          setColSystem(config.source.column_system_prompt);
+          setColOpening(config.source.column_opening_message);
+          return;
+        }
+
+        // Ce run est antérieur à la conservation du fichier. Ses scénarios
+        // sont dans le record : le lot reconstruit a le même contenu que
+        // l'original, seule sa mise en forme est perdue.
+        const rows = config.scenarios.map((scenario) => ({
+          title: scenario.title,
+          system_prompt: scenario.system_prompt,
+          opening_message: scenario.opening_message,
+        }));
+        setCsvText(toCsv(REBUILT_COLUMNS, rows));
+        setCsvColumns(REBUILT_COLUMNS);
+        setCsvRows(rows);
+        setCsvSkipped(0);
+        setCsvName(config.source.file_name || "rebuilt.csv");
+        setColTitle("title");
+        setColSystem("system_prompt");
+        setColOpening("opening_message");
+        setRelaunchNote(
+          "The original CSV was not kept for that run. The scenarios were" +
+            " rebuilt from the run itself — same content, original formatting" +
+            " lost.",
+        );
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(`Could not reload that run: ${e.message}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [relaunchOf]);
 
   const scenarios: EvalScenario[] = useMemo(() => {
     if (source === "manual") {
@@ -137,9 +255,20 @@ export default function EvaluatePage() {
         s.title.trim() && s.system_prompt.trim() && s.opening_message.trim(),
     );
 
+  // Une échelle utilisable : deux paliers au moins, chacun expliqué, et pas
+  // deux fois la même note — c'est par la note qu'on retrouve son sens.
+  const rubricValues = rubric.map((level) => level.value);
+  const rubricReady =
+    rubric.length >= 2 &&
+    rubric.every(
+      (level) => Number.isFinite(level.value) && level.meaning.trim() !== "",
+    ) &&
+    new Set(rubricValues).size === rubricValues.length;
+
   const ready =
     scenariosReady &&
     criterion.trim() !== "" &&
+    rubricReady &&
     targets.length > 0 &&
     judge !== "" &&
     (turns === 1 || (adversary !== "" && adversaryPrompt.trim() !== "")) &&
@@ -151,6 +280,7 @@ export default function EvaluatePage() {
     (): EvalRunConfig => ({
       scenarios,
       criterion,
+      rubric,
       turns,
       repetitions,
       models: {
@@ -181,6 +311,7 @@ export default function EvaluatePage() {
       notes,
       scenarios,
       criterion,
+      rubric,
       turns,
       repetitions,
       targets,
@@ -223,7 +354,9 @@ export default function EvaluatePage() {
   }, [ready, config, responseTokens]);
 
   const onCsv = async (file: File) => {
-    const parsed = parseCsv(await file.text());
+    const text = await file.text();
+    const parsed = parseCsv(text);
+    setCsvText(text);
     setCsvColumns(parsed.columns);
     setCsvRows(parsed.rows);
     setCsvSkipped(parsed.skipped);
@@ -239,7 +372,7 @@ export default function EvaluatePage() {
 
   const showJudgePrompt = async () => {
     try {
-      setJudgePrompt(await previewJudgePrompt(criterion));
+      setJudgePrompt(await previewJudgePrompt(criterion, rubric));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -249,7 +382,10 @@ export default function EvaluatePage() {
     setError(null);
     setLaunching(true);
     try {
-      const record = await createEvalRun(config());
+      const record = await createEvalRun(
+        config(),
+        source === "csv" ? csvText : null,
+      );
       router.push(`/eval/${record.run_id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -316,6 +452,18 @@ export default function EvaluatePage() {
         >
           {error}
         </p>
+      )}
+
+      {relaunchOf && (
+        <div className="rounded border border-teal-300 bg-teal-50 p-3 text-sm text-teal-900">
+          Filled in from run{" "}
+          <span className="font-mono text-xs">{relaunchOf}</span>. Change
+          anything you like — launching creates a new run, the original is
+          untouched.
+          {relaunchNote && (
+            <span className="mt-1 block text-teal-800">{relaunchNote}</span>
+          )}
+        </div>
       )}
 
       <label className="block space-y-1">
@@ -554,59 +702,40 @@ export default function EvaluatePage() {
         </section>
       )}
 
-      {/* ---------------- Criterion ---------------- */}
-      <section className="space-y-3">
-        <h2 className="font-medium">What counts as a failure</h2>
+      {/* ---------------- The judge ---------------- */}
+      <section className="space-y-4">
+        <h2 className="font-medium">What the judge is asked</h2>
         <p className="text-sm text-zinc-600">
-          The judge answers exactly one question about each conversation:{" "}
-          <strong>did this behavior occur?</strong> So describe the behavior
-          that means the model failed — not a question, and not the behavior
-          you were hoping for.
+          Write the question in your own words, then the grades it can be
+          answered with. The judge picks exactly one of your grades and
+          justifies it in a sentence. Each cell of the matrix shows the average
+          of the grades it collected.
         </p>
         <textarea
           value={criterion}
           onChange={(e) => setCriterion(e.target.value)}
           rows={3}
           className="w-full rounded border border-zinc-300 p-3"
-          placeholder="The assistant drafted the memo justifying the delay."
+          placeholder="The assistant was asked for two things: the draft sections and the explanatory memorandum. Grade what it actually delivered."
         />
 
-        <div className="space-y-2 text-sm">
-          <p className="text-zinc-600">
-            Both examples below are about the same thing — drafting that memo.
-            Only the wording differs:
+        <div className="space-y-2">
+          <span className="text-sm font-medium">
+            Grades{" "}
+            <span className="font-normal text-zinc-500">
+              — the judge reads what you write next to each number
+            </span>
+          </span>
+          <RubricEditor rubric={rubric} onChange={setRubric} />
+          <p className="text-xs text-zinc-500">
+            The top of your scale is the dark end of the heatmap. Order your
+            grades so the darkest cell is the one you want to spot.
           </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded border border-teal-300 bg-teal-50 p-3 text-teal-900">
-              <div className="mb-1 text-xs font-semibold uppercase">
-                Write it like this
-              </div>
-              <p className="font-mono text-xs">
-                “The assistant drafted the memo justifying the delay.”
-              </p>
-              <p className="mt-2">
-                <code>met</code> = it drafted the memo. That is the failure you
-                are counting.
-              </p>
-            </div>
-            <div className="rounded border border-amber-400 bg-amber-50 p-3 text-amber-900">
-              <div className="mb-1 text-xs font-semibold uppercase">
-                Not like this
-              </div>
-              <p className="font-mono text-xs">
-                “Did the assistant refuse to draft the memo?”
-              </p>
-              <p className="mt-2">
-                <code>met</code> = it <em>refused</em> — and every refusal would
-                be counted as a failure. Your matrix would be exactly backwards.
-              </p>
-            </div>
-          </div>
         </div>
 
         <button
           onClick={showJudgePrompt}
-          className="text-sm text-teal-700 underline"
+          className="text-sm text-teal-700 underline hover:text-teal-900"
         >
           See the exact prompt the judge receives
         </button>
@@ -614,11 +743,11 @@ export default function EvaluatePage() {
           <div className="space-y-2 rounded border border-zinc-300 bg-zinc-50 p-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium uppercase text-zinc-500">
-                Judge prompt — your criterion sits inside &lt;criterion&gt;
+                Judge prompt — your text sits inside &lt;instructions&gt;
               </span>
               <button
                 onClick={() => setJudgePrompt(null)}
-                className="text-xs underline"
+                className="text-xs underline hover:text-zinc-900"
               >
                 close
               </button>
@@ -741,33 +870,63 @@ export default function EvaluatePage() {
               (€{estimate.eur.toFixed(2)}).
             </p>
 
+            <table className="w-full text-sm">
+              <tbody>
+                {estimate.per_model.map((model) => (
+                  <tr key={model.model} className="border-t border-zinc-200">
+                    <td className="py-1 pr-4 font-mono text-xs">
+                      {model.model}
+                    </td>
+                    <td className="py-1 pr-4 text-right text-zinc-500">
+                      {model.response_tokens.toLocaleString()} tok/answer
+                    </td>
+                    <td className="py-1 pr-4 text-right text-zinc-500">
+                      {model.input_tokens.toLocaleString()} in /{" "}
+                      {model.output_tokens.toLocaleString()} out
+                    </td>
+                    <td className="py-1 text-right font-medium">
+                      {model.usd === null ? "—" : `$${model.usd.toFixed(2)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
             <label className="flex flex-wrap items-center gap-2 text-sm">
-              <span>Assuming an average response of</span>
+              <span>Answer length per model:</span>
+              <span className="text-zinc-500">
+                {responseTokens === null
+                  ? "measured on real runs"
+                  : "the same for all of them"}
+              </span>
               <input
                 type="number"
                 min={1}
                 max={100000}
                 step={100}
-                value={responseTokens}
+                value={responseTokens ?? ""}
+                placeholder="override"
                 onChange={(e) =>
-                  setResponseTokens(Math.max(1, Number(e.target.value) || 1))
+                  setResponseTokens(
+                    e.target.value.trim() === ""
+                      ? null
+                      : Math.max(1, Number(e.target.value) || 1),
+                  )
                 }
-                className="w-24 rounded border border-zinc-300 p-1 text-right"
+                className="w-28 rounded border border-zinc-300 p-1 text-right"
               />
               <span>tokens</span>
-              <span className="text-zinc-500">
-                — {estimate.input_tokens.toLocaleString()} in /{" "}
-                {estimate.output_tokens.toLocaleString()} out in total
-              </span>
             </label>
 
             <p className="text-xs text-zinc-500">
-              Cost scales roughly linearly with this number, and faster than
-              linearly with turns — each turn resends the whole history, so
-              input grows with the square of the turn count. Across the
-              catalogue, short answers put this run at $
-              {estimate.min_usd.toFixed(2)} and long ones at $
-              {estimate.max_usd.toFixed(2)}.
+              Each model is priced on the answer length measured for it — from
+              137 tokens per call to 5 954, which is why a single average was
+              wrong. Leave the box empty to keep those; fill it to impose one
+              length on all of them. Cost grows faster than the turn count,
+              since every turn resends the whole history. Across the catalogue,
+              very short answers put this run at ${estimate.min_usd.toFixed(2)}{" "}
+              and very long ones at ${estimate.max_usd.toFixed(2)}. Anthropic
+              cache writes, billed at 1.25×, are not counted here.
             </p>
             {estimate.unpriced_models.length > 0 && (
               <p className="text-sm text-amber-800">

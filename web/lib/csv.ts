@@ -82,3 +82,17 @@ export function parseCsv(text: string): ParsedCsv {
 
   return { columns, rows, skipped };
 }
+
+/** Écrit un CSV lisible par `parseCsv` et par un tableur.
+ *
+ * Sert à reconstituer le lot d'un run lancé avant que le fichier téléversé ne
+ * soit conservé : les scénarios, eux, sont dans le record, et le CSV
+ * reconstruit a exactement le même contenu que l'original. */
+export function toCsv(columns: string[], rows: Record<string, string>[]): string {
+  const cell = (value: string) =>
+    /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  return [
+    columns.map(cell).join(","),
+    ...rows.map((row) => columns.map((column) => cell(row[column] ?? "")).join(",")),
+  ].join("\n");
+}
