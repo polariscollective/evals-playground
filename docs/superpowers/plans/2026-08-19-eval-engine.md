@@ -1199,7 +1199,14 @@ def temperatures_for(
     if spec.max is None or repetitions == 1:
         return [spec.min] * repetitions
     step = (spec.max - spec.min) / (repetitions - 1)
-    return [spec.min + step * index for index in range(repetitions)]
+    # La dernière valeur est reprise telle quelle plutôt que recalculée :
+    # l'accumulation flottante ne retombe pas exactement sur la borne haute
+    # (0.2 + 0.7 vaut 0.8999999999999999), et une plage qui n'atteint pas la
+    # température demandée serait un mensonge silencieux.
+    return [
+        spec.max if index == repetitions - 1 else spec.min + step * index
+        for index in range(repetitions)
+    ]
 
 
 def eval_dataset(config: EvalRunConfig) -> MemoryDataset:
