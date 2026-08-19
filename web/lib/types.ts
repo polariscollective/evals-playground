@@ -75,6 +75,8 @@ export interface EvalRunConfig {
   temperature?: TemperatureSpec | null;
   label?: string | null;
   source?: ScenarioSource | null;
+  /** Le commentaire écrit au lancement, en markdown. */
+  notes?: string;
 }
 
 export interface Message {
@@ -122,12 +124,18 @@ export interface EvalRunRecord {
 }
 
 export interface CostEstimate {
+  /** L'hypothèse de longueur de réponse qui produit `usd`. */
+  response_tokens: number;
+  usd: number;
+  eur: number;
   min_usd: number;
   max_usd: number;
   min_eur: number;
   max_eur: number;
   conversations: number;
   model_calls: number;
+  input_tokens: number;
+  output_tokens: number;
   unpriced_models: string[];
 }
 

@@ -115,6 +115,14 @@ class EvalRunConfig(BaseModel):
     source: ScenarioSource | None = None
     """Provenance des scénarios : saisie manuelle ou import CSV."""
 
+    notes: str = ""
+    """Le commentaire tel qu'il a été écrit au lancement, en markdown.
+
+    `EvalRunRecord.notes` en est amorcé puis fait seule autorité : c'est lui
+    qu'affiche et que modifie la page du run. Celui-ci garde la trace de ce
+    qu'on avait en tête avant de voir les résultats.
+    """
+
     @model_validator(mode="after")
     def _adversaire_requis_en_multitours(self) -> "EvalRunConfig":
         """Au-delà d'un tour, il faut quelqu'un pour parler et quelque chose à dire.

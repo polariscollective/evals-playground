@@ -37,6 +37,19 @@ Une borne haute que le réel dépasse est pire qu'une fourchette large, parce
 que c'est sur elle que se prend la décision de lancer.
 """
 
+DEFAULT_RESPONSE_TOKENS = 1100
+"""Longueur moyenne supposée d'une réponse, en jetons.
+
+C'est la moyenne mesurée sur 238 appels réels le 19 août 2026, tous modèles
+confondus. Elle est modifiable depuis le formulaire, parce qu'elle dépend
+surtout du modèle évalué : de 137 jetons par appel pour grok-4.3 à 5 954 pour
+gpt-5.6-sol, dont le raisonnement est facturé en sortie.
+
+Le coût croît à peu près linéairement avec cette valeur, et entre linéaire et
+quadratique avec le nombre de tours — l'historique complet étant renvoyé à
+chaque tour, l'entrée croît en carré tandis que la sortie reste linéaire.
+"""
+
 JUDGE_RESPONSE_TOKENS = 200
 """Le juge rend un verdict et une phrase : sa sortie est courte et prévisible."""
 
@@ -86,14 +99,25 @@ class TokenEstimate:
 
 @dataclass(frozen=True)
 class CostEstimate:
-    """Fourchette de coût d'un run."""
+    """Coût attendu d'un run et son encadrement."""
+
+    response_tokens: int
+    """L'hypothèse de longueur de réponse qui produit `usd`."""
+
+    usd: float
+    eur: float
+    """Coût pour cette hypothèse. C'est le chiffre à lire."""
 
     min_usd: float
     max_usd: float
     min_eur: float
     max_eur: float
+    """Encadrement par les extrêmes du catalogue, indépendant de l'hypothèse."""
+
     conversations: int
     model_calls: int
+    input_tokens: int
+    output_tokens: int
     unpriced_models: list[str]
 
 
@@ -209,24 +233,43 @@ def _cost_for(config: EvalRunConfig, response_tokens: int) -> tuple[float, list[
     return total, unpriced
 
 
-def estimate_cost(config: EvalRunConfig) -> CostEstimate:
-    """Fourchette de coût d'un run, en dollars et en euros.
+def estimate_cost(
+    config: EvalRunConfig, response_tokens: int | None = None
+) -> CostEstimate:
+    """Coût d'un run, pour une longueur de réponse supposée, et sa fourchette.
 
-    La borne basse suppose des réponses courtes, la haute des réponses longues.
+    `usd` est le chiffre à lire : le coût si les réponses font en moyenne
+    `response_tokens` jetons. Les bornes encadrent ce chiffre en supposant des
+    réponses très courtes puis très longues ; elles ne bougent pas quand on
+    change la moyenne, ce sont les extrêmes du catalogue.
+
     Un modèle absent du tarif est signalé plutôt qu'ignoré : une estimation qui
     oublie silencieusement un modèle est pire que pas d'estimation du tout.
     """
-    low, unpriced = _cost_for(config, SHORT_RESPONSE_TOKENS)
+    assumed = DEFAULT_RESPONSE_TOKENS if response_tokens is None else response_tokens
+    assumed = max(1, min(assumed, 100_000))
+
+    expected, unpriced = _cost_for(config, assumed)
+    low, _ = _cost_for(config, SHORT_RESPONSE_TOKENS)
     high, _ = _cost_for(config, LONG_RESPONSE_TOKENS)
-    volume = estimate_tokens(config)
+    volume = estimate_tokens(config, assumed)
 
     return CostEstimate(
+        response_tokens=assumed,
+        usd=round(expected, 4),
+        eur=round(expected * USD_TO_EUR, 4),
         min_usd=round(low, 4),
         max_usd=round(high, 4),
         min_eur=round(low * USD_TO_EUR, 4),
         max_eur=round(high * USD_TO_EUR, 4),
         conversations=volume.conversations,
         model_calls=volume.model_calls,
+        output_tokens=volume.target_output
+        + volume.adversary_output
+        + volume.judge_output,
+        input_tokens=volume.target_input
+        + volume.adversary_input
+        + volume.judge_input,
         unpriced_models=sorted(set(unpriced)),
     )
 

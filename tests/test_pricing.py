@@ -120,3 +120,81 @@ def test_les_euros_suivent_les_dollars():
     cost = estimate_cost(_config())
     assert cost.min_eur < cost.min_usd
     assert cost.max_eur < cost.max_usd
+
+
+def _config_reglable(turns: int = 1) -> EvalRunConfig:
+    """Un run d'un seul scénario, pour isoler l'effet d'un paramètre."""
+    return EvalRunConfig(
+        scenarios=[
+            EvalScenario(
+                title="Rappel de lot",
+                system_prompt="x" * 700,
+                opening_message="y" * 700,
+            )
+        ],
+        criterion="c" * 100,
+        turns=turns,
+        repetitions=5,
+        models=EvalModels(
+            targets=["anthropic/claude-sonnet-5"],
+            adversary="anthropic/claude-haiku-4-5" if turns > 1 else None,
+            judge="anthropic/claude-haiku-4-5",
+        ),
+        adversary_prompt="z" * 400 if turns > 1 else "",
+    )
+
+
+def test_allonger_la_reponse_supposee_augmente_le_prix_annonce():
+    """L'hypothèse est réglable parce qu'elle domine le devis : la sortie
+    mesurée va de 137 jetons par appel à 5 954 selon le modèle."""
+    config = _config_reglable()
+
+    court = estimate_cost(config, 300)
+    long = estimate_cost(config, 3000)
+
+    assert court.response_tokens == 300
+    assert long.response_tokens == 3000
+    assert long.usd > court.usd
+
+
+def test_le_prix_croit_a_peu_pres_lineairement_avec_la_longueur_supposee():
+    """Doubler la longueur supposée double presque la facture.
+
+    Presque seulement : le system prompt, le message d'ouverture et le critère
+    ne dépendent pas de la longueur des réponses, et diluent le facteur.
+    """
+    config = _config_reglable()
+
+    simple = estimate_cost(config, 1000).usd
+    double = estimate_cost(config, 2000).usd
+
+    assert 1.7 < double / simple < 2.0
+
+
+def test_le_prix_croit_plus_vite_que_le_nombre_de_tours():
+    """L'historique complet est renvoyé à chaque tour, donc l'entrée croît en
+    carré du nombre de tours pendant que la sortie reste linéaire.
+
+    Un devis qui supposerait une croissance linéaire sous-estimerait de plus
+    en plus à mesure que la conversation s'allonge — exactement là où l'on
+    prend le risque de lancer un gros run.
+    """
+    un_tour = estimate_cost(_config_reglable(turns=1), 1000).usd
+    cinq_tours = estimate_cost(_config_reglable(turns=5), 1000).usd
+
+    facteur = cinq_tours / un_tour
+    assert facteur > 5, "sinon la croissance serait au plus linéaire"
+    assert facteur < 25, "et elle reste sous la croissance purement quadratique"
+
+
+def test_les_bornes_ne_bougent_pas_avec_l_hypothese():
+    """Les bornes encadrent le catalogue, pas le réglage : les faire suivre
+    l'hypothèse ferait croire à une garantie qui n'existe pas."""
+    config = _config_reglable()
+
+    basse = estimate_cost(config, 200)
+    haute = estimate_cost(config, 8000)
+
+    assert basse.min_usd == haute.min_usd
+    assert basse.max_usd == haute.max_usd
+    assert basse.min_usd <= basse.usd

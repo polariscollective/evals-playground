@@ -8,6 +8,7 @@ import {
   matrixCsvText,
   saveNotes,
 } from "@/lib/api";
+import { NotesField } from "@/components/NotesField";
 import type {
   Conversation,
   EvalRunRecord,
@@ -347,65 +348,6 @@ function ExportMenu({ runId }: { runId: string }) {
   );
 }
 
-/** Notes libres sur un run, sauvegardées explicitement.
-
-    Pas de sauvegarde automatique : une note à moitié écrite au moment où le
-    rafraîchissement recharge le record serait perdue sans que rien ne le dise. */
-function RunNotes({
-  runId,
-  initial,
-}: {
-  runId: string;
-  initial: string;
-}) {
-  const [text, setText] = useState(initial);
-  const [saved, setSaved] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const save = async () => {
-    try {
-      await saveNotes(runId, text);
-      setSaved(true);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  return (
-    <section className="rounded border border-zinc-300 p-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Notes</h2>
-        <div className="flex items-center gap-2 text-xs">
-          {!saved && <span className="text-amber-700">unsaved</span>}
-          <button
-            onClick={save}
-            disabled={saved}
-            className="rounded border border-zinc-300 px-2 py-0.5 disabled:opacity-40"
-          >
-            Save
-          </button>
-        </div>
-      </div>
-      <textarea
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setSaved(false);
-        }}
-        rows={3}
-        placeholder="What were you testing, what did you notice?"
-        className="mt-2 w-full rounded border border-zinc-300 p-2 text-sm"
-      />
-      {error && (
-        <p role="alert" className="text-xs text-red-700">
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
-
 export default function EvalRunPage({
   params,
 }: {
@@ -414,13 +356,18 @@ export default function EvalRunPage({
   const { runId } = use(params);
   const [record, setRecord] = useState<EvalRunRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
   const [open, setOpen] = useState<{ scenario: number; target: string } | null>(
     null,
   );
 
   const load = useCallback(async () => {
     try {
-      setRecord(await getEvalRun(runId));
+      const loaded = await getEvalRun(runId);
+      setRecord(loaded);
+      // Amorcé une seule fois : le rafraîchissement d'un run en cours ne doit
+      // pas écraser une note en train d'être écrite.
+      setNotes((current) => (current === "" ? loaded.notes : current));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -515,13 +462,6 @@ export default function EvalRunPage({
         </div>
       </div>
 
-      <RunNotes
-        runId={record.run_id}
-        // La clé force un remontage quand le run change : sans elle, l'état
-        // local du textarea survivrait à la navigation d'un run à l'autre.
-        key={record.run_id}
-        initial={record.notes}
-      />
 
       {running && (
         <p className="rounded border border-zinc-300 p-3 text-sm">
@@ -612,6 +552,16 @@ export default function EvalRunPage({
         </section>
       )}
 
+      <NotesField
+        // La clé force un remontage quand le run change : sans elle, l'état
+        // local du composant survivrait à la navigation d'un run à l'autre.
+        key={record.run_id}
+        value={notes}
+        onChange={setNotes}
+        onSave={async (next) => {
+          setRecord(await saveNotes(record.run_id, next));
+        }}
+      />
       {open && (
         <DetailModal
           record={record}

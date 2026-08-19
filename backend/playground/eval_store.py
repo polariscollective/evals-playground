@@ -38,6 +38,9 @@ def create_eval_run(
         label=config.label,
         status="pending",
         config=config,
+        # Le commentaire écrit dans le formulaire suit le run dès sa création :
+        # c'est le même champ que celui qu'on modifiera ensuite sur sa page.
+        notes=config.notes,
         progress=EvalProgress(
             completed=0,
             # La matrice entière : un run produit une conversation par

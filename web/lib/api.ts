@@ -67,11 +67,11 @@ export const createEvalRun = (config: EvalRunConfig) =>
 export const cancelEvalRun = (runId: string) =>
   request<EvalRunRecord>(`/api/eval-runs/${runId}/cancel`, { method: "POST" });
 
-export const estimateRun = (config: EvalRunConfig) =>
-  request<CostEstimate>("/api/eval-runs/estimate", {
-    method: "POST",
-    body: JSON.stringify(config),
-  });
+export const estimateRun = (config: EvalRunConfig, responseTokens: number) =>
+  request<CostEstimate>(
+    `/api/eval-runs/estimate?response_tokens=${responseTokens}`,
+    { method: "POST", body: JSON.stringify(config) },
+  );
 
 export const previewJudgePrompt = (criterion: string) =>
   request<JudgePromptPreview>("/api/judge-prompt-preview", {

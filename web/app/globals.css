@@ -24,3 +24,36 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Notes de run rendues depuis le markdown. Volontairement sobre : ces notes
+   vivent au milieu d'un tableau de bord, pas dans un article. */
+.notes-prose h2,
+.notes-prose h3,
+.notes-prose h4,
+.notes-prose h5 {
+  font-weight: 600;
+  margin: 0.6em 0 0.2em;
+}
+.notes-prose h2 { font-size: 1.05rem; }
+.notes-prose h3 { font-size: 1rem; }
+.notes-prose h4,
+.notes-prose h5 { font-size: 0.95rem; }
+.notes-prose p { margin: 0.4em 0; }
+.notes-prose ul,
+.notes-prose ol { margin: 0.4em 0; padding-left: 1.3em; }
+.notes-prose ul { list-style: disc; }
+.notes-prose ol { list-style: decimal; }
+.notes-prose li { margin: 0.15em 0; }
+.notes-prose blockquote {
+  border-left: 3px solid #d4d4d8;
+  padding-left: 0.7em;
+  color: #52525b;
+  margin: 0.4em 0;
+}
+.notes-prose code {
+  background: #f4f4f5;
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+.notes-prose a { color: #0f766e; text-decoration: underline; }

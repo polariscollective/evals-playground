@@ -18,6 +18,7 @@ import type {
   ProviderInfo,
   SelectedScenario,
 } from "@/lib/types";
+import { NotesField } from "@/components/NotesField";
 
 const MIN_TURNS = 1;
 const MAX_TURNS = 10;
@@ -33,6 +34,7 @@ export default function EvaluatePage() {
   const [selected, setSelected] = useState<SelectedScenario[]>([]);
 
   const [label, setLabel] = useState("");
+  const [notes, setNotes] = useState("");
   const [source, setSource] = useState<Source>("manual");
   const [title, setTitle] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -59,6 +61,10 @@ export default function EvaluatePage() {
   const [judge, setJudge] = useState("");
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  // La moyenne mesurée sur des appels réels, tous modèles confondus. C'est
+  // l'inconnue dominante du devis : elle varie d'un facteur quarante selon le
+  // modèle évalué, d'où le fait qu'elle soit réglable plutôt que figée.
+  const [responseTokens, setResponseTokens] = useState(1100);
   const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
@@ -154,6 +160,7 @@ export default function EvaluatePage() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       label: label.trim() || null,
+      notes,
       // La provenance suit le run : sans le nom du fichier et les colonnes
       // choisies, on ne saurait plus, plus tard, quel lot a produit la matrice.
       source: {
@@ -171,6 +178,7 @@ export default function EvaluatePage() {
     }),
     [
       label,
+      notes,
       scenarios,
       criterion,
       turns,
@@ -200,7 +208,7 @@ export default function EvaluatePage() {
         if (!cancelled) setEstimate(null);
         return;
       }
-      estimateRun(config())
+      estimateRun(config(), responseTokens)
         .then((result) => {
           if (!cancelled) setEstimate(result);
         })
@@ -212,7 +220,7 @@ export default function EvaluatePage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [ready, config]);
+  }, [ready, config, responseTokens]);
 
   const onCsv = async (file: File) => {
     const parsed = parseCsv(await file.text());
@@ -324,6 +332,14 @@ export default function EvaluatePage() {
           className="w-full rounded border border-zinc-300 p-2"
         />
       </label>
+
+      {/* Le même commentaire que sur la page du run : écrit ici avant de
+          lancer, modifiable ensuite quand on a vu les résultats. */}
+      <NotesField
+        value={notes}
+        onChange={setNotes}
+        hint="Why are you running this? What do you expect?"
+      />
 
       {/* ---------------- Scenarios ---------------- */}
       <section className="space-y-4">
@@ -718,10 +734,40 @@ export default function EvaluatePage() {
           <>
             <p className="text-sm">
               About <strong>{estimate.model_calls}</strong> model calls —
-              estimated cost between{" "}
-              <strong>${estimate.min_usd.toFixed(2)}</strong> and{" "}
-              <strong>${estimate.max_usd.toFixed(2)}</strong> (€
-              {estimate.min_eur.toFixed(2)}–{estimate.max_eur.toFixed(2)}).
+              estimated cost{" "}
+              <strong className="text-base">
+                ${estimate.usd.toFixed(2)}
+              </strong>{" "}
+              (€{estimate.eur.toFixed(2)}).
+            </p>
+
+            <label className="flex flex-wrap items-center gap-2 text-sm">
+              <span>Assuming an average response of</span>
+              <input
+                type="number"
+                min={1}
+                max={100000}
+                step={100}
+                value={responseTokens}
+                onChange={(e) =>
+                  setResponseTokens(Math.max(1, Number(e.target.value) || 1))
+                }
+                className="w-24 rounded border border-zinc-300 p-1 text-right"
+              />
+              <span>tokens</span>
+              <span className="text-zinc-500">
+                — {estimate.input_tokens.toLocaleString()} in /{" "}
+                {estimate.output_tokens.toLocaleString()} out in total
+              </span>
+            </label>
+
+            <p className="text-xs text-zinc-500">
+              Cost scales roughly linearly with this number, and faster than
+              linearly with turns — each turn resends the whole history, so
+              input grows with the square of the turn count. Across the
+              catalogue, short answers put this run at $
+              {estimate.min_usd.toFixed(2)} and long ones at $
+              {estimate.max_usd.toFixed(2)}.
             </p>
             {estimate.unpriced_models.length > 0 && (
               <p className="text-sm text-amber-800">

@@ -129,14 +129,21 @@ def post_eval_run(config: EvalRunConfig) -> EvalRunRecord:
 
 
 @router.post("/api/eval-runs/estimate", response_model=CostEstimate)
-def post_estimate(config: EvalRunConfig) -> CostEstimate:
+def post_estimate(
+    config: EvalRunConfig, response_tokens: int | None = None
+) -> CostEstimate:
     """Estime le coût d'un run sans rien lancer.
 
     Même schéma d'entrée que le lancement : l'interface peut donc estimer
     exactement ce qu'elle s'apprête à envoyer, sans transformation
     intermédiaire susceptible de diverger.
+
+    Args:
+        response_tokens: Longueur moyenne supposée d'une réponse. Réglable
+            depuis le formulaire : c'est l'inconnue dominante, et elle varie
+            d'un facteur quarante selon le modèle évalué.
     """
-    return estimate_cost(config)
+    return estimate_cost(config, response_tokens)
 
 
 @router.get("/api/eval-runs", response_model=list[EvalRunRecord])
