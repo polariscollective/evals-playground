@@ -38,7 +38,14 @@ def create_eval_run(
         label=config.label,
         status="pending",
         config=config,
-        progress=EvalProgress(completed=0, total=config.repetitions),
+        progress=EvalProgress(
+            completed=0,
+            # La matrice entière : un run produit une conversation par
+            # triplet scénario x modèle évalué x répétition.
+            total=len(config.scenarios)
+            * len(config.models.targets)
+            * config.repetitions,
+        ),
     )
     write_eval_run(record, runs_dir)
     return record

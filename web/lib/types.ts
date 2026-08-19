@@ -7,9 +7,6 @@ export type RunStatus =
   | "error"
   | "cancelled";
 
-/** Les deux phases partagent le même cycle de vie de run. */
-export type EvalRunStatus = RunStatus;
-
 export interface ModelOption {
   id: string;
   label: string;
@@ -38,7 +35,7 @@ export interface EvalScenario {
 }
 
 export interface EvalModels {
-  target: string;
+  targets: string[];
   adversary?: string | null;
   judge: string;
 }
@@ -49,7 +46,7 @@ export interface TemperatureSpec {
 }
 
 export interface EvalRunConfig {
-  scenario: EvalScenario;
+  scenarios: EvalScenario[];
   criterion: string;
   turns: number;
   repetitions: number;
@@ -67,6 +64,8 @@ export interface Message {
 export interface Conversation {
   conversation_id: string;
   repetition: number;
+  scenario_index: number;
+  target: string;
   temperature: number | null;
   messages: Message[];
   verdict: Verdict | null;
@@ -83,11 +82,27 @@ export interface EvalRunRecord {
   run_id: string;
   created_at: string;
   label: string | null;
-  status: EvalRunStatus;
+  status: RunStatus;
   config: EvalRunConfig;
   progress: { completed: number; total: number };
   error: string | null;
   log_path: string | null;
-  tally: Tally;
+  /** Une entrée par scénario, alignée sur config.scenarios. */
+  tallies: Record<string, Tally>[];
   conversations: Conversation[];
+}
+
+export interface CostEstimate {
+  min_usd: number;
+  max_usd: number;
+  min_eur: number;
+  max_eur: number;
+  conversations: number;
+  model_calls: number;
+  unpriced_models: string[];
+}
+
+export interface JudgePromptPreview {
+  system_message: string;
+  user_message: string;
 }

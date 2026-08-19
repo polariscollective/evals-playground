@@ -104,3 +104,18 @@ def test_le_fichier_temporaire_n_est_jamais_ramasse(tmp_path: Path):
     record = create_eval_run(_config(), tmp_path)
     (tmp_path / f"{record.run_id}.json.tmp").write_text("{ écriture en cours")
     assert [r.run_id for r in list_eval_runs(tmp_path)] == [record.run_id]
+
+
+def test_le_total_de_progression_compte_la_matrice_entiere(tmp_path: Path):
+    """Un run produit une conversation par triplet scénario x modèle x répétition.
+
+    Compter les seules répétitions annoncerait « 6 sur 1 » pendant un run, ce
+    qui est le genre d'incohérence qui fait douter de tout le reste.
+    """
+    config = _config()
+    config.scenarios = [config.scenarios[0], config.scenarios[0]]
+    config.models = EvalModels(targets=["a/1", "b/2", "c/3"], judge="mockllm/model")
+    config.repetitions = 4
+
+    record = create_eval_run(config, tmp_path)
+    assert record.progress.total == 2 * 3 * 4
