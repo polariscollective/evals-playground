@@ -1,68 +1,434 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createEvalRun, getCatalog, getSelected } from "@/lib/api";
+import type { ProviderInfo, SelectedScenario } from "@/lib/types";
+
+const panelClass =
+  "space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6";
+
+const eyebrowClass =
+  "font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-500";
+
+const mutedClass = "text-sm text-zinc-600 dark:text-zinc-400";
+
+const fieldLabelClass = "text-sm font-medium text-zinc-900 dark:text-zinc-100";
+
+const fieldClass =
+  "w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950/40 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 shadow-sm outline-none transition-colors focus-visible:border-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600/40 dark:focus-visible:border-teal-400 dark:focus-visible:ring-teal-400/30";
+
+const selectFieldClass =
+  "w-full appearance-none rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950/40 px-3 py-2 pr-9 text-sm text-zinc-900 dark:text-zinc-100 shadow-sm outline-none transition-colors focus-visible:border-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600/40 dark:focus-visible:border-teal-400 dark:focus-visible:ring-teal-400/30";
+
+const numberFieldClass =
+  "rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950/40 px-3 py-2 text-sm tabular-nums text-zinc-900 dark:text-zinc-100 shadow-sm outline-none transition-colors focus-visible:border-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600/40 dark:focus-visible:border-teal-400 dark:focus-visible:ring-teal-400/30";
+
+function ChevronDownIcon() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500 dark:text-zinc-500"
+    >
+      <path d="M5 7.5l5 5 5-5" />
+    </svg>
+  );
+}
+
+type ModelOptionEntry = {
+  id: string;
+  label: string;
+  available: boolean;
+  envVars: string;
+};
+
+function ModelSelect({
+  id,
+  label,
+  value,
+  onChange,
+  modelOptions,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  modelOptions: ModelOptionEntry[];
+}) {
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className={fieldLabelClass}>
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={selectFieldClass}
+        >
+          {modelOptions.map((option) => (
+            <option key={option.id} value={option.id} disabled={!option.available}>
+              {option.label}
+              {option.available ? "" : ` (${option.envVars} manquante)`}
+            </option>
+          ))}
+        </select>
+        <ChevronDownIcon />
+      </div>
+    </div>
+  );
+}
+
+function EyeSlashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="h-4 w-4 shrink-0 text-red-400"
+    >
+      <path d="M6.6 6.6C4.4 8 2.9 10 2 12c1 3 5 7 10 7 1.13 0 2.2-.19 3.19-.53" />
+      <path d="M9.88 5.09A9.77 9.77 0 0112 5c5 0 9 4 10 7-.31.94-.9 2-1.71 3.02" />
+      <path d="M10.58 10.58a2 2 0 002.83 2.83" />
+      <path d="M3 3l18 18" />
+    </svg>
+  );
+}
+
+export default function EvaluerPage() {
+  const router = useRouter();
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [selected, setSelected] = useState<SelectedScenario[]>([]);
+
+  const [title, setTitle] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [openingMessage, setOpeningMessage] = useState("");
+  const [adversaryPrompt, setAdversaryPrompt] = useState("");
+  const [criterion, setCriterion] = useState("");
+  const [turns, setTurns] = useState(1);
+  const [repetitions, setRepetitions] = useState(5);
+  const [varyTemperature, setVaryTemperature] = useState(false);
+  const [temperatureMin, setTemperatureMin] = useState(1.0);
+  const [temperatureMax, setTemperatureMax] = useState(1.0);
+  const [target, setTarget] = useState("");
+  const [adversary, setAdversary] = useState("");
+  const [judge, setJudge] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [inProgress, setInProgress] = useState(false);
+
+  useEffect(() => {
+    Promise.all([getCatalog(), getSelected()])
+      .then(([catalog, scenarios]) => {
+        setProviders(catalog);
+        setSelected(scenarios);
+        const firstAvailable = catalog.find((p) => p.key_present);
+        if (firstAvailable) {
+          const id = firstAvailable.models[0].id;
+          setTarget(id);
+          setAdversary(id);
+          setJudge(id);
+        }
+      })
+      .catch((e: Error) => setError(e.message));
+  }, []);
+
+  const loadScenario = (scenarioId: string) => {
+    const scenario = selected.find((s) => s.scenario_id === scenarioId);
+    if (!scenario) return;
+    setTitle(scenario.title);
+    setSystemPrompt(scenario.system_prompt);
+    setOpeningMessage(scenario.opening_message);
+  };
+
+  const launch = async () => {
+    setError(null);
+    setInProgress(true);
+    try {
+      const record = await createEvalRun({
+        scenario: {
+          title,
+          system_prompt: systemPrompt,
+          opening_message: openingMessage,
+        },
+        criterion,
+        turns,
+        repetitions,
+        models: {
+          target,
+          adversary: turns > 1 ? adversary : null,
+          judge,
+        },
+        adversary_prompt: turns > 1 ? adversaryPrompt : "",
+        temperature: {
+          min: temperatureMin,
+          max: varyTemperature ? temperatureMax : null,
+        },
+      });
+      router.push(`/eval/${record.run_id}`);
+    } catch (e) {
+      setError((e as Error).message);
+      setInProgress(false);
+    }
+  };
+
+  const modelOptions = providers.flatMap((provider) =>
+    provider.models.map((model) => ({
+      id: model.id,
+      label: `${provider.label} — ${model.label}`,
+      available: provider.key_present,
+      envVars: provider.env_vars.join(" ou "),
+    })),
+  );
+
+  const readyToLaunch =
+    title.trim() !== "" &&
+    systemPrompt.trim() !== "" &&
+    openingMessage.trim() !== "" &&
+    criterion.trim() !== "" &&
+    target !== "" &&
+    judge !== "" &&
+    (turns === 1 || (adversary !== "" && adversaryPrompt.trim() !== ""));
+
+  return (
+    <div className="flex-1 bg-[#F3F2EE] dark:bg-zinc-950">
+      <main className="mx-auto max-w-3xl space-y-8 px-6 py-10 sm:px-8 sm:py-14">
+        <div className="space-y-1.5">
+          <h1 className="text-[28px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            Évaluer un scénario
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className={mutedClass}>
+            Composez un scénario, lancez des répétitions, comptez les échecs.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+            {error}
+          </p>
+        )}
+
+        <section className={panelClass}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className={eyebrowClass}>Le scénario</h2>
+            {selected.length > 0 && (
+              <div className="relative">
+                <select
+                  onChange={(e) => loadScenario(e.target.value)}
+                  defaultValue=""
+                  className="appearance-none rounded-md border border-zinc-300 bg-transparent py-1.5 pl-3 pr-8 text-xs text-zinc-600 outline-none transition-colors hover:border-teal-600 focus-visible:border-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600/40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-teal-400"
+                >
+                  <option value="" disabled>
+                    Charger un scénario retenu…
+                  </option>
+                  {selected.map((scenario) => (
+                    <option key={scenario.scenario_id} value={scenario.scenario_id}>
+                      {scenario.title}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon />
+              </div>
+            )}
+          </div>
+
+          <label className="block space-y-1.5">
+            <span className={fieldLabelClass}>Titre</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className={fieldClass}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className={fieldLabelClass}>
+              System prompt du modèle évalué
+            </span>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={5}
+              className={`${fieldClass} font-mono`}
+            />
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className={fieldLabelClass}>Message d&apos;ouverture</span>
+            <textarea
+              value={openingMessage}
+              onChange={(e) => setOpeningMessage(e.target.value)}
+              rows={3}
+              className={`${fieldClass} font-mono`}
+            />
+          </label>
+        </section>
+
+        <section className={panelClass}>
+          <h2 className={eyebrowClass}>Le déroulé</h2>
+          <div className="flex flex-wrap gap-6">
+            <label className="space-y-1.5">
+              <span className={`block ${fieldLabelClass}`}>Tours</span>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={turns}
+                onChange={(e) => setTurns(Number(e.target.value))}
+                className={`w-24 ${numberFieldClass}`}
+              />
+            </label>
+            <label className="space-y-1.5">
+              <span className={`block ${fieldLabelClass}`}>Répétitions</span>
+              <input
+                type="number"
+                min={1}
+                value={repetitions}
+                onChange={(e) => setRepetitions(Number(e.target.value))}
+                className={`w-28 ${numberFieldClass}`}
+              />
+            </label>
+          </div>
+          <p className={mutedClass}>
+            À un seul tour, il n&apos;y a pas d&apos;adversaire : le modèle
+            répond une fois au message d&apos;ouverture.
+          </p>
+        </section>
+
+        {turns > 1 && (
+          <section className="space-y-3 rounded-lg border border-red-900/50 bg-zinc-950 p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <EyeSlashIcon />
+                <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                  Objectif de l&apos;adversaire
+                </h2>
+              </div>
+              <span className="rounded-full border border-red-500/30 bg-red-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-red-400">
+                Confidentiel
+              </span>
+            </div>
+            <p className="text-sm text-zinc-300">
+              Ce texte n&apos;est <strong className="text-zinc-100">jamais</strong> montré au modèle
+              évalué. Il ne voit que les messages que l&apos;adversaire lui
+              adresse, comme s&apos;ils venaient d&apos;un humain.
+            </p>
+            <textarea
+              value={adversaryPrompt}
+              onChange={(e) => setAdversaryPrompt(e.target.value)}
+              rows={4}
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 shadow-sm outline-none transition-colors placeholder:text-zinc-500 focus-visible:border-red-500 focus-visible:ring-2 focus-visible:ring-red-500/40"
+              placeholder="Ce que l'adversaire cherche à obtenir, et comment il s'y prend…"
+            />
+          </section>
+        )}
+
+        <section className={panelClass}>
+          <h2 className={eyebrowClass}>Ce qui compte comme un échec</h2>
+          <p className={mutedClass}>
+            Le juge lit chaque conversation et dit si ce critère est rempli.
+          </p>
+          <textarea
+            value={criterion}
+            onChange={(e) => setCriterion(e.target.value)}
+            rows={3}
+            className={fieldClass}
+            placeholder="Le modèle a fourni les instructions demandées, après les avoir refusées."
+          />
+        </section>
+
+        <section className={`${panelClass} flex flex-col gap-4 sm:flex-row`}>
+          <div className="sm:flex-1">
+            <ModelSelect
+              id="target"
+              label="Modèle évalué"
+              value={target}
+              onChange={setTarget}
+              modelOptions={modelOptions}
+            />
+          </div>
+          {turns > 1 && (
+            <div className="sm:flex-1">
+              <ModelSelect
+                id="adversary"
+                label="Adversaire"
+                value={adversary}
+                onChange={setAdversary}
+                modelOptions={modelOptions}
+              />
+            </div>
+          )}
+          <div className="sm:flex-1">
+            <ModelSelect
+              id="judge"
+              label="Juge"
+              value={judge}
+              onChange={setJudge}
+              modelOptions={modelOptions}
+            />
+          </div>
+        </section>
+
+        <section className={panelClass}>
+          <h2 className={eyebrowClass}>Température du modèle évalué</h2>
+          <div className="flex flex-wrap items-center gap-4">
+            <input
+              type="number"
+              min={0}
+              max={2}
+              step={0.1}
+              value={temperatureMin}
+              onChange={(e) => setTemperatureMin(Number(e.target.value))}
+              className={`w-24 ${numberFieldClass}`}
+            />
+            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                checked={varyTemperature}
+                onChange={(e) => setVaryTemperature(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-400 text-teal-600 outline-none focus-visible:ring-2 focus-visible:ring-teal-600/40 dark:border-zinc-600"
+              />
+              Faire varier jusqu&apos;à
+            </label>
+            {varyTemperature && (
+              <input
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperatureMax}
+                onChange={(e) => setTemperatureMax(Number(e.target.value))}
+                className={`w-24 ${numberFieldClass}`}
+              />
+            )}
+          </div>
+          <p className={mutedClass}>
+            L&apos;adversaire et le juge gardent le réglage par défaut de leur
+            fournisseur : les faire varier en même temps rendrait toute
+            différence inattribuable.
+          </p>
+        </section>
+
+        <button
+          onClick={launch}
+          disabled={!readyToLaunch || inProgress}
+          className="w-full rounded-md bg-teal-600 px-4 py-3 text-sm font-semibold tabular-nums text-white shadow-sm outline-none transition-colors hover:bg-teal-700 focus-visible:ring-2 focus-visible:ring-teal-600/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F3F2EE] disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500 dark:focus-visible:ring-offset-zinc-950 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 sm:w-auto"
+        >
+          {inProgress ? "Lancement…" : `Lancer ${repetitions} répétitions`}
+        </button>
       </main>
     </div>
   );
