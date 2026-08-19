@@ -7,7 +7,6 @@ et isole un plantage d'inspect du serveur.
 Entrypoint : `python -m playground.job <run_id>`.
 """
 
-import re
 import sys
 import traceback
 from pathlib import Path
@@ -26,39 +25,11 @@ from playground.store import (
     bump_progress,
     read_progress,
     read_run,
+    safe_id_component,
     write_run,
 )
 
 LOGS_DIR = Path("logs")
-
-_UNSAFE_ID_CHARS = re.compile(r"[^A-Za-z0-9_-]+")
-
-
-def _safe_id_component(value: object) -> str:
-    """Rend une valeur sûre à utiliser comme composant d'un nom de fichier.
-
-    `scenario_id` mélange `log.eval.task_id` et `sample.id` — ce dernier
-    n'étant pas garanti par inspect d'être un entier propre, ce pourrait être
-    n'importe quelle chaîne fournie par un dataset. Comme `scenario_id` sert
-    ensuite tel quel de nom de fichier (`data/selected/<scenario_id>.yaml`),
-    tout caractère autre qu'alphanumérique, `-` ou `_` est remplacé par `_` :
-    ni séparateur de chemin (`/`, `\\`), ni segment `..` ne peut donc survivre
-    pour sortir de `data/selected/`. Les séquences neutralisées sont fusionnées
-    pour rester lisibles, et une valeur qui deviendrait vide retombe sur `_`.
-
-    Seule cette absence de traversée de répertoire est garantie : cette
-    fonction n'est pas injective. Deux identifiants distincts peuvent se
-    réduire à la même chaîne après nettoyage (par exemple `"a/b"` et `"a\\b"`
-    deviennent tous deux `"a_b"`), ce qui collisionnerait alors le nom de
-    fichier d'un scénario retenu avec celui d'un autre. Le cas n'est pas
-    atteignable aujourd'hui : `generation_dataset` attribue à chaque sample un
-    identifiant entier simple (`index + 1`), qui ne contient jamais de
-    caractère neutralisé par cette fonction — la collision ne redeviendrait
-    possible que si un dataset fournissait un jour des `sample.id` en chaînes
-    libres, sous contrôle externe.
-    """
-    safe = _UNSAFE_ID_CHARS.sub("_", str(value))
-    return safe or "_"
 
 
 def scenarios_from_log(log: EvalLog, config: RunConfig) -> list[Scenario]:
@@ -68,7 +39,7 @@ def scenarios_from_log(log: EvalLog, config: RunConfig) -> list[Scenario]:
     ne jette jamais un scénario, on le montre en bas de table.
     """
     scenarios: list[Scenario] = []
-    task_id = _safe_id_component(log.eval.task_id)
+    task_id = safe_id_component(log.eval.task_id)
     for sample in log.samples or []:
         raw = (sample.metadata or {}).get("scenario") or {}
         score = (sample.scores or {}).get("scenario_judge")
@@ -77,7 +48,7 @@ def scenarios_from_log(log: EvalLog, config: RunConfig) -> list[Scenario]:
 
         scenarios.append(
             Scenario(
-                scenario_id=f"{task_id}-{_safe_id_component(sample.id)}",
+                scenario_id=f"{task_id}-{safe_id_component(sample.id)}",
                 title=str(raw.get("title") or f"Scénario {sample.id}"),
                 system_prompt=str(raw.get("system_prompt") or ""),
                 opening_message=str(raw.get("opening_message") or ""),
