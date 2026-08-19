@@ -7,7 +7,7 @@ plus difficile à tenir en tête.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Verdict = Literal["met", "not_met", "borderline"]
 """Verdict du juge sur une conversation.
@@ -46,9 +46,19 @@ class TemperatureSpec(BaseModel):
 class EvalModels(BaseModel):
     """Les trois rôles de modèle d'un run d'évaluation."""
 
-    target: str
+    target: str = Field(min_length=1)
     adversary: str | None = None
-    judge: str
+    judge: str = Field(min_length=1)
+
+    @field_validator("adversary")
+    @classmethod
+    def _adversary_non_vide(cls, v: str | None) -> str | None:
+        """Si adversary est fourni (non None), il ne doit pas être vide."""
+        if v is not None and not v.strip():
+            raise ValueError(
+                "L'identifiant du modèle adversaire ne doit pas être vide."
+            )
+        return v
 
 
 class EvalRunConfig(BaseModel):
