@@ -685,9 +685,12 @@ export default function EvalRunPage({
                 )}
               </>
             )}
-            {" · "}
-            <span className="text-zinc-500">{run.user_email}</span>
           </p>
+          {/* Sur sa propre ligne plutôt qu'au bout de la précédente :
+              noyée entre le coût et le devis, l'adresse ne se lisait pas. */}
+          {run.user_email && (
+            <p className="text-sm text-zinc-500">{run.user_email}</p>
+          )}
         </div>
         <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
           {running && (

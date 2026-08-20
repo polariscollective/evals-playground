@@ -189,6 +189,12 @@ export default function RunsPage() {
                         </span>
                       )}
                     </div>
+                    {/* Qui l'a lancé. Tout le monde voit tous les runs : sans
+                        l'auteur, une liste chargée ne dit plus à qui s'adresser
+                        quand un run surprend. */}
+                    {run.user_email && (
+                      <div className="text-xs text-zinc-500">{run.user_email}</div>
+                    )}
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-600">
                     {formatDate(run.created_at)}
