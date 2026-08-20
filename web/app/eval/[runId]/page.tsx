@@ -22,7 +22,36 @@ import {
   rubricBounds,
   sortedRubric,
 } from "@/lib/rubric";
-import type { EvalSample, RubricLevel, RunDetail } from "@/lib/types";
+import type {
+  EvalSample,
+  Progress,
+  RubricLevel,
+  RunDetail,
+} from "@/lib/types";
+
+/** Ce que l'arrêt va réellement faire, case par case.
+ *
+ * Un arrêt n'est pas symétrique, et c'est ce qui fait hésiter : les cases en
+ * vol sont déjà payées et iront à leur terme, celles qui n'ont pas commencé ne
+ * coûteront rien, et rien de ce qui est noté n'est perdu. Un bouton d'arrêt
+ * devant lequel on n'ose pas cliquer ne sert à rien — autant énoncer les trois
+ * chiffres avant de le faire. */
+function stopWarning(progress: Progress): string {
+  const lines = ["Stop this run?", ""];
+  if (progress.running > 0) {
+    lines.push(`In flight: ${progress.running} — will finish, and be kept.`);
+  }
+  if (progress.pending > 0) {
+    lines.push(`Not started: ${progress.pending} — will be cancelled.`);
+  }
+  if (progress.done > 0) {
+    lines.push(`Already graded: ${progress.done} — kept as they are.`);
+  }
+  if (progress.errored > 0) {
+    lines.push(`Failed: ${progress.errored} — unchanged.`);
+  }
+  return lines.join("\n");
+}
 
 function shortModel(id: string): string {
   return id.split("/").pop() ?? id;
@@ -696,6 +725,7 @@ export default function EvalRunPage({
           {running && (
             <button
               onClick={async () => {
+                if (!window.confirm(stopWarning(progress))) return;
                 setStopping(true);
                 try {
                   await cancelRun(run.id);
@@ -751,10 +781,27 @@ export default function EvalRunPage({
 
       {running && (
         <p className="rounded border border-zinc-300 p-3 text-sm">
-          Running — {progress.done + progress.errored} / {progress.total} cells
-          done
-          {progress.running > 0 && `, ${progress.running} in flight`}
-          {progress.errored > 0 && `, ${progress.errored} failed`}.
+          {/* `triggered` et `running` ne veulent pas dire la même chose, et les
+              confondre fait passer pour « en cours » un job qui n'a pas encore
+              démarré. Un démarrage à froid de Cloud Run prend une minute : sans
+              cette distinction, on croit à un blocage. */}
+          {run.status === "triggered" ? (
+            <>
+              <strong>Starting.</strong> The job has been asked to start; no
+              cell has begun yet — {progress.total} queued. A cold start takes
+              about a minute.
+            </>
+          ) : (
+            <>
+              <strong>Running.</strong> {progress.done} graded
+              {progress.running > 0 && `, ${progress.running} in flight`}
+              {/* Les cases qui n'ont pas commencé sont ce qui reste à payer :
+                  c'est le chiffre qu'on cherche quand on hésite à arrêter. */}
+              {progress.pending > 0 && `, ${progress.pending} still to run`}
+              {progress.errored > 0 && `, ${progress.errored} failed`} — out of{" "}
+              {progress.total} cells.
+            </>
+          )}
         </p>
       )}
 
