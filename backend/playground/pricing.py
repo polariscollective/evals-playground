@@ -13,8 +13,17 @@ fournisseurs. Ils changent : ce fichier est le seul endroit à mettre à jour.
 from dataclasses import dataclass
 
 from playground.eval_schemas import EvalRunConfig, ModelUsage
+from playground.shared_data import load
 
-CHARS_PER_TOKEN = 2.5
+_SHARED = load("pricing")
+"""Tarifs, calibrations et catalogue, partagés avec TypeScript.
+
+Les valeurs ci-dessous en sont extraites plutôt qu'écrites ici : c'est le seul
+moyen que le devis affiché par l'interface et le coût calculé par le job ne
+puissent pas diverger. Les changer se fait dans `shared/pricing.json`.
+"""
+
+CHARS_PER_TOKEN = _SHARED["chars_per_token"]
 """Approximation du nombre de caractères par jeton, pour les textes saisis.
 
 Mesurée sur les réponses réelles d'un run en français : 7 293 caractères pour
@@ -28,8 +37,8 @@ au juge. Les sorties, elles, ne sont plus déduites d'une longueur de texte mais
 de `OUTPUT_TOKENS_PER_CALL`.
 """
 
-SHORT_RESPONSE_TOKENS = 200
-LONG_RESPONSE_TOKENS = 6000
+SHORT_RESPONSE_TOKENS = _SHARED["short_response_tokens"]
+LONG_RESPONSE_TOKENS = _SHARED["long_response_tokens"]
 """Bornes d'hypothèse sur la longueur d'une réponse de modèle.
 
 Elles encadrent le devis en supposant que *tous* les modèles répondent très
@@ -39,7 +48,7 @@ dépasse est pire qu'une fourchette large, parce que c'est sur elle que se prend
 la décision de lancer.
 """
 
-DEFAULT_RESPONSE_TOKENS = 1100
+DEFAULT_RESPONSE_TOKENS = _SHARED["default_response_tokens"]
 """Longueur supposée d'une réponse pour un modèle jamais mesuré.
 
 C'est la moyenne tous modèles confondus relevée le 19 août 2026. Elle ne sert
@@ -48,17 +57,7 @@ moyenne globale est une mauvaise réponse à une question qui varie d'un facteur
 quarante d'un modèle à l'autre.
 """
 
-OUTPUT_TOKENS_PER_CALL: dict[str, int] = {
-    # Jetons de sortie facturés par appel, relevés sur les runs réels du
-    # 19 août 2026. Ce sont les nombres du fournisseur, jetons de raisonnement
-    # compris — c'est ce qui explique l'écart de quarante fois entre les
-    # extrêmes, et c'est ce qui est facturé.
-    "openai/gpt-5.6-sol": 5954,
-    "anthropic/claude-sonnet-5": 3608,
-    "openai/gpt-5.6-luna": 401,
-    "anthropic/claude-haiku-4-5": 320,
-    "grok/grok-4.3": 137,
-}
+OUTPUT_TOKENS_PER_CALL: dict[str, int] = _SHARED["output_tokens_per_call"]
 """Longueur de réponse mesurée, par modèle.
 
 Un modèle absent d'ici prend `DEFAULT_RESPONSE_TOKENS` : mieux vaut une valeur
@@ -67,10 +66,10 @@ réponses ont toutes été bloquées par le filtre du fournisseur dans le seul r
 où il a été évalué, ce qui ne mesure rien.
 """
 
-JUDGE_RESPONSE_TOKENS = 200
+JUDGE_RESPONSE_TOKENS = _SHARED["judge_response_tokens"]
 """Le juge rend une note et une phrase : sa sortie est courte et prévisible."""
 
-USD_TO_EUR = 0.92
+USD_TO_EUR = _SHARED["usd_to_eur"]
 """Taux de conversion indicatif. Une estimation, pas une conversion comptable."""
 
 
@@ -83,20 +82,8 @@ class ModelPrice:
 
 
 PRICES: dict[str, ModelPrice] = {
-    "anthropic/claude-opus-5": ModelPrice(5.00, 25.00),
-    # Claude Sonnet 5 est en tarif d'introduction à 2,00 / 10,00 jusqu'au
-    # 31 août 2026. On encode le tarif standard : l'estimation est donc
-    # conservatrice jusqu'à cette date, ce qui est le bon sens de l'erreur.
-    "anthropic/claude-sonnet-5": ModelPrice(3.00, 15.00),
-    "anthropic/claude-haiku-4-5": ModelPrice(1.00, 5.00),
-    "openai/gpt-5.6-sol": ModelPrice(5.00, 30.00),
-    "openai/gpt-5.6-terra": ModelPrice(2.00, 12.00),
-    "openai/gpt-5.6-luna": ModelPrice(0.20, 1.20),
-    # Grok double ses tarifs au-delà de 200 000 jetons d'entrée. Un run de ce
-    # produit n'en approche pas — dix tours font quelques milliers de jetons.
-    "grok/grok-4.6": ModelPrice(2.00, 6.00),
-    "grok/grok-4.5": ModelPrice(2.00, 6.00),
-    "grok/grok-4.3": ModelPrice(1.25, 2.50),
+    name: ModelPrice(tarif["input_per_mtok"], tarif["output_per_mtok"])
+    for name, tarif in _SHARED["prices"].items()
 }
 
 
@@ -377,8 +364,8 @@ def estimate_cost(
     )
 
 
-CACHE_READ_MULTIPLIER = 0.10
-CACHE_WRITE_MULTIPLIER = 1.25
+CACHE_READ_MULTIPLIER = _SHARED["cache_read_multiplier"]
+CACHE_WRITE_MULTIPLIER = _SHARED["cache_write_multiplier"]
 """Tarifs relatifs des jetons d'entrée mis en cache.
 
 Les trois fournisseurs facturent une lecture de cache à 10 % du tarif d'entrée.

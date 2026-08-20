@@ -11,6 +11,7 @@ import os
 from pydantic import BaseModel
 
 from playground.pricing import PRICES
+from playground.shared_data import load
 
 
 class ModelOption(BaseModel):
@@ -44,39 +45,11 @@ class ProviderInfo(BaseModel):
     models: list[ModelOption]
 
 
-_PROVIDERS: list[dict] = [
-    {
-        "id": "anthropic",
-        "label": "Anthropic",
-        "env_vars": ["ANTHROPIC_API_KEY"],
-        "models": [
-            {"id": "anthropic/claude-opus-5", "label": "Claude Opus 5"},
-            {"id": "anthropic/claude-sonnet-5", "label": "Claude Sonnet 5"},
-            {"id": "anthropic/claude-haiku-4-5", "label": "Claude Haiku 4.5"},
-        ],
-    },
-    {
-        "id": "openai",
-        "label": "OpenAI",
-        "env_vars": ["OPENAI_API_KEY"],
-        "models": [
-            {"id": "openai/gpt-5.6-sol", "label": "GPT-5.6 Sol"},
-            {"id": "openai/gpt-5.6-terra", "label": "GPT-5.6 Terra"},
-            {"id": "openai/gpt-5.6-luna", "label": "GPT-5.6 Luna"},
-        ],
-    },
-    {
-        "id": "grok",
-        "label": "xAI (Grok)",
-        # Le provider grok d'inspect accepte l'une ou l'autre variable.
-        "env_vars": ["XAI_API_KEY", "GROK_API_KEY"],
-        "models": [
-            {"id": "grok/grok-4.6", "label": "Grok 4.6"},
-            {"id": "grok/grok-4.5", "label": "Grok 4.5"},
-            {"id": "grok/grok-4.3", "label": "Grok 4.3"},
-        ],
-    },
-]
+_PROVIDERS: list[dict] = load("pricing")["providers"]
+"""Le catalogue, partagé avec TypeScript — voir `shared/pricing.json`.
+
+Volontairement restreint : il ne liste pas tout ce qu'un fournisseur expose,
+mais les quelques modèles qu'on veut proposer par défaut."""
 
 
 def catalog() -> list[ProviderInfo]:
