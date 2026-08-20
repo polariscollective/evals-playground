@@ -2,6 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Ce fichier ne fait **pas** d'authentification. Il aiguille.
 //
+// Nommé `proxy.ts` et non `middleware.ts` : Next 16 a renommé la convention, et
+// le repli de compatibilité qui fonctionne en développement ne suffit pas au
+// déploiement — un `middleware.ts` y produisait un MIDDLEWARE_INVOCATION_FAILED
+// sans autre explication. L'export doit s'appeler `proxy`, et il est nommé,
+// pas par défaut.
+//
 // La version précédente appelait `auth()` de NextAuth ici, donc faisait tourner
 // toute la bibliothèque sur le runtime edge. C'est ce qui a produit un
 // MIDDLEWARE_INVOCATION_FAILED opaque au premier déploiement : quand ce
@@ -28,7 +34,7 @@ const skipAuthInDev =
   process.env.NODE_ENV !== "production" &&
   process.env.LOCAL_AUTHENTICATION_NEEDED === "false";
 
-export default function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (skipAuthInDev) return NextResponse.next();
 
   const signedIn = SESSION_COOKIES.some(
