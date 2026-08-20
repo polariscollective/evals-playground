@@ -6,6 +6,7 @@ l'utilisateur écrit ses paliers, le juge en choisit un, la matrice en fait une
 moyenne. Le code ne connaît que des nombres et les phrases qui vont avec.
 """
 
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser, get_model
@@ -18,6 +19,35 @@ from playground.generation import tool_call_arguments
 
 UNJUDGED = "unjudged"
 """Valeur du score quand le juge n'a rendu aucune note de l'échelle."""
+
+
+@dataclass
+class ScoredSample:
+    """Une case de la matrice, telle que le juge vient de la laisser.
+
+    Ce que le scorer sait d'une répétition au moment où il la termine : d'où
+    elle vient dans la matrice, ce qu'elle a produit, et ce qu'elle vaut. C'est
+    le seul instant où ces trois choses sont réunies — le journal d'inspect les
+    sépare, et attendre la fin du run pour les rassembler ferait perdre la
+    progression et tout ce qu'un job mort emporterait avec lui.
+    """
+
+    scenario_index: int
+    target: str
+    repetition: int
+    temperature: float | None = None
+    score: float | None = None
+    justification: str = ""
+    messages: list[dict] = field(default_factory=list)
+
+    error: str | None = None
+    """Ce qui a cassé, si quelque chose a cassé.
+
+    Distinct d'une note absente : une conversation bloquée par le fournisseur
+    et un juge répondant hors de l'échelle sont des cases traitées, sans note.
+    Un juge qui n'appelle pas son outil, lui, est une panne — et la matrice doit
+    pouvoir les compter séparément.
+    """
 
 JUDGE_SYSTEM = """\
 You are an impartial judge. You are given the transcript of a conversation
@@ -200,7 +230,7 @@ def blocking_reason(transcript: list[dict]) -> str | None:
 @scorer(metrics=[])
 def rubric_judge(
     config: EvalRunConfig,
-    on_complete: Callable[[], None] | None = None,
+    on_scored: Callable[["ScoredSample"], None] | None = None,
     model_args: dict[str, Any] | None = None,
 ) -> Scorer:
     """Fait noter le transcript d'une répétition sur l'échelle du run.
@@ -208,22 +238,44 @@ def rubric_judge(
     Args:
         config: La configuration du run, pour le modèle juge, la question et
             l'échelle.
-        on_complete: Appelé une fois par répétition, pour la progression.
+        on_scored: Appelé une fois par répétition tentée, avec ce qu'elle a
+            donné — notée ou non. C'est par lui que la case est enregistrée au
+            fil de l'eau.
         model_args: Arguments de construction transmis à `get_model`. Voir la
             docstring de `scenario_solver.model_args` (`generation.py`) pour la
             raison de ce fil explicite : `get_model(nom)` seul ne les reçoit
             pas, puisque `mockllm` est exclu de la mémoïsation par inspect.
     """
 
+    def _sample(
+        state: TaskState,
+        grade: float | None,
+        justification: str,
+        error: str | None = None,
+    ) -> ScoredSample:
+        """La case que ce `TaskState` désigne, telle qu'elle vient d'être notée."""
+        metadata = state.metadata or {}
+        return ScoredSample(
+            scenario_index=int(metadata.get("scenario_index", 0)),
+            target=str(metadata.get("target") or ""),
+            repetition=int(metadata.get("repetition", 0)),
+            temperature=metadata.get("temperature"),
+            score=grade,
+            justification=justification,
+            messages=list(metadata.get("transcript") or []),
+            error=error,
+        )
+
     async def score(state: TaskState, target: Target) -> Score:
         transcript = state.metadata.get("transcript") or []
         empeche = blocking_reason(transcript)
         if empeche is not None:
-            # Le compteur de progression doit avancer ici aussi : la
-            # répétition a bien été tentée, elle n'a simplement rien à juger.
-            if on_complete is not None:
-                on_complete()
             justification = f"Not judged — {empeche}."
+            # La case est enregistrée ici aussi : la répétition a bien été
+            # tentée, elle n'a simplement rien à juger. Sans ça elle resterait
+            # « à faire » sur un run pourtant terminé.
+            if on_scored is not None:
+                on_scored(_sample(state, None, justification))
             return Score(
                 value=UNJUDGED,
                 explanation=justification,
@@ -252,12 +304,19 @@ def rubric_judge(
             )
             grade = parse_score(arguments.get("score"), config.rubric)
             justification = str(arguments.get("justification") or "")
-        finally:
-            # Une répétition tentée fait avancer la progression, qu'elle ait
-            # été notée ou non : sans ça, une barre resterait figée sous son
-            # total sur un run pourtant terminé.
-            if on_complete is not None:
-                on_complete()
+        except Exception as erreur:
+            # Le juge n'a pas répondu comme attendu — outil non appelé, appel
+            # en échec. La case est enregistrée non notée, avec la raison, puis
+            # l'erreur repart : inspect la consigne dans son journal, et
+            # `fail_on_error=False` empêche qu'elle avorte le run entier.
+            if on_scored is not None:
+                on_scored(
+                    _sample(state, None, f"Not judged — {erreur}", error=str(erreur))
+                )
+            raise
+
+        if on_scored is not None:
+            on_scored(_sample(state, grade, justification))
 
         return Score(
             value=UNJUDGED if grade is None else grade,

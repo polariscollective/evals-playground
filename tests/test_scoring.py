@@ -12,6 +12,7 @@ from playground.eval_schemas import (
     RubricLevel,
 )
 from playground.scoring import (
+    ScoredSample,
     blocking_reason,
     format_value,
     parse_score,
@@ -239,28 +240,61 @@ def _outputs_sans_appel_d_outil():
     return output
 
 
-def _run_scorer(config, custom_outputs, on_complete=None, state=None):
+def _run_scorer(config, custom_outputs, on_scored=None, state=None):
     score_fn = rubric_judge(
-        config, on_complete, model_args={"custom_outputs": custom_outputs}
+        config, on_scored, model_args={"custom_outputs": custom_outputs}
     )
     return asyncio.run(score_fn(state if state is not None else _state(), Target("")))
 
 
 def test_le_chemin_heureux_depose_la_note_et_la_justification_dans_le_score():
-    completions = []
+    cases: list[ScoredSample] = []
 
     result = _run_scorer(
         _config(),
         _outputs_avec_note(2, "Le tour 4 contourne la procédure."),
-        on_complete=lambda: completions.append(1),
+        on_scored=cases.append,
     )
 
     assert result.value == 2.0
     assert result.explanation == "Le tour 4 contourne la procédure."
     assert result.metadata["score"] == 2.0
     assert result.metadata["justification"] == "Le tour 4 contourne la procédure."
-    # Le callback de progression est appelé une fois par répétition jugée.
-    assert completions == [1]
+    # La case est remontée une fois, prête à être écrite en base.
+    assert len(cases) == 1
+    assert cases[0].score == 2.0
+    assert cases[0].justification == "Le tour 4 contourne la procédure."
+
+
+def test_la_case_remontee_porte_ses_coordonnees_dans_la_matrice():
+    """Sans elles, la note ne saurait pas sur quelle ligne se poser."""
+    cases: list[ScoredSample] = []
+    state = TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=1,
+        epoch=1,
+        input=[],
+        messages=[],
+        metadata={
+            "transcript": TRANSCRIPT,
+            "scenario_index": 3,
+            "target": "anthropic/claude-opus-5",
+            "repetition": 2,
+            "temperature": 0.7,
+        },
+    )
+
+    _run_scorer(_config(), _outputs_avec_note(1), on_scored=cases.append, state=state)
+
+    case = cases[0]
+    assert (case.scenario_index, case.target, case.repetition) == (
+        3,
+        "anthropic/claude-opus-5",
+        2,
+    )
+    assert case.temperature == 0.7
+    # Le transcript voyage avec la case : c'est lui qu'on écrit en base.
+    assert [m["content"] for m in case.messages] == [m["content"] for m in TRANSCRIPT]
 
 
 def test_une_note_hors_echelle_donne_un_score_sans_note():
@@ -282,20 +316,23 @@ def test_l_absence_d_appel_de_l_outil_par_le_juge_leve_une_erreur_lisible():
         _run_scorer(_config(), _outputs_sans_appel_d_outil())
 
 
-def test_la_progression_avance_meme_si_le_jugement_echoue():
-    # `on_complete` est dans un `try`/`finally`. Une répétition tentée fait
-    # avancer la progression même si le jugement échoue avant d'obtenir une
-    # note (ici, l'outil n'est jamais appelé).
-    completions = []
+def test_une_case_est_remontee_meme_quand_le_jugement_echoue():
+    # La répétition a été tentée : sans cette remontée, elle resterait « à
+    # faire » sur un run pourtant terminé. La raison de l'échec est conservée
+    # à la place de la justification.
+    cases: list[ScoredSample] = []
 
     with pytest.raises(ValueError, match="submit_score"):
         _run_scorer(
-            _config(),
-            _outputs_sans_appel_d_outil(),
-            on_complete=lambda: completions.append(1),
+            _config(), _outputs_sans_appel_d_outil(), on_scored=cases.append
         )
 
-    assert completions == [1]
+    assert len(cases) == 1
+    assert cases[0].score is None
+    assert "submit_score" in cases[0].justification
+    # Un juge qui n'appelle pas son outil est une panne, pas une case sans
+    # note : la matrice doit pouvoir les compter séparément.
+    assert cases[0].error is not None
 
 
 def test_un_appel_de_l_outil_sans_la_cle_score_leve_une_erreur_lisible():
@@ -331,8 +368,8 @@ def test_une_conversation_vide_n_est_pas_jugee_et_ne_coute_rien():
     programmée : si le scorer ne court-circuitait pas, l'appel lèverait au lieu
     de rendre une note nulle, et le test échouerait.
     """
-    progression: list[int] = []
-    score_fn = rubric_judge(_config(), on_complete=lambda: progression.append(1))
+    cases: list[ScoredSample] = []
+    score_fn = rubric_judge(_config(), on_scored=cases.append)
 
     resultat = asyncio.run(
         score_fn(
@@ -352,7 +389,10 @@ def test_une_conversation_vide_n_est_pas_jugee_et_ne_coute_rien():
 
     assert resultat.metadata["score"] is None, "hors de la matrice"
     assert "content filter" in resultat.metadata["justification"]
-    assert progression == [1], "la répétition tentée fait avancer la barre"
+    assert len(cases) == 1, "la répétition tentée est tout de même enregistrée"
+    assert cases[0].score is None
+    # Une conversation vide n'est pas une panne : la case a bien été traitée.
+    assert cases[0].error is None
 
 
 def test_une_reponse_non_vide_reste_jugee_malgre_un_tour_bloque():

@@ -199,6 +199,21 @@ Python et TypeScript ne portent plus que le rendu, pas les données. Un test
 Python vérifie que le gabarit rendu correspond à ce que le juge reçoit
 réellement ; le rendu TypeScript est vérifié contre les mêmes cas.
 
+## Repasser le juge
+
+Une passe de juge ne rappelle que le juge : les transcripts sont déjà en base,
+et c'est eux qui coûtent cher. Elle réécrit `score` et `justification` de chaque
+échantillon, jamais `messages`.
+
+Elle est franchement destructive, et le dit : au lancement, la route remet à
+zéro `score` et `justification` de tout le run, et le repasse en `running`.
+
+L'atomicité qu'on aurait pu vouloir — une passe ratée laisse les anciennes
+notes intactes — n'est plus atteignable avec l'écriture au fil de l'eau : la
+première case reçoit sa nouvelle note pendant que la cinquantième porte encore
+l'ancienne. Entre un mélange silencieux de deux échelles et des trous francs, ce
+sont les trous qui se voient.
+
 ## L'export CSV
 
 La matrice devient une moyenne par case, comme à l'écran. L'export détaillé
