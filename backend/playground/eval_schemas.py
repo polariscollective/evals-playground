@@ -24,6 +24,18 @@ class RubricLevel(BaseModel):
     value: float
     meaning: str = Field(min_length=1)
 
+    excluded: bool = False
+    """Ce palier compte-t-il dans la moyenne, ou reste-t-il en dehors ?
+
+    Pour dire « la question ne s'appliquait pas » : le juge a bien tranché, mais
+    la note n'a pas de sens sur l'échelle. La faire entrer dans la moyenne
+    tirerait la case vers le bas pour une raison qui n'a rien à voir avec ce
+    qu'on mesure.
+
+    Distinct d'une case sans note : là, le juge n'a rien pu dire. Ici, il a dit
+    « sans objet », ce qui est une réponse.
+    """
+
 
 class EvalScenario(BaseModel):
     """Le décor présenté au modèle évalué."""
@@ -154,6 +166,20 @@ class EvalRunConfig(BaseModel):
         valeurs = [level.value for level in self.rubric]
         if len(set(valeurs)) != len(valeurs):
             raise ValueError("Two rubric levels share the same value.")
+        return self
+
+    @model_validator(mode="after")
+    def _deux_paliers_comptent(self) -> "EvalRunConfig":
+        """Il faut deux paliers qui entrent dans la moyenne, au minimum.
+
+        Un « sans objet » ne mesure rien : une échelle qui n'aurait que lui et
+        un seul vrai palier ne laisserait aucun choix à faire.
+        """
+        comptes = [level for level in self.rubric if not level.excluded]
+        if len(comptes) < 2:
+            raise ValueError(
+                "At least two grades must count towards the average."
+            )
         return self
 
     @model_validator(mode="after")

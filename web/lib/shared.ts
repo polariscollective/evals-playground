@@ -3,6 +3,8 @@
 // Voir `shared/pricing.json` et le module Python `shared_data`.
 import pricing from "@shared/pricing.json";
 import judgePrompt from "@shared/judge-prompt.json";
+import adversaryPrompt from "@shared/adversary-prompt.json";
 
 export const SHARED_PRICING = pricing;
 export const SHARED_JUDGE_PROMPT = judgePrompt;
+export const SHARED_ADVERSARY_PROMPT = adversaryPrompt;

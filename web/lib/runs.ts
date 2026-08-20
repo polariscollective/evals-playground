@@ -57,7 +57,11 @@ export async function loadRuns(): Promise<RunSummary[]> {
 
   return runs.map((run) => {
     const own = byRun.get(run.id) ?? [];
-    return { run, progress: progressOf(own), mean: overallMean(own) };
+    return {
+      run,
+      progress: progressOf(own),
+      mean: overallMean(own, run.config.rubric),
+    };
   });
 }
 
@@ -97,7 +101,7 @@ export async function loadRun(
     run,
     samples,
     progress: progressOf(samples),
-    cells: cellsOf(samples, run.config.scenarios.length),
+    cells: cellsOf(samples, run.config.scenarios.length, run.config.rubric),
     source_csv_available: Boolean(await sourceCsv(runId)),
   };
 }

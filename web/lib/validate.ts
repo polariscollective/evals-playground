@@ -37,6 +37,12 @@ export function rubricProblem(rubric: unknown): string | null {
     // qu'on lui avait donné.
     return "two grades cannot share the same value";
   }
+  // Un « sans objet » ne mesure rien : une échelle qui n'aurait que lui et un
+  // seul vrai palier ne laisserait aucun choix à faire.
+  const comptes = (rubric as RubricLevel[]).filter((level) => !level.excluded);
+  if (comptes.length < 2) {
+    return "at least two grades must count towards the average";
+  }
   return null;
 }
 

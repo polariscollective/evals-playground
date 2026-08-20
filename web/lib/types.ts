@@ -19,6 +19,10 @@ export type SampleStatus =
 export interface RubricLevel {
   value: number;
   meaning: string;
+  /** Hors moyenne : le juge a tranché, mais la note n'a pas de sens sur
+   *  l'échelle — « la question ne s'appliquait pas ». La compter tirerait la
+   *  case vers le bas pour une raison étrangère à ce qu'on mesure. */
+  excluded?: boolean;
 }
 
 export interface EvalScenario {
@@ -146,6 +150,8 @@ export interface Cell {
   errored: number;
   /** Jamais commencée : le run a été arrêté avant d'y arriver. */
   cancelled: number;
+  /** Notée « sans objet » : le juge a répondu, mais hors moyenne. */
+  excluded: number;
   pending: number;
   mean: number | null;
   /** Somme de ce qu'ont coûté les cases de cette case de matrice. */

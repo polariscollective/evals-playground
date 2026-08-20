@@ -93,10 +93,29 @@ def test_la_borne_basse_est_inferieure_a_la_borne_haute():
     assert 0 < cost.min_usd < cost.max_usd
 
 
-def test_doubler_les_repetitions_double_le_cout():
-    simple = estimate_cost(_config(repetitions=5))
-    double = estimate_cost(_config(repetitions=10))
-    assert double.min_usd == pytest.approx(simple.min_usd * 2, rel=1e-6)
+def test_doubler_les_repetitions_double_le_volume():
+    """Vérifié sur les jetons, pas sur les dollars.
+
+    Les montants sont arrondis à quatre décimales avant d'être renvoyés : sur
+    quelques centimes, `0.0154 × 2` ne retombe pas sur `0.0309`, alors que le
+    volume sous-jacent, lui, double au jeton près. C'est la proportionnalité
+    qu'on vérifie, pas la façon de l'arrondir.
+    """
+
+    def volume(repetitions):
+        v = estimate_tokens(_config(repetitions=repetitions), 200)
+        return (
+            sum(t.input for t in v.per_model.values()),
+            sum(t.output for t in v.per_model.values()),
+        )
+
+    simple_in, simple_out = volume(5)
+    double_in, double_out = volume(10)
+    assert (double_in, double_out) == (simple_in * 2, simple_out * 2)
+
+    # Et le prix suit, à l'arrondi près.
+    cout = estimate_cost(_config(repetitions=10)).min_usd
+    assert cout == pytest.approx(estimate_cost(_config(repetitions=5)).min_usd * 2, rel=1e-2)
 
 
 def test_un_modele_cher_coute_plus_qu_un_modele_bon_marche():
@@ -221,7 +240,9 @@ def test_le_detail_par_modele_totalise_le_prix_annonce():
         "grok/grok-4.3",
         "anthropic/claude-haiku-4-5",
     }
-    assert sum(c.usd for c in cost.per_model) == pytest.approx(cost.usd, rel=1e-3)
+    # Même raison : chaque coût par modèle est arrondi séparément, donc leur
+    # somme s'écarte du total de quelques millièmes de centime.
+    assert sum(c.usd for c in cost.per_model) == pytest.approx(cost.usd, rel=1e-2)
     # Du plus cher au moins cher : c'est le premier de la liste qui explique
     # une facture, et c'est lui qu'on veut lire en premier.
     montants = [c.usd for c in cost.per_model]

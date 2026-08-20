@@ -5,7 +5,11 @@
 // le coût *réel*, calculé après coup sur les jetons rapportés par les
 // fournisseurs ; celui-ci ne fait que l'estimation, qui doit être affichée
 // avant que le moindre Python ne tourne.
-import { SHARED_PRICING as S } from "./shared";
+import {
+  SHARED_ADVERSARY_PROMPT as A,
+  SHARED_JUDGE_PROMPT as J,
+  SHARED_PRICING as S,
+} from "./shared";
 import type { CostEstimate, EvalRunConfig, ModelCost } from "./types";
 
 const PRICES = S.prices as Record<
@@ -31,6 +35,41 @@ function tokens(text: string): number {
 function rubricTokens(config: EvalRunConfig): number {
   return config.rubric.reduce((sum, level) => sum + tokens(level.meaning) + 4, 0);
 }
+
+/** Jetons d'un gabarit, une fois ses emplacements retirés : la part que le
+ * modèle reçoit à chaque appel quoi qu'on lui demande. */
+function fixedTokens(text: string, ...placeholders: string[]): number {
+  for (const placeholder of placeholders) text = text.replaceAll(placeholder, "");
+  return tokens(text);
+}
+
+/** Ce que le juge reçoit à chaque appel en plus du run : son message système et
+ * l'ossature de son message utilisateur. Les ignorer sous-estimait chaque appel,
+ * d'autant plus que la matrice est grande.
+ *
+ * Mesuré sur les gabarits plutôt qu'écrit en dur : une reformulation du prompt
+ * se répercute alors sur le devis toute seule. */
+const JUDGE_OVERHEAD_TOKENS =
+  fixedTokens(J.system) +
+  fixedTokens(
+    J.user_template,
+    "{criterion}",
+    "{transcript}",
+    "{rubric}",
+    "{values}",
+  );
+
+/** Ce que l'adversaire reçoit en plus de son objectif. La consigne de
+ * confidentialité y figure **deux fois**, avant et après l'objectif — d'où le
+ * facteur deux, qui n'est pas une faute de frappe. */
+const ADVERSARY_OVERHEAD_TOKENS =
+  fixedTokens(
+    A.system_template,
+    "{notice}",
+    "{adversary_prompt}",
+    "{opening_message}",
+  ) +
+  2 * tokens(A.confidentiality_notice);
 
 interface ModelTokens {
   input: number;
@@ -90,13 +129,13 @@ export function estimateTokens(
         if (turn < config.turns - 1) {
           // L'historique contient déjà le message d'ouverture : ne compter que
           // le prompt de l'adversaire en plus.
-          adversaryInput += adversaryPrompt + history;
+          adversaryInput += adversaryPrompt + history + ADVERSARY_OVERHEAD_TOKENS;
           adversaryOutput += adversaryResponse;
           history += adversaryResponse;
         }
       }
 
-      const judgeInput = question + system + history;
+      const judgeInput = question + system + history + JUDGE_OVERHEAD_TOKENS;
       const weight = config.repetitions;
 
       add(target, targetInput * weight, targetOutput * weight, targetResponse);

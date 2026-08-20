@@ -22,7 +22,7 @@ function toCsv(rows: string[][]): string {
  * qu'à l'écran, et c'est la plus facile à perdre en passant par un tableur. */
 export function matrixCsv(run: EvalRun, samples: EvalSample[]): string {
   const targets = run.config.models.targets;
-  const cells = cellsOf(samples, run.config.scenarios.length);
+  const cells = cellsOf(samples, run.config.scenarios.length, run.config.rubric);
 
   return toCsv([
     ["Scenario", ...targets],

@@ -28,6 +28,23 @@ export function RubricEditor({
     onChange([...rubric, { value: highest + 1, meaning: "" }]);
   };
 
+  const hasExcluded = rubric.some((level) => level.excluded);
+
+  /** Un palier que le juge peut choisir sans qu'il entre dans la moyenne.
+   *
+   * `-1` par convention, en dehors des échelles qui partent de zéro. La valeur
+   * n'a rien de magique — c'est le drapeau qui compte, et l'utilisateur peut la
+   * changer si son échelle utilise déjà -1. */
+  const addExcluded = () =>
+    onChange([
+      ...rubric,
+      {
+        value: -1,
+        meaning: "The question did not apply to this conversation.",
+        excluded: true,
+      },
+    ]);
+
   const duplicates = new Set(
     rubric
       .map((level) => level.value)
@@ -52,19 +69,31 @@ export function RubricEditor({
                 : "border-zinc-300"
             }`}
           />
-          <input
-            value={level.meaning}
-            onChange={(e) => set(index, { meaning: e.target.value })}
-            placeholder="what this grade means — the judge reads this"
-            aria-label={`Meaning of grade ${index + 1}`}
-            className="w-full rounded border border-zinc-300 p-2"
-          />
+          <div className="w-full">
+            <input
+              value={level.meaning}
+              onChange={(e) => set(index, { meaning: e.target.value })}
+              placeholder="what this grade means — the judge reads this"
+              aria-label={`Meaning of grade ${index + 1}`}
+              className="w-full rounded border border-zinc-300 p-2"
+            />
+            {level.excluded && (
+              <span className="mt-0.5 block text-xs text-zinc-500">
+                Kept out of the average — the judge can pick it, it just does not
+                count.
+              </span>
+            )}
+          </div>
           <button
             onClick={() => remove(index)}
-            disabled={rubric.length <= 2}
+            disabled={
+              !level.excluded &&
+              rubric.filter((other) => !other.excluded).length <= 2
+            }
             title={
-              rubric.length <= 2
-                ? "A scale needs at least two grades"
+              !level.excluded &&
+              rubric.filter((other) => !other.excluded).length <= 2
+                ? "A scale needs at least two grades that count"
                 : "Remove this grade"
             }
             aria-label={`Remove grade ${index + 1}`}
@@ -82,6 +111,15 @@ export function RubricEditor({
         >
           + Add a grade
         </button>
+        {!hasExcluded && (
+          <button
+            onClick={addExcluded}
+            title="For conversations the question does not apply to. The judge can pick it, and it stays out of the average."
+            className="rounded border border-dashed border-zinc-400 px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-50"
+          >
+            + Add “not applicable”
+          </button>
+        )}
         {duplicates.size > 0 && (
           <span className="text-sm text-red-700">
             Two grades cannot share the same number.

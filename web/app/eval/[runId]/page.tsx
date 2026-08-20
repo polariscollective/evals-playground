@@ -73,7 +73,21 @@ function ScoreBadge({
   }
 
   const { min, max } = rubricBounds(rubric);
-  const meaning = rubric.find((level) => level.value === sample.score)?.meaning;
+  const level = rubric.find((one) => one.value === sample.score);
+  const meaning = level?.meaning;
+
+  if (level?.excluded) {
+    // Le juge a répondu, mais sa réponse reste hors moyenne : ni une note, ni
+    // une absence de note.
+    return (
+      <span
+        className="rounded border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600"
+        title={meaning}
+      >
+        n/a — {meaning}
+      </span>
+    );
+  }
   const t = max > min ? (sample.score - min) / (max - min) : 0;
   const style =
     t <= 0
@@ -789,7 +803,13 @@ export default function EvalRunPage({
                             className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric)}`}
                             title={
                               cell?.mean != null
-                                ? `${distribution(scoresOf(index, target))} — average ${formatMean(cell.mean)}` +
+                                ? `${distribution(scoresOf(index, target))} — average of ${cell.judged} of ${run.config.repetitions}` +
+                                  (cell.excluded > 0
+                                    ? ` · ${cell.excluded} not applicable`
+                                    : "") +
+                                  (cell.unjudged > 0
+                                    ? ` · ${cell.unjudged} not judged`
+                                    : "") +
                                   (cell.cancelled > 0
                                     ? ` · ${cell.cancelled} never ran`
                                     : "") +
@@ -803,13 +823,26 @@ export default function EvalRunPage({
                                     : "nothing judged"
                             }
                           >
-                            {cell?.mean != null
-                              ? formatMean(cell.mean)
-                              : waiting
-                                ? "…"
-                                : nothingRan
-                                  ? "∅"
-                                  : "—"}
+                            {cell?.mean != null ? (
+                              <>
+                                {formatMean(cell.mean)}
+                                {cell.judged < run.config.repetitions && (
+                                  // La moyenne ne porte pas sur toutes les
+                                  // répétitions : le dire, sinon on la lit
+                                  // comme si elle valait autant que ses
+                                  // voisines.
+                                  <span className="ml-1 text-xs font-normal opacity-70">
+                                    ({cell.judged}/{run.config.repetitions})
+                                  </span>
+                                )}
+                              </>
+                            ) : waiting ? (
+                              "…"
+                            ) : nothingRan ? (
+                              "∅"
+                            ) : (
+                              "—"
+                            )}
                           </button>
                         </td>
                       );
@@ -826,7 +859,10 @@ export default function EvalRunPage({
                 stopped before reaching it.{" "}
               </>
             )}
-            Average of the grades the judge gave, over {run.config.repetitions}{" "}
+            A cell showing <strong>(2/3)</strong> means its average rests on
+            fewer repetitions than were run — some were not applicable, not
+            judged, or never ran. Average of the grades the judge gave, over{" "}
+            {run.config.repetitions}{" "}
             repetition{run.config.repetitions > 1 ? "s" : ""}, on your{" "}
             {formatValue(min)}–{formatValue(max)} scale. The top of the scale is
             the dark end. A hatched cell means nothing could be judged — which is

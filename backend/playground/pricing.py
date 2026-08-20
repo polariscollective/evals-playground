@@ -172,8 +172,50 @@ def _tokens(text: str) -> int:
 
 
 def _rubric_tokens(config: EvalRunConfig) -> int:
-    """Jetons de l'échelle telle qu'elle est écrite au juge."""
+    """Jetons de l'échelle telle qu'elle est écrite au juge.
+
+    Les paliers exclus de la moyenne comptent ici : le juge les reçoit comme
+    les autres, c'est seulement l'agrégation qui les met de côté.
+    """
     return sum(_tokens(level.meaning) + 4 for level in config.rubric)
+
+
+def _fixed_tokens(text: str, *placeholders: str) -> int:
+    """Jetons d'un gabarit, une fois ses emplacements retirés.
+
+    C'est la part qui ne dépend pas du run : le texte que le modèle reçoit à
+    chaque appel quoi qu'on lui demande.
+    """
+    for emplacement in placeholders:
+        text = text.replace(emplacement, "")
+    return _tokens(text)
+
+
+JUDGE_OVERHEAD_TOKENS = _fixed_tokens(
+    load("judge-prompt")["system"]
+) + _fixed_tokens(
+    load("judge-prompt")["user_template"],
+    "{criterion}", "{transcript}", "{rubric}", "{values}",
+)
+"""Ce que le juge reçoit à chaque appel en plus du run lui-même.
+
+Son message système et l'ossature de son message utilisateur — environ trois
+cents jetons. Les ignorer sous-estimait chaque appel de juge, d'autant plus que
+la matrice est grande.
+
+Mesuré sur les gabarits plutôt qu'écrit en dur : une reformulation du prompt se
+répercute alors sur le devis toute seule.
+"""
+
+ADVERSARY_OVERHEAD_TOKENS = _fixed_tokens(
+    load("adversary-prompt")["system_template"],
+    "{notice}", "{adversary_prompt}", "{opening_message}",
+) + 2 * _tokens(load("adversary-prompt")["confidentiality_notice"])
+"""Ce que l'adversaire reçoit en plus de son objectif, à chaque appel.
+
+La consigne de confidentialité y figure **deux fois**, avant et après
+l'objectif — d'où le facteur deux, qui n'est pas une faute de frappe.
+"""
 
 
 def _add(
@@ -239,11 +281,13 @@ def estimate_tokens(
                 if turn < config.turns - 1:
                     # L'historique contient déjà le message d'ouverture : ne
                     # compter que le prompt de l'adversaire en plus.
-                    adversary_input += adversary_prompt + history
+                    adversary_input += (
+                        adversary_prompt + history + ADVERSARY_OVERHEAD_TOKENS
+                    )
                     adversary_output += adversary_response
                     history += adversary_response
 
-            judge_input = question + system + history
+            judge_input = question + system + history + JUDGE_OVERHEAD_TOKENS
 
             weight = config.repetitions
             _add(

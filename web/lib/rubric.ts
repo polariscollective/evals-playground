@@ -28,8 +28,12 @@ export function formatMean(mean: number): string {
 export function rubricBounds(
   rubric: RubricLevel[] | undefined,
 ): { min: number; max: number } {
-  if (!rubric?.length) return { min: 0, max: 0 };
-  const values = rubric.map((level) => level.value);
+  // Les paliers hors moyenne sont écartés : un « sans objet » à -1 tirerait
+  // sinon la borne basse vers lui, et toute la matrice changerait de couleur
+  // pour un palier qui ne mesure rien.
+  const comptes = (rubric ?? []).filter((level) => !level.excluded);
+  if (!comptes.length) return { min: 0, max: 0 };
+  const values = comptes.map((level) => level.value);
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 

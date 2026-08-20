@@ -3,7 +3,7 @@
 // Portage de ce que faisait `backend/playground/matrix.py` : le calcul vit
 // désormais côté lecture, puisque c'est l'interface qui l'affiche et l'export
 // qui le recopie.
-import type { Cell, EvalSample, Progress } from "./types";
+import type { Cell, EvalSample, Progress, RubricLevel } from "./types";
 
 /** Où en est un run, compté sur ses cases plutôt que sur un compteur à part.
  *
@@ -34,6 +34,7 @@ function emptyCell(): Cell {
     unjudged: 0,
     errored: 0,
     cancelled: 0,
+    excluded: 0,
     pending: 0,
     mean: null,
     cost_usd: 0,
@@ -49,10 +50,22 @@ function emptyCell(): Cell {
  * Une case sans note est comptée à part plutôt qu'ignorée — et une case en
  * panne encore à part. La moyenne ne dit rien de ce qu'elle n'a pas pu
  * mesurer, et « le modèle a obtenu zéro » n'est pas « on ne sait pas ». */
+/** Les notes que l'échelle met hors moyenne.
+ *
+ * Un ensemble plutôt qu'un test par palier : la recherche a lieu une fois par
+ * case, et la matrice d'un gros run en compte des centaines. */
+function excludedValues(rubric: RubricLevel[] | undefined): Set<number> {
+  return new Set(
+    (rubric ?? []).filter((level) => level.excluded).map((level) => level.value),
+  );
+}
+
 export function cellsOf(
   samples: EvalSample[],
   scenarioCount: number,
+  rubric?: RubricLevel[],
 ): Record<string, Cell>[] {
+  const horsMoyenne = excludedValues(rubric);
   const cells: Record<string, Cell>[] = Array.from(
     { length: scenarioCount },
     () => ({}),
@@ -77,6 +90,10 @@ export function cellsOf(
       cell.errored += 1;
     } else if (sample.score === null) {
       cell.unjudged += 1;
+    } else if (horsMoyenne.has(sample.score)) {
+      // Le juge a tranché « sans objet » : c'est une réponse, pas une absence
+      // de réponse, mais elle ne peut pas entrer dans une moyenne.
+      cell.excluded += 1;
     } else {
       cell.judged += 1;
       const key = `${sample.scenario_index} ${sample.target_model}`;
@@ -100,10 +117,14 @@ export function cellsOf(
  * Calculée sur les notes et non sur les moyennes des cases : une moyenne de
  * moyennes donnerait le même poids à une case notée dix fois et à une case
  * notée une seule. */
-export function overallMean(samples: EvalSample[]): number | null {
+export function overallMean(
+  samples: EvalSample[],
+  rubric?: RubricLevel[],
+): number | null {
+  const horsMoyenne = excludedValues(rubric);
   const notes = samples
     .map((sample) => sample.score)
-    .filter((score): score is number => score !== null);
+    .filter((score): score is number => score !== null && !horsMoyenne.has(score));
   if (notes.length === 0) return null;
   return notes.reduce((sum, note) => sum + note, 0) / notes.length;
 }

@@ -389,6 +389,18 @@ function EvaluateForm() {
     }
   };
 
+  // Ce que le devis suppose en moyenne pour les modèles évalués de ce run.
+  // Pondéré par leur nombre d'appels, donc simplement la moyenne des longueurs
+  // retenues — le juge est exclu, sa réponse étant une constante courte qui
+  // n'apprend rien sur ce qu'on est en train de régler.
+  const assumedAverage = (() => {
+    const lengths = (estimate?.per_model ?? [])
+      .filter((model) => targets.includes(model.model))
+      .map((model) => model.response_tokens);
+    if (lengths.length === 0) return 1100;
+    return Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+  })();
+
   const modelRows = providers.flatMap((provider) =>
     provider.models.map((model) => ({
       id: model.id,
@@ -865,19 +877,18 @@ function EvaluateForm() {
             </table>
 
             <label className="flex flex-wrap items-center gap-2 text-sm">
-              <span>Answer length per model:</span>
-              <span className="text-zinc-500">
-                {responseTokens === null
-                  ? "measured on real runs"
-                  : "the same for all of them"}
-              </span>
+              <span>Answer length:</span>
               <input
                 type="number"
                 min={1}
                 max={100000}
                 step={100}
                 value={responseTokens ?? ""}
-                placeholder="override"
+                // Le champ vide n'est pas un champ oublié : il veut dire « à
+                // chacun la sienne ». L'indication montre ce que ça donne en
+                // moyenne pour les modèles cochés, pour qu'on voie sur quoi le
+                // devis repose sans avoir à lire le tableau ci-dessus.
+                placeholder={String(assumedAverage)}
                 onChange={(e) =>
                   setResponseTokens(
                     e.target.value.trim() === ""
@@ -888,6 +899,24 @@ function EvaluateForm() {
                 className="w-28 rounded border border-zinc-300 p-1 text-right"
               />
               <span>tokens</span>
+              <span className="text-zinc-500">
+                {responseTokens === null ? (
+                  <>
+                    — each model uses its own measured length (
+                    {assumedAverage.toLocaleString()} on average here)
+                  </>
+                ) : (
+                  <>
+                    — imposed on every model.{" "}
+                    <button
+                      onClick={() => setResponseTokens(null)}
+                      className="underline hover:text-zinc-900"
+                    >
+                      Use the measured lengths
+                    </button>
+                  </>
+                )}
+              </span>
             </label>
 
             <p className="text-xs text-zinc-500">
