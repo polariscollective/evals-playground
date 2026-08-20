@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { getEvalRuns } from "@/lib/api";
+import { getRuns } from "@/lib/api";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
-import type { Cell, EvalRunRecord } from "@/lib/types";
+import type { RunSummary } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "queued",
@@ -21,31 +21,6 @@ const STATUS_STYLE: Record<string, string> = {
   error: "bg-red-100 text-red-800",
   cancelled: "bg-amber-100 text-amber-900",
 };
-
-/** Moyenne des notes d'un run entier, ou null si rien n'a pu être noté.
-
-    La distinction compte : rien de noté n'est pas la même chose qu'un run
-    entièrement au bas de son échelle.
-
-    Les cases portent déjà des moyennes, mais on repart des conversations : une
-    moyenne de moyennes donnerait le même poids à une case notée dix fois et à
-    une case notée une seule. */
-function overallMean(record: EvalRunRecord): number | null {
-  const notes = record.conversations
-    .map((c) => c.score)
-    .filter((score): score is number => score !== null);
-  if (notes.length > 0) {
-    return notes.reduce((sum, note) => sum + note, 0) / notes.length;
-  }
-  // Un run dont les conversations n'ont pas été chargées garde ses cases : on
-  // s'en contente plutôt que d'afficher un tiret trompeur.
-  const cells = record.cells.flatMap((row) => Object.values(row) as Cell[]);
-  const judged = cells.reduce((sum, cell) => sum + cell.judged, 0);
-  if (judged === 0) return null;
-  return (
-    cells.reduce((sum, cell) => sum + (cell.mean ?? 0) * cell.judged, 0) / judged
-  );
-}
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -107,12 +82,12 @@ function CopyId({ value }: { value: string }) {
 }
 
 export default function RunsPage() {
-  const [runs, setRuns] = useState<EvalRunRecord[] | null>(null);
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setRuns(await getEvalRuns());
+      setRuns(await getRuns());
     } catch (e) {
       setError((e as Error).message);
     }
@@ -126,7 +101,7 @@ export default function RunsPage() {
   // Tant qu'un run tourne, la liste se rafraîchit : c'est le seul endroit d'où
   // l'on peut suivre plusieurs runs à la fois.
   useEffect(() => {
-    if (!runs?.some((r) => r.status === "running" || r.status === "pending"))
+    if (!runs?.some((r) => r.run.status === "running" || r.run.status === "pending"))
       return;
     const timer = setInterval(load, 3000);
     return () => clearInterval(timer);
@@ -177,27 +152,26 @@ export default function RunsPage() {
             </tr>
           </thead>
           <tbody>
-            {runs.map((run) => {
-              const mean = overallMean(run);
+            {runs.map(({ run, progress, mean }) => {
               const { min, max } = rubricBounds(run.config.rubric);
               const running =
                 run.status === "running" || run.status === "pending";
               return (
                 <tr
-                  key={run.run_id}
+                  key={run.id}
                   className="border-b border-zinc-200 align-top hover:bg-zinc-50"
                 >
                   {/* La colonne du titre prend la place restante : c'est par lui
                       qu'on retrouve un run, pas par sa forme ni son statut. */}
                   <td className="w-full py-3 pr-8">
                     <Link
-                      href={`/eval/${run.run_id}`}
+                      href={`/eval/${run.id}`}
                       className="font-medium underline hover:text-teal-800"
                     >
-                      {run.label ?? run.config.scenarios[0]?.title ?? run.run_id}
+                      {run.label ?? run.config.scenarios[0]?.title ?? run.id}
                     </Link>
                     <div className="text-xs text-zinc-500">
-                      <CopyId value={run.run_id} />
+                      <CopyId value={run.id} />
                     </div>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-600">
@@ -219,7 +193,7 @@ export default function RunsPage() {
                     </span>
                     {running && (
                       <div className="text-xs text-zinc-500">
-                        {run.progress.completed} / {run.progress.total}
+                        {progress.done + progress.errored} / {progress.total}
                       </div>
                     )}
                   </td>

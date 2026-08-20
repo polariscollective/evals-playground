@@ -3,11 +3,10 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  createEvalRun,
+  createRun,
   estimateRun,
   getCatalog,
-  getEvalRun,
-  getSelected,
+  getRun,
   previewJudgePrompt,
   sourceCsvText,
 } from "@/lib/api";
@@ -19,7 +18,6 @@ import type {
   JudgePromptPreview,
   ProviderInfo,
   RubricLevel,
-  SelectedScenario,
 } from "@/lib/types";
 import { NotesField } from "@/components/NotesField";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -60,7 +58,6 @@ function EvaluateForm() {
   const searchParams = useSearchParams();
   const relaunchOf = searchParams.get("from");
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [selected, setSelected] = useState<SelectedScenario[]>([]);
 
   const [label, setLabel] = useState("");
   const [notes, setNotes] = useState("");
@@ -105,10 +102,9 @@ function EvaluateForm() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([getCatalog(), getSelected()])
-      .then(([catalog, scenarios]) => {
+    getCatalog()
+      .then((catalog) => {
         setProviders(catalog);
-        setSelected(scenarios);
         const available = catalog.find((p) => p.key_present);
         // Un relaunch apporte ses propres modèles : les défauts du catalogue
         // les écraseraient selon l'ordre d'arrivée des deux requêtes.
@@ -126,8 +122,8 @@ function EvaluateForm() {
     if (!relaunchOf) return;
     let cancelled = false;
 
-    getEvalRun(relaunchOf)
-      .then(async (run) => {
+    getRun(relaunchOf)
+      .then(async ({ run, source_csv_available }) => {
         if (cancelled) return;
         const config = run.config;
         setLabel(run.label ?? "");
@@ -154,7 +150,7 @@ function EvaluateForm() {
         }
 
         setSource("csv");
-        const text = run.source_csv_available
+        const text = source_csv_available
           ? await sourceCsvText(relaunchOf).catch(() => null)
           : null;
         if (cancelled) return;
@@ -382,11 +378,11 @@ function EvaluateForm() {
     setError(null);
     setLaunching(true);
     try {
-      const record = await createEvalRun(
+      const { run_id } = await createRun(
         config(),
         source === "csv" ? csvText : null,
       );
-      router.push(`/eval/${record.run_id}`);
+      router.push(`/eval/${run_id}`);
     } catch (e) {
       setError((e as Error).message);
       setLaunching(false);
@@ -511,30 +507,6 @@ function EvaluateForm() {
 
         {source === "manual" ? (
           <div className="space-y-3">
-            {selected.length > 0 && (
-              <select
-                defaultValue=""
-                onChange={(e) => {
-                  const s = selected.find(
-                    (x) => x.scenario_id === e.target.value,
-                  );
-                  if (!s) return;
-                  setTitle(s.title);
-                  setSystemPrompt(s.system_prompt);
-                  setOpeningMessage(s.opening_message);
-                }}
-                className="rounded border border-zinc-300 p-1 text-sm"
-              >
-                <option value="" disabled>
-                  Load a kept scenario…
-                </option>
-                {selected.map((s) => (
-                  <option key={s.scenario_id} value={s.scenario_id}>
-                    {s.title}
-                  </option>
-                ))}
-              </select>
-            )}
             <label className="block space-y-1">
               <span className="text-sm font-medium">Title</span>
               <input

@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Lance le backend et le front ensemble. Ctrl-C arrête les deux.
+# Lance l'application. Il n'y a plus qu'un serveur : les routes /api de Next
+# portent ce que FastAPI faisait, et le moteur d'évaluation ne tourne que dans
+# un job, déclenché à la demande.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ ! -f .env ]; then
   echo "Pas de .env — copie .env.example et remplis tes clés." >&2
+  exit 1
 fi
 
-trap 'kill 0' EXIT
+# Next lit ses variables depuis web/, pas depuis la racine.
+ln -sf ../.env web/.env.local
 
-.venv/bin/uvicorn playground.api:app --app-dir backend --port 8000 --reload &
-npm --prefix web run dev &
-wait
+npm --prefix web run dev
