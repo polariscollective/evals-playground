@@ -73,6 +73,19 @@ function runLocally(runId: string, mode: JobMode): string {
   return `local:${child.pid}`;
 }
 
+/** Une variable telle qu'on a pu la coller, débarrassée de ce qui l'entoure.
+ *
+ * Mesuré contre le proxy réel : une espace ou un retour à la ligne *à la fin*
+ * sont sans effet — la couche HTTP rogne les blancs de bord d'un en-tête. Mais
+ * une espace au début, ou des guillemets restés autour de la valeur, donnent un
+ * 401 « unauthorized » impossible à distinguer d'un mauvais secret. Ces deux
+ * accidents-là sont ceux qu'un copier-coller dans une interface de variables
+ * d'environnement produit vraiment. */
+function pasted(value: string | undefined): string | undefined {
+  const clean = value?.trim().replace(/^["']|["']$/g, "");
+  return clean || undefined;
+}
+
 /** Démarre le job, et renvoie de quoi le retrouver.
  *
  * Throws:
@@ -88,8 +101,8 @@ export async function startJob(
     return { execution: runLocally(runId, mode), origin: "local" };
   }
 
-  const url = process.env.BATCH_TRIGGER_URL;
-  const secret = process.env.BATCH_TRIGGER_SECRET;
+  const url = pasted(process.env.BATCH_TRIGGER_URL);
+  const secret = pasted(process.env.BATCH_TRIGGER_SECRET);
   if (!url || !secret) {
     throw new Error(
       process.env.NODE_ENV === "production"
