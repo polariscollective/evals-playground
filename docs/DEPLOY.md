@@ -27,7 +27,7 @@ gabarits du prompt du juge sont partagés avec le Python, et les recopier dans
 SUPABASE_URL                   https://hkqzamibfpyvlowiqgpn.supabase.co
 SUPABASE_SERVICE_ROLE_KEY      la clé de service du projet « evals »
 BATCH_TRIGGER_URL              https://polaris-batch-trigger-…-ew.a.run.app
-BATCH_TRIGGER_SHARED_SECRET    le secret d'evals-playground (voir plus bas)
+BATCH_TRIGGER_SECRET    le secret d'evals-playground (voir plus bas)
 AUTH_GOOGLE_ID                 client OAuth Google
 AUTH_GOOGLE_SECRET
 AUTH_SECRET                    openssl rand -base64 32

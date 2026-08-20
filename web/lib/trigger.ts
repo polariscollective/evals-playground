@@ -89,11 +89,11 @@ export async function startJob(
   }
 
   const url = process.env.BATCH_TRIGGER_URL;
-  const secret = process.env.BATCH_TRIGGER_SHARED_SECRET;
+  const secret = process.env.BATCH_TRIGGER_SECRET;
   if (!url || !secret) {
     throw new Error(
       process.env.NODE_ENV === "production"
-        ? "BATCH_TRIGGER_URL and BATCH_TRIGGER_SHARED_SECRET must both be set."
+        ? "BATCH_TRIGGER_URL and BATCH_TRIGGER_SECRET must both be set."
         : "Set BATCH_TRIGGER_URL to use the deployed trigger, or EVAL_PYTHON to" +
           " run the job locally.",
     );
