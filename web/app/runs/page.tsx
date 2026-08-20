@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getRuns } from "@/lib/api";
+import { keepIfUnchanged } from "@/lib/unchanged";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
 import type { RunSummary } from "@/lib/types";
 
@@ -87,7 +88,10 @@ export default function RunsPage() {
 
   const load = useCallback(async () => {
     try {
-      setRuns(await getRuns());
+      // Ne remplace l'état que si la base a bougé : sinon la liste entière se
+      // redessinerait toutes les trois secondes pour rien.
+      const fetched = await getRuns();
+      setRuns((current) => keepIfUnchanged(current, fetched));
     } catch (e) {
       setError((e as Error).message);
     }

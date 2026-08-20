@@ -120,15 +120,24 @@ export async function rpc<T = unknown>(
   return (await request("POST", `rpc/${fn}`, { body: args })) as T;
 }
 
+let lastSweep = 0;
+
 /** Termine les runs dont le job a disparu, avant toute lecture.
  *
- * Idempotent et sans coût mesurable — la fonction ne touche rien quand il n'y a
- * rien à terminer. L'appeler ici plutôt que de dépendre d'une tâche planifiée
- * évite `pg_cron`, qui n'est pas activé sur ce projet.
+ * L'appeler ici plutôt que de dépendre d'une tâche planifiée évite `pg_cron`,
+ * qui n'est pas activé sur ce projet.
+ *
+ * Espacé de trente secondes : la page d'un run en cours interroge toutes les
+ * trois secondes, et un aller-retour de plus à chaque fois allongeait la
+ * réponse d'un tiers pour chercher un abandon qui, par définition, met deux
+ * heures à se produire.
  *
  * Un échec n'interrompt pas la lecture qui suit : ne pas avoir pu corriger un
  * run abandonné est moins grave que de ne rien afficher du tout. */
 export async function failStaleRuns(): Promise<void> {
+  const now = Date.now();
+  if (now - lastSweep < 30_000) return;
+  lastSweep = now;
   try {
     await rpc("fail_stale_eval_runs");
   } catch (error) {

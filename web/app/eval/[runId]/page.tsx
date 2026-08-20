@@ -11,6 +11,7 @@ import {
   saveNotes,
   sourceCsvUrl,
 } from "@/lib/api";
+import { keepIfUnchanged } from "@/lib/unchanged";
 import { NotesField } from "@/components/NotesField";
 import { RubricEditor } from "@/components/RubricEditor";
 import {
@@ -552,7 +553,9 @@ export default function EvalRunPage({
     async (withTranscripts: boolean) => {
       try {
         const loaded = await getRun(runId, withTranscripts);
-        setDetail(loaded);
+        // Même raison que sur la liste : un run terminé qu'on garde ouvert ne
+        // doit pas faire clignoter sa matrice.
+        setDetail((current) => keepIfUnchanged(current, loaded));
         // Amorcé une seule fois : le rafraîchissement d'un run en cours ne doit
         // pas écraser une note en train d'être écrite.
         setNotes((current) => (current === "" ? loaded.run.notes : current));
