@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
 import { NotFound, loadRun } from "@/lib/runs";
 
 /** Un run et ses cases.
@@ -9,6 +10,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
 ) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   const { runId } = await params;
   const withTranscripts =
     new URL(request.url).searchParams.get("transcripts") === "1";

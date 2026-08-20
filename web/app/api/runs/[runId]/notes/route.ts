@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
 import { NotFound, loadRun, saveNotes } from "@/lib/runs";
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
 ) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   const { runId } = await params;
   const body = (await request.json().catch(() => ({}))) as { notes?: string };
   if (typeof body.notes !== "string") {

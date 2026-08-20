@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
 import { sourceCsv } from "@/lib/runs";
 import { csvResponse } from "@/lib/csv-response";
 
@@ -11,6 +12,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
 ) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   const { runId } = await params;
   const content = await sourceCsv(runId);
   if (content === null) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
 import { NotFound, cancelRun, loadRun } from "@/lib/runs";
 
 /** Demande l'arrêt d'un run en cours.
@@ -16,6 +17,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
 ) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   const { runId } = await params;
 
   let detail;

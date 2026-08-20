@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { getSessionEmail } from "@/auth";
+import { requireUser } from "@/auth";
 import { createRun, failToStart, loadRuns, recordStart } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
 import type { EvalRunConfig } from "@/lib/types";
 
 export async function GET() {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   return NextResponse.json(await loadRuns());
 }
 
@@ -15,10 +18,8 @@ export async function GET() {
  * si bien qu'un déclenchement raté laisse une trace visible plutôt qu'un
  * silence. */
 export async function POST(request: Request) {
-  const userEmail = await getSessionEmail();
-  if (!userEmail) {
-    return NextResponse.json({ error: "not signed in" }, { status: 401 });
-  }
+  const user = await requireUser();
+  if ("response" in user) return user.response;
 
   const body = (await request.json().catch(() => null)) as {
     config?: EvalRunConfig;
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
   // L'auteur vient de la session, jamais de ce que le client prétend.
-  const run = await createRun(body!.config!, userEmail, body?.csv_text ?? null);
+  const run = await createRun(body!.config!, user.email, body?.csv_text ?? null);
 
   try {
     await recordStart(run.id, await startJob(run.id, "run"));

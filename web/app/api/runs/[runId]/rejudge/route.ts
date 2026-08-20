@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
 import { NotFound, failToStart, loadRun, recordStart, resetForRejudge } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { rejudgeProblem } from "@/lib/validate";
@@ -12,6 +13,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
 ) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   const { runId } = await params;
   const body = (await request.json().catch(() => null)) as RejudgeRequest | null;
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
 import { NotFound, loadRun } from "@/lib/runs";
 import { detailsCsv, matrixCsv } from "@/lib/exports";
 import { csvResponse } from "@/lib/csv-response";
@@ -7,6 +8,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ runId: string; kind: string }> },
 ) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
   const { runId, kind } = await params;
   if (kind !== "matrix" && kind !== "details") {
     return NextResponse.json({ error: `Unknown export: ${kind}` }, { status: 404 });
