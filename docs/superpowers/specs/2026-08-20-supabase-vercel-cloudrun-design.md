@@ -57,8 +57,15 @@ Python garde ce que TypeScript ne peut pas faire : le moteur d'évaluation.
 
 ## Le schéma
 
-Deux tables, dans le projet Supabase déjà utilisé par COP. Le préfixe `eval_`
-les tient à l'écart de ses `runs`, `batches`, `scenarios`.
+Deux tables, dans le projet Supabase `evals` déjà utilisé par COP. Le préfixe
+`eval_` les tient à l'écart de ses `runs`, `batches`, `scenarios`.
+
+**Les migrations ne vivent pas dans ce dépôt** mais dans `polaris-supabase`, qui
+possède le schéma des bases de l'organisation. L'historique de migration d'une
+base Postgres est unique, et la CLI Supabase refuse de pousser depuis un dépôt
+dont le dossier de migrations ne couvre pas tout l'historique distant : deux
+applications ne peuvent donc pas migrer la même base chacune de son côté. Le
+prix de ce choix est une PR de plus par changement de schéma.
 
 ```sql
 create table eval_runs (
