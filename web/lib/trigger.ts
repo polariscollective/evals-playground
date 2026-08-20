@@ -24,6 +24,16 @@ const LOCAL_PYTHON = "EVAL_PYTHON";
 
 export type JobMode = "run" | "rejudge";
 
+/** Où le job a tourné. Enregistré sur le run : le local et le déployé écrivent
+ * dans la même base, et sans marqueur un essai jetable ressemble à un vrai
+ * run. */
+export type Origin = "local" | "cloud-run";
+
+export interface Started {
+  execution: string;
+  origin: Origin;
+}
+
 /** Le sous-process local peut-il remplacer le service Cloud Run ?
  *
  * Verrouillé sur `NODE_ENV` en plus de l'absence d'URL, exactement comme le
@@ -70,8 +80,13 @@ function runLocally(runId: string, mode: JobMode): string {
  *   le run reste alors `pending` avec son message, plutôt que d'attendre
  *   indéfiniment un job qui n'a jamais démarré.
  */
-export async function startJob(runId: string, mode: JobMode = "run"): Promise<string> {
-  if (canRunLocally()) return runLocally(runId, mode);
+export async function startJob(
+  runId: string,
+  mode: JobMode = "run",
+): Promise<Started> {
+  if (canRunLocally()) {
+    return { execution: runLocally(runId, mode), origin: "local" };
+  }
 
   const url = process.env.BATCH_TRIGGER_URL;
   const secret = process.env.BATCH_TRIGGER_SHARED_SECRET;
@@ -112,5 +127,5 @@ export async function startJob(runId: string, mode: JobMode = "run"): Promise<st
   if (!response.ok) {
     throw new Error(body.error || `batch trigger returned ${response.status}`);
   }
-  return body.execution ?? "";
+  return { execution: body.execution ?? "", origin: "cloud-run" };
 }

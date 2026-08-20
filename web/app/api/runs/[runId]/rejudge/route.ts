@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { NotFound, failToStart, loadRun, recordExecution, resetForRejudge } from "@/lib/runs";
+import { NotFound, failToStart, loadRun, recordStart, resetForRejudge } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { rejudgeProblem } from "@/lib/validate";
 import type { RejudgeRequest } from "@/lib/types";
@@ -55,7 +55,7 @@ export async function POST(
   });
 
   try {
-    await recordExecution(runId, await startJob(runId, "rejudge"));
+    await recordStart(runId, await startJob(runId, "rejudge"));
   } catch (error) {
     const reason = `Could not start the judging pass: ${(error as Error).message}`;
     await failToStart(runId, reason);

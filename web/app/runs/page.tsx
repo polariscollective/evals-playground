@@ -170,8 +170,19 @@ export default function RunsPage() {
                     >
                       {run.label ?? run.config.scenarios[0]?.title ?? run.id}
                     </Link>
-                    <div className="text-xs text-zinc-500">
+                    <div className="flex items-center gap-2 text-xs text-zinc-500">
                       <CopyId value={run.id} />
+                      {/* Le local et le déployé écrivent dans la même base :
+                          sans ce badge, un essai jetable ressemble à un vrai
+                          run. Seul le local est marqué — c'est l'exception. */}
+                      {run.origin === "local" && (
+                        <span
+                          className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600"
+                          title="Lancé depuis une machine de développement, pas depuis le job déployé"
+                        >
+                          local
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-600">

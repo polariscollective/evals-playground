@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionEmail } from "@/auth";
-import { createRun, failToStart, loadRuns, recordExecution } from "@/lib/runs";
+import { createRun, failToStart, loadRuns, recordStart } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
 import type { EvalRunConfig } from "@/lib/types";
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const run = await createRun(body!.config!, userEmail, body?.csv_text ?? null);
 
   try {
-    await recordExecution(run.id, await startJob(run.id, "run"));
+    await recordStart(run.id, await startJob(run.id, "run"));
   } catch (error) {
     // Sans ça, le run resterait en attente jusqu'à ce que la fonction
     // d'expiration le ramasse deux heures plus tard, avec un message parlant

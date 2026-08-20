@@ -83,6 +83,8 @@ export interface EvalRun {
   cost_usd: number | null;
   rejudged_at: string | null;
   execution: string | null;
+  /** Où le job a tourné : sur une machine de développement, ou sur Cloud Run. */
+  origin: "local" | "cloud-run";
 }
 
 /** Une ligne d'`eval_samples` : une case de la matrice. */

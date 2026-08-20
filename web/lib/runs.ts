@@ -186,11 +186,11 @@ export async function saveNotes(runId: string, notes: string): Promise<void> {
   await update(RUNS, { notes }, { id: `eq.${runId}` });
 }
 
-export async function recordExecution(
+export async function recordStart(
   runId: string,
-  execution: string,
+  started: { execution: string; origin: string },
 ): Promise<void> {
-  await update(RUNS, { execution }, { id: `eq.${runId}` });
+  await update(RUNS, started, { id: `eq.${runId}` });
 }
 
 /** Marque un run comme mort-né : le job n'a pas pu être démarré.
