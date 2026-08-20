@@ -660,6 +660,29 @@ export default function EvalRunPage({
                 >
                   ${run.cost_usd.toFixed(run.cost_usd < 1 ? 4 : 2)}
                 </span>
+                {run.estimate && (
+                  // L'écart au devis, à côté du prix : c'est en le voyant run
+                  // après run qu'on saura si l'estimation dérive, et sur quels
+                  // modèles.
+                  <span
+                    className="text-zinc-500"
+                    title={`Estimated $${run.estimate.usd.toFixed(4)} before launching, assuming ${run.estimate.per_model
+                      .map((m) => `${m.model} ${m.response_tokens} tok/answer`)
+                      .join(", ")}`}
+                  >
+                    {" "}
+                    (estimate ${run.estimate.usd.toFixed(
+                      run.estimate.usd < 1 ? 4 : 2,
+                    )}
+                    {run.cost_usd > 0 &&
+                      `, ${
+                        run.estimate.usd >= run.cost_usd ? "+" : ""
+                      }${Math.round(
+                        ((run.estimate.usd - run.cost_usd) / run.cost_usd) * 100,
+                      )}%`}
+                    )
+                  </span>
+                )}
               </>
             )}
             {" · "}

@@ -10,6 +10,7 @@ import {
   select,
   update,
 } from "./supabase";
+import { estimateCost } from "./pricing";
 import type {
   EvalRun,
   EvalRunConfig,
@@ -141,6 +142,10 @@ export async function createRun(
       notes: config.notes ?? "",
       source_csv: csvText,
       total_samples: total,
+      // Recalculé ici et non repris du navigateur : le devis enregistré doit
+      // être celui que ce code produit, pas celui qu'un client affirme avoir
+      // vu. Sans ça, la comparaison d'après ne mesurerait plus rien.
+      estimate: estimateCost(config),
     },
     { returning: true },
   );

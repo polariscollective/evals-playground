@@ -103,6 +103,9 @@ export interface EvalRun {
   execution: string | null;
   /** Où le job a tourné : sur une machine de développement, ou sur Cloud Run. */
   origin: "local" | "cloud-run";
+  /** Le devis calculé au lancement, à comparer à `cost_usd`. null sur les runs
+   *  antérieurs à son enregistrement. */
+  estimate: CostEstimate | null;
 }
 
 /** Une ligne d'`eval_samples` : une case de la matrice. */

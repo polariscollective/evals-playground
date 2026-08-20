@@ -152,6 +152,7 @@ export default function RunsPage() {
               <th className="py-3 pr-8 font-medium">Shape</th>
               <th className="py-3 pr-8 font-medium">Status</th>
               <th className="py-3 pr-8 text-right font-medium">Cost</th>
+              <th className="py-3 pr-8 text-right font-medium">vs estimate</th>
               <th className="py-3 text-right font-medium">Average grade</th>
             </tr>
           </thead>
@@ -216,6 +217,34 @@ export default function RunsPage() {
                     {run.cost_usd === null
                       ? "—"
                       : `$${run.cost_usd.toFixed(run.cost_usd < 1 ? 3 : 2)}`}
+                  </td>
+                  {/* L'écart au devis, run après run : c'est en le voyant
+                      s'accumuler qu'on saura si l'estimation dérive, et sur
+                      quels modèles. Un run arrêté est écarté — son devis
+                      chiffrait la matrice entière, pas la part qui a tourné. */}
+                  <td className="whitespace-nowrap py-3 pr-8 text-right">
+                    {run.estimate === null || run.cost_usd === null ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : run.status === "cancelled" ? (
+                      <span
+                        className="text-zinc-400"
+                        title="Arrêté en cours : le devis chiffrait toute la matrice"
+                      >
+                        n/a
+                      </span>
+                    ) : (
+                      <span
+                        className="text-zinc-600"
+                        title={`Devis $${run.estimate.usd.toFixed(4)}`}
+                      >
+                        {run.estimate.usd >= run.cost_usd ? "+" : ""}
+                        {Math.round(
+                          ((run.estimate.usd - run.cost_usd) / run.cost_usd) *
+                            100,
+                        )}
+                        %
+                      </span>
+                    )}
                   </td>
                   {/* La moyenne porte son échelle : chaque run a la sienne, et
                       un chiffre nu se comparerait à tort d'une ligne à l'autre. */}
