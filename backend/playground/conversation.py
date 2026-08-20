@@ -10,7 +10,7 @@ lui est propre. Ce prompt ne quitte jamais sa vue.
 """
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 
 from inspect_ai.model import (
     ChatMessage,
@@ -20,6 +20,15 @@ from inspect_ai.model import (
     GenerateConfig,
     Model,
 )
+
+
+class Cancelled(Exception):
+    """L'arrêt a été demandé, et on ne dépensera pas un appel de plus.
+
+    Levée depuis l'endroit exact où l'argent se dépense — juste avant un appel
+    de modèle. Inspect la consigne dans son journal et, `fail_on_error` étant
+    faux, passe à la case suivante, qui lèvera à son tour sans rien appeler.
+    """
 
 
 @dataclass
@@ -113,6 +122,7 @@ async def run_conversation(
     adversary: Model | None = None,
     adversary_prompt: str = "",
     temperature: float | None = None,
+    stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
     """Déroule une conversation de `turns` tours et renvoie son transcript.
 
@@ -130,6 +140,12 @@ async def run_conversation(
         temperature: Appliquée au seul modèle évalué. L'adversaire tourne au
             réglage par défaut de son fournisseur : le faire varier en même
             temps rendrait toute différence de comportement inattribuable.
+        stopped: Consulté juste avant chaque appel de modèle, et nulle part
+            ailleurs. C'est le seul endroit qui compte : inspect démarre tous
+            les échantillons d'un coup et les fait attendre un jeton de
+            connexion *à l'intérieur* de `generate`. Un contrôle placé avant la
+            file serait franchi par tout le monde dès la première seconde, et
+            n'arrêterait rien.
 
     Raises:
         ValueError: si `turns` dépasse 1 sans adversaire.
@@ -150,6 +166,8 @@ async def run_conversation(
     )
 
     for turn_index in range(turns):
+        if stopped is not None and stopped():
+            raise Cancelled("stopped before the evaluated model's turn")
         target_output = await target.generate(
             input=target_view(system_prompt, transcript),
             config=target_config,
@@ -169,6 +187,8 @@ async def run_conversation(
         if turn_index == turns - 1:
             break
 
+        if stopped is not None and stopped():
+            raise Cancelled("stopped before the adversary's turn")
         adversary_output = await adversary.generate(
             input=adversary_view(adversary_prompt, opening_message, transcript),
         )

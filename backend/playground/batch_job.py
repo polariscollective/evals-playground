@@ -31,10 +31,14 @@ from playground.pricing import actual_cost
 from playground.scoring import ScoredSample, rubric_judge
 from playground.supabase_store import (
     SAMPLES,
+    Cancellation,
     Supabase,
     abandon_unfinished_samples,
+    cancel_unfinished_samples,
     fetch_run,
     finish_run,
+    mark_sample_running,
+    run_status,
     start_run,
     write_sample,
 )
@@ -133,6 +137,7 @@ def run_batch_job(
     supabase: Supabase | None = None,
     logs_dir: Path = LOGS_DIR,
     model_args: dict[str, Any] | None = None,
+    cancellation: Cancellation | None = None,
 ) -> None:
     """Exécute un run, ou rejoue son juge, et écrit chaque case au fil de l'eau.
 
@@ -143,6 +148,9 @@ def run_batch_job(
             modèle évalué ni l'adversaire.
         supabase: Injectable pour les tests, qui n'ont ainsi besoin ni de réseau
             ni de base.
+        cancellation: Injectable pour les tests, qui doivent pouvoir annuler
+            son cache. Celui-ci vaut une seconde en production — court devant
+            la durée d'un appel de modèle, long devant celle d'un test.
         logs_dir: Où inspect écrit ses `.eval`. Éphémère dans un conteneur : ce
             qui compte est en base, pas ici.
         model_args: Arguments passés aux modèles. Sert aux tests, avec
@@ -157,6 +165,21 @@ def run_batch_job(
     config = EvalRunConfig(**row["config"])
 
     start_run(supabase, run_id, execution=os.environ.get("CLOUD_RUN_EXECUTION"))
+    arret = cancellation or Cancellation(supabase, run_id)
+
+    def commence(state) -> None:
+        """La case démarre : le dire, sinon la progression ment.
+
+        Une case en vol se lisait « à faire », et le total des cases restantes
+        comptait des conversations déjà en cours d'écriture."""
+        metadata = state.metadata or {}
+        mark_sample_running(
+            supabase,
+            run_id,
+            int(metadata.get("scenario_index", 0)),
+            str(metadata.get("target") or ""),
+            int(metadata.get("repetition", 0)),
+        )
 
     def enregistre(sample: ScoredSample) -> None:
         write_sample(
@@ -178,14 +201,22 @@ def run_batch_job(
             solveur: Solver = stored_transcript()
         else:
             dataset = eval_dataset(config)
-            solveur = conversation_solver(config, model_args=model_args)
+            solveur = conversation_solver(
+                config,
+                model_args=model_args,
+                stopped=arret.stopped,
+                started=commence,
+            )
 
         logs = inspect_eval(
             Task(
                 dataset=dataset,
                 solver=solveur,
                 scorer=rubric_judge(
-                    config, on_scored=enregistre, model_args=model_args
+                    config,
+                    on_scored=enregistre,
+                    model_args=model_args,
+                    stopped=arret.stopped,
                 ),
                 # Une répétition ratée ne doit pas avorter le run : les autres
                 # portent l'information de fréquence, qui est le but du produit.
@@ -200,12 +231,20 @@ def run_batch_job(
         )
         log = logs[0]
 
-        # Un échantillon dont le solver a échoué n'atteint jamais le scorer,
-        # donc jamais `enregistre`. Sans ce ramassage il resterait « à faire »
-        # sur un run pourtant terminé.
-        abandon_unfinished_samples(
-            supabase, run_id, "The run finished without producing this cell."
-        )
+        # L'arrêt est relu en base plutôt que dans le cache : entre la dernière
+        # consultation et ici, l'utilisateur a pu cliquer.
+        annule = arret.stopped() or run_status(supabase, run_id) == "cancelled"
+
+        if annule:
+            # Ce qu'on a décidé de ne pas faire n'est pas ce qui a cassé.
+            cancel_unfinished_samples(supabase, run_id)
+        else:
+            # Un échantillon dont le solver a échoué n'atteint jamais le scorer,
+            # donc jamais `enregistre`. Sans ce ramassage il resterait « à
+            # faire » sur un run pourtant terminé.
+            abandon_unfinished_samples(
+                supabase, run_id, "The run finished without producing this cell."
+            )
 
         usage = add_usage(row.get("usage") or {}, usage_from_log(log))
         cost, unpriced = actual_cost_from_dicts(usage)
@@ -214,7 +253,7 @@ def run_batch_job(
         # termine le journal avec un statut. Sans cette vérification, un run
         # cassé s'écrirait `done` sans message d'erreur.
         erreur = None
-        if log.status != "success":
+        if log.status != "success" and not annule:
             erreur = (
                 log.error.message
                 if log.error
@@ -229,6 +268,7 @@ def run_batch_job(
             # qu'une absence de total.
             cost_usd=None if unpriced else cost,
             error=erreur,
+            cancelled=annule,
         )
 
     except Exception as error:

@@ -16,18 +16,20 @@ export function progressOf(samples: EvalSample[]): Progress {
     running: 0,
     pending: 0,
     errored: 0,
+    cancelled: 0,
   };
   for (const sample of samples) {
     if (sample.status === "done") progress.done += 1;
     else if (sample.status === "running") progress.running += 1;
     else if (sample.status === "error") progress.errored += 1;
+    else if (sample.status === "cancelled") progress.cancelled += 1;
     else progress.pending += 1;
   }
   return progress;
 }
 
 function emptyCell(): Cell {
-  return { judged: 0, unjudged: 0, errored: 0, pending: 0, mean: null };
+  return { judged: 0, unjudged: 0, errored: 0, cancelled: 0, pending: 0, mean: null };
 }
 
 /** La matrice, une entrée par scénario.
@@ -59,6 +61,9 @@ export function cellsOf(
 
     if (sample.status === "pending" || sample.status === "running") {
       cell.pending += 1;
+    } else if (sample.status === "cancelled") {
+      // Jamais commencée. Pas une panne : on a décidé de ne pas la faire.
+      cell.cancelled += 1;
     } else if (sample.status === "error") {
       cell.errored += 1;
     } else if (sample.score === null) {

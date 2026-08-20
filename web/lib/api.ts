@@ -62,6 +62,9 @@ export const rejudgeRun = (runId: string, body: RejudgeRequest) =>
     body: JSON.stringify(body),
   });
 
+export const cancelRun = (runId: string) =>
+  request<{ ok: true }>(`/api/runs/${runId}/cancel`, { method: "POST" });
+
 export const saveNotes = (runId: string, notes: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/notes`, {
     method: "PUT",

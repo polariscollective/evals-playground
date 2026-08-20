@@ -7,7 +7,7 @@ partageraient la même température. Un échantillon par répétition permet à
 chacune de porter la sienne.
 """
 
-from typing import Any
+from typing import Any, Callable
 
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import get_model
@@ -74,12 +74,22 @@ def eval_dataset(config: EvalRunConfig) -> MemoryDataset:
 
 @solver
 def conversation_solver(
-    config: EvalRunConfig, model_args: dict[str, Any] | None = None
+    config: EvalRunConfig,
+    model_args: dict[str, Any] | None = None,
+    stopped: Callable[[], bool] | None = None,
+    started: Callable[[TaskState], None] | None = None,
 ) -> Solver:
     """Déroule une conversation complète pour une répétition.
 
     Args:
         config: La configuration du run, pour les modèles cible et adversaire.
+        stopped: Transmis à la boucle de conversation, qui le consulte avant
+            chaque appel de modèle. Le contrôler ici ne servirait à rien :
+            inspect démarre tous les échantillons d'un coup, et ils franchiraient
+            tous ce point avant qu'un clic n'ait pu se produire.
+        started: Appelé quand la case commence réellement, une fois le premier
+            jeton de connexion obtenu. Sans lui, une case en vol se lit « à
+            faire » et la progression ment.
         model_args: Arguments de construction transmis à `get_model`. Voir la
             docstring de `scenario_solver.model_args` (`generation.py`) pour
             la raison de ce fil explicite : `get_model(nom)` seul ne les
@@ -92,6 +102,9 @@ def conversation_solver(
     """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
+        if started is not None:
+            started(state)
+
         scenario = config.scenarios[int(state.metadata.get("scenario_index", 0))]
         target_name = state.metadata.get("target") or config.models.targets[0]
         adversary = (
@@ -107,6 +120,7 @@ def conversation_solver(
             adversary=adversary,
             adversary_prompt=config.adversary_prompt,
             temperature=state.metadata.get("temperature"),
+            stopped=stopped,
         )
         state.metadata["transcript"] = [
             {

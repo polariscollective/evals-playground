@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  cancelRun,
   exportUrl,
   getRun,
   matrixCsvText,
@@ -51,6 +52,14 @@ function ScoreBadge({
         title={sample.error ?? undefined}
       >
         failed
+      </span>
+    );
+  }
+  if (sample.status === "cancelled") {
+    // Pas rouge : on a décidé de ne pas la faire, elle n'a pas cassé.
+    return (
+      <span className="rounded bg-zinc-200 px-2 py-0.5 text-xs text-zinc-700">
+        not run
       </span>
     );
   }
@@ -528,6 +537,7 @@ export default function EvalRunPage({
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [rejudging, setRejudging] = useState(false);
+  const [stopping, setStopping] = useState(false);
   // Les transcripts pèsent lourd et ne servent qu'à la fenêtre de détail : on
   // ne les charge qu'à l'ouverture d'une case, pas à chaque rafraîchissement.
   const [transcripts, setTranscripts] = useState(false);
@@ -559,7 +569,7 @@ export default function EvalRunPage({
   }, [load, transcripts]);
 
   const running =
-    detail?.run.status === "running" || detail?.run.status === "pending";
+    detail?.run.status === "running" || detail?.run.status === "triggered";
 
   useEffect(() => {
     if (!running) return;
@@ -637,6 +647,26 @@ export default function EvalRunPage({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
+          {running && (
+            <button
+              onClick={async () => {
+                setStopping(true);
+                try {
+                  await cancelRun(run.id);
+                  await load(transcripts);
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setStopping(false);
+                }
+              }}
+              disabled={stopping}
+              title="Le job lit la demande avant chaque case. Celle en cours ira à son terme."
+              className="rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          )}
           <button
             onClick={() => router.push(`/?from=${run.id}`)}
             title="Open the form filled in with exactly these settings"
@@ -692,8 +722,13 @@ export default function EvalRunPage({
       )}
 
       {run.status === "cancelled" && (
-        <p className="rounded border border-zinc-300 p-3 text-sm">
-          Run cancelled.
+        <p className="rounded border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+          <strong>Stopped.</strong> {progress.done} of {progress.total} cells
+          finished
+          {progress.cancelled > 0 && ` · ${progress.cancelled} never ran (∅)`}
+          {progress.errored > 0 && ` · ${progress.errored} failed`}. A cell
+          already in flight when you stopped was let finish — what was paid for
+          is kept. Relaunch to run the whole matrix again.
         </p>
       )}
 
@@ -739,24 +774,33 @@ export default function EvalRunPage({
                     {targets.map((target) => {
                       const cell = cells[index]?.[target];
                       const waiting = (cell?.pending ?? 0) > 0;
+                      const nothingRan =
+                        !!cell && cell.judged === 0 && cell.cancelled > 0;
                       return (
                         <td key={target} className="border-b border-zinc-200 p-1">
                           <button
                             onClick={() => openCell(index, target)}
                             className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric)}`}
                             title={
-                              !cell || cell.mean === null
-                                ? waiting
+                              cell?.mean != null
+                                ? `${distribution(scoresOf(index, target))} — average ${formatMean(cell.mean)}` +
+                                  (cell.cancelled > 0
+                                    ? ` · ${cell.cancelled} never ran`
+                                    : "")
+                                : waiting
                                   ? `${cell?.pending} still to run`
-                                  : "nothing judged"
-                                : `${distribution(scoresOf(index, target))} — average ${formatMean(cell.mean)}`
+                                  : nothingRan
+                                    ? "never ran — the run was stopped first"
+                                    : "nothing judged"
                             }
                           >
                             {cell?.mean != null
                               ? formatMean(cell.mean)
                               : waiting
                                 ? "…"
-                                : "—"}
+                                : nothingRan
+                                  ? "∅"
+                                  : "—"}
                           </button>
                         </td>
                       );
@@ -767,6 +811,12 @@ export default function EvalRunPage({
             </table>
           </div>
           <p className="text-sm text-zinc-600">
+            {progress.cancelled > 0 && (
+              <>
+                <strong>∅</strong> marks a cell that never ran — the run was
+                stopped before reaching it.{" "}
+              </>
+            )}
             Average of the grades the judge gave, over {run.config.repetitions}{" "}
             repetition{run.config.repetitions > 1 ? "s" : ""}, on your{" "}
             {formatValue(min)}–{formatValue(max)} scale. The top of the scale is

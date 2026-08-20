@@ -11,7 +11,8 @@ le job Cloud Run, jamais par du code qui atteint un navigateur.
 """
 
 import os
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -154,16 +155,18 @@ def finish_run(
     usage: dict[str, Any] | None = None,
     cost_usd: float | None = None,
     error: str | None = None,
+    cancelled: bool = False,
 ) -> None:
-    """Termine le run, qu'il ait abouti ou non.
+    """Termine le run, qu'il ait abouti, échoué ou été arrêté.
 
-    La consommation est enregistrée dans les deux cas : les jetons déjà brûlés
-    l'ont été, et ne pas les inscrire laisserait croire un run raté gratuit.
+    La consommation est enregistrée dans les trois cas : les jetons déjà brûlés
+    l'ont été, et ne pas les inscrire laisserait croire un run interrompu
+    gratuit.
     """
     supabase.update(
         RUNS,
         {
-            "status": "error" if error else "done",
+            "status": "cancelled" if cancelled else ("error" if error else "done"),
             "error": error,
             "finished_at": NOW,
             "usage": usage or {},
@@ -171,6 +174,64 @@ def finish_run(
         },
         id=f"eq.{run_id}",
     )
+
+
+def run_status(supabase: Supabase, run_id: str) -> str:
+    """Le statut du run, et rien d'autre.
+
+    Une seule colonne : cette lecture est faite avant chaque case, et ramener la
+    configuration complète — scénarios, prompts, échelle — à chaque fois pour
+    lire un mot serait absurde.
+    """
+    rows = supabase.select(RUNS, id=f"eq.{run_id}", select="status", limit=1)
+    return str(rows[0]["status"]) if rows else ""
+
+
+@dataclass
+class Cancellation:
+    """L'arrêt demandé par l'utilisateur, vu depuis le job.
+
+    L'arrêt est coopératif : l'interface écrit `cancelled` sur le run, et le job
+    le lit avant chaque case. Tuer l'exécution Cloud Run serait plus brutal sans
+    être plus propre — le conteneur mourrait en pleine écriture, les cases
+    resteraient `running` pour toujours, et il faudrait quand même attendre le
+    ramassage. Ici le job se termine lui-même.
+
+    La réponse est mise en cache une seconde : consultée avant chaque appel de
+    modèle, elle serait sinon relue des milliers de fois pour un mot qui change
+    au plus une fois. Une seconde est court devant la durée d'un appel, donc
+    l'arrêt reste franc — un cache plus long, lui, laissait passer toute une
+    vague d'appels et rendait la fonction inopérante.
+    """
+
+    supabase: Supabase
+    run_id: str
+    ttl_seconds: float = 1.0
+
+    _stopped: bool = field(default=False, init=False)
+    _checked_at: float = field(default=0.0, init=False)
+
+    def stopped(self) -> bool:
+        """L'utilisateur a-t-il demandé l'arrêt ?
+
+        Une fois vrai, le reste vrai sans redemander : un run annulé ne se
+        désannule pas, et le job n'a plus qu'à sortir.
+
+        Une lecture en échec — réseau, base indisponible — répond « non ». Un
+        run qui continue malgré une demande d'arrêt est un désagrément ; un run
+        qui s'arrête parce que le réseau a hoqueté détruit du travail payé.
+        """
+        if self._stopped:
+            return True
+        maintenant = time.monotonic()
+        if maintenant - self._checked_at < self.ttl_seconds:
+            return False
+        self._checked_at = maintenant
+        try:
+            self._stopped = run_status(self.supabase, self.run_id) == "cancelled"
+        except SupabaseError:
+            return False
+        return self._stopped
 
 
 # --- les échantillons --------------------------------------------------------
@@ -238,6 +299,21 @@ def write_sample(
             "finished_at": NOW,
         },
         **sample_filters(run_id, scenario_index, target_model, repetition),
+    )
+
+
+def cancel_unfinished_samples(supabase: Supabase, run_id: str) -> None:
+    """Marque `cancelled` les cases qui ne seront pas faites.
+
+    Distinct du ramassage en erreur : une case qu'on a décidé de ne pas faire
+    n'est pas une case qui a cassé, et la matrice doit pouvoir les compter
+    séparément.
+    """
+    supabase.update(
+        SAMPLES,
+        {"status": "cancelled", "finished_at": NOW},
+        run_id=f"eq.{run_id}",
+        status="in.(pending,running)",
     )
 
 

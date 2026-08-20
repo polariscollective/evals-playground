@@ -1,5 +1,19 @@
-export type RunStatus = "pending" | "running" | "done" | "error" | "cancelled";
-export type SampleStatus = "pending" | "running" | "done" | "error";
+/** `triggered` : le job a été demandé, le conteneur n'a pas encore écrit. */
+export type RunStatus =
+  | "triggered"
+  | "running"
+  | "done"
+  | "error"
+  | "cancelled";
+
+/** Pas de `triggered` ici : une case n'est jamais déclenchée individuellement,
+ *  elles le sont toutes d'un coup avec le run. */
+export type SampleStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "error"
+  | "cancelled";
 
 /** Un palier de l'échelle : la note, et ce qu'elle veut dire pour le juge. */
 export interface RubricLevel {
@@ -112,18 +126,22 @@ export interface Progress {
   running: number;
   pending: number;
   errored: number;
+  cancelled: number;
 }
 
 /** Une case de la matrice : ce qu'un modèle a obtenu sur un scénario.
  *
- * `unjudged` et `errored` sont comptés séparément. Une case traitée sans note —
- * conversation bloquée, réponse hors échelle — n'est pas une panne, et les
- * confondre effacerait la différence entre « on ne sait pas » et « ça a
- * cassé ». */
+ * Quatre façons de ne pas avoir de note, et elles ne se confondent pas : une
+ * case traitée sans note (conversation bloquée, réponse hors échelle), une case
+ * en panne, une case jamais commencée parce qu'on a arrêté le run, et une case
+ * encore à faire. Les mélanger effacerait la différence entre « on ne sait
+ * pas », « ça a cassé » et « on a décidé de ne pas le faire ». */
 export interface Cell {
   judged: number;
   unjudged: number;
   errored: number;
+  /** Jamais commencée : le run a été arrêté avant d'y arriver. */
+  cancelled: number;
   pending: number;
   mean: number | null;
 }

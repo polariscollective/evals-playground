@@ -220,6 +220,7 @@ def rubric_judge(
     config: EvalRunConfig,
     on_scored: Callable[["ScoredSample"], None] | None = None,
     model_args: dict[str, Any] | None = None,
+    stopped: Callable[[], bool] | None = None,
 ) -> Scorer:
     """Fait noter le transcript d'une répétition sur l'échelle du run.
 
@@ -229,6 +230,8 @@ def rubric_judge(
         on_scored: Appelé une fois par répétition tentée, avec ce qu'elle a
             donné — notée ou non. C'est par lui que la case est enregistrée au
             fil de l'eau.
+        stopped: Reçu mais **délibérément ignoré**. Voir la note ci-dessous :
+            un arrêt ne doit pas jeter une conversation déjà payée.
         model_args: Arguments de construction transmis à `get_model`. Voir la
             docstring de `scenario_solver.model_args` (`generation.py`) pour la
             raison de ce fil explicite : `get_model(nom)` seul ne les reçoit
@@ -270,6 +273,19 @@ def rubric_judge(
                 metadata={"score": None, "justification": justification},
             )
 
+        # Le juge n'est jamais court-circuité par un arrêt, et c'est voulu.
+        #
+        # Arriver ici veut dire que la conversation a eu lieu, donc qu'elle est
+        # payée — c'est elle qui coûte, le juge ne pesant que quelques centaines
+        # de jetons. Sauter le jugement économiserait des centimes et rendrait
+        # sans valeur ce qu'on vient d'acheter : un transcript sans note ne dit
+        # rien, et ne peut même pas entrer dans la moyenne.
+        #
+        # Mesuré : un essai réel où le juge s'arrêtait aussi a rendu 40 cases
+        # « jamais commencées » pour 0,032 $ dépensés, sans une seule note.
+        #
+        # L'arrêt agit là où l'argent se dépense encore, c'est-à-dire avant les
+        # tours du modèle évalué — voir `run_conversation`.
         try:
             output = await get_model(
                 config.models.judge, **(model_args or {})

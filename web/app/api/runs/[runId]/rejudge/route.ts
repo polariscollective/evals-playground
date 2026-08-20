@@ -32,7 +32,7 @@ export async function POST(
     throw error;
   }
 
-  if (detail.run.status === "pending" || detail.run.status === "running") {
+  if (detail.run.status === "triggered" || detail.run.status === "running") {
     return NextResponse.json(
       { error: "This run is still going. Wait for it to finish." },
       { status: 409 },

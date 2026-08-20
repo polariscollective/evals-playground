@@ -186,3 +186,58 @@ def test_le_ramassage_ne_vise_que_les_cases_non_terminees():
     url = str(envoyees[0].url)
     assert "status=in.%28pending%2Crunning%29" in url or "status=in.(pending,running)" in url
     assert _body(envoyees[0])["error"] == "le job s'est arrêté"
+
+
+# --- l'arrêt coopératif ------------------------------------------------------
+
+
+def test_l_arret_est_relu_en_base_puis_mis_en_cache():
+    """Une matrice de cinq cents cases ne doit pas faire cinq cents requêtes
+    pour lire un mot qui change une fois."""
+    from playground.supabase_store import Cancellation
+
+    supabase, envoyees = _supabase(_ok([{"status": "running"}]))
+    arret = Cancellation(supabase, "r1", ttl_seconds=60)
+
+    assert arret.stopped() is False
+    assert arret.stopped() is False
+    assert len(envoyees) == 1, "la seconde lecture vient du cache"
+
+
+def test_une_fois_arrete_le_reste_sans_redemander():
+    from playground.supabase_store import Cancellation
+
+    supabase, envoyees = _supabase(_ok([{"status": "cancelled"}]))
+    arret = Cancellation(supabase, "r1", ttl_seconds=0)
+
+    assert arret.stopped() is True
+    assert arret.stopped() is True
+    assert len(envoyees) == 1, "un run annulé ne se désannule pas"
+
+
+def test_une_lecture_en_echec_ne_provoque_pas_d_arret():
+    """Un run qui continue malgré une demande d'arrêt est un désagrément ; un
+    run qui s'arrête parce que le réseau a hoqueté détruit du travail payé."""
+    from playground.supabase_store import Cancellation
+
+    supabase, _ = _supabase(lambda r: httpx.Response(500, text="boum"))
+    assert Cancellation(supabase, "r1", ttl_seconds=0).stopped() is False
+
+
+def test_les_cases_non_faites_sont_annulees_a_part():
+    from playground.supabase_store import cancel_unfinished_samples
+
+    supabase, envoyees = _supabase(_ok())
+    cancel_unfinished_samples(supabase, "r1")
+
+    corps = _body(envoyees[0])
+    assert corps["status"] == "cancelled"
+    assert "error" not in corps, "une case annulée n'a pas de message d'erreur"
+
+
+def test_terminer_sur_un_arret_donne_le_statut_cancelled():
+    supabase, envoyees = _supabase(_ok())
+    finish_run(supabase, "r1", cancelled=True)
+    corps = _body(envoyees[0])
+    assert corps["status"] == "cancelled"
+    assert corps["error"] is None

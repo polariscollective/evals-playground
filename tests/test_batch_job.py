@@ -39,10 +39,15 @@ class FakeSupabase(Supabase):
         super().__init__(url="https://fake", key="cle")
         self.run = run or {"id": "r1", "config": CONFIG, "usage": {}}
         self.samples = samples or []
+        self.statut = "running"
         self.ecritures: list[tuple[str, dict, dict]] = []
 
     def select(self, table, **params):
-        return [self.run] if table == RUNS else list(self.samples)
+        if table == RUNS:
+            # `run_status` ne demande qu'une colonne : la même ligne convient,
+            # et c'est par elle que l'arrêt est lu.
+            return [{**self.run, "status": self.statut}]
+        return list(self.samples)
 
     def update(self, table, values, **filters):
         self.ecritures.append((table, values, filters))
@@ -136,6 +141,58 @@ def test_une_note_hors_echelle_laisse_la_case_sans_note(tmp_path: Path):
     # La case reste `done` : elle a été traitée, elle n'a simplement pas de
     # note. C'est un trou visible, pas un échec du job.
     assert all(v["status"] == "done" for v in notes)
+
+
+# --- l'arrêt ----------------------------------------------------------------
+
+
+def test_un_run_annule_ne_lance_aucun_appel_de_modele(tmp_path: Path):
+    """Ce qui coûte, ce sont les appels de modèle. L'arrêt les coupe."""
+    supabase = FakeSupabase()
+    supabase.statut = "cancelled"
+    appels: list = []
+
+    def compte(input, tools, tool_choice, config):
+        appels.append(input)
+        return ModelOutput.from_content(model="mockllm", content="ne devrait pas arriver")
+
+    _lancer(supabase, tmp_path, outputs=compte)
+
+    assert appels == [], "aucun modèle ne doit être appelé"
+
+
+def test_un_run_annule_termine_en_cancelled_et_non_en_erreur(tmp_path: Path):
+    supabase = FakeSupabase()
+    supabase.statut = "cancelled"
+    _lancer(supabase, tmp_path)
+
+    cloture = supabase.ecrites(RUNS)[-1]
+    assert cloture["status"] == "cancelled"
+    assert cloture["error"] is None
+
+
+def test_les_cases_non_faites_sont_annulees_et_non_mises_en_erreur(tmp_path: Path):
+    """Ce qu'on a décidé de ne pas faire n'est pas ce qui a cassé, et la
+    matrice doit pouvoir les compter séparément."""
+    supabase = FakeSupabase()
+    supabase.statut = "cancelled"
+    _lancer(supabase, tmp_path)
+
+    ramassage = [
+        v for nom, v, f in supabase.ecritures
+        if nom == SAMPLES and f.get("status") == "in.(pending,running)"
+    ]
+    assert ramassage, "les cases restantes doivent être marquées"
+    assert all(v["status"] == "cancelled" for v in ramassage)
+
+
+def test_la_consommation_est_enregistree_meme_sur_un_arret(tmp_path: Path):
+    # Les jetons déjà brûlés l'ont été : ne pas les inscrire ferait passer un
+    # run interrompu pour gratuit.
+    supabase = FakeSupabase()
+    supabase.statut = "cancelled"
+    _lancer(supabase, tmp_path)
+    assert "usage" in supabase.ecrites(RUNS)[-1]
 
 
 def test_un_juge_en_panne_met_la_case_en_erreur(tmp_path: Path):

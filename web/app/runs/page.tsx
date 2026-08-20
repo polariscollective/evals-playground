@@ -7,7 +7,7 @@ import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
 import type { RunSummary } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: "queued",
+  triggered: "starting",
   running: "running",
   done: "done",
   error: "failed",
@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  pending: "bg-zinc-100 text-zinc-700",
+  triggered: "bg-zinc-100 text-zinc-700",
   running: "bg-teal-100 text-teal-900",
   done: "bg-zinc-900 text-white",
   error: "bg-red-100 text-red-800",
@@ -101,7 +101,7 @@ export default function RunsPage() {
   // Tant qu'un run tourne, la liste se rafraîchit : c'est le seul endroit d'où
   // l'on peut suivre plusieurs runs à la fois.
   useEffect(() => {
-    if (!runs?.some((r) => r.run.status === "running" || r.run.status === "pending"))
+    if (!runs?.some((r) => r.run.status === "running" || r.run.status === "triggered"))
       return;
     const timer = setInterval(load, 3000);
     return () => clearInterval(timer);
@@ -155,7 +155,7 @@ export default function RunsPage() {
             {runs.map(({ run, progress, mean }) => {
               const { min, max } = rubricBounds(run.config.rubric);
               const running =
-                run.status === "running" || run.status === "pending";
+                run.status === "running" || run.status === "triggered";
               return (
                 <tr
                   key={run.id}

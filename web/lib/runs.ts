@@ -182,6 +182,15 @@ export async function resetForRejudge(
   );
 }
 
+/** Demande l'arrêt : le job le lit avant chaque case et se termine lui-même.
+ *
+ * Seul le run est marqué. Les cases restantes sont passées en `cancelled` par
+ * le job, pas ici — c'est lui qui sait lesquelles il n'a pas faites, et le
+ * faire des deux côtés produirait deux vérités sur la même ligne. */
+export async function cancelRun(runId: string): Promise<void> {
+  await update(RUNS, { status: "cancelled" }, { id: `eq.${runId}` });
+}
+
 export async function saveNotes(runId: string, notes: string): Promise<void> {
   await update(RUNS, { notes }, { id: `eq.${runId}` });
 }
