@@ -9,6 +9,7 @@ dependencies = [
     # Providers d'inspect : chacun exige son SDK, sans quoi le modèle
     # échoue silencieusement au premier appel — une colonne vide dans la
     # matrice, sans message d'erreur.
+    "anthropic>=0.40",
     "openai>=1.0",
     "xai-sdk>=0.1",
     "pydantic>=2.7",
