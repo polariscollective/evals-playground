@@ -14,7 +14,9 @@ import {
   sourceCsvUrl,
 } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
+import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
+import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
 import { NotesField } from "@/components/NotesField";
 import { RubricEditor } from "@/components/RubricEditor";
 import {
@@ -27,34 +29,9 @@ import {
 } from "@/lib/rubric";
 import type {
   EvalSample,
-  Progress,
   RubricLevel,
   RunDetail,
 } from "@/lib/types";
-
-/** Ce que l'arrêt va réellement faire, case par case.
- *
- * Un arrêt n'est pas symétrique, et c'est ce qui fait hésiter : les cases en
- * vol sont déjà payées et iront à leur terme, celles qui n'ont pas commencé ne
- * coûteront rien, et rien de ce qui est noté n'est perdu. Un bouton d'arrêt
- * devant lequel on n'ose pas cliquer ne sert à rien — autant énoncer les trois
- * chiffres avant de le faire. */
-function stopWarning(progress: Progress): string {
-  const lines = ["Stop this run?", ""];
-  if (progress.running > 0) {
-    lines.push(`In flight: ${progress.running} — will finish, and be kept.`);
-  }
-  if (progress.pending > 0) {
-    lines.push(`Not started: ${progress.pending} — will be cancelled.`);
-  }
-  if (progress.done > 0) {
-    lines.push(`Already graded: ${progress.done} — kept as they are.`);
-  }
-  if (progress.errored > 0) {
-    lines.push(`Failed: ${progress.errored} — unchanged.`);
-  }
-  return lines.join("\n");
-}
 
 /** Combien d'essais chaque couple scénario × modèle a déjà : le moins, le plus.
  *
@@ -531,67 +508,6 @@ function AttemptView({
   );
 }
 
-/** Export de la matrice : télécharger le CSV, ou le copier tel quel. */
-function ExportMenu({ runId }: { runId: string }) {
-  const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(await matrixCsvText(runId));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-      setOpen(false);
-    } catch (e) {
-      setFailed((e as Error).message);
-    }
-  };
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-      >
-        Export table {copied ? "· copied" : "▾"}
-      </button>
-      {open && (
-        <>
-          {/* Ferme au clic ailleurs, sans écouteur global sur document. */}
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-1 w-56 rounded border border-zinc-300 bg-white p-1 shadow-lg">
-            <a
-              href={exportUrl(runId, "matrix")}
-              onClick={() => setOpen(false)}
-              className="block rounded px-3 py-2 text-sm hover:bg-zinc-100"
-            >
-              Download CSV
-              <span className="block text-xs text-zinc-500">
-                The table as shown
-              </span>
-            </a>
-            <button
-              onClick={copy}
-              className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-zinc-100"
-            >
-              Copy to clipboard
-              <span className="block text-xs text-zinc-500">
-                Paste into a sheet or a doc
-              </span>
-            </button>
-            {failed && (
-              <p role="alert" className="px-3 py-1 text-xs text-red-700">
-                {failed}
-              </p>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 export default function EvalRunPage({
   params,
@@ -606,6 +522,14 @@ export default function EvalRunPage({
   const [rejudging, setRejudging] = useState(false);
   const [extending, setExtending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  // Quelle action attend d'être confirmée, s'il y en a une.
+  const [confirming, setConfirming] = useState<null | "stop" | "retry">(
+    null,
+  );
+  // Le retour d'une action du menu, qui s'est refermé depuis. Séparé de
+  // `error`, qui remplace la page entière : un presse-papier récalcitrant ne
+  // doit pas faire disparaître la matrice.
+  const [notice, setNotice] = useState("");
   // Les transcripts pèsent lourd et ne servent qu'à la fenêtre de détail : on
   // ne les charge qu'à l'ouverture d'une case, pas à chaque rafraîchissement.
   const [transcripts, setTranscripts] = useState(false);
@@ -663,6 +587,39 @@ export default function EvalRunPage({
   if (!detail) return <main className="mx-auto max-w-5xl p-8">Loading…</main>;
 
   const { run, progress, cells } = detail;
+
+  const copyMatrix = async () => {
+    try {
+      await navigator.clipboard.writeText(await matrixCsvText(run.id));
+      setNotice("Table copied to the clipboard.");
+    } catch (e) {
+      setNotice(`Could not copy: ${(e as Error).message}`);
+    }
+    setTimeout(() => setNotice(""), 3000);
+  };
+
+  const stop = async () => {
+    setStopping(true);
+    try {
+      await cancelRun(run.id);
+      setConfirming(null);
+      await load(transcripts);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  const retry = async () => {
+    try {
+      await retryFailedCells(run.id);
+      setConfirming(null);
+      await load(transcripts);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   const targets = run.config.models.targets;
   const rubric = run.config.rubric;
   const { min, max } = rubricBounds(rubric);
@@ -742,96 +699,101 @@ export default function EvalRunPage({
             <p className="text-sm text-zinc-500">{run.user_email}</p>
           )}
         </div>
-        <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
+        <div className="flex shrink-0 items-start justify-end gap-2">
+          {/* L'arrêt reste dehors : c'est la seule action qu'on cherche dans
+              l'urgence, et elle ne paraît que pendant qu'un run tourne — donc
+              jamais en même temps que celles du menu. */}
           {running && (
             <button
-              onClick={async () => {
-                if (!window.confirm(stopWarning(progress))) return;
-                setStopping(true);
-                try {
-                  await cancelRun(run.id);
-                  await load(transcripts);
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setStopping(false);
-                }
-              }}
+              onClick={() => setConfirming("stop")}
               disabled={stopping}
               title="Le job lit la demande avant chaque case. Celle en cours ira à son terme."
-              className="rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+              className="cursor-pointer rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-50"
             >
               {stopping ? "Stopping…" : "Stop"}
             </button>
           )}
-          <button
-            onClick={() => router.push(`/?from=${run.id}`)}
-            title="Open the form filled in with these settings — creates a separate run"
-            className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-          >
-            Duplicate
-          </button>
-          {!running && progress.errored > 0 && (
-            <button
-              onClick={async () => {
-                const many = progress.errored > 1;
-                if (
-                  !window.confirm(
-                    `Retry ${progress.errored} failed cell${many ? "s" : ""}?` +
-                      `\n\n${many ? "They" : "It"} will be run again in this` +
-                      " same run. Nothing already graded is touched.",
-                  )
-                ) {
-                  return;
-                }
-                try {
-                  await retryFailedCells(run.id);
-                  await load(transcripts);
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
-              title="Run the failed cells again, in this same run"
-              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-            >
-              Retry failed ({progress.errored})
-            </button>
-          )}
-          {!running && (
-            <button
-              onClick={() => setExtending((v) => !v)}
-              title="Add scenarios, models or attempts to this same run"
-              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-            >
-              Extend…
-            </button>
-          )}
-          {!running && progress.done + progress.errored > 0 && (
-            <button
-              onClick={() => setRejudging((v) => !v)}
-              title="Ask a different question of the same transcripts"
-              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-            >
-              Re-judge
-            </button>
-          )}
-          {detail.source_csv_available && (
-            <a
-              href={sourceCsvUrl(run.id)}
-              title="The CSV that was uploaded when this run was launched"
-              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-            >
-              Source CSV
-            </a>
-          )}
-          <ExportMenu runId={run.id} />
-          <a
-            href={exportUrl(run.id, "details")}
-            className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
-            title="One row per cell: inputs, transcript, grade"
-          >
-            Download full data
-          </a>
+          <Menu label="Run actions">
+            {(close) => (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    close();
+                    router.push(`/?from=${run.id}`);
+                  }}
+                  hint="A separate run, same settings"
+                >
+                  Duplicate
+                </MenuItem>
+                {!running && (
+                  <MenuItem
+                    onClick={() => {
+                      close();
+                      setExtending(true);
+                    }}
+                    hint="Scenarios, models or attempts, added here"
+                  >
+                    Extend…
+                  </MenuItem>
+                )}
+                {!running && progress.errored > 0 && (
+                  <MenuItem
+                    onClick={() => {
+                      close();
+                      setConfirming("retry");
+                    }}
+                    hint="Run them again, in this same run"
+                  >
+                    Retry failed ({progress.errored})
+                  </MenuItem>
+                )}
+                {!running && progress.done + progress.errored > 0 && (
+                  <MenuItem
+                    onClick={() => {
+                      close();
+                      setRejudging(true);
+                    }}
+                    hint="A different question, same transcripts"
+                  >
+                    Re-judge
+                  </MenuItem>
+                )}
+                <MenuSeparator />
+                <MenuItem
+                  href={exportUrl(run.id, "matrix")}
+                  onClick={close}
+                  hint="The table as shown"
+                >
+                  Download table
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    close();
+                    void copyMatrix();
+                  }}
+                  hint="Paste into a sheet or a doc"
+                >
+                  Copy table
+                </MenuItem>
+                <MenuItem
+                  href={exportUrl(run.id, "details")}
+                  onClick={close}
+                  hint="One row per cell: inputs, transcript, grade"
+                >
+                  Download full data
+                </MenuItem>
+                {detail.source_csv_available && (
+                  <MenuItem
+                    href={sourceCsvUrl(run.id)}
+                    onClick={close}
+                    hint="The CSV uploaded when this run was launched"
+                  >
+                    Source CSV
+                  </MenuItem>
+                )}
+              </>
+            )}
+          </Menu>
         </div>
       </div>
 
@@ -880,6 +842,69 @@ export default function EvalRunPage({
           is kept. Extend to finish what was left, or Duplicate to start over.
         </p>
       )}
+
+      {notice && (
+        <p className="rounded border border-zinc-300 bg-zinc-50 p-2 text-sm text-zinc-700">
+          {notice}
+        </p>
+      )}
+
+      <ConfirmDialog
+        open={confirming === "stop"}
+        title="Stop this run?"
+        confirmLabel="Stop the run"
+        tone="warning"
+        busy={stopping}
+        onConfirm={stop}
+        onCancel={() => setConfirming(null)}
+      >
+        {/* Les trois issues ne sont pas symétriques, et c'est la source de
+            l'hésitation : ce qui est en vol est déjà payé, ce qui n'a pas
+            commencé ne coûtera rien, ce qui est noté reste. */}
+        <ConfirmRows
+          rows={[
+            {
+              label: "In flight",
+              count: progress.running,
+              fate: "will finish, and be kept.",
+            },
+            {
+              label: "Not started",
+              count: progress.pending,
+              fate: "will be cancelled.",
+            },
+            {
+              label: "Already graded",
+              count: progress.done,
+              fate: "kept as they are.",
+            },
+            { label: "Failed", count: progress.errored, fate: "unchanged." },
+          ]}
+        />
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirming === "retry"}
+        title={`Retry ${progress.errored} failed cell${progress.errored > 1 ? "s" : ""}?`}
+        confirmLabel="Retry them"
+        onConfirm={retry}
+        onCancel={() => setConfirming(null)}
+      >
+        <ConfirmRows
+          rows={[
+            {
+              label: "Failed",
+              count: progress.errored,
+              fate: "will be run again, in this same run.",
+            },
+            {
+              label: "Already graded",
+              count: progress.done,
+              fate: "untouched, and not paid for again.",
+            },
+          ]}
+        />
+      </ConfirmDialog>
 
       {extending && !running && (
         <ExtendPanel
