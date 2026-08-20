@@ -1,0 +1,57 @@
+name: Deploy Batch Runner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "backend/**"
+      - "shared/**"
+      - "pyproject.toml"
+
+env:
+  REGION: europe-west1
+  PROJECT: polaris-prod-499213
+  REGISTRY: europe-west1-docker.pkg.dev/genial-broker-499211-s1/polaris-docker
+  JOB: evals-playground-runner
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet -e ".[dev]"
+      - run: pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+      - run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.JOB }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.JOB }}:latest
+      - name: Deploy to Cloud Run Job
+        run: |
+          gcloud run jobs update ${{ env.JOB }} \
+            --image=${{ env.REGISTRY }}/${{ env.JOB }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT }}
