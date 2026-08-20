@@ -25,7 +25,7 @@ import type {
  * toutes les trois secondes pendant qu'un run tourne. */
 const SAMPLE_COLUMNS =
   "id,run_id,scenario_index,scenario_title,target_model,repetition,status," +
-  "temperature,score,justification,error,started_at,finished_at";
+  "temperature,score,justification,error,started_at,finished_at,cost_usd";
 
 export class NotFound extends Error {}
 
@@ -88,7 +88,10 @@ export async function loadRun(
     select: options.withTranscripts ? "*" : SAMPLE_COLUMNS,
     order: "scenario_index.asc,target_model.asc,repetition.asc",
   });
-  for (const sample of samples) sample.messages ??= [];
+  for (const sample of samples) {
+    sample.messages ??= [];
+    sample.usage ??= {};
+  }
 
   return {
     run,

@@ -334,3 +334,60 @@ def test_une_consommation_absente_du_journal_vaut_zero():
             model_usage = {}
 
     assert usage_from_log(FauxLog()) == {}
+
+
+# --- le coût, case par case --------------------------------------------------
+
+
+def test_chaque_case_ecrit_sa_consommation_et_son_cout(tmp_path: Path):
+    """Le total du run venait des agrégats d'inspect : juste, mais incapable de
+    dire quel scénario ou quel modèle pèse."""
+    supabase = FakeSupabase()
+    _lancer(supabase, tmp_path)
+
+    notees = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    assert notees
+    for case in notees:
+        assert "usage" in case, "la case doit porter ses jetons"
+        assert "cost_usd" in case, "la case doit porter son coût"
+
+
+def test_une_case_dont_rien_n_a_ete_consomme_coute_zero(tmp_path: Path):
+    """Zéro et « on ne sait pas » ne se confondent pas.
+
+    `mockllm` ne rapporte aucune consommation : le dictionnaire est vide, donc
+    rien n'a été facturé, donc zéro. C'est différent d'un modèle qui a bien
+    consommé mais dont on ignore le tarif — voir le test suivant.
+    """
+    supabase = FakeSupabase()
+    _lancer(supabase, tmp_path)
+
+    notees = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    assert all(case["usage"] == {} for case in notees)
+    assert all(case["cost_usd"] == 0.0 for case in notees)
+
+
+def test_un_modele_sans_tarif_connu_laisse_le_cout_vide():
+    """Un total amputé d'un modèle serait plus trompeur qu'une absence de
+    total, à l'échelle d'une case comme à celle d'un run."""
+    from playground.batch_job import actual_cost_from_dicts
+
+    cout, sans_tarif = actual_cost_from_dicts(
+        {
+            "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0},
+            "labo/modele-interne": {"input_tokens": 1_000_000, "output_tokens": 0},
+        }
+    )
+    assert sans_tarif == ["labo/modele-interne"]
+    assert cout == pytest.approx(1.00), "seul le modèle tarifé est compté"
+
+
+def test_la_consommation_d_une_case_est_relevee_pendant_qu_elle_tourne():
+    """`sample_model_usage()` répond pour la case en cours : c'est le seul
+    instant où l'attribution est certaine, et c'est ce qui permet d'écrire le
+    coût au fil de l'eau plutôt qu'en repassant sur le journal à la fin."""
+    from inspect_ai.model._model import sample_model_usage
+
+    # Hors d'un échantillon, la fonction répond un dictionnaire vide plutôt que
+    # de lever : une case notée hors run — un test — n'écrit alors aucun coût.
+    assert sample_model_usage() == {}

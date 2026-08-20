@@ -117,6 +117,10 @@ export interface EvalSample {
   error: string | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Jetons consommés par cette case, par modèle. */
+  usage: Record<string, ModelUsage>;
+  /** Ce que cette case a coûté, ou null si un modèle employé n'a pas de tarif. */
+  cost_usd: number | null;
 }
 
 /** Où en est un run, compté sur ses cases. */
@@ -144,6 +148,8 @@ export interface Cell {
   cancelled: number;
   pending: number;
   mean: number | null;
+  /** Somme de ce qu'ont coûté les cases de cette case de matrice. */
+  cost_usd: number;
 }
 
 /** Un run dans la liste : de quoi trier et décider d'ouvrir. */

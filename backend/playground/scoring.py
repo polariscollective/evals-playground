@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser, get_model
+from inspect_ai.model._model import sample_model_usage
 from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
@@ -49,6 +50,19 @@ class ScoredSample:
     score: float | None = None
     justification: str = ""
     messages: list[dict] = field(default_factory=list)
+
+    usage: dict[str, dict[str, int]] = field(default_factory=dict)
+    """Jetons consommés par cette case, par modèle.
+
+    Relevé ici et non à la fin du run : `sample_model_usage()` répond pour la
+    case en cours, et c'est le seul instant où l'attribution est certaine. Le
+    total du run devient alors une addition, plutôt qu'un second chiffre à tenir
+    d'accord avec le premier.
+
+    Le juge est compté dedans : il est appelé juste au-dessus, dans le même
+    échantillon. C'est voulu — le coût d'une case, c'est tout ce qu'il a fallu
+    dépenser pour obtenir sa note.
+    """
 
     error: str | None = None
     """Ce qui a cassé, si quelque chose a cassé.
@@ -254,6 +268,16 @@ def rubric_judge(
             score=grade,
             justification=justification,
             messages=list(metadata.get("transcript") or []),
+            usage={
+                nom: {
+                    "input_tokens": u.input_tokens or 0,
+                    "output_tokens": u.output_tokens or 0,
+                    "input_tokens_cache_read": u.input_tokens_cache_read or 0,
+                    "input_tokens_cache_write": u.input_tokens_cache_write or 0,
+                    "reasoning_tokens": u.reasoning_tokens or 0,
+                }
+                for nom, u in (sample_model_usage() or {}).items()
+            },
             error=error,
         )
 

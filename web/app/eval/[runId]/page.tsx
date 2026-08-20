@@ -408,6 +408,9 @@ function AttemptView({
           </span>
         )}
         <span className="ml-auto text-xs text-zinc-500">
+          {attempt.cost_usd !== null && attempt.cost_usd > 0 && (
+            <>${attempt.cost_usd.toFixed(4)} · </>
+          )}
           {attempt.messages.length} message
           {attempt.messages.length > 1 ? "s" : ""}
         </span>
@@ -786,6 +789,9 @@ export default function EvalRunPage({
                                 ? `${distribution(scoresOf(index, target))} — average ${formatMean(cell.mean)}` +
                                   (cell.cancelled > 0
                                     ? ` · ${cell.cancelled} never ran`
+                                    : "") +
+                                  (cell.cost_usd > 0
+                                    ? ` · $${cell.cost_usd.toFixed(4)}`
                                     : "")
                                 : waiting
                                   ? `${cell?.pending} still to run`

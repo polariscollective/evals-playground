@@ -279,6 +279,8 @@ def write_sample(
     justification: str,
     messages: list[dict],
     temperature: float | None = None,
+    usage: dict[str, Any] | None = None,
+    cost_usd: float | None = None,
     error: str | None = None,
 ) -> None:
     """Enregistre une case terminée.
@@ -295,6 +297,8 @@ def write_sample(
             "justification": justification,
             "messages": messages,
             "temperature": temperature,
+            "usage": usage or {},
+            "cost_usd": cost_usd,
             "error": error,
             "finished_at": NOW,
         },

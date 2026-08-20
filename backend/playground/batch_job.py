@@ -182,6 +182,10 @@ def run_batch_job(
         )
 
     def enregistre(sample: ScoredSample) -> None:
+        # Tarifée avec notre table, pas celle d'inspect : deux sources de prix
+        # finiraient par ne plus dire la même chose, et c'est exactement ce que
+        # `shared/pricing.json` existe pour empêcher.
+        cout, sans_tarif = actual_cost_from_dicts(sample.usage)
         write_sample(
             supabase,
             run_id,
@@ -192,6 +196,10 @@ def run_batch_job(
             justification=sample.justification,
             messages=sample.messages,
             temperature=sample.temperature,
+            usage=sample.usage,
+            # Un total amputé d'un modèle sans tarif connu serait plus trompeur
+            # qu'une absence de total.
+            cost_usd=None if sans_tarif else cout,
             error=sample.error,
         )
 
@@ -246,6 +254,13 @@ def run_batch_job(
                 supabase, run_id, "The run finished without producing this cell."
             )
 
+        # Le total du run vient du journal d'inspect, et non de la somme des
+        # cases. Les deux coïncident presque toujours — vérifié à zéro jeton
+        # près sur un run de 72 cases et trois modèles — mais une case dont la
+        # conversation a échoué avant d'atteindre le juge n'écrit jamais sa
+        # consommation, alors qu'elle a bien été facturée. Le total du journal
+        # la voit, la somme des cases non. Le chiffre du run est celui qu'on
+        # paie ; celui des cases dit où il est parti.
         usage = add_usage(row.get("usage") or {}, usage_from_log(log))
         cost, unpriced = actual_cost_from_dicts(usage)
 

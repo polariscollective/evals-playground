@@ -29,7 +29,15 @@ export function progressOf(samples: EvalSample[]): Progress {
 }
 
 function emptyCell(): Cell {
-  return { judged: 0, unjudged: 0, errored: 0, cancelled: 0, pending: 0, mean: null };
+  return {
+    judged: 0,
+    unjudged: 0,
+    errored: 0,
+    cancelled: 0,
+    pending: 0,
+    mean: null,
+    cost_usd: 0,
+  };
 }
 
 /** La matrice, une entrée par scénario.
@@ -58,6 +66,7 @@ export function cellsOf(
     const row = cells[sample.scenario_index];
     if (!row[sample.target_model]) row[sample.target_model] = emptyCell();
     const cell = row[sample.target_model];
+    cell.cost_usd += sample.cost_usd ?? 0;
 
     if (sample.status === "pending" || sample.status === "running") {
       cell.pending += 1;
