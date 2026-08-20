@@ -14,8 +14,21 @@ export function formatMean(mean: number): string {
   return Number.isInteger(mean) ? String(mean) : mean.toFixed(2);
 }
 
-/** Les bornes de l'échelle, dans l'ordre. */
-export function rubricBounds(rubric: RubricLevel[]): { min: number; max: number } {
+/** Les bornes de l'échelle, dans l'ordre.
+ *
+ * Tolère une échelle absente. Le schéma en exige deux paliers, et la migration
+ * en donne une à tout run qui n'en avait pas — mais un serveur d'une version
+ * antérieure, lui, renvoie des runs sans échelle du tout. Une page entière qui
+ * s'effondre sur un champ manquant est un mauvais échange contre une matrice
+ * hachurée, qui dit la même chose sans rien casser.
+ *
+ * Des bornes égales plutôt qu'un `0–1` inventé : `positionOnScale` et
+ * `cellStyle` les traitent alors comme « pas d'échelle », au lieu de colorer
+ * des cases selon une graduation que personne n'a écrite. */
+export function rubricBounds(
+  rubric: RubricLevel[] | undefined,
+): { min: number; max: number } {
+  if (!rubric?.length) return { min: 0, max: 0 };
   const values = rubric.map((level) => level.value);
   return { min: Math.min(...values), max: Math.max(...values) };
 }
@@ -24,8 +37,10 @@ export function rubricBounds(rubric: RubricLevel[]): { min: number; max: number 
  *
  * Une échelle présentée dans le désordre se lit comme une liste d'options sans
  * progression, alors que l'ordre est précisément ce qui en fait une échelle. */
-export function sortedRubric(rubric: RubricLevel[]): RubricLevel[] {
-  return [...rubric].sort((a, b) => a.value - b.value);
+export function sortedRubric(
+  rubric: RubricLevel[] | undefined,
+): RubricLevel[] {
+  return [...(rubric ?? [])].sort((a, b) => a.value - b.value);
 }
 
 /** Où tombe une moyenne sur l'échelle, entre 0 et 1.
@@ -35,7 +50,7 @@ export function sortedRubric(rubric: RubricLevel[]): RubricLevel[] {
  * une couleur arbitraire présentée comme un résultat. */
 export function positionOnScale(
   mean: number,
-  rubric: RubricLevel[],
+  rubric: RubricLevel[] | undefined,
 ): number | null {
   const { min, max } = rubricBounds(rubric);
   if (!(max > min)) return null;
@@ -49,7 +64,7 @@ export function positionOnScale(
  * confondre serait le pire contresens possible sur cet écran. */
 export function cellStyle(
   cell: Cell | undefined,
-  rubric: RubricLevel[],
+  rubric: RubricLevel[] | undefined,
 ): string {
   const hachures =
     "bg-[repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5_4px,#e4e4e7_4px,#e4e4e7_8px)] text-zinc-400";
