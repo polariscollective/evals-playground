@@ -14,61 +14,42 @@ from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from playground.conversation import run_conversation
-from playground.eval_schemas import EvalRunConfig, TemperatureSpec
+from playground.eval_schemas import EvalRunConfig
 
 
-def temperatures_for(
-    spec: TemperatureSpec | None, repetitions: int
-) -> list[float | None]:
-    """La température de chaque répétition.
+def pending_dataset(
+    rows: list[dict[str, Any]], config: EvalRunConfig
+) -> MemoryDataset:
+    """Une case par ligne restée à faire.
 
-    Sans consigne, aucune température n'est envoyée et le fournisseur applique
-    son défaut. Avec une borne haute, les répétitions s'étalent linéairement
-    entre les deux bornes, celles-ci comprises. Une répétition unique prend la
-    borne basse : il n'y a pas d'intervalle à parcourir.
+    La matrice n'est pas reconstruite depuis la configuration : elle est lue en
+    base, où chaque case existe déjà avec sa température. C'est ce qui permet de
+    reprendre un run — relancer ses erreurs, lui ajouter des scénarios ou des
+    modèles — sans refaire ce qui est déjà noté, et donc déjà payé.
 
-    La dernière répétition renvoie `spec.max` tel quel plutôt que le calculer
-    par accumulation : `spec.min + step * index` peut retomber à un cheveu de
-    la borne haute par arrondi flottant (`0.2 + 0.7 == 0.8999999999999999`),
-    ce que la borne demandée par l'utilisateur ne doit pas subir.
+    La température vient de la ligne et n'est jamais recalculée : un run complété
+    en deux fois porte deux étalements, et repartir de `config.repetitions`
+    réécrirait celui des cases anciennes.
     """
-    if spec is None:
-        return [None] * repetitions
-    if spec.max is None or repetitions == 1:
-        return [spec.min] * repetitions
-    step = (spec.max - spec.min) / (repetitions - 1)
-    return [
-        spec.max if index == repetitions - 1 else spec.min + step * index
-        for index in range(repetitions)
-    ]
-
-
-def eval_dataset(config: EvalRunConfig) -> MemoryDataset:
-    """Un échantillon par triplet scénario × modèle évalué × répétition.
-
-    Les températures sont recalculées à l'identique pour chaque couple : c'est
-    ce qui rend la matrice comparable, chaque case recevant exactement les mêmes
-    réglages que ses voisines.
-    """
-    temperatures = temperatures_for(config.temperature, config.repetitions)
     samples = []
-    index = 0
-    for scenario_index, scenario in enumerate(config.scenarios):
-        for target in config.models.targets:
-            for repetition in range(config.repetitions):
-                index += 1
-                samples.append(
-                    Sample(
-                        id=index,
-                        input=scenario.opening_message,
-                        metadata={
-                            "scenario_index": scenario_index,
-                            "target": target,
-                            "repetition": repetition,
-                            "temperature": temperatures[repetition],
-                        },
-                    )
-                )
+    for index, row in enumerate(rows):
+        scenario_index = int(row["scenario_index"])
+        scenario = config.scenarios[scenario_index]
+        temperature = row.get("temperature")
+        samples.append(
+            Sample(
+                id=index + 1,
+                input=scenario.opening_message,
+                metadata={
+                    "scenario_index": scenario_index,
+                    "target": row["target_model"],
+                    "repetition": int(row["repetition"]),
+                    # PostgREST peut rendre un `numeric` en chaîne pour ne pas
+                    # perdre de précision ; le solver, lui, attend un flottant.
+                    "temperature": None if temperature is None else float(temperature),
+                },
+            )
+        )
     return MemoryDataset(samples, name="matrice")
 
 

@@ -26,7 +26,7 @@ from inspect_ai.log import EvalLog
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from playground.eval_schemas import EvalRunConfig
-from playground.eval_task import conversation_solver, eval_dataset
+from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
 from playground.scoring import ScoredSample, rubric_judge
 from playground.supabase_store import (
@@ -38,6 +38,7 @@ from playground.supabase_store import (
     fetch_run,
     finish_run,
     mark_sample_running,
+    pending_samples,
     run_status,
     start_run,
     write_sample,
@@ -208,7 +209,25 @@ def run_batch_job(
             dataset = rejudge_dataset(supabase, run_id)
             solveur: Solver = stored_transcript()
         else:
-            dataset = eval_dataset(config)
+            # Ce qui reste à faire, et rien d'autre : un run dont on relance les
+            # erreurs ou auquel on ajoute des scénarios ne doit pas repayer ses
+            # cases déjà notées.
+            dataset = pending_dataset(pending_samples(supabase, run_id), config)
+            if len(dataset) == 0:
+                # Rien à faire : un run déjà complet qu'on relance, ou une
+                # reprise dont les cases ont été traitées entre-temps. Le
+                # terminer proprement vaut mieux que de laisser inspect
+                # trébucher sur un dataset vide, et le run resterait sinon
+                # `triggered` jusqu'au ramassage des deux heures.
+                usage = row.get("usage") or {}
+                cost, unpriced = actual_cost_from_dicts(usage)
+                finish_run(
+                    supabase,
+                    run_id,
+                    usage=usage,
+                    cost_usd=None if unpriced else cost,
+                )
+                return
             solveur = conversation_solver(
                 config,
                 model_args=model_args,

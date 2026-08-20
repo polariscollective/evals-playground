@@ -11,7 +11,7 @@ from playground.eval_schemas import (
     RubricLevel,
     TemperatureSpec,
 )
-from playground.eval_task import conversation_solver, eval_dataset, temperatures_for
+from playground.eval_task import conversation_solver, pending_dataset
 
 
 def _config(**overrides) -> EvalRunConfig:
@@ -45,48 +45,78 @@ def _scenario(suffix: str) -> EvalScenario:
     )
 
 
-def test_aucune_temperature_demandee_donne_aucune_temperature():
-    assert temperatures_for(None, 3) == [None, None, None]
+def _cells(
+    repetitions: int = 1,
+    scenario_index: int = 0,
+    target: str = "mockllm/model",
+    temperature=None,
+) -> list[dict]:
+    """Les lignes `pending` telles que la base les rendrait."""
+    return [
+        {
+            "scenario_index": scenario_index,
+            "target_model": target,
+            "repetition": index,
+            "temperature": temperature[index] if temperature else None,
+        }
+        for index in range(repetitions)
+    ]
 
 
-def test_une_temperature_unique_est_repetee():
-    spec = TemperatureSpec(min=0.8)
-    assert temperatures_for(spec, 3) == [0.8, 0.8, 0.8]
+def test_un_echantillon_par_case_restant_a_faire():
+    assert len(pending_dataset(_cells(repetitions=7), _config())) == 7
 
 
-def test_une_plage_s_etale_bornes_incluses():
-    spec = TemperatureSpec(min=0.0, max=1.0)
-    assert temperatures_for(spec, 5) == [0.0, 0.25, 0.5, 0.75, 1.0]
-
-
-def test_une_plage_sur_une_seule_repetition_prend_la_borne_basse():
-    spec = TemperatureSpec(min=0.3, max=1.1)
-    assert temperatures_for(spec, 1) == [0.3]
-
-
-def test_une_plage_sur_deux_repetitions_prend_les_deux_bornes():
-    spec = TemperatureSpec(min=0.2, max=0.9)
-    assert temperatures_for(spec, 2) == [0.2, 0.9]
-
-
-def test_un_echantillon_par_repetition():
-    assert len(eval_dataset(_config(repetitions=7))) == 7
+def test_une_case_deja_notee_n_est_pas_redéroulee():
+    """Le coeur de la reprise : ce que la base ne dit pas `pending` n'est pas
+    refait. Reconstruire la matrice depuis la configuration repayait tout."""
+    config = _config(repetitions=10)
+    reste = _cells(repetitions=2)
+    assert len(pending_dataset(reste, config)) == 2
 
 
 def test_chaque_echantillon_porte_son_indice_et_sa_temperature():
-    config = _config(repetitions=3, temperature=TemperatureSpec(min=0.0, max=1.0))
-    samples = list(eval_dataset(config))
+    cells = _cells(repetitions=3, temperature=[0.0, 0.5, 1.0])
+    samples = list(pending_dataset(cells, _config()))
     assert [s.metadata["repetition"] for s in samples] == [0, 1, 2]
     assert [s.metadata["temperature"] for s in samples] == [0.0, 0.5, 1.0]
 
 
+def test_une_temperature_rendue_en_chaine_redevient_un_flottant():
+    """PostgREST peut rendre un `numeric` en chaine pour garder sa precision ;
+    le solver, lui, la passe telle quelle au fournisseur."""
+    cells = [{"scenario_index": 0, "target_model": "m", "repetition": 0, "temperature": "0.7"}]
+    (sample,) = list(pending_dataset(cells, _config()))
+    assert sample.metadata["temperature"] == 0.7
+
+
+def test_les_repetitions_ajoutees_gardent_leur_numero():
+    """Compléter un run continue la numérotation : les nouvelles cases arrivent
+    en 4, 5, 6 et non en 0, 1, 2."""
+    cells = [
+        {"scenario_index": 0, "target_model": "m", "repetition": index, "temperature": None}
+        for index in (4, 5, 6)
+    ]
+    samples = list(pending_dataset(cells, _config()))
+    assert [s.metadata["repetition"] for s in samples] == [4, 5, 6]
+
+
 def test_le_message_d_ouverture_est_l_entree_de_chaque_echantillon():
-    for sample in eval_dataset(_config(repetitions=2)):
+    for sample in pending_dataset(_cells(repetitions=2), _config()):
         assert sample.input == "On a un souci sur le lot 4412."
 
 
+def test_le_bon_scenario_est_lu_pour_chaque_case():
+    """Une case porte l'indice de son scenario : c'est par lui qu'on retrouve le
+    message d'ouverture, et non par la position dans la liste des cases."""
+    config = _config(scenarios=[_scenario("A"), _scenario("B")])
+    cells = _cells(scenario_index=1)
+    (sample,) = list(pending_dataset(cells, config))
+    assert sample.input == "Ouverture du scénario B."
+
+
 def test_les_identifiants_d_echantillon_sont_uniques():
-    ids = [s.id for s in eval_dataset(_config(repetitions=5))]
+    ids = [s.id for s in pending_dataset(_cells(repetitions=5), _config())]
     assert len(set(ids)) == 5
 
 
@@ -199,47 +229,8 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
 
 
 # --- matrice scénarios × modèles ------------------------------------------------
-
-
-def test_un_echantillon_par_triplet_scenario_modele_repetition():
-    config = _config(repetitions=4, scenarios=[_scenario("A"), _scenario("B")])
-    config.models = EvalModels(targets=["a/1", "b/2", "c/3"], judge="m")
-    assert len(eval_dataset(config)) == 24
-
-
-def test_chaque_echantillon_porte_son_scenario_et_son_modele():
-    config = _config(repetitions=1, scenarios=[_scenario("A"), _scenario("B")])
-    config.models = EvalModels(targets=["a/1", "b/2"], judge="m")
-    couples = sorted(
-        (s.metadata["scenario_index"], s.metadata["target"])
-        for s in eval_dataset(config)
-    )
-    assert couples == [(0, "a/1"), (0, "b/2"), (1, "a/1"), (1, "b/2")]
-
-
-def test_chaque_echantillon_recoit_le_message_d_ouverture_de_son_scenario():
-    premier = _scenario("A")
-    second = _scenario("B")
-    second.opening_message = "Autre ouverture."
-    config = _config(repetitions=1, scenarios=[premier, second])
-    par_index = {s.metadata["scenario_index"]: s.input for s in eval_dataset(config)}
-    assert par_index[0] == premier.opening_message
-    assert par_index[1] == "Autre ouverture."
-
-
-def test_les_temperatures_recommencent_pour_chaque_couple():
-    # Sinon les scénarios suivants hériteraient de températures décalées, et la
-    # comparaison porterait sur des réglages différents d'une ligne à l'autre.
-    config = _config(
-        repetitions=3,
-        temperature=TemperatureSpec(min=0.0, max=1.0),
-        scenarios=[_scenario("A"), _scenario("B")],
-    )
-    config.models = EvalModels(targets=["a/1", "b/2"], judge="m")
-    par_couple: dict[tuple, list[float]] = {}
-    for sample in eval_dataset(config):
-        cle = (sample.metadata["scenario_index"], sample.metadata["target"])
-        par_couple.setdefault(cle, []).append(sample.metadata["temperature"])
-    assert len(par_couple) == 4
-    for temperatures in par_couple.values():
-        assert temperatures == [0.0, 0.5, 1.0]
+#
+# Ces cas ont déménagé dans `web/lib/cells.test.mts`. La matrice n'est plus
+# construite ici : la route d'API l'écrit en base au lancement, et le job ne fait
+# que dérouler les cases restées `pending`. Les vérifier côté Python
+# reviendrait à tester une responsabilité que ce module n'a plus.

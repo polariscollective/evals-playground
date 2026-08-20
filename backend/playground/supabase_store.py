@@ -132,6 +132,23 @@ def fetch_run(supabase: Supabase, run_id: str) -> dict:
     return rows[0]
 
 
+def pending_samples(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
+    """Les cases qu'il reste à dérouler, dans l'ordre de la matrice.
+
+    C'est la seule source de ce que le job doit faire. Reconstruire la matrice
+    depuis la configuration refait tout, y compris ce qui est déjà noté : ni la
+    reprise des erreurs ni l'ajout de scénarios à un run existant ne seraient
+    possibles.
+    """
+    return supabase.select(
+        SAMPLES,
+        run_id=f"eq.{run_id}",
+        status="eq.pending",
+        select="scenario_index,target_model,repetition,temperature",
+        order="scenario_index,target_model,repetition",
+    )
+
+
 def start_run(supabase: Supabase, run_id: str, execution: str | None = None) -> None:
     """Marque le run comme démarré.
 

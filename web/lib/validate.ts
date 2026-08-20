@@ -5,7 +5,12 @@
 // n'est cru : une échelle à un seul palier, un scénario vide ou un multitours
 // sans adversaire produiraient un run qui ne mesure rien, et le job n'aurait
 // aucun moyen de s'en rendre compte.
-import type { EvalRunConfig, RejudgeRequest, RubricLevel } from "./types";
+import type {
+  EvalRunConfig,
+  ExtendRequest,
+  RejudgeRequest,
+  RubricLevel,
+} from "./types";
 
 const MIN_TURNS = 1;
 const MAX_TURNS = 10;
@@ -121,5 +126,71 @@ export function rejudgeProblem(request: unknown): string | null {
   const rubric = rubricProblem(r.rubric);
   if (rubric) return rubric;
   if (!isFilled(r.judge)) return "a judge model is required";
+  return null;
+}
+
+/** Ce qui cloche dans une demande d'ajout à un run, ou null.
+ *
+ * `scenarioCount` est la taille de la matrice actuelle : un indice qui la
+ * dépasse désignerait un scénario que le job ne saurait pas lire, puisque c'est
+ * par cet indice qu'il retrouve le message d'ouverture. */
+export function extendProblem(
+  request: unknown,
+  scenarioCount: number,
+): string | null {
+  if (!request || typeof request !== "object") return "body must be an object";
+  const r = request as ExtendRequest;
+
+  if (!Array.isArray(r.targets) || r.targets.length === 0) {
+    return "at least one model is required";
+  }
+  if (r.targets.some((target) => !isFilled(target))) {
+    return "a model identifier is empty";
+  }
+  if (new Set(r.targets).size !== r.targets.length) {
+    return "the same model appears more than once";
+  }
+
+  if (!Number.isInteger(r.repetitions) || r.repetitions < 1) {
+    return "repetitions must be at least 1";
+  }
+
+  const indices = r.scenario_indices;
+  if (!Array.isArray(indices)) return "scenario_indices must be a list";
+  for (const index of indices) {
+    if (!Number.isInteger(index) || index < 0 || index >= scenarioCount) {
+      return `scenario ${index} is not part of this run`;
+    }
+  }
+
+  const nouveaux = r.new_scenarios;
+  if (!Array.isArray(nouveaux)) return "new_scenarios must be a list";
+  for (const scenario of nouveaux) {
+    if (
+      !isFilled(scenario?.title) ||
+      !isFilled(scenario?.system_prompt) ||
+      !isFilled(scenario?.opening_message)
+    ) {
+      return "every scenario needs a title, a system prompt and an opening message";
+    }
+  }
+
+  if (indices.length === 0 && nouveaux.length === 0) {
+    // Sans scénario il n'y a pas de case à ajouter : la demande tournerait à
+    // vide et remettrait pourtant le run en route.
+    return "at least one scenario is required";
+  }
+
+  const temperature = r.temperature;
+  if (temperature) {
+    const { min, max } = temperature;
+    if (typeof min !== "number" || min < 0 || min > 2) {
+      return "temperature must be between 0 and 2";
+    }
+    if (max != null && (max < 0 || max > 2 || max < min)) {
+      return "the temperature upper bound is below the lower bound";
+    }
+  }
+
   return null;
 }

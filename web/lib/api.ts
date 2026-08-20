@@ -5,6 +5,7 @@ import type {
   CostEstimate,
   EvalRunConfig,
   JudgePromptPreview,
+  ExtendRequest,
   ProviderInfo,
   RejudgeRequest,
   RubricLevel,
@@ -64,6 +65,19 @@ export const rejudgeRun = (runId: string, body: RejudgeRequest) =>
 
 export const cancelRun = (runId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/cancel`, { method: "POST" });
+
+/** Relance les cases en erreur, dans ce même run. */
+export const retryFailedCells = (runId: string) =>
+  request<{ ok: true; retried: number }>(`/api/runs/${runId}/retry`, {
+    method: "POST",
+  });
+
+/** Ajoute une sous-matrice à un run : des scénarios, des modèles, des essais. */
+export const extendRun = (runId: string, body: ExtendRequest) =>
+  request<{ ok: true; added: number }>(`/api/runs/${runId}/extend`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const saveNotes = (runId: string, notes: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/notes`, {

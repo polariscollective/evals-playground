@@ -157,10 +157,11 @@ export default function RunsPage() {
             </tr>
           </thead>
           <tbody>
-            {runs.map(({ run, progress, mean }) => {
+            {runs.map(({ run, progress, mean, repetitions }) => {
               const { min, max } = rubricBounds(run.config.rubric);
               const running =
                 run.status === "running" || run.status === "triggered";
+              const [low, high] = repetitions;
               return (
                 <tr
                   key={run.id}
@@ -202,7 +203,10 @@ export default function RunsPage() {
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-700">
                     {run.config.scenarios.length} ×{" "}
                     {run.config.models.targets.length} ×{" "}
-                    {run.config.repetitions}
+                    {/* Compté sur les cases : un run complété n'a plus le même
+                        nombre d'essais partout, et `config.repetitions` ne dirait
+                        que ce qu'on a demandé au dernier lot. */}
+                    {low === high ? low : `${low}–${high}`}
                     <div className="text-xs text-zinc-500">
                       scenarios × models × reps
                     </div>

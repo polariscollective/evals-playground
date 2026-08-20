@@ -58,7 +58,17 @@ class BaseQuiSAnnule(Supabase):
     def select(self, table, **params):
         if table == RUNS:
             return [{"id": "r1", "config": CONFIG, "usage": {}, "status": self.statut}]
-        return []
+        # Les cases existent en base avant que le job ne demarre : c'est la route
+        # d'API qui les ecrit, et le job ne deroule que celles restees `pending`.
+        return [
+            {
+                "scenario_index": 0,
+                "target_model": "mockllm/model",
+                "repetition": repetition,
+                "temperature": None,
+            }
+            for repetition in range(CONFIG["repetitions"])
+        ]
 
     def update(self, table, values, **filters):
         self.ecritures.append((table, values, filters))

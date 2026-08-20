@@ -68,6 +68,26 @@ export interface EvalRunConfig {
   notes?: string;
 }
 
+/** Ce qu'on ajoute à un run existant : une sous-matrice, et rien d'autre.
+ *
+ * Ni juge, ni échelle, ni nombre de tours : ce qui ne peut pas être envoyé ne
+ * peut pas dériver, et deux lots jugés différemment ne seraient plus
+ * comparables — ce qu'une matrice existe précisément pour permettre.
+ *
+ * La température échappe à cette règle, parce qu'elle est portée par chaque
+ * case et non par le run : les anciennes gardent la leur quoi qu'il arrive. */
+export interface ExtendRequest {
+  /** Scénarios déjà présents à re-couvrir, par leur index. */
+  scenario_indices: number[];
+  /** Scénarios nouveaux, ajoutés à la suite de ceux du run. */
+  new_scenarios: EvalScenario[];
+  /** Modèles à couvrir — déjà évalués ou non, la distinction se fait ici. */
+  targets: string[];
+  /** Combien de répétitions ajouter à chaque couple retenu. */
+  repetitions: number;
+  temperature?: TemperatureSpec | null;
+}
+
 export interface Message {
   role: "user" | "assistant";
   content: string;
@@ -166,6 +186,12 @@ export interface RunSummary {
   run: EvalRun;
   progress: Progress;
   mean: number | null;
+  /** Combien d'essais par case : le moins, le plus.
+   *
+   * Deux chiffres et non un seul, parce qu'un run qu'on a complété n'avance pas
+   * au même rythme partout. `config.repetitions` ne dit plus que ce qui avait
+   * été demandé au dernier lot. */
+  repetitions: [number, number];
 }
 
 /** Un run ouvert : sa configuration, ses cases, sa matrice. */

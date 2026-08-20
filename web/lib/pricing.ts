@@ -252,3 +252,59 @@ export function estimateCost(
     unpriced_models: unpriced,
   };
 }
+
+/** Deux devis mis bout à bout, pour un run qu'on a complété en plusieurs fois.
+ *
+ * Sans ça, compléter un run laisserait face à face un coût réel qui a grandi et
+ * un devis figé sur la première matrice : l'écart affiché ne mesurerait plus
+ * l'estimation, seulement l'ajout. Les longueurs de réponse supposées ne se
+ * moyennent pas — deux lots ont pu être devisés sur des hypothèses différentes,
+ * et `null` le dit honnêtement plutôt que d'inventer un chiffre intermédiaire. */
+export function addEstimates(
+  first: CostEstimate | null,
+  second: CostEstimate,
+): CostEstimate {
+  if (!first) return second;
+
+  const parModele = new Map<string, ModelCost>();
+  for (const entry of [...first.per_model, ...second.per_model]) {
+    const deja = parModele.get(entry.model);
+    if (!deja) {
+      parModele.set(entry.model, { ...entry });
+      continue;
+    }
+    parModele.set(entry.model, {
+      model: entry.model,
+      input_tokens: deja.input_tokens + entry.input_tokens,
+      output_tokens: deja.output_tokens + entry.output_tokens,
+      // La longueur supposée est une hypothèse, pas une quantité : la retenir
+      // du lot le plus récent vaut mieux que d'additionner deux hypothèses.
+      response_tokens: entry.response_tokens,
+      // Un seul lot sans tarif suffit à rendre le total du modèle inconnu.
+      usd: deja.usd === null || entry.usd === null ? null : deja.usd + entry.usd,
+    });
+  }
+
+  return {
+    response_tokens:
+      first.response_tokens === second.response_tokens
+        ? first.response_tokens
+        : null,
+    usd: round(first.usd + second.usd, 4),
+    eur: round(first.eur + second.eur, 4),
+    min_usd: round(first.min_usd + second.min_usd, 4),
+    max_usd: round(first.max_usd + second.max_usd, 4),
+    min_eur: round(first.min_eur + second.min_eur, 4),
+    max_eur: round(first.max_eur + second.max_eur, 4),
+    conversations: first.conversations + second.conversations,
+    model_calls: first.model_calls + second.model_calls,
+    input_tokens: first.input_tokens + second.input_tokens,
+    output_tokens: first.output_tokens + second.output_tokens,
+    per_model: [...parModele.values()].sort(
+      (a, b) => (b.usd ?? 0) - (a.usd ?? 0),
+    ),
+    unpriced_models: [
+      ...new Set([...first.unpriced_models, ...second.unpriced_models]),
+    ],
+  };
+}

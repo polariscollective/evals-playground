@@ -5,13 +5,16 @@ import { useRouter } from "next/navigation";
 import {
   cancelRun,
   exportUrl,
+  extendRun,
   getRun,
   matrixCsvText,
   rejudgeRun,
+  retryFailedCells,
   saveNotes,
   sourceCsvUrl,
 } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
+import { ExtendPanel } from "@/components/ExtendPanel";
 import { NotesField } from "@/components/NotesField";
 import { RubricEditor } from "@/components/RubricEditor";
 import {
@@ -51,6 +54,23 @@ function stopWarning(progress: Progress): string {
     lines.push(`Failed: ${progress.errored} — unchanged.`);
   }
   return lines.join("\n");
+}
+
+/** Combien d'essais chaque couple scénario × modèle a déjà : le moins, le plus.
+ *
+ * Un run complété n'avance pas au même rythme partout — un modèle ajouté en
+ * cours de route a moins d'essais que les premiers, et la moyenne d'une case
+ * porte alors sur moins de conversations que celle d'à côté. Le dire est le prix
+ * d'une matrice qu'on peut agrandir. */
+function repetitionRange(samples: EvalSample[]): [number, number] {
+  const counts = new Map<string, number>();
+  for (const sample of samples) {
+    const key = `${sample.scenario_index} ${sample.target_model}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const values = [...counts.values()];
+  if (values.length === 0) return [0, 0];
+  return [Math.min(...values), Math.max(...values)];
 }
 
 function shortModel(id: string): string {
@@ -584,6 +604,7 @@ export default function EvalRunPage({
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [rejudging, setRejudging] = useState(false);
+  const [extending, setExtending] = useState(false);
   const [stopping, setStopping] = useState(false);
   // Les transcripts pèsent lourd et ne servent qu'à la fenêtre de détail : on
   // ne les charge qu'à l'ouverture d'une case, pas à chaque rafraîchissement.
@@ -745,11 +766,46 @@ export default function EvalRunPage({
           )}
           <button
             onClick={() => router.push(`/?from=${run.id}`)}
-            title="Open the form filled in with exactly these settings"
+            title="Open the form filled in with these settings — creates a separate run"
             className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
           >
-            Relaunch
+            Duplicate
           </button>
+          {!running && progress.errored > 0 && (
+            <button
+              onClick={async () => {
+                const many = progress.errored > 1;
+                if (
+                  !window.confirm(
+                    `Retry ${progress.errored} failed cell${many ? "s" : ""}?` +
+                      `\n\n${many ? "They" : "It"} will be run again in this` +
+                      " same run. Nothing already graded is touched.",
+                  )
+                ) {
+                  return;
+                }
+                try {
+                  await retryFailedCells(run.id);
+                  await load(transcripts);
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+              title="Run the failed cells again, in this same run"
+              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            >
+              Retry failed ({progress.errored})
+            </button>
+          )}
+          {!running && (
+            <button
+              onClick={() => setExtending((v) => !v)}
+              title="Add scenarios, models or attempts to this same run"
+              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            >
+              Extend…
+            </button>
+          )}
           {!running && progress.done + progress.errored > 0 && (
             <button
               onClick={() => setRejudging((v) => !v)}
@@ -821,8 +877,21 @@ export default function EvalRunPage({
           {progress.cancelled > 0 && ` · ${progress.cancelled} never ran (∅)`}
           {progress.errored > 0 && ` · ${progress.errored} failed`}. A cell
           already in flight when you stopped was let finish — what was paid for
-          is kept. Relaunch to run the whole matrix again.
+          is kept. Extend to finish what was left, or Duplicate to start over.
         </p>
+      )}
+
+      {extending && !running && (
+        <ExtendPanel
+          run={run}
+          repetitionRange={repetitionRange(detail.samples)}
+          onCancel={() => setExtending(false)}
+          onSubmit={async (request) => {
+            await extendRun(run.id, request);
+            setExtending(false);
+            await load(transcripts);
+          }}
+        />
       )}
 
       {rejudging && !running && (

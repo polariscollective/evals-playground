@@ -28,6 +28,26 @@ CONFIG = {
 }
 
 
+def cells_pour(config: dict) -> list[dict]:
+    """La matrice telle que la route d'API l'ecrit au lancement.
+
+    Les tests la posent en base plutot que de la laisser deviner au job : c'est
+    le partage des roles en production depuis que le job ne reconstruit plus la
+    matrice depuis la configuration, mais lit les cases restees `pending`.
+    """
+    return [
+        {
+            "scenario_index": index,
+            "target_model": target,
+            "repetition": repetition,
+            "temperature": None,
+        }
+        for index in range(len(config["scenarios"]))
+        for target in config["models"]["targets"]
+        for repetition in range(config["repetitions"])
+    ]
+
+
 class FakeSupabase(Supabase):
     """Une base en mémoire, qui retient l'ordre des écritures.
 
@@ -38,7 +58,7 @@ class FakeSupabase(Supabase):
     def __init__(self, run: dict | None = None, samples: list[dict] | None = None):
         super().__init__(url="https://fake", key="cle")
         self.run = run or {"id": "r1", "config": CONFIG, "usage": {}}
-        self.samples = samples or []
+        self.samples = cells_pour(self.run["config"]) if samples is None else samples
         self.statut = "running"
         self.ecritures: list[tuple[str, dict, dict]] = []
 
