@@ -15,7 +15,10 @@ on:
 
 env:
   REGION: europe-west1
-  PROJECT: polaris-prod-499213
+  # Dev seulement : la prod ne porte encore aucune de ces ressources.
+  # Le jour où elle en aura, ce sera develop -> dev et main -> prod, comme
+  # dans polaris-tf, et pas une variable à changer à la main.
+  PROJECT: polaris-dev-499211
   REGISTRY: europe-west1-docker.pkg.dev/genial-broker-499211-s1/polaris-docker
   JOB: evals-playground-runner
 
