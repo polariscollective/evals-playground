@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Lance l'application. Il n'y a plus qu'un serveur : les routes /api de Next
-# portent ce que FastAPI faisait, et le moteur d'évaluation ne tourne que dans
-# un job, déclenché à la demande.
+# Lance l'application. Un seul serveur : les routes /api de Next portent tout
+# le service, et le moteur d'évaluation ne tourne que dans un job, déclenché à
+# la demande.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

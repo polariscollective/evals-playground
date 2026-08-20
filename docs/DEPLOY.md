@@ -5,12 +5,17 @@ fois ; ensuite, tout part d'un push sur `main`.
 
 ## L'application — Vercel
 
-Le dépôt se connecte tel quel. Deux réglages qui ne se devinent pas :
+Le dépôt se connecte tel quel. Trois réglages qui ne se devinent pas :
 
 | réglage | valeur | pourquoi |
 |---|---|---|
 | Root Directory | `web` | l'application Next.js n'est pas à la racine |
+| Framework Preset | **Next.js** | à vérifier : tant que le Root Directory est la racine, Vercel voit `pyproject.toml` et propose un préréglage Python |
 | Include source files outside of the Root Directory | **coché** | `shared/` est à la racine, lu par l'interface *et* par le job |
+
+Régler le Root Directory sur `web` d'abord : la détection se refait alors sur
+ce dossier, y trouve `next` dans `package.json`, et le bon préréglage se
+propose tout seul.
 
 Sans le second, le build échoue sur `@shared/pricing.json` : les tarifs et les
 gabarits du prompt du juge sont partagés avec le Python, et les recopier dans
