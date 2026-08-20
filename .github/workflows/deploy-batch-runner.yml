@@ -9,6 +9,10 @@ on:
       - "shared/**"
       - "pyproject.toml"
 
+  # Redéployer sans rien changer au code : le filtre de chemins ci-dessus
+  # ignore un commit vide, et une image doit parfois être reposée telle quelle.
+  workflow_dispatch:
+
 env:
   REGION: europe-west1
   PROJECT: polaris-prod-499213
