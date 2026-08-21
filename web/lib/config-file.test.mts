@@ -165,33 +165,39 @@ test("un fichier écrit puis relu rend la même configuration", () => {
   // C'est la garantie qui rend le bouton de téléchargement utile comme gabarit :
   // ce qu'il produit doit se redéposer sans retouche.
   const { config } = readConfigFile(COMPLET);
-  const relu = readConfigFile(writeConfigFile(config, false));
+  const relu = readConfigFile(writeConfigFile(config));
   assert.deepEqual(relu.config, config);
   assert.equal(relu.csv, null);
 });
 
-test("un run venu d'un CSV s'écrit en désignant ses colonnes", () => {
-  // Recopier trente scénarios dans un gabarit en ferait un mauvais gabarit, et
-  // le CSV existe déjà.
+function venuDuCsv() {
   const { config } = readConfigFile(COMPLET);
-  const texte = writeConfigFile(
-    {
-      ...config,
-      source: {
-        kind: "csv",
-        file_name: "scenarios.csv",
-        column_title: "intitule",
-        column_system_prompt: "consigne",
-        column_opening_message: "question",
-        skipped_rows: 0,
-      },
+  return {
+    ...config,
+    source: {
+      kind: "csv" as const,
+      file_name: "scenarios.csv",
+      column_title: "intitule",
+      column_system_prompt: "consigne",
+      column_opening_message: "question",
+      skipped_rows: 0,
     },
-    true,
-  );
-  const relu = readConfigFile(texte);
-  assert.deepEqual(relu.config.scenarios, []);
-  assert.equal(relu.csv?.column_title, "intitule");
-  assert.equal(relu.csv?.column_opening_message, "question");
+  };
+}
+
+test("les scénarios sont écrits même quand ils viennent d'un CSV", () => {
+  // Un fichier qui renverrait au CSV ne se suffirait pas, et ne dirait même pas
+  // duquel il parle : il faudrait retrouver le bon fichier à la main.
+  const relu = readConfigFile(writeConfigFile(venuDuCsv()));
+  assert.equal(relu.csv, null);
+  assert.deepEqual(relu.config.scenarios, readConfigFile(COMPLET).config.scenarios);
+});
+
+test("le fichier dit de quel CSV les scénarios sortent", () => {
+  // En commentaire : ça ne se relit pas, mais ça répond à « d'où sortent ces
+  // trente scénarios » six mois plus tard.
+  const texte = writeConfigFile(venuDuCsv());
+  assert.match(texte, /read from scenarios\.csv, columns intitule \/ consigne \/ question\./);
 });
 
 test("les consignes de plusieurs lignes restent lisibles dans le fichier", () => {
@@ -202,25 +208,24 @@ test("les consignes de plusieurs lignes restent lisibles dans le fichier", () =>
       ...readConfigFile(COMPLET).config,
       adversary_prompt: "Tu joues un client pressé.\nTu insistes poliment.\n",
     },
-    false,
   );
   assert.match(texte, /adversary_prompt: \|\n {2}Tu joues un client pressé\.\n {2}Tu insistes poliment\./);
 });
 
 test("le fichier dit d'où il vient et comment le réutiliser", () => {
-  assert.match(writeConfigFile(readConfigFile(COMPLET).config, false), /^# evals-playground/);
+  assert.match(writeConfigFile(readConfigFile(COMPLET).config), /^# evals-playground/);
 });
 
 test("un palier ordinaire ne porte pas d'exclusion écrite", () => {
   // `excluded: false` partout est du bruit, et enseigne un champ là où il ne
   // sert pas — or ce fichier sert de gabarit.
-  const texte = writeConfigFile(readConfigFile(COMPLET).config, false);
+  const texte = writeConfigFile(readConfigFile(COMPLET).config);
   assert.ok(!texte.includes("excluded: false"));
   assert.ok(texte.includes("excluded: true"));
 });
 
 test("les clés suivent l'ordre du prompt, scénarios en dernier", () => {
-  const texte = writeConfigFile(readConfigFile(COMPLET).config, false);
+  const texte = writeConfigFile(readConfigFile(COMPLET).config);
   const ordre = ["criterion:", "rubric:", "turns:", "models:", "scenarios:"];
   const positions = ordre.map((cle) => texte.indexOf(`\n${cle}`));
   assert.ok(positions.every((p) => p > 0), "toutes les clés doivent être là");

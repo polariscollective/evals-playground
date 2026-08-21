@@ -47,14 +47,11 @@ export async function PUT(request: Request) {
 
   const body = (await request.json().catch(() => null)) as {
     config?: EvalRunConfig;
-    from_csv?: boolean;
   } | null;
 
   if (!body?.config) {
     return NextResponse.json({ error: "config is missing." }, { status: 422 });
   }
 
-  return NextResponse.json({
-    text: writeConfigFile(body.config, body.from_csv === true),
-  });
+  return NextResponse.json({ text: writeConfigFile(body.config) });
 }

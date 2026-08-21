@@ -347,7 +347,7 @@ function EvaluateForm() {
    * se fait côté serveur, là où vit déjà la lecture. */
   const downloadConfig = async () => {
     try {
-      const { text } = await exportConfigFile(config(), source === "csv");
+      const { text } = await exportConfigFile(config());
       const url = URL.createObjectURL(new Blob([text], { type: "text/yaml" }));
       const link = document.createElement("a");
       link.href = url;
