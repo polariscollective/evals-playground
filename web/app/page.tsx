@@ -21,6 +21,7 @@ import type {
   RubricLevel,
 } from "@/lib/types";
 import { NotesField } from "@/components/NotesField";
+import { PromptGuide } from "@/components/PromptGuide";
 import { RubricEditor } from "@/components/RubricEditor";
 
 const MIN_TURNS = 1;
@@ -638,12 +639,15 @@ function configFileOf(
           />
         </label>
         <span className="text-zinc-500">JSON or YAML — fills in everything below.</span>
-        <button
-          onClick={downloadConfig}
-          className="ml-auto cursor-pointer text-zinc-600 underline hover:text-zinc-900"
-        >
-          Download this form as a config file
-        </button>
+        <span className="ml-auto flex gap-4">
+          <PromptGuide providers={providers} />
+          <button
+            onClick={downloadConfig}
+            className="cursor-pointer text-zinc-600 underline hover:text-zinc-900"
+          >
+            Download this form as a config file
+          </button>
+        </span>
       </div>
 
       {importNote && (
