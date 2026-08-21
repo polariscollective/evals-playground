@@ -8,6 +8,7 @@ import {
   getCatalog,
   getRun,
   previewJudgePrompt,
+  importConfigFile,
   sourceCsvText,
 } from "@/lib/api";
 import { parseCsv, toCsv } from "@/lib/csv";
@@ -99,6 +100,17 @@ function EvaluateForm() {
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
+  // Le fichier de configuration importé, s'il y en a eu un : ce qu'il a rempli,
+  // et le CSV qu'il annonce sans le porter.
+  const [importNote, setImportNote] = useState<string | null>(null);
+  // Les colonnes nommées par le fichier, à appliquer au CSV quand il arrivera.
+  // Sans elles, `onCsv` devinerait — et le fichier avait justement pris la peine
+  // de le dire.
+  const [wantedColumns, setWantedColumns] = useState<{
+    title: string;
+    system: string;
+    opening: string;
+  } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -198,6 +210,33 @@ function EvaluateForm() {
       cancelled = true;
     };
   }, [relaunchOf]);
+
+/** Le formulaire, écrit dans un fichier qu'on pourra redéposer ici.
+ *
+ * Sert de gabarit : c'est le plus court chemin pour montrer à un agent la forme
+ * qu'on attend de lui. En JSON plutôt qu'en YAML, parce que le navigateur sait
+ * l'écrire sans rien importer — et l'import accepte les deux.
+ *
+ * Quand les scénarios viennent d'un CSV, le fichier dit d'où ils viennent au
+ * lieu de les recopier : recopier trente scénarios dans un fichier de
+ * configuration en ferait un mauvais gabarit, et le CSV existe déjà. */
+function configFileOf(
+  config: EvalRunConfig,
+  fromCsv: boolean,
+): Record<string, unknown> {
+  const { source, ...rest } = config;
+  return {
+    ...rest,
+    scenarios: fromCsv
+      ? {
+          from: "csv",
+          column_title: source?.column_title ?? "",
+          column_system_prompt: source?.column_system_prompt ?? "",
+          column_opening_message: source?.column_opening_message ?? "",
+        }
+      : config.scenarios,
+  };
+}
 
   const scenarios: EvalScenario[] = useMemo(() => {
     if (source === "manual") {
@@ -326,6 +365,18 @@ function EvaluateForm() {
     ],
   );
 
+  const downloadConfig = () => {
+    const text = JSON.stringify(configFileOf(config(), source === "csv"), null, 2);
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(label.trim() || "run").replace(/[^\w-]+/g, "-")}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   // L'estimation est rafraîchie dès que la configuration devient valide :
   // le volume est un produit de quatre facteurs et explose sans qu'on le voie.
   useEffect(() => {
@@ -361,9 +412,102 @@ function EvaluateForm() {
       parsed.columns.find((c) =>
         candidates.some((k) => c.toLowerCase().includes(k)),
       ) ?? "";
-    setColTitle(guess(["title", "titre", "name"]));
-    setColSystem(guess(["system"]));
-    setColOpening(guess(["opening", "message", "user", "prompt"]));
+    // Un fichier de configuration qui nomme ses colonnes l'emporte sur la
+    // devinette : c'est une intention, pas une supposition. Une colonne qu'il
+    // nomme sans qu'elle existe est ignorée plutôt que sélectionnée à vide.
+    const wanted = (name: string, candidates: string[]) =>
+      name && parsed.columns.includes(name) ? name : guess(candidates);
+    setColTitle(wanted(wantedColumns?.title ?? "", ["title", "titre", "name"]));
+    setColSystem(wanted(wantedColumns?.system ?? "", ["system"]));
+    setColOpening(
+      wanted(wantedColumns?.opening ?? "", [
+        "opening",
+        "message",
+        "user",
+        "prompt",
+      ]),
+    );
+    setWantedColumns(null);
+  };
+
+  /** Remplit le formulaire depuis un fichier JSON ou YAML.
+   *
+   * La lecture et la validation sont faites par la route `/api/config` : un
+   * fichier accepté là ne peut pas être refusé au lancement, ce qu'une
+   * validation faite ici seulement ne garantirait pas. */
+  const onConfigFile = async (file: File) => {
+    setError(null);
+    try {
+      const { config, csv } = await importConfigFile(await file.text());
+      setLabel(config.label ?? "");
+      setNotes(config.notes ?? "");
+      setCriterion(config.criterion);
+      setRubric(config.rubric);
+      setTurns(config.turns);
+      setRepetitions(config.repetitions);
+      setAdversaryPrompt(config.adversary_prompt);
+      setTargets(config.models.targets);
+      setAdversary(config.models.adversary ?? "");
+      setJudge(config.models.judge);
+      setTemperatureMin(config.temperature?.min ?? 1);
+      setVaryTemperature(config.temperature?.max != null);
+      setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
+
+      if (csv) {
+        // Le fichier annonce un CSV sans le porter : le formulaire passe en mode
+        // CSV et attend le fichier, colonnes déjà choisies.
+        setSource("csv");
+        setCsvText("");
+        setCsvColumns([]);
+        setCsvRows([]);
+        setCsvName("");
+        setWantedColumns({
+          title: csv.column_title,
+          system: csv.column_system_prompt,
+          opening: csv.column_opening_message,
+        });
+        setImportNote(
+          `${file.name} read. Now upload the CSV of scenarios — the columns it` +
+            " names will be selected for you.",
+        );
+        return;
+      }
+
+      setWantedColumns(null);
+      if (config.scenarios.length === 1) {
+        setSource("manual");
+        setTitle(config.scenarios[0].title);
+        setSystemPrompt(config.scenarios[0].system_prompt);
+        setOpeningMessage(config.scenarios[0].opening_message);
+      } else {
+        // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
+        // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
+        // en mémoire — c'est déjà ce que fait la reprise d'un vieux run.
+        const rows = config.scenarios.map((scenario) => ({
+          title: scenario.title,
+          system_prompt: scenario.system_prompt,
+          opening_message: scenario.opening_message,
+        }));
+        setSource("csv");
+        setCsvText(toCsv(REBUILT_COLUMNS, rows));
+        setCsvColumns(REBUILT_COLUMNS);
+        setCsvRows(rows);
+        setCsvSkipped(0);
+        setCsvName(file.name.replace(/\.(ya?ml|json)$/i, ".csv"));
+        setColTitle("title");
+        setColSystem("system_prompt");
+        setColOpening("opening_message");
+      }
+      setImportNote(
+        `${file.name} read — ${config.scenarios.length} scenario` +
+          `${config.scenarios.length > 1 ? "s" : ""}, ` +
+          `${config.models.targets.length} model` +
+          `${config.models.targets.length > 1 ? "s" : ""}.`,
+      );
+    } catch (e) {
+      setImportNote(null);
+      setError(`${file.name}: ${(e as Error).message}`);
+    }
   };
 
   const showJudgePrompt = async () => {
@@ -472,6 +616,40 @@ function EvaluateForm() {
             <span className="mt-1 block text-teal-800">{relaunchNote}</span>
           )}
         </div>
+      )}
+
+      {/* Un run peut arriver tout écrit : un agent produit le fichier, on le
+          dépose ici. La forme demandée est celle stockée en base, si bien qu'un
+          run exporté se réimporte sans traduction. */}
+      <div className="flex flex-wrap items-center gap-3 rounded border border-dashed border-zinc-300 p-3 text-sm">
+        <label className="cursor-pointer">
+          <span className="rounded border border-zinc-300 bg-white px-3 py-1 hover:bg-zinc-50">
+            Load a config file
+          </span>
+          <input
+            type="file"
+            accept=".json,.yaml,.yml,application/json,text/yaml"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void onConfigFile(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <span className="text-zinc-500">JSON or YAML — fills in everything below.</span>
+        <button
+          onClick={downloadConfig}
+          className="ml-auto cursor-pointer text-zinc-600 underline hover:text-zinc-900"
+        >
+          Download this form as a config file
+        </button>
+      </div>
+
+      {importNote && (
+        <p className="rounded border border-teal-300 bg-teal-50 p-3 text-sm text-teal-900">
+          {importNote}
+        </p>
       )}
 
       <label className="block space-y-1">

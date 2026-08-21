@@ -4,6 +4,7 @@
 import type {
   CostEstimate,
   EvalRunConfig,
+  ExpectedCsv,
   JudgePromptPreview,
   ExtendRequest,
   ProviderInfo,
@@ -37,6 +38,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const getCatalog = () => request<ProviderInfo[]>("/api/catalog");
+
+/** Lit un run décrit dans un fichier JSON ou YAML.
+ *
+ * Le texte part au serveur plutôt que d'être analysé ici : l'analyseur YAML
+ * reste hors du paquet du navigateur, et la validation appliquée est celle du
+ * lancement. */
+export const importConfigFile = (text: string) =>
+  request<{ config: EvalRunConfig; csv: ExpectedCsv | null }>("/api/config", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
 export const getRuns = () => request<RunSummary[]>("/api/runs");
 
 /** Un run et ses cases.

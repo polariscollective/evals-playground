@@ -68,6 +68,17 @@ export interface EvalRunConfig {
   notes?: string;
 }
 
+/** Les colonnes d'un CSV qu'un fichier de configuration annonce sans le porter.
+ *
+ * Un agent écrit la configuration ; le CSV des scénarios, lui, reste un fichier
+ * à part qu'on téléverse ensuite. Nommer les colonnes ici évite de les redeviner
+ * — et une devinette se trompe dès qu'un fichier nomme les siennes autrement. */
+export interface ExpectedCsv {
+  column_title: string;
+  column_system_prompt: string;
+  column_opening_message: string;
+}
+
 /** Ce qu'on ajoute à un run existant : une sous-matrice, et rien d'autre.
  *
  * Ni juge, ni échelle, ni nombre de tours : ce qui ne peut pas être envoyé ne
