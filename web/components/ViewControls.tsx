@@ -18,13 +18,23 @@ import type { RubricLevel } from "@/lib/types";
 
 export function ViewControls({
   rubric,
+  /** Toutes les notes rendues par le juge sur ce run. */
+  scores,
   view,
   onChange,
 }: {
   rubric: RubricLevel[];
+  scores: number[];
   view: MatrixView;
   onChange: (view: MatrixView) => void;
 }) {
+  const combien = new Map<number, number>();
+  for (const score of scores) {
+    combien.set(score, (combien.get(score) ?? 0) + 1);
+  }
+  const comptees = scores.filter(
+    (score) => mapScore(score, rubric, view) !== null,
+  ).length;
   const setRemap = (from: number, to: number | null | undefined) => {
     const remap = { ...view.remap };
     // `undefined` remet le palier à sa valeur d'origine, ce qui n'est pas la
@@ -83,6 +93,14 @@ export function ViewControls({
             the judge said, and you can bring the not-applicable grade back in by
             giving it a value.
           </p>
+          {/* La confusion qu'on a réellement faite : donner à une note la valeur
+              d'un palier « sans objet » ne la met pas dehors. Les deux colonnes
+              de droite montrent la différence à mesure qu'on la fait. */}
+          <p className="text-xs text-zinc-500">
+            The two are not the same. Leaving a grade out drops it from the
+            count; giving it a value keeps it in, <em>as that number</em> — even
+            if that number happens to be the one your not-applicable level uses.
+          </p>
           <table className="text-sm">
             <tbody>
               {sortedRubric(rubric).map((level) => {
@@ -101,6 +119,11 @@ export function ViewControls({
                     </td>
                     <td className="max-w-md truncate py-1 pr-3 text-zinc-700">
                       {level.meaning}
+                    </td>
+                    {/* Combien de fois le juge a réellement choisi ce palier :
+                        c'est ce qui dit si l'écarter change quelque chose. */}
+                    <td className="py-1 pr-3 text-right text-xs whitespace-nowrap text-zinc-500">
+                      {combien.get(level.value) ?? 0}×
                     </td>
                     <td className="py-1 pr-3">
                       <input
@@ -151,6 +174,14 @@ export function ViewControls({
             </tbody>
           </table>
         </div>
+
+        <p className="text-sm">
+          <strong className="font-medium">{comptees}</strong> of {scores.length}{" "}
+          grade{scores.length === 1 ? "" : "s"} counted
+          {scores.length - comptees > 0 &&
+            `, ${scores.length - comptees} left out`}
+          .
+        </p>
 
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs text-zinc-500">

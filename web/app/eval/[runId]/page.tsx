@@ -951,7 +951,14 @@ export default function EvalRunPage({
       {cells.length > 0 && (
         <section className="space-y-3">
           <h2 className="font-medium">Grade per scenario and model</h2>
-          <ViewControls rubric={rubric} view={view} onChange={setView} />
+          <ViewControls
+            rubric={rubric}
+            scores={detail.samples
+              .map((sample) => sample.score)
+              .filter((score): score is number => score !== null)}
+            view={view}
+            onChange={setView}
+          />
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>

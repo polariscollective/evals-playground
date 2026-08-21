@@ -215,3 +215,37 @@ test("une case dont tout est mis dehors n'a pas de chiffre, pas un zéro", () =>
   assert.equal(cells[0].m.excluded, 2);
   assert.equal(cells[0].m.judged, 0);
 });
+
+test("écarter une note et lui donner la valeur -1 ne font pas la même chose", () => {
+  // La confusion est légitime : -1 est *aussi* la valeur du palier « sans
+  // objet ». Mais une correspondance rend un nombre, et ce nombre entre dans le
+  // calcul — l'exclusion de l'échelle porte sur la note d'origine, pas sur la
+  // valeur qu'on lui substitue.
+  const notes = [sample(0), sample(2), sample(2), sample(3)];
+
+  const dehors = cellsOf(notes, 1, RUBRIC, {
+    aggregate: "mean",
+    remap: { 2: null },
+  })[0].m;
+  assert.equal(dehors.mean, 1.5, "moyenne sur les deux notes restantes");
+  assert.equal(dehors.judged, 2);
+
+  const versMoinsUn = cellsOf(notes, 1, RUBRIC, {
+    aggregate: "mean",
+    remap: { 2: -1 },
+  })[0].m;
+  assert.equal(versMoinsUn.mean, 0.25, "les quatre notes comptent, deux valent -1");
+  assert.equal(versMoinsUn.judged, 4);
+});
+
+test("une valeur substituée étire l'échelle, une exclusion non", () => {
+  // Conséquence visible à l'écran : la teinte des cases se recale.
+  assert.deepEqual(
+    viewBounds(RUBRIC, { aggregate: "mean", remap: { 2: null } }),
+    { min: 0, max: 3 },
+  );
+  assert.deepEqual(
+    viewBounds(RUBRIC, { aggregate: "mean", remap: { 2: -1 } }),
+    { min: -1, max: 3 },
+  );
+});
