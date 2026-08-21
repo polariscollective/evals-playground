@@ -79,94 +79,90 @@ export function ViewControls({
 
         <div className="space-y-2">
           <p className="text-sm text-zinc-600">
-            Give a grade another value, or leave it out. Collapsing a scale to 0
-            and 1 and taking the mean gives the share of conversations that
-            reached the level you care about.
+            Each grade counts as itself, unless you say otherwise. Collapsing a
+            scale to 0 and 1 and taking the mean gives the share of conversations
+            that reached the level you care about.
           </p>
-          {/* La confusion à lever : une note « sans objet » est une réponse du
-              juge, choisie par lui ; « leave out » est une décision de lecteur,
-              prise après coup sur des notes déjà rendues. */}
+          {/* Ce qu'un lecteur ne peut pas deviner : le palier « sans objet » est
+              déjà dehors avant qu'il ouvre ce panneau, et c'est l'échelle qui l'a
+              décidé — pas lui. */}
           <p className="text-xs text-zinc-500">
-            A grade the scale marks as not applicable is a verdict the judge
-            could pick, and it is already out of the count. Leaving a grade out
-            here is your own decision, made after the fact — it changes nothing
-            the judge said, and you can bring the not-applicable grade back in by
-            giving it a value.
+            A grade your scale marks as not applicable already counts for
+            nothing: that was decided when the scale was written, and the judge
+            could pick it knowing so. Everything you change here is a reading —
+            the judge&rsquo;s grades are untouched.
           </p>
-          {/* La confusion qu'on a réellement faite : donner à une note la valeur
-              d'un palier « sans objet » ne la met pas dehors. Les deux colonnes
-              de droite montrent la différence à mesure qu'on la fait. */}
-          <p className="text-xs text-zinc-500">
-            The two are not the same. Leaving a grade out drops it from the
-            count; giving it a value keeps it in, <em>as that number</em> — even
-            if that number happens to be the one your not-applicable level uses.
-          </p>
+          {/* Une ligne, une affirmation. La version précédente posait une case
+              à cocher à côté d'une case de valeur : « -1 » y désignait tantôt un
+              palier mis hors moyenne par l'échelle, tantôt un nombre qui compte,
+              et rien ne distinguait les deux. Ici chaque palier dit soit « vaut
+              tel nombre », soit « ne compte pas », jamais les deux à la fois. */}
           <table className="text-sm">
+            <thead>
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="py-1 pr-3 font-normal">Grade</th>
+                <th className="py-1 pr-3 font-normal">What it means</th>
+                <th className="py-1 pr-3 text-right font-normal">Given</th>
+                <th className="py-1 font-normal">Counts as</th>
+              </tr>
+            </thead>
             <tbody>
               {sortedRubric(rubric).map((level) => {
                 const mapped = view.remap[level.value];
-                // L'état *effectif*, échelle comprise : un palier « sans objet »
-                // est déjà hors du calcul avant qu'on ait touché à quoi que ce
-                // soit, et la case doit le dire — sinon elle affiche « compté »
-                // pour une note qui ne l'est pas.
                 const ignored = mapScore(level.value, rubric, view) === null;
-                const shown =
-                  mapped === undefined || mapped === null ? "" : String(mapped);
+                const byTheScale = level.excluded && !(level.value in view.remap);
                 return (
-                  <tr key={level.value}>
-                    <td className="py-1 pr-3 font-mono text-zinc-500">
+                  <tr key={level.value} className="border-t border-zinc-100">
+                    <td className="py-1.5 pr-3 font-mono text-zinc-500">
                       {formatValue(level.value)}
                     </td>
-                    <td className="max-w-md truncate py-1 pr-3 text-zinc-700">
+                    <td className="max-w-md truncate py-1.5 pr-3 text-zinc-700">
                       {level.meaning}
                     </td>
                     {/* Combien de fois le juge a réellement choisi ce palier :
-                        c'est ce qui dit si l'écarter change quelque chose. */}
-                    <td className="py-1 pr-3 text-right text-xs whitespace-nowrap text-zinc-500">
+                        c'est ce qui dit si le toucher change quelque chose. */}
+                    <td className="py-1.5 pr-3 text-right text-xs whitespace-nowrap text-zinc-500">
                       {combien.get(level.value) ?? 0}×
                     </td>
-                    <td className="py-1 pr-3">
-                      <input
-                        type="number"
-                        step="any"
-                        disabled={ignored}
-                        placeholder={formatValue(level.value)}
-                        value={shown}
-                        onChange={(event) =>
-                          setRemap(
-                            level.value,
-                            event.target.value === ""
-                              ? undefined
-                              : Number(event.target.value),
-                          )
-                        }
-                        className="w-20 rounded border border-zinc-300 px-2 py-0.5 disabled:bg-zinc-100"
-                      />
-                    </td>
-                    <td className="py-1">
-                      <label className="flex cursor-pointer items-center gap-1 text-xs text-zinc-600">
-                        <input
-                          type="checkbox"
-                          className="cursor-pointer"
-                          checked={ignored}
-                          onChange={() =>
-                            setRemap(
-                              level.value,
-                              // Remettre dans le calcul un palier que l'échelle
-                              // exclut demande de le dire explicitement :
-                              // oublier la clé le renverrait dehors.
-                              ignored
-                                ? level.excluded
-                                  ? level.value
-                                  : undefined
-                                : null,
-                            )
-                          }
-                        />
-                        {level.excluded && !(level.value in view.remap)
-                          ? "left out by the scale"
-                          : "leave out"}
-                      </label>
+                    <td className="py-1.5">
+                      {ignored ? (
+                        <span className="flex items-center gap-2">
+                          <span className="text-zinc-500 italic">
+                            {byTheScale ? "nothing — the scale leaves it out" : "nothing"}
+                          </span>
+                          <button
+                            onClick={() => setRemap(level.value, level.value)}
+                            className="cursor-pointer rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+                          >
+                            count it
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            step="any"
+                            aria-label={`Value counted for grade ${level.value}`}
+                            placeholder={formatValue(level.value)}
+                            value={mapped === undefined ? "" : String(mapped)}
+                            onChange={(event) =>
+                              setRemap(
+                                level.value,
+                                event.target.value === ""
+                                  ? undefined
+                                  : Number(event.target.value),
+                              )
+                            }
+                            className="w-20 rounded border border-zinc-300 px-2 py-0.5"
+                          />
+                          <button
+                            onClick={() => setRemap(level.value, null)}
+                            className="cursor-pointer rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+                          >
+                            leave out
+                          </button>
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
