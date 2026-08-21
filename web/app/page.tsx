@@ -8,6 +8,7 @@ import {
   getCatalog,
   getRun,
   previewJudgePrompt,
+  exportConfigFile,
   importConfigFile,
   sourceCsvText,
 } from "@/lib/api";
@@ -212,33 +213,6 @@ function EvaluateForm() {
     };
   }, [relaunchOf]);
 
-/** Le formulaire, écrit dans un fichier qu'on pourra redéposer ici.
- *
- * Sert de gabarit : c'est le plus court chemin pour montrer à un agent la forme
- * qu'on attend de lui. En JSON plutôt qu'en YAML, parce que le navigateur sait
- * l'écrire sans rien importer — et l'import accepte les deux.
- *
- * Quand les scénarios viennent d'un CSV, le fichier dit d'où ils viennent au
- * lieu de les recopier : recopier trente scénarios dans un fichier de
- * configuration en ferait un mauvais gabarit, et le CSV existe déjà. */
-function configFileOf(
-  config: EvalRunConfig,
-  fromCsv: boolean,
-): Record<string, unknown> {
-  const { source, ...rest } = config;
-  return {
-    ...rest,
-    scenarios: fromCsv
-      ? {
-          from: "csv",
-          column_title: source?.column_title ?? "",
-          column_system_prompt: source?.column_system_prompt ?? "",
-          column_opening_message: source?.column_opening_message ?? "",
-        }
-      : config.scenarios,
-  };
-}
-
   const scenarios: EvalScenario[] = useMemo(() => {
     if (source === "manual") {
       return [
@@ -366,16 +340,23 @@ function configFileOf(
     ],
   );
 
-  const downloadConfig = () => {
-    const text = JSON.stringify(configFileOf(config(), source === "csv"), null, 2);
-    const url = URL.createObjectURL(
-      new Blob([text], { type: "application/json" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${(label.trim() || "run").replace(/[^\w-]+/g, "-")}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+  /** Écrit le formulaire dans un fichier YAML, redéposable tel quel.
+   *
+   * Le même format que celui demandé à l'agent : deux formats pour les deux sens
+   * de la même conversion serait une bizarrerie de plus à expliquer. L'écriture
+   * se fait côté serveur, là où vit déjà la lecture. */
+  const downloadConfig = async () => {
+    try {
+      const { text } = await exportConfigFile(config(), source === "csv");
+      const url = URL.createObjectURL(new Blob([text], { type: "text/yaml" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${(label.trim() || "run").replace(/[^\w-]+/g, "-")}.yaml`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   // L'estimation est rafraîchie dès que la configuration devient valide :
@@ -642,10 +623,10 @@ function configFileOf(
         <span className="ml-auto flex gap-4">
           <PromptGuide providers={providers} />
           <button
-            onClick={downloadConfig}
+            onClick={() => void downloadConfig()}
             className="cursor-pointer text-zinc-600 underline hover:text-zinc-900"
           >
-            Download this form as a config file
+            Download this form as YAML
           </button>
         </span>
       </div>

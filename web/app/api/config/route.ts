@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { ConfigFileError, readConfigFile } from "@/lib/config-file";
+import {
+  ConfigFileError,
+  readConfigFile,
+  writeConfigFile,
+} from "@/lib/config-file";
+import type { EvalRunConfig } from "@/lib/types";
 
 /** Lit un run décrit dans un fichier JSON ou YAML, et le rend prêt à remplir le
  * formulaire.
@@ -29,4 +34,27 @@ export async function POST(request: Request) {
     }
     throw error;
   }
+}
+
+/** Le chemin inverse : la configuration du formulaire, écrite en YAML.
+ *
+ * Ici plutôt que dans la page pour deux raisons : l'écrivain YAML reste hors du
+ * paquet du navigateur, et les deux sens de la même conversion vivent côte à
+ * côte — c'est ce qui rend visible qu'ils doivent rester d'accord. */
+export async function PUT(request: Request) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
+  const body = (await request.json().catch(() => null)) as {
+    config?: EvalRunConfig;
+    from_csv?: boolean;
+  } | null;
+
+  if (!body?.config) {
+    return NextResponse.json({ error: "config is missing." }, { status: 422 });
+  }
+
+  return NextResponse.json({
+    text: writeConfigFile(body.config, body.from_csv === true),
+  });
 }

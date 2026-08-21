@@ -49,6 +49,14 @@ export const importConfigFile = (text: string) =>
     method: "POST",
     body: JSON.stringify({ text }),
   });
+
+/** Écrit la configuration du formulaire en YAML, le format que le prompt
+ *  demande à l'agent — un seul format pour les deux sens. */
+export const exportConfigFile = (config: EvalRunConfig, fromCsv: boolean) =>
+  request<{ text: string }>("/api/config", {
+    method: "PUT",
+    body: JSON.stringify({ config, from_csv: fromCsv }),
+  });
 export const getRuns = () => request<RunSummary[]>("/api/runs");
 
 /** Un run et ses cases.

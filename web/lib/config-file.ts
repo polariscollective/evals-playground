@@ -9,7 +9,7 @@
 // YAML, et `parse` avale donc les deux. Il vit côté serveur pour rester hors du
 // paquet envoyé au navigateur, et pour que la validation reste celle qui fait
 // autorité.
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { configProblem } from "./validate.ts";
 import type {
   EvalRunConfig,
@@ -170,4 +170,59 @@ export function readConfigFile(text: string): ImportedConfig {
   if (problem) throw new ConfigFileError(problem);
 
   return { config, csv };
+}
+
+/** Le chemin inverse : une configuration écrite dans un fichier redéposable.
+ *
+ * En YAML et non en JSON, parce que c'est ce que le prompt demande à l'agent :
+ * deux formats pour les deux sens de la même conversion serait une bizarrerie de
+ * plus à expliquer. L'écriture passe par le serveur pour la même raison que la
+ * lecture — l'analyseur reste hors du paquet du navigateur.
+ *
+ * Quand les scénarios viennent d'un CSV, le fichier dit d'où ils viennent au
+ * lieu de les recopier : recopier trente scénarios dans un gabarit en ferait un
+ * mauvais gabarit, et le CSV existe déjà. */
+export function writeConfigFile(
+  config: EvalRunConfig,
+  fromCsv: boolean,
+): string {
+  const source = config.source;
+  // Les clés dans l'ordre où le prompt les présente, et non celui de l'objet :
+  // un gabarit qu'on lit de haut en bas doit commencer par ce qui identifie le
+  // run, et finir par les scénarios, qui sont la partie longue.
+  const document = {
+    label: config.label ?? "",
+    notes: config.notes ?? "",
+    criterion: config.criterion,
+    // `excluded: false` sur chaque palier serait du bruit : c'est le défaut du
+    // lecteur, et un gabarit qui l'écrit partout enseigne un champ là où il ne
+    // sert pas.
+    rubric: config.rubric.map((level) =>
+      level.excluded
+        ? { value: level.value, meaning: level.meaning, excluded: true }
+        : { value: level.value, meaning: level.meaning },
+    ),
+    turns: config.turns,
+    repetitions: config.repetitions,
+    temperature: config.temperature ?? null,
+    models: config.models,
+    adversary_prompt: config.adversary_prompt,
+    scenarios: fromCsv
+      ? {
+          from: "csv",
+          column_title: source?.column_title ?? "",
+          column_system_prompt: source?.column_system_prompt ?? "",
+          column_opening_message: source?.column_opening_message ?? "",
+        }
+      : config.scenarios,
+  };
+  return (
+    "# evals-playground — load this file back with « Load a config file ».\n" +
+    (fromCsv
+      ? "# The scenarios come from a CSV, which you upload separately.\n"
+      : "") +
+    // Sans `lineWidth: 0`, une longue consigne serait repliée sur plusieurs
+    // lignes : relue, elle serait identique, mais illisible pour qui l'édite.
+    stringify(document, { lineWidth: 0 })
+  );
 }
