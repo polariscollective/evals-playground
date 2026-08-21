@@ -5,7 +5,13 @@
 // Les notes du juge ne bougent pas : c'est leur lecture qu'on change, et rien
 // n'est écrit en base. Poser une autre question à des résultats déjà payés ne
 // devrait pas coûter un second run.
-import { AGGREGATES, PLAIN_VIEW, describeView, isPlainView } from "@/lib/view";
+import {
+  AGGREGATES,
+  PLAIN_VIEW,
+  describeView,
+  isPlainView,
+  mapScore,
+} from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import type { RubricLevel } from "@/lib/types";
@@ -67,11 +73,25 @@ export function ViewControls({
             and 1 and taking the mean gives the share of conversations that
             reached the level you care about.
           </p>
+          {/* La confusion à lever : une note « sans objet » est une réponse du
+              juge, choisie par lui ; « leave out » est une décision de lecteur,
+              prise après coup sur des notes déjà rendues. */}
+          <p className="text-xs text-zinc-500">
+            A grade the scale marks as not applicable is a verdict the judge
+            could pick, and it is already out of the count. Leaving a grade out
+            here is your own decision, made after the fact — it changes nothing
+            the judge said, and you can bring the not-applicable grade back in by
+            giving it a value.
+          </p>
           <table className="text-sm">
             <tbody>
               {sortedRubric(rubric).map((level) => {
                 const mapped = view.remap[level.value];
-                const ignored = mapped === null;
+                // L'état *effectif*, échelle comprise : un palier « sans objet »
+                // est déjà hors du calcul avant qu'on ait touché à quoi que ce
+                // soit, et la case doit le dire — sinon elle affiche « compté »
+                // pour une note qui ne l'est pas.
+                const ignored = mapScore(level.value, rubric, view) === null;
                 const shown =
                   mapped === undefined || mapped === null ? "" : String(mapped);
                 return (
@@ -107,10 +127,22 @@ export function ViewControls({
                           className="cursor-pointer"
                           checked={ignored}
                           onChange={() =>
-                            setRemap(level.value, ignored ? undefined : null)
+                            setRemap(
+                              level.value,
+                              // Remettre dans le calcul un palier que l'échelle
+                              // exclut demande de le dire explicitement :
+                              // oublier la clé le renverrait dehors.
+                              ignored
+                                ? level.excluded
+                                  ? level.value
+                                  : undefined
+                                : null,
+                            )
                           }
                         />
-                        leave out
+                        {level.excluded && !(level.value in view.remap)
+                          ? "left out by the scale"
+                          : "leave out"}
                       </label>
                     </td>
                   </tr>

@@ -180,3 +180,38 @@ test("un paramètre illisible est ignoré, pas traduit en zéro", () => {
   assert.equal(view.aggregate, "mean");
   assert.deepEqual(view.remap, { 2: 1 });
 });
+
+// --- « sans objet » et « leave out » ne sont pas la même chose ------------------
+
+test("un palier « sans objet » est déjà dehors avant qu'on touche à rien", () => {
+  // C'est un verdict que le juge pouvait choisir, et l'échelle dit qu'il ne se
+  // moyenne pas. Rien à régler pour ça.
+  assert.equal(mapScore(-1, RUBRIC, PLAIN_VIEW), null);
+});
+
+test("on peut le faire rentrer dans le calcul en lui donnant une valeur", () => {
+  // La décision du lecteur l'emporte sur celle de l'échelle : c'est le seul sens
+  // dans lequel les deux se rencontrent.
+  const view = { aggregate: "mean" as const, remap: { [-1]: 0 } };
+  assert.equal(mapScore(-1, RUBRIC, view), 0);
+  assert.equal(overallMean([sample(-1), sample(2)], RUBRIC, view), 1);
+});
+
+test("mettre dehors une note ordinaire ne touche pas l'échelle", () => {
+  // La note reste ce que le juge a répondu ; seule cette lecture l'ignore.
+  const view = { aggregate: "mean" as const, remap: { 0: null } };
+  assert.equal(mapScore(0, RUBRIC, view), null);
+  assert.equal(mapScore(0, RUBRIC, PLAIN_VIEW), 0, "l'échelle est intacte");
+});
+
+test("une case dont tout est mis dehors n'a pas de chiffre, pas un zéro", () => {
+  // Le piège de « leave out » : à force d'écarter, une case peut n'avoir plus
+  // rien à agréger, et « on ne sait pas » n'est pas « le modèle a eu zéro ».
+  const cells = cellsOf([sample(0), sample(0)], 1, RUBRIC, {
+    aggregate: "mean",
+    remap: { 0: null },
+  });
+  assert.equal(cells[0].m.mean, null);
+  assert.equal(cells[0].m.excluded, 2);
+  assert.equal(cells[0].m.judged, 0);
+});
