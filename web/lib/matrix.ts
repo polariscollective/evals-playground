@@ -4,6 +4,7 @@
 // désormais côté lecture, puisque c'est l'interface qui l'affiche et l'export
 // qui le recopie.
 import type { Cell, EvalSample, Progress, RubricLevel } from "./types";
+import { PLAIN_VIEW, aggregate, mapScore, type MatrixView } from "./view.ts";
 
 /** Où en est un run, compté sur ses cases plutôt que sur un compteur à part.
  *
@@ -50,27 +51,19 @@ function emptyCell(): Cell {
  * Une case sans note est comptée à part plutôt qu'ignorée — et une case en
  * panne encore à part. La moyenne ne dit rien de ce qu'elle n'a pas pu
  * mesurer, et « le modèle a obtenu zéro » n'est pas « on ne sait pas ». */
-/** Les notes que l'échelle met hors moyenne.
- *
- * Un ensemble plutôt qu'un test par palier : la recherche a lieu une fois par
- * case, et la matrice d'un gros run en compte des centaines. */
-function excludedValues(rubric: RubricLevel[] | undefined): Set<number> {
-  return new Set(
-    (rubric ?? []).filter((level) => level.excluded).map((level) => level.value),
-  );
-}
-
 export function cellsOf(
   samples: EvalSample[],
   scenarioCount: number,
   rubric?: RubricLevel[],
+  view: MatrixView = PLAIN_VIEW,
 ): Record<string, Cell>[] {
-  const horsMoyenne = excludedValues(rubric);
   const cells: Record<string, Cell>[] = Array.from(
     { length: scenarioCount },
     () => ({}),
   );
-  const totals = new Map<string, number>();
+  // Les notes sont gardées et non additionnées au vol : une médiane ou un
+  // minimum demandent de les voir toutes, ce qu'une somme courante interdit.
+  const notes = new Map<string, number[]>();
 
   for (const sample of samples) {
     if (sample.scenario_index < 0 || sample.scenario_index >= scenarioCount) {
@@ -90,41 +83,45 @@ export function cellsOf(
       cell.errored += 1;
     } else if (sample.score === null) {
       cell.unjudged += 1;
-    } else if (horsMoyenne.has(sample.score)) {
-      // Le juge a tranché « sans objet » : c'est une réponse, pas une absence
-      // de réponse, mais elle ne peut pas entrer dans une moyenne.
-      cell.excluded += 1;
     } else {
-      cell.judged += 1;
-      const key = `${sample.scenario_index} ${sample.target_model}`;
-      totals.set(key, (totals.get(key) ?? 0) + sample.score);
+      const valeur = mapScore(sample.score, rubric, view);
+      if (valeur === null) {
+        // Mise dehors, soit par l'échelle — le juge a tranché « sans objet » —
+        // soit par la vue. C'est une réponse, pas une absence de réponse, mais
+        // elle n'entre pas dans le calcul.
+        cell.excluded += 1;
+      } else {
+        cell.judged += 1;
+        const key = `${sample.scenario_index} ${sample.target_model}`;
+        notes.set(key, [...(notes.get(key) ?? []), valeur]);
+      }
     }
   }
 
-  for (const [key, total] of totals) {
+  for (const [key, values] of notes) {
     const separator = key.indexOf(" ");
     const index = Number(key.slice(0, separator));
     const target = key.slice(separator + 1);
-    const cell = cells[index][target];
-    cell.mean = total / cell.judged;
+    cells[index][target].mean = aggregate(values, view.aggregate);
   }
 
   return cells;
 }
 
-/** Moyenne d'un run entier, ou null si rien n'a pu être noté.
+/** Le chiffre d'un run entier, ou null si rien n'a pu être noté.
  *
- * Calculée sur les notes et non sur les moyennes des cases : une moyenne de
- * moyennes donnerait le même poids à une case notée dix fois et à une case
- * notée une seule. */
+ * Calculé sur les notes et non sur les chiffres des cases : agréger des agrégats
+ * donnerait le même poids à une case notée dix fois et à une case notée une
+ * seule. */
 export function overallMean(
   samples: EvalSample[],
   rubric?: RubricLevel[],
+  view: MatrixView = PLAIN_VIEW,
 ): number | null {
-  const horsMoyenne = excludedValues(rubric);
   const notes = samples
-    .map((sample) => sample.score)
-    .filter((score): score is number => score !== null && !horsMoyenne.has(score));
-  if (notes.length === 0) return null;
-  return notes.reduce((sum, note) => sum + note, 0) / notes.length;
+    .map((sample) =>
+      sample.score === null ? null : mapScore(sample.score, rubric, view),
+    )
+    .filter((value): value is number => value !== null);
+  return aggregate(notes, view.aggregate);
 }

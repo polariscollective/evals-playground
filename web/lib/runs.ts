@@ -1,6 +1,9 @@
 // Lire et écrire les runs. Le seul endroit qui connaît la forme des deux tables.
 import "server-only";
-import { cellsOf, overallMean, progressOf } from "./matrix";
+// La matrice se calcule là où on la regarde : l'écran laisse relire un run
+// autrement — une médiane, une échelle repliée — et deux calculs de la même
+// chose finiraient par ne plus dire pareil.
+import { overallMean, progressOf } from "./matrix";
 import {
   NOW,
   RUNS,
@@ -126,7 +129,6 @@ export async function loadRun(
     run,
     samples,
     progress: progressOf(samples),
-    cells: cellsOf(samples, run.config.scenarios.length, run.config.rubric),
     source_csv_available: Boolean(await sourceCsv(runId)),
   };
 }

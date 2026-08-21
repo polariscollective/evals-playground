@@ -210,7 +210,6 @@ export interface RunDetail {
   run: EvalRun;
   samples: EvalSample[];
   progress: Progress;
-  cells: Record<string, Cell>[];
   source_csv_available: boolean;
 }
 

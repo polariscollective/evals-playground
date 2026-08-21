@@ -13,9 +13,13 @@ import {
   saveNotes,
   sourceCsvUrl,
 } from "@/lib/api";
+import { cellsOf } from "@/lib/matrix";
 import { keepIfUnchanged } from "@/lib/unchanged";
+import { PLAIN_VIEW, describeView, viewBounds } from "@/lib/view";
+import type { MatrixView } from "@/lib/view";
 import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
+import { ViewControls } from "@/components/ViewControls";
 import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
 import { NotesField } from "@/components/NotesField";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -521,6 +525,9 @@ export default function EvalRunPage({
   const [notes, setNotes] = useState("");
   const [rejudging, setRejudging] = useState(false);
   const [extending, setExtending] = useState(false);
+  // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
+  // pas un résultat, et un rechargement ramène la lecture ordinaire.
+  const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
   const [stopping, setStopping] = useState(false);
   // Quelle action attend d'être confirmée, s'il y en a une.
   const [confirming, setConfirming] = useState<null | "stop" | "retry">(
@@ -586,11 +593,17 @@ export default function EvalRunPage({
 
   if (!detail) return <main className="mx-auto max-w-5xl p-8">Loading…</main>;
 
-  const { run, progress, cells } = detail;
+  const { run, progress } = detail;
+  const cells = cellsOf(
+    detail.samples,
+    run.config.scenarios.length,
+    run.config.rubric,
+    view,
+  );
 
   const copyMatrix = async () => {
     try {
-      await navigator.clipboard.writeText(await matrixCsvText(run.id));
+      await navigator.clipboard.writeText(await matrixCsvText(run.id, view));
       setNotice("Table copied to the clipboard.");
     } catch (e) {
       setNotice(`Could not copy: ${(e as Error).message}`);
@@ -622,7 +635,10 @@ export default function EvalRunPage({
   };
   const targets = run.config.models.targets;
   const rubric = run.config.rubric;
-  const { min, max } = rubricBounds(rubric);
+  // Les bornes de la lecture en cours, pas celles de l'échelle : une échelle
+  // repliée sur 0–1 laisserait sinon la couleur calée sur l'ancienne étendue, et
+  // toute la matrice paraîtrait pâle.
+  const { min, max } = viewBounds(rubric, view);
 
   const scoresOf = (scenarioIndex: number, target: string) =>
     detail.samples
@@ -760,7 +776,7 @@ export default function EvalRunPage({
                 )}
                 <MenuSeparator />
                 <MenuItem
-                  href={exportUrl(run.id, "matrix")}
+                  href={exportUrl(run.id, "matrix", view)}
                   onClick={close}
                   hint="The table as shown"
                 >
@@ -934,7 +950,8 @@ export default function EvalRunPage({
 
       {cells.length > 0 && (
         <section className="space-y-3">
-          <h2 className="font-medium">Average grade per scenario and model</h2>
+          <h2 className="font-medium">Grade per scenario and model</h2>
+          <ViewControls rubric={rubric} view={view} onChange={setView} />
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -1028,12 +1045,13 @@ export default function EvalRunPage({
             )}
             A cell showing <strong>(2/3)</strong> means its average rests on
             fewer repetitions than were run — some were not applicable, not
-            judged, or never ran. Average of the grades the judge gave, over{" "}
-            {run.config.repetitions}{" "}
-            repetition{run.config.repetitions > 1 ? "s" : ""}, on your{" "}
-            {formatValue(min)}–{formatValue(max)} scale. The top of the scale is
-            the dark end. A hatched cell means nothing could be judged — which is
-            not the same as {formatValue(min)}.
+            judged, or never ran. Each cell is{" "}
+            {/* La phrase suit la lecture en cours : « moyenne » cesse d'être
+                vrai dès qu'on choisit une médiane ou un minimum. */}
+            {describeView(view, rubric)}, on a {formatValue(min)}–
+            {formatValue(max)} scale. The top of the scale is the dark end. A
+            hatched cell means nothing could be judged — which is not the same as{" "}
+            {formatValue(min)}.
           </p>
         </section>
       )}

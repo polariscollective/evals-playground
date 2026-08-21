@@ -4,6 +4,7 @@
 // qu'elle est affichée, pour recoller un tableau dans un rapport ; et le détail,
 // une ligne par case, pour ré-analyser un run hors de l'outil.
 import { cellsOf } from "./matrix";
+import { PLAIN_VIEW, describeView, type MatrixView } from "./view";
 import { formatValue, sortedRubric } from "./judge-prompt";
 import type { EvalRun, EvalSample, Message } from "./types";
 
@@ -20,12 +21,24 @@ function toCsv(rows: string[][]): string {
  * Chaque case porte la moyenne des notes obtenues. Une case dont rien n'a pu
  * être noté reste vide plutôt que de valoir zéro : la distinction est la même
  * qu'à l'écran, et c'est la plus facile à perdre en passant par un tableur. */
-export function matrixCsv(run: EvalRun, samples: EvalSample[]): string {
+export function matrixCsv(
+  run: EvalRun,
+  samples: EvalSample[],
+  view: MatrixView = PLAIN_VIEW,
+): string {
   const targets = run.config.models.targets;
-  const cells = cellsOf(samples, run.config.scenarios.length, run.config.rubric);
+  const cells = cellsOf(
+    samples,
+    run.config.scenarios.length,
+    run.config.rubric,
+    view,
+  );
 
   return toCsv([
-    ["Scenario", ...targets],
+    // L'en-tête dit ce que contiennent les cases. Un chiffre qui n'est plus la
+    // moyenne des notes doit se présenter, surtout une fois recopié dans un
+    // tableur où plus rien ne le rappelle.
+    [`Scenario — each cell is ${describeView(view, run.config.rubric)}`, ...targets],
     ...run.config.scenarios.map((scenario, index) => [
       scenario.title,
       ...targets.map((target) => {

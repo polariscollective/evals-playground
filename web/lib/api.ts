@@ -13,6 +13,7 @@ import type {
   RunDetail,
   RunSummary,
 } from "./types";
+import { PLAIN_VIEW, viewToQuery, type MatrixView } from "./view";
 
 /** Rend lisible le corps d'une réponse d'erreur, plutôt que d'afficher du JSON brut. */
 async function readError(response: Response): Promise<string> {
@@ -124,8 +125,15 @@ export const previewJudgePrompt = (criterion: string, rubric: RubricLevel[]) =>
   });
 
 /** URL d'un export CSV. Le navigateur télécharge : pas de fetch intermédiaire. */
-export function exportUrl(runId: string, kind: "matrix" | "details"): string {
-  return `/api/runs/${runId}/export/${kind}`;
+export function exportUrl(
+  runId: string,
+  kind: "matrix" | "details",
+  view: MatrixView = PLAIN_VIEW,
+): string {
+  // Le détail porte les notes brutes du juge : le relire autrement n'aurait pas
+  // de sens, et lui coller une vue dans l'URL laisserait croire le contraire.
+  const query = kind === "matrix" ? viewToQuery(view) : "";
+  return `/api/runs/${runId}/export/${kind}${query}`;
 }
 
 export function sourceCsvUrl(runId: string): string {
@@ -144,8 +152,13 @@ export async function sourceCsvText(runId: string): Promise<string> {
  * Ne passe pas par `request`, qui attend du JSON. Le BOM que sert la route est
  * là pour Excel ; collé dans un éditeur il apparaîtrait comme un caractère
  * parasite en tête de fichier. */
-export async function matrixCsvText(runId: string): Promise<string> {
-  const response = await fetch(exportUrl(runId, "matrix"), { cache: "no-store" });
+export async function matrixCsvText(
+  runId: string,
+  view: MatrixView = PLAIN_VIEW,
+): Promise<string> {
+  const response = await fetch(exportUrl(runId, "matrix", view), {
+    cache: "no-store",
+  });
   if (!response.ok) throw new Error(await readError(response));
   return (await response.text()).replace(/^﻿/, "");
 }
