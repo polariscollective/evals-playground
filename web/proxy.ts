@@ -51,13 +51,20 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(new URL("/api/auth/signin", request.nextUrl.origin));
 }
 
-// Quatre exclusions ne passent pas du tout par ici ; tout le reste atteint la
+// Cinq exclusions ne passent pas du tout par ici ; tout le reste atteint la
 // fonction ci-dessus. Chacune est ancrée par `(?:/|$)` — répertoire ou fin
 // exacte — sauf `favicon.ico$`, un fichier unique. Sans ancrage, un simple
 // préfixe laisserait passer un chemin voisin plus long : `/api/authx`,
 // `/_next/imagex` et `/_next/staticfoo` contourneraient la porte.
+//
+// `prompt` est la seule exclusion qui expose du contenu à nous : le mode
+// d'emploi qu'on donne à un agent, lequel n'a pas de session et ne saurait pas
+// en obtenir une. Elle est en lecture seule, ne touche ni la base ni la requête,
+// et ne rend qu'un texte fixe accompagné de la liste des modèles — laquelle vit
+// dans un fichier de ce dépôt, qui est public. L'ancrage compte ici autant
+// qu'ailleurs : sans lui, un `/prompts-secrets` s'ouvrirait avec.
 export const config = {
   matcher: [
-    "/((?!api/auth(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$).*)",
+    "/((?!api/auth(?:/|$)|prompt(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$).*)",
   ],
 };
