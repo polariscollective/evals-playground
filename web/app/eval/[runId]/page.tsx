@@ -19,6 +19,7 @@ import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW, describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
+import { Dialog } from "@/components/Dialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
 import { ViewControls } from "@/components/ViewControls";
 import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
@@ -33,6 +34,7 @@ import {
   sortedRubric,
 } from "@/lib/rubric";
 import type {
+  EvalRun,
   EvalSample,
   RubricLevel,
   RunDetail,
@@ -244,6 +246,118 @@ function ToolsBlock({ detail }: { detail: RunDetail }) {
         );
       })}
     </section>
+  );
+}
+
+/** Ce qui définit une ligne de la matrice, réuni.
+ *
+ * « Pourquoi cette ligne » est la question qu'on se pose devant une matrice, et
+ * le titre seul n'y répond pas — surtout sur douze scénarios dont les titres se
+ * ressemblent parce qu'ils ne varient que d'un axe. La note y répond ; le reste
+ * est là pour vérifier qu'elle dit vrai.
+ */
+function ScenarioModal({
+  run,
+  index,
+  onClose,
+}: {
+  run: EvalRun;
+  index: number;
+  onClose: () => void;
+}) {
+  const scenario = run.config.scenarios[index];
+  if (!scenario) return null;
+  const tools = toolsFor(run.config, scenario);
+  const hasTools = (run.config.tools ?? []).length > 0;
+
+  return (
+    <Dialog
+      open
+      title={scenario.title}
+      width="44rem"
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end">
+          <button
+            onClick={onClose}
+            className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+          >
+            Close
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        {scenario.note ? (
+          <div className="rounded border border-teal-300 bg-teal-50 p-3">
+            <p className="mb-1 text-xs font-medium text-teal-900">
+              {/* Une note de laboratoire, pas une consigne : le modèle et le
+                  juge ne la voient jamais. Le dire ici évite qu'on l'écrive un
+                  jour comme si elle comptait. */}
+              Note — for whoever reads the matrix. Neither the model nor the
+              judge saw this.
+            </p>
+            <p className="whitespace-pre-wrap text-sm text-teal-950">
+              {scenario.note}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500 italic">
+            No note was written for this scenario.
+          </p>
+        )}
+
+        {hasTools && (
+          <p className="text-sm">
+            <span className="text-zinc-500">Tools available: </span>
+            {tools.length === 0 ? (
+              <span className="font-mono">none</span>
+            ) : (
+              tools.map((tool) => (
+                <code key={tool.name} className="mr-2">
+                  {tool.name}
+                </code>
+              ))
+            )}
+          </p>
+        )}
+
+        <div>
+          <p className="mb-1 text-xs text-zinc-500">System prompt</p>
+          <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs whitespace-pre-wrap">
+            {scenario.system_prompt}
+          </pre>
+        </div>
+
+        {(scenario.history ?? []).length > 0 && (
+          <div>
+            <p className="mb-1 text-xs text-zinc-500">
+              Prior history — given, not produced
+            </p>
+            <div className="space-y-1">
+              {(scenario.history ?? []).map((turn, position) => (
+                <div
+                  key={position}
+                  className="rounded border border-dashed border-zinc-300 p-2 text-xs"
+                >
+                  <span className="mr-2 font-medium text-zinc-500">
+                    {turn.role}
+                  </span>
+                  <span className="whitespace-pre-wrap">{turn.content}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <p className="mb-1 text-xs text-zinc-500">Opening message</p>
+          <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs whitespace-pre-wrap">
+            {scenario.opening_message}
+          </pre>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -673,6 +787,7 @@ export default function EvalRunPage({
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
   // pas un résultat, et un rechargement ramène la lecture ordinaire.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
+  const [openScenario, setOpenScenario] = useState<number | null>(null);
   const [stopping, setStopping] = useState(false);
   // Quelle action attend d'être confirmée, s'il y en a une.
   const [confirming, setConfirming] = useState<null | "stop" | "retry">(
@@ -1127,7 +1242,24 @@ export default function EvalRunPage({
                 {run.config.scenarios.map((scenario, index) => (
                   <tr key={index}>
                     <td className="border-b border-zinc-200 p-2">
-                      {scenario.title}
+                      {/* Le titre mène à ce qui définit la ligne. Sur douze
+                          scénarios qui ne varient que d'un axe, le titre seul
+                          ne dit pas ce qu'on regarde. */}
+                      <button
+                        onClick={() => setOpenScenario(index)}
+                        title="What this scenario is, and why"
+                        className="cursor-pointer text-left underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-900"
+                      >
+                        {scenario.title}
+                      </button>
+                      {scenario.note && (
+                        <span
+                          className="ml-1 text-xs text-zinc-400"
+                          aria-hidden
+                        >
+                          ●
+                        </span>
+                      )}
                     </td>
                     {targets.map((target) => {
                       const cell = cells[index]?.[target];
@@ -1221,6 +1353,13 @@ export default function EvalRunPage({
           await saveNotes(run.id, next);
         }}
       />
+      {openScenario !== null && (
+        <ScenarioModal
+          run={run}
+          index={openScenario}
+          onClose={() => setOpenScenario(null)}
+        />
+      )}
       {open && (
         <DetailModal
           detail={detail}

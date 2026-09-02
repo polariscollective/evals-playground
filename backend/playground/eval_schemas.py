@@ -104,6 +104,14 @@ class EvalScenario(BaseModel):
     system_prompt: str = Field(min_length=1)
     opening_message: str = Field(min_length=1)
 
+    note: str = ""
+    """Pourquoi ce scénario existe, à l'usage de qui relit la matrice.
+
+    Ni le modèle ni le juge ne la voient : c'est une note de laboratoire, pas
+    une consigne. Six mois plus tard, « pourquoi cette ligne » est la question
+    qu'on se pose devant une matrice, et le titre seul n'y répond pas.
+    """
+
     tools: list[str] | None = None
     """Les outils offerts à ce scénario, par leur nom.
 

@@ -79,6 +79,7 @@ const DETAIL_COLUMNS = [
   "created_at",
   "scenario_index",
   "scenario_title",
+  "scenario_note",
   "system_prompt",
   "opening_message",
   "target_model",
@@ -128,6 +129,7 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[]): string {
         run.created_at,
         String(sample.scenario_index),
         scenario?.title ?? sample.scenario_title,
+        scenario?.note ?? "",
         scenario?.system_prompt ?? "",
         scenario?.opening_message ?? "",
         sample.target_model,
@@ -280,6 +282,15 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[]): string {
   for (const [index, scenario] of config.scenarios.entries()) {
     const offerts = toolsFor(config, scenario).map((tool) => tool.name);
     lines.push(`### ${index}. ${scenario.title}`, "");
+    if (scenario.note) {
+      // La note d'abord : c'est elle qui répond à « pourquoi cette ligne ».
+      lines.push(
+        "**Note** _(for whoever reads the matrix — neither the model nor the judge saw it)_",
+        "",
+        scenario.note.trim(),
+        "",
+      );
+    }
     if (tools.length > 0) {
       lines.push(
         `**Tools available** ${offerts.length === 0 ? "none" : offerts.map((n) => `\`${n}\``).join(", ")}`,

@@ -58,6 +58,12 @@ export interface EvalScenario {
   title: string;
   system_prompt: string;
   opening_message: string;
+  /** Pourquoi ce scénario existe, à l'usage de qui relit la matrice.
+   *
+   * Ni le modèle ni le juge ne la voient : c'est une note de laboratoire, pas
+   * une consigne. « Pourquoi cette ligne » est la question qu'on se pose devant
+   * une matrice six mois plus tard, et le titre seul n'y répond pas. */
+  note?: string;
   /** Un état de conversation posé d'avance, propre à ce scénario.
    *
    * Sert à mesurer ce qu'un modèle fait *depuis* un état sans avoir à l'y
@@ -97,6 +103,8 @@ export interface ScenarioSource {
   column_history?: string;
   /** La colonne disant quels outils le scénario reçoit. Vide s'il n'y en a pas. */
   column_tools?: string;
+  /** La colonne portant la note de laboratoire du scénario. */
+  column_note?: string;
   skipped_rows: number;
 }
 
@@ -136,6 +144,8 @@ export interface ExpectedCsv {
   column_opening_message: string;
   /** Facultative : la colonne portant l'historique posé, en JSON. */
   column_history?: string;
+  /** Facultative : la colonne portant la note de laboratoire du scénario. */
+  column_note?: string;
 }
 
 /** Ce qu'on ajoute à un run existant : une sous-matrice, et rien d'autre.

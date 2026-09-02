@@ -377,3 +377,24 @@ test("l'aller-retour conserve les outils et la sélection", () => {
   assert.deepEqual(relu.config.tools, config.tools);
   assert.deepEqual(relu.config.scenarios[0].tools, []);
 });
+
+test("une clôture Markdown venue avec le collage ne fait pas échouer la lecture", () => {
+  const { config } = readConfigFile("```yaml\n" + COMPLET + "```");
+  assert.equal(config.criterion, readConfigFile(COMPLET).config.criterion);
+});
+
+test("une clôture ouverte sans fermeture est retirée quand même", () => {
+  // Une sélection à la souris s'arrête parfois avant la dernière ligne.
+  assert.ok(readConfigFile("```\n" + COMPLET).config.rubric.length >= 2);
+});
+
+test("une échelle présente mais mal formée ne se dit pas « absente »", () => {
+  assert.throws(
+    () => readConfigFile(COMPLET.replace(/rubric:\n(  - .*\n|    .*\n)+/, "rubric:\n  0: refusé\n  1: obtempéré\n")),
+    /rubric must be a list of grades/,
+  );
+  assert.throws(
+    () => readConfigFile(COMPLET.replace(/rubric:\n(  - .*\n|    .*\n)+/, "")),
+    /rubric is missing/,
+  );
+});

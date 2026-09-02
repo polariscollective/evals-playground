@@ -7,7 +7,7 @@
    la refuser, l'utilisateur croirait avoir chargé plus de scénarios qu'il
    n'en a réellement. */
 
-import type { SeededTurn } from "./types";
+import type { EvalScenario, SeededTurn } from "./types";
 
 export interface ParsedCsv {
   columns: string[];
@@ -142,4 +142,71 @@ export function parseToolsCell(cell: string): string[] | null {
     .split(",")
     .map((name) => name.trim())
     .filter((name) => name !== "");
+}
+
+/** L'inverse de `parseHistoryCell`, pour un lot reconstruit en mémoire.
+ *
+ * Elle manquait, et son absence se voyait mal : un document de plusieurs
+ * scénarios repasse par un CSV pour remplir le formulaire, et l'historique
+ * posé disparaissait en silence entre le document et le run. Silence est le
+ * mot — `parseHistoryCell` d'une cellule vide rend une liste vide, qui est
+ * exactement ce qu'un scénario sans historique rend aussi. */
+export function writeHistoryCell(history: SeededTurn[]): string {
+  return history.length === 0 ? "" : JSON.stringify(history);
+}
+
+/** L'inverse de `parseToolsCell`, et ses trois états.
+ *
+ * `null` offre tous les outils du run, une liste vide n'en offre aucun, sinon
+ * les noms. Les virgules séparent sans risque : un nom d'outil est limité aux
+ * lettres, aux chiffres, au tiret et au souligné. */
+export function writeToolsCell(tools: string[] | null): string {
+  if (tools === null) return "";
+  if (tools.length === 0) return "none";
+  return tools.join(",");
+}
+
+/** Les colonnes toujours présentes dans un CSV reconstruit. */
+const REBUILT_COLUMNS = ["title", "system_prompt", "opening_message"];
+
+/** Un lot de scénarios remis sous la forme que le formulaire sait tenir.
+ *
+ * Le mode manuel ne porte qu'un scénario : au-delà, un document — collé,
+ * chargé, ou repris d'un vieux run dont le CSV n'a pas été gardé — repasse par
+ * un CSV reconstruit en mémoire. Ce détour ne doit rien perdre en route, et il
+ * perdait tout ce qui n'est pas l'un des trois champs obligatoires : la note de
+ * laboratoire, l'historique posé, les outils choisis par scénario. Rien ne le
+ * signalait — une cellule vide se lit « pas de note », « pas d'historique » et
+ * « tous les outils », qui sont précisément ce qu'un scénario sans rien de tout
+ * cela rend aussi.
+ *
+ * Chaque colonne facultative n'apparaît que si un scénario s'en sert : vides sur
+ * tout un lot, elles n'apprendraient rien et alourdiraient le panneau des
+ * colonnes pour le cas courant, qui n'en a aucune.
+ *
+ * Un champ de plus par scénario, un jour, se rajoute ici — et l'oublier ne
+ * casse rien de visible, ce qui est exactement le danger. */
+export function rebuildCsv(scenarios: EvalScenario[]): {
+  columns: string[];
+  rows: Record<string, string>[];
+} {
+  const columns = [
+    ...REBUILT_COLUMNS,
+    ...(scenarios.some((s) => s.note) ? ["note"] : []),
+    ...(scenarios.some((s) => (s.history?.length ?? 0) > 0) ? ["history"] : []),
+    ...(scenarios.some((s) => s.tools != null) ? ["tools"] : []),
+  ];
+  return {
+    columns,
+    rows: scenarios.map((scenario) => ({
+      title: scenario.title,
+      system_prompt: scenario.system_prompt,
+      opening_message: scenario.opening_message,
+      // Du texte libre, qui n'a pas besoin d'être encodé : `toCsv` échappe les
+      // virgules et les retours à la ligne, `parseCsv` les rend.
+      note: scenario.note ?? "",
+      history: writeHistoryCell(scenario.history ?? []),
+      tools: writeToolsCell(scenario.tools ?? null),
+    })),
+  };
 }

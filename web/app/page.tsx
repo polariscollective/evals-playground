@@ -16,6 +16,7 @@ import {
   parseCsv,
   parseHistoryCell,
   parseToolsCell,
+  rebuildCsv,
   toCsv,
 } from "@/lib/csv";
 import type {
@@ -50,9 +51,6 @@ const DEFAULT_RUBRIC: RubricLevel[] = [
   { value: 0, meaning: "" },
   { value: 1, meaning: "" },
 ];
-
-/** Les colonnes d'un CSV reconstruit depuis les scénarios d'un run. */
-const REBUILT_COLUMNS = ["title", "system_prompt", "opening_message"];
 
 /** D'où vient le texte déposé : ce que les messages ont besoin de nommer.
  *
@@ -95,6 +93,7 @@ function EvaluateForm() {
   // L'historique du scénario saisi à la main. Le mode CSV a le sien, dans une
   // colonne : ce sont deux chemins vers le même champ du scénario.
   const [history, setHistory] = useState<SeededTurn[]>([]);
+  const [scenarioNote, setScenarioNote] = useState("");
   // Les outils du run, et ce que le scénario manuel en prend. Le mode CSV a
   // sa colonne : deux chemins vers le même champ du scénario.
   const [tools, setTools] = useState<ToolSpec[]>([]);
@@ -117,6 +116,9 @@ function EvaluateForm() {
   // Facultative aussi : une cellule vide offre tous les outils du run, `none`
   // n'en offre aucun, sinon les noms séparés par des virgules.
   const [colTools, setColTools] = useState("");
+  // Facultative : la note de laboratoire du scénario, celle qu'on relit six
+  // mois plus tard pour se rappeler pourquoi cette ligne existe.
+  const [colNote, setColNote] = useState("");
 
   const [adversaryPrompt, setAdversaryPrompt] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -202,6 +204,7 @@ function EvaluateForm() {
           setOpeningMessage(first?.opening_message ?? "");
           setHistory(first?.history ?? []);
           setScenarioTools(first?.tools ?? null);
+          setScenarioNote(first?.note ?? "");
           return;
         }
 
@@ -223,25 +226,25 @@ function EvaluateForm() {
           setColOpening(config.source.column_opening_message);
           setColHistory(config.source.column_history ?? "");
           setColTools(config.source.column_tools ?? "");
+          setColNote(config.source.column_note ?? "");
           return;
         }
 
         // Ce run est antérieur à la conservation du fichier. Ses scénarios
         // sont dans le record : le lot reconstruit a le même contenu que
         // l'original, seule sa mise en forme est perdue.
-        const rows = config.scenarios.map((scenario) => ({
-          title: scenario.title,
-          system_prompt: scenario.system_prompt,
-          opening_message: scenario.opening_message,
-        }));
-        setCsvText(toCsv(REBUILT_COLUMNS, rows));
-        setCsvColumns(REBUILT_COLUMNS);
+        const { columns, rows } = rebuildCsv(config.scenarios);
+        setCsvText(toCsv(columns, rows));
+        setCsvColumns(columns);
         setCsvRows(rows);
         setCsvSkipped(0);
         setCsvName(config.source.file_name || "rebuilt.csv");
         setColTitle("title");
         setColSystem("system_prompt");
         setColOpening("opening_message");
+        setColNote(columns.includes("note") ? "note" : "");
+        setColHistory(columns.includes("history") ? "history" : "");
+        setColTools(columns.includes("tools") ? "tools" : "");
         setRelaunchNote(
           "The original CSV was not kept for that run. The scenarios were" +
             " rebuilt from the run itself — same content, original formatting" +
@@ -265,6 +268,7 @@ function EvaluateForm() {
           system_prompt: systemPrompt,
           opening_message: openingMessage,
           history,
+          note: scenarioNote,
           tools: scenarioTools,
         },
       ];
@@ -276,6 +280,7 @@ function EvaluateForm() {
       opening_message: row[colOpening] ?? "",
       history: colHistory ? parseHistoryCell(row[colHistory] ?? "") : [],
       tools: colTools ? parseToolsCell(row[colTools] ?? "") : null,
+      note: colNote ? (row[colNote] ?? "") : "",
     }));
   }, [
     source,
@@ -290,6 +295,8 @@ function EvaluateForm() {
     colOpening,
     colHistory,
     colTools,
+    colNote,
+    scenarioNote,
   ]);
 
   const turnsError =
@@ -365,6 +372,7 @@ function EvaluateForm() {
         column_opening_message: source === "csv" ? colOpening : "",
         column_history: source === "csv" ? colHistory : "",
         column_tools: source === "csv" ? colTools : "",
+        column_note: source === "csv" ? colNote : "",
         skipped_rows: source === "csv" ? csvSkipped : 0,
       },
       temperature: {
@@ -396,6 +404,7 @@ function EvaluateForm() {
       colOpening,
       colHistory,
       colTools,
+      colNote,
       csvSkipped,
     ],
   );
@@ -529,26 +538,26 @@ function EvaluateForm() {
       setTitle(config.scenarios[0].title);
       setSystemPrompt(config.scenarios[0].system_prompt);
       setOpeningMessage(config.scenarios[0].opening_message);
+      setScenarioNote(config.scenarios[0].note ?? "");
       setHistory(config.scenarios[0].history ?? []);
       setScenarioTools(config.scenarios[0].tools ?? null);
     } else {
       // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
       // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
       // en mémoire — c'est déjà ce que fait la reprise d'un vieux run.
-      const rows = config.scenarios.map((scenario) => ({
-        title: scenario.title,
-        system_prompt: scenario.system_prompt,
-        opening_message: scenario.opening_message,
-      }));
+      const { columns, rows } = rebuildCsv(config.scenarios);
       setSource("csv");
-      setCsvText(toCsv(REBUILT_COLUMNS, rows));
-      setCsvColumns(REBUILT_COLUMNS);
+      setCsvText(toCsv(columns, rows));
+      setCsvColumns(columns);
       setCsvRows(rows);
       setCsvSkipped(0);
       setCsvName(origin.csvName);
       setColTitle("title");
       setColSystem("system_prompt");
       setColOpening("opening_message");
+      setColNote(columns.includes("note") ? "note" : "");
+      setColHistory(columns.includes("history") ? "history" : "");
+      setColTools(columns.includes("tools") ? "tools" : "");
     }
     setImportNote(
       `${origin.said} read — ${config.scenarios.length} scenario` +
@@ -830,6 +839,22 @@ function EvaluateForm() {
               </span>
               <HistoryEditor history={history} onChange={setHistory} />
             </div>
+            <label className="block space-y-1">
+              <span className="text-sm font-medium">
+                Note{" "}
+                <span className="font-normal text-zinc-500">
+                  — why this scenario exists. Neither the model nor the judge
+                  sees it.
+                </span>
+              </span>
+              <textarea
+                value={scenarioNote}
+                onChange={(e) => setScenarioNote(e.target.value)}
+                rows={2}
+                placeholder="What this row is meant to isolate."
+                className="w-full rounded border border-zinc-300 p-2 text-sm"
+              />
+            </label>
             <ScenarioTools
               tools={tools}
               selected={scenarioTools}
@@ -873,7 +898,7 @@ function EvaluateForm() {
                 <p className="text-sm text-zinc-600">
                   Tell us which column holds what:
                 </p>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-6 gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
                     {
@@ -897,6 +922,11 @@ function EvaluateForm() {
                       label: "Tools (optional)",
                       value: colTools,
                       set: setColTools,
+                    },
+                    {
+                      label: "Note (optional)",
+                      value: colNote,
+                      set: setColNote,
                     },
                   ].map((f) => (
                     <label key={f.label} className="block space-y-1">

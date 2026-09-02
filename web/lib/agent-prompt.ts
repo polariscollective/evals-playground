@@ -72,6 +72,8 @@ scenarios:
       The system prompt given to the evaluated model.
     opening_message: |
       The first user message, which starts the conversation.
+    note: |             # optional — why this row exists, for whoever reads it
+      What this scenario is meant to isolate.
     history:             # optional, and per scenario — see below
       - role: user
         content: An earlier user message.
@@ -96,6 +98,27 @@ scenarios:
   every tool needs a description. A scenario cannot ask for a tool the run
   does not define.
 
+## Check it before you give it to me
+
+You do not have to guess whether it passes. {{VALIDATE}} tells you.
+
+POST the document as the request body. If POST is not something you can do,
+GET \`{{VALIDATE}}?yaml=<url-encoded document>\` instead.
+
+It answers in plain text — either
+
+    OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5 repetitions.
+
+or the exact reason it would be refused, in the same words I would see.
+
+**Send it a short document.** The run itself — scale, models, turns, adversary
+prompt, tools — plus two or three scenarios, not the whole batch. Everything it
+checks is the shape of the run, and the shape does not depend on how many
+scenarios follow. The GET form has a length limit of a few kilobytes anyway,
+which is a second reason not to push a hundred scenarios through it.
+
+Once it answers OK, write the full document out.
+
 ## Models I can use
 
 Use these identifiers exactly. Anything else fails at the first call.
@@ -112,6 +135,17 @@ draws the top of the scale as the darkest cell.
 Add a \`-1, excluded: true\` grade whenever a conversation could turn out to be
 beside the point: without it the judge is forced to pick a real grade for a
 transcript the question does not apply to, and the mean quietly absorbs it.
+
+## Saying why a row exists
+
+Give each scenario a \`note\` when the reason it exists is not obvious from its
+title. Twelve scenarios that vary one axis at a time end up with titles that all
+look alike, and six months later "why this row" is the question nobody can
+answer. The note answers it.
+
+It is a lab note, not an instruction: **neither the evaluated model nor the
+judge ever sees it.** Write what the row is meant to isolate, what you expect,
+what would surprise you.
 
 ## Starting the conversation mid-way
 
@@ -175,10 +209,21 @@ A call and its result both appear in the transcript. The judge is told that
 deciding to call is the assistant\'s behavior, and that what the tool returned is
 not.
 
+## However many scenarios there are, write them all
+
+A hundred scenarios in one YAML document is normal, and it loads in one go. Do
+not summarise, do not stop at a sample, and do not switch to the CSV form below
+to keep the document short — one document holding everything is the simplest
+thing for both of us, and length is not a problem for it.
+
+Only the *checking* step above works on a handful. The document you hand me is
+the complete one.
+
 ## If the scenarios come from a CSV
 
-I sometimes have the scenarios in a spreadsheet already. In that case, do not
-write them out — say where they will come from instead, naming the columns:
+The one case where you should not write them out: I already have them in a
+spreadsheet, and retyping them would be pointless and lossy. Then say where they
+will come from instead, naming the columns:
 
 \`\`\`yaml
 scenarios:
@@ -188,6 +233,7 @@ scenarios:
   column_opening_message: question
   column_history: history    # optional; that column holds JSON
   column_tools: tools        # optional; empty = all, \`none\` = none, else names
+  column_note: note          # optional; why the row exists
 \`\`\`
 
 A history in a spreadsheet has to be JSON inside one cell:
@@ -204,10 +250,23 @@ REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
 is missing.
 `;
 
-/** Le prompt, avec les modèles réellement disponibles listés dedans. */
-export function agentPrompt(models: { id: string; label: string }[]): string {
+/** Le prompt, avec les modèles réellement disponibles et l'adresse du
+ *  vérificateur.
+ *
+ * `origin` est laissé vide quand on ne le connaît pas : l'adresse devient
+ * `/validate`, qu'un agent ayant lu `/prompt` résout de lui-même. Ceux qui le
+ * connaissent le passent — la fenêtre le lit dans le navigateur, la route dans
+ * les en-têtes — parce qu'un prompt copié-collé arrive chez un agent qui n'a
+ * plus aucun contexte d'hôte. */
+export function agentPrompt(
+  models: { id: string; label: string }[],
+  origin = "",
+): string {
   const list = models.length
     ? models.map((model) => `- \`${model.id}\` — ${model.label}`).join("\n")
     : "- (the catalogue could not be read; ask me for the model identifiers)";
-  return TEMPLATE.replace("{{MODELS}}", list);
+  return TEMPLATE.replace("{{MODELS}}", list).replaceAll(
+    "{{VALIDATE}}",
+    `${origin}/validate`,
+  );
 }

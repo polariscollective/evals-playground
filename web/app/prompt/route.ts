@@ -1,6 +1,23 @@
 import { agentPrompt } from "@/lib/agent-prompt";
 import { catalog } from "@/lib/catalog";
 
+/** L'adresse publique sous laquelle on a été appelé.
+ *
+ * Le prompt y renvoie l'agent pour vérifier son document, et une adresse
+ * relative ne lui servirait que s'il a lui-même lu cette page. Derrière le
+ * proxy de Vercel, `request.url` porte l'hôte interne : ce sont les en-têtes
+ * transmis qui disent sous quel nom on est joignable. En local il n'y en a pas,
+ * et l'URL de la requête suffit. */
+function originOf(request: Request): string {
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (!host) return new URL(request.url).origin;
+  const proto =
+    request.headers.get("x-forwarded-proto") ??
+    (/^(localhost|127\.|\[::1\])/.test(host) ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 /** Le prompt d'aide à la rédaction d'un run, en texte brut et sans connexion.
  *
  * Volontairement hors de la porte : le but est de donner cette URL à un agent,
@@ -12,7 +29,7 @@ import { catalog } from "@/lib/catalog";
  *
  * En `text/plain` parce que le lecteur est une machine : du HTML lui ferait
  * traverser une mise en page pour retrouver le texte qu'on lui destine. */
-export async function GET() {
+export async function GET(request: Request) {
   const models = catalog().flatMap((provider) =>
     provider.models.map((model) => ({
       id: model.id,
@@ -20,7 +37,7 @@ export async function GET() {
     })),
   );
 
-  return new Response(agentPrompt(models), {
+  return new Response(agentPrompt(models, originOf(request)), {
     headers: {
       "content-type": "text/plain; charset=utf-8",
       // Le contenu ne bouge qu'avec un déploiement : cinq minutes de cache

@@ -50,6 +50,7 @@ function scenarioOf(entry: unknown, position: number): EvalScenario {
     // L'historique posé, propre à ce scénario. Absent la plupart du temps, et
     // absent du fichier écrit quand il l'est : un tableau vide partout ferait
     // du bruit dans un gabarit.
+    note: asString(row.note),
     history: readHistory(row.history, position),
     // Trois états à préserver : absent offre tous les outils du run, une liste
     // offre ceux-là, `none` n'en offre aucun. Les confondre ferait disparaître
@@ -167,7 +168,18 @@ function readTools(value: unknown): ToolSpec[] {
 }
 
 function readRubric(value: unknown): RubricLevel[] {
-  if (!Array.isArray(value)) throw new ConfigFileError("rubric is missing.");
+  // Deux torts différents, deux messages : « missing » pour une échelle
+  // absente, et ce qu'on attend pour une échelle présente mais mal formée —
+  // une table de paliers, ou un autre nom de clé, disaient tous les deux
+  // « missing », ce qui envoyait chercher au mauvais endroit.
+  if (value === undefined || value === null) {
+    throw new ConfigFileError("rubric is missing.");
+  }
+  if (!Array.isArray(value)) {
+    throw new ConfigFileError(
+      "rubric must be a list of grades, each with a `value` and a `meaning`.",
+    );
+  }
   return value.map((entry, position) => {
     if (!entry || typeof entry !== "object") {
       throw new ConfigFileError(`grade ${position} is not a mapping.`);
@@ -183,11 +195,27 @@ function readRubric(value: unknown): RubricLevel[] {
   });
 }
 
+/** Retire la clôture Markdown, quand elle est venue avec le texte.
+ *
+ * Un agent rend son document dans un bloc de code, et le coller à la main en
+ * emporte souvent les backticks. YAML les refuse en parlant de clés implicites
+ * à la ligne 1 — un message juste, et illisible pour qui vient de coller.
+ *
+ * La ligne d'ouverture suffit à décider : elle ne peut pas être du YAML utile.
+ * La fermeture est retirée si elle est là, et son absence n'empêche rien —
+ * une sélection s'arrête parfois avant. */
+function withoutFence(text: string): string {
+  const lines = text.trim().split("\n");
+  if (!/^```/.test(lines[0] ?? "")) return text;
+  const end = lines[lines.length - 1].trim() === "```" ? -1 : undefined;
+  return lines.slice(1, end).join("\n");
+}
+
 /** Le fichier, lu et validé, ou une erreur qui dit ce qui manque. */
 export function readConfigFile(text: string): ImportedConfig {
   let raw: unknown;
   try {
-    raw = parse(text);
+    raw = parse(withoutFence(text));
   } catch (error) {
     throw new ConfigFileError(`Could not read the file: ${(error as Error).message}`);
   }
@@ -300,6 +328,7 @@ export function writeConfigFile(config: EvalRunConfig): string {
             title: scenario.title,
             system_prompt: scenario.system_prompt,
             opening_message: scenario.opening_message,
+            ...(scenario.note ? { note: scenario.note } : {}),
             ...(scenario.tools == null
               ? {}
               : { tools: scenario.tools.length === 0 ? "none" : scenario.tools }),

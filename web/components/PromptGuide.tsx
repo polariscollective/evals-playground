@@ -14,15 +14,25 @@ import type { ProviderInfo } from "@/lib/types";
 export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-
-  const text = agentPrompt(
-    providers.flatMap((provider) =>
-      provider.models.map((model) => ({
-        id: model.id,
-        label: `${provider.label} ${model.label}`,
-      })),
-    ),
-  );
+  // Le prompt renvoie l'agent vers `/validate`, et un prompt copié-collé arrive
+  // chez un agent qui n'a aucun contexte d'hôte : il lui faut l'adresse
+  // entière, que seul le navigateur connaît.
+  //
+  // D'où le calcul à l'ouverture et non au rendu : le serveur rend toujours
+  // cette fenêtre fermée, donc `window` est là dès que ce texte existe. Un
+  // effet qui poserait l'origine en état ferait le même travail en deux rendus,
+  // et le linter le refuse à juste titre.
+  const text = open
+    ? agentPrompt(
+        providers.flatMap((provider) =>
+          provider.models.map((model) => ({
+            id: model.id,
+            label: `${provider.label} ${model.label}`,
+          })),
+        ),
+        window.location.origin,
+      )
+    : "";
 
   const copy = async (what: string, said: string) => {
     try {
@@ -80,10 +90,8 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
           editing.
         </p>
         {/* Un agent qui sait lire une page se passe du copier-coller : cette
-            adresse rend le même texte, en clair et sans connexion.
-            Lue au rendu et non dans un effet, ce que seul permet le fait que ce
-            bloc n'existe qu'une fois la fenêtre ouverte : le serveur ne le rend
-            jamais, donc `window` y est toujours là. */}
+            adresse rend le même texte, en clair et sans connexion — et le
+            prompt qu'elle rend porte déjà l'origine, lue côté serveur. */}
         {open && (
           <div className="mb-3 flex items-center gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
             <span className="shrink-0 text-zinc-500">Or give it this link:</span>
