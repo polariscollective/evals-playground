@@ -31,6 +31,7 @@ import type {
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { NotesField } from "@/components/NotesField";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
+import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
 import { RubricEditor } from "@/components/RubricEditor";
 
@@ -52,6 +53,20 @@ const DEFAULT_RUBRIC: RubricLevel[] = [
 
 /** Les colonnes d'un CSV reconstruit depuis les scénarios d'un run. */
 const REBUILT_COLUMNS = ["title", "system_prompt", "opening_message"];
+
+/** D'où vient le texte déposé : ce que les messages ont besoin de nommer.
+ *
+ * Un fichier a un nom, un collage n'en a pas — et l'écart s'arrête là. Le reste
+ * du chemin est le même, ce qui est exactement la propriété qu'on veut : la
+ * validation est celle de `/api/config` dans les deux cas. */
+type ConfigOrigin = { said: string; csvName: string };
+
+const originOfFile = (file: File): ConfigOrigin => ({
+  said: file.name,
+  csvName: file.name.replace(/\.(ya?ml|json)$/i, ".csv"),
+});
+
+const PASTED: ConfigOrigin = { said: "Pasted config", csvName: "pasted.csv" };
 
 type Source = "manual" | "csv";
 
@@ -457,85 +472,98 @@ function EvaluateForm() {
     setWantedColumns(null);
   };
 
-  /** Remplit le formulaire depuis un fichier JSON ou YAML.
+  /** Remplit le formulaire depuis une config écrite, fichier ou collage.
    *
    * La lecture et la validation sont faites par la route `/api/config` : un
-   * fichier accepté là ne peut pas être refusé au lancement, ce qu'une
-   * validation faite ici seulement ne garantirait pas. */
-  const onConfigFile = async (file: File) => {
+   * texte accepté là ne peut pas être refusé au lancement, ce qu'une validation
+   * faite ici seulement ne garantirait pas. Rien du formulaire n'est touché
+   * avant que la route ait répondu — un texte refusé le laisse donc entier.
+   *
+   * Elle lève au lieu d'afficher : le message n'a pas le même endroit selon
+   * d'où vient le texte — en haut de la page pour un fichier, dans la fenêtre
+   * pour un collage, à côté de ce qui peut encore être corrigé. */
+  const onConfigText = async (text: string, origin: ConfigOrigin) => {
     setError(null);
-    try {
-      const { config, csv } = await importConfigFile(await file.text());
-      setLabel(config.label ?? "");
-      setNotes(config.notes ?? "");
-      setCriterion(config.criterion);
-      setRubric(config.rubric);
-      setTurns(config.turns);
-      setRepetitions(config.repetitions);
-      setAdversaryPrompt(config.adversary_prompt);
-      setTargets(config.models.targets);
-      setAdversary(config.models.adversary ?? "");
-      setJudge(config.models.judge);
-      setTemperatureMin(config.temperature?.min ?? 1);
-      setVaryTemperature(config.temperature?.max != null);
-      setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
+    // Effacé d'entrée plutôt qu'en cas d'échec : un refus ne doit pas laisser
+    // en place le bandeau du texte précédent, qui décrirait un formulaire que
+    // celui-ci a pu changer entre-temps.
+    setImportNote(null);
+    const { config, csv } = await importConfigFile(text);
+    setLabel(config.label ?? "");
+    setNotes(config.notes ?? "");
+    setCriterion(config.criterion);
+    setRubric(config.rubric);
+    setTurns(config.turns);
+    setRepetitions(config.repetitions);
+    setAdversaryPrompt(config.adversary_prompt);
+    setTargets(config.models.targets);
+    setAdversary(config.models.adversary ?? "");
+    setJudge(config.models.judge);
+    setTemperatureMin(config.temperature?.min ?? 1);
+    setVaryTemperature(config.temperature?.max != null);
+    setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
 
-      if (csv) {
-        // Le fichier annonce un CSV sans le porter : le formulaire passe en mode
-        // CSV et attend le fichier, colonnes déjà choisies.
-        setSource("csv");
-        setCsvText("");
-        setCsvColumns([]);
-        setCsvRows([]);
-        setCsvName("");
-        setWantedColumns({
-          title: csv.column_title,
-          system: csv.column_system_prompt,
-          opening: csv.column_opening_message,
-        });
-        setImportNote(
-          `${file.name} read. Now upload the CSV of scenarios — the columns it` +
-            " names will be selected for you.",
-        );
-        return;
-      }
-
-      setWantedColumns(null);
-      if (config.scenarios.length === 1) {
-        setSource("manual");
-        setTitle(config.scenarios[0].title);
-        setSystemPrompt(config.scenarios[0].system_prompt);
-        setOpeningMessage(config.scenarios[0].opening_message);
-        setHistory(config.scenarios[0].history ?? []);
-        setScenarioTools(config.scenarios[0].tools ?? null);
-      } else {
-        // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
-        // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
-        // en mémoire — c'est déjà ce que fait la reprise d'un vieux run.
-        const rows = config.scenarios.map((scenario) => ({
-          title: scenario.title,
-          system_prompt: scenario.system_prompt,
-          opening_message: scenario.opening_message,
-        }));
-        setSource("csv");
-        setCsvText(toCsv(REBUILT_COLUMNS, rows));
-        setCsvColumns(REBUILT_COLUMNS);
-        setCsvRows(rows);
-        setCsvSkipped(0);
-        setCsvName(file.name.replace(/\.(ya?ml|json)$/i, ".csv"));
-        setColTitle("title");
-        setColSystem("system_prompt");
-        setColOpening("opening_message");
-      }
+    if (csv) {
+      // Le fichier annonce un CSV sans le porter : le formulaire passe en mode
+      // CSV et attend le fichier, colonnes déjà choisies.
+      setSource("csv");
+      setCsvText("");
+      setCsvColumns([]);
+      setCsvRows([]);
+      setCsvName("");
+      setWantedColumns({
+        title: csv.column_title,
+        system: csv.column_system_prompt,
+        opening: csv.column_opening_message,
+      });
       setImportNote(
-        `${file.name} read — ${config.scenarios.length} scenario` +
-          `${config.scenarios.length > 1 ? "s" : ""}, ` +
-          `${config.models.targets.length} model` +
-          `${config.models.targets.length > 1 ? "s" : ""}.`,
+        `${origin.said} read. Now upload the CSV of scenarios — the columns it` +
+          " names will be selected for you.",
       );
+      return;
+    }
+
+    setWantedColumns(null);
+    if (config.scenarios.length === 1) {
+      setSource("manual");
+      setTitle(config.scenarios[0].title);
+      setSystemPrompt(config.scenarios[0].system_prompt);
+      setOpeningMessage(config.scenarios[0].opening_message);
+      setHistory(config.scenarios[0].history ?? []);
+      setScenarioTools(config.scenarios[0].tools ?? null);
+    } else {
+      // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
+      // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
+      // en mémoire — c'est déjà ce que fait la reprise d'un vieux run.
+      const rows = config.scenarios.map((scenario) => ({
+        title: scenario.title,
+        system_prompt: scenario.system_prompt,
+        opening_message: scenario.opening_message,
+      }));
+      setSource("csv");
+      setCsvText(toCsv(REBUILT_COLUMNS, rows));
+      setCsvColumns(REBUILT_COLUMNS);
+      setCsvRows(rows);
+      setCsvSkipped(0);
+      setCsvName(origin.csvName);
+      setColTitle("title");
+      setColSystem("system_prompt");
+      setColOpening("opening_message");
+    }
+    setImportNote(
+      `${origin.said} read — ${config.scenarios.length} scenario` +
+        `${config.scenarios.length > 1 ? "s" : ""}, ` +
+        `${config.models.targets.length} model` +
+        `${config.models.targets.length > 1 ? "s" : ""}.`,
+    );
+  };
+
+  const onConfigFile = async (file: File) => {
+    const origin = originOfFile(file);
+    try {
+      await onConfigText(await file.text(), origin);
     } catch (e) {
-      setImportNote(null);
-      setError(`${file.name}: ${(e as Error).message}`);
+      setError(`${origin.said}: ${(e as Error).message}`);
     }
   };
 
@@ -647,9 +675,11 @@ function EvaluateForm() {
         </div>
       )}
 
-      {/* Un run peut arriver tout écrit : un agent produit le fichier, on le
-          dépose ici. La forme demandée est celle stockée en base, si bien qu'un
-          run exporté se réimporte sans traduction. */}
+      {/* Un run peut arriver tout écrit : un agent le rend, on le dépose ici.
+          Deux portes pour un seul chemin — un agent rend du texte, et n'en fait
+          un fichier que si on le lui demande. La forme attendue est celle
+          stockée en base, si bien qu'un run exporté se réimporte sans
+          traduction. */}
       <div className="flex flex-wrap items-center gap-3 rounded border border-dashed border-zinc-300 p-3 text-sm">
         <label className="cursor-pointer">
           <span className="rounded border border-zinc-300 bg-white px-3 py-1 hover:bg-zinc-50">
@@ -666,6 +696,7 @@ function EvaluateForm() {
             }}
           />
         </label>
+        <PasteConfig onLoad={(text) => onConfigText(text, PASTED)} />
         <span className="text-zinc-500">JSON or YAML — fills in everything below.</span>
         <span className="ml-auto flex gap-4">
           <PromptGuide providers={providers} />

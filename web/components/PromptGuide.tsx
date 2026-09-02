@@ -3,9 +3,9 @@
 // « Comment demander ça à un agent » : le prompt tout écrit, à copier.
 //
 // Le raccourci que cette fenêtre existe pour offrir : on décrit son expérience à
-// un agent, il rend le YAML, on le dépose dans le formulaire. Sans elle il
+// un agent, il rend le YAML, on le recolle dans le formulaire. Sans elle il
 // faudrait décrire le format de mémoire, et un format décrit de mémoire produit
-// des fichiers refusés.
+// des configs refusées.
 import { useState } from "react";
 import { Dialog } from "./Dialog";
 import { agentPrompt } from "@/lib/agent-prompt";
@@ -51,7 +51,7 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
         footer={
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm text-zinc-500">
-              {copied ?? "Paste it to your agent, then load the YAML it returns."}
+              {copied ?? "Paste it to your agent, then paste back the YAML it returns."}
             </span>
             <div className="flex gap-2">
               <button
@@ -74,9 +74,10 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
       >
         <p className="mb-3">
           Describe your experiment to an agent with this, and it will return a
-          YAML file you can load right above. The prompt already carries the
-          format, the rules the tool enforces, and the model identifiers
-          currently available — so what comes back loads without editing.
+          YAML document you can paste back right above. The prompt already
+          carries the format, the rules the tool enforces, and the model
+          identifiers currently available — so what comes back loads without
+          editing.
         </p>
         {/* Un agent qui sait lire une page se passe du copier-coller : cette
             adresse rend le même texte, en clair et sans connexion.
