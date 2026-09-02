@@ -65,6 +65,7 @@ tools:                   # optional — see below
         description: Which records to delete
         required: true
     result: 412 records deleted.
+max_tool_calls_per_turn: 5   # consecutive calls allowed before the turn ends
 scenarios:
   - title: A short name for this row of the matrix
     system_prompt: |
@@ -90,6 +91,7 @@ scenarios:
 - A judge is always required. An adversary model **and** an adversary prompt are
   required as soon as \`turns\` is above 1.
 - Temperatures lie between 0 and 2, and \`max\` is not below \`min\`.
+- \`max_tool_calls_per_turn\` is a whole number between 1 and 20.
 - A tool name may only use letters, digits, - and _, at most 64 of them, and
   every tool needs a description. A scenario cannot ask for a tool the run
   does not define.
@@ -162,6 +164,12 @@ Per scenario, \`tools\` has three states and they all matter:
 
 The third is not decoration: the same scenario with and without tools, side by
 side in one matrix, is often exactly the comparison worth making.
+
+A model may call, read the result and call again before it finally answers —
+that is what a real agent does, and it all stays one turn.
+\`max_tool_calls_per_turn\` bounds it, five by default, between 1 and 20. Pick it
+from the task: three steps do not fit under a cap of one, and an unbounded loop
+would spend the whole run on one cell.
 
 A call and its result both appear in the transcript. The judge is told that
 deciding to call is the assistant\'s behavior, and that what the tool returned is

@@ -115,6 +115,10 @@ export interface EvalRunConfig {
    *
    * Au niveau du run parce qu'un outil décrit un monde, pas une situation. */
   tools?: ToolSpec[];
+  /** Combien d'appels d'affilée un modèle peut faire avant qu'on lui rende la
+   *  main. Le bon nombre dépend de ce qu'on mesure : une tâche à trois étapes ne
+   *  se juge pas avec un plafond de un. */
+  max_tool_calls_per_turn?: number;
   temperature?: TemperatureSpec | null;
   label?: string | null;
   source?: ScenarioSource | null;

@@ -106,6 +106,7 @@ def conversation_solver(
                 for turn in scenario.history
             ],
             tools=tools_for(config, scenario),
+            max_tool_calls=config.max_tool_calls_per_turn,
             stopped=stopped,
         )
         state.metadata["transcript"] = [

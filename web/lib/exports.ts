@@ -6,6 +6,7 @@
 import { cellsOf } from "./matrix";
 import { PLAIN_VIEW, describeView, type MatrixView } from "./view";
 import { formatValue, sortedRubric } from "./judge-prompt";
+import { toolsFor } from "./tools";
 import type { EvalRun, EvalSample, Message } from "./types";
 
 function cell(value: string): string {
@@ -90,6 +91,7 @@ const DETAIL_COLUMNS = [
   "error",
   "turns",
   "message_count",
+  "tools_available",
   "criterion",
   "rubric",
   "adversary_model",
@@ -101,7 +103,6 @@ const DETAIL_COLUMNS = [
   "temperature_max",
   "scenario_source",
   "source_file",
-  "run_notes",
   "transcript",
 ];
 
@@ -139,6 +140,15 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[]): string {
         sample.error ?? "",
         String(config.turns),
         String(sample.messages.length),
+        // Quels outils cette case avait réellement sous la main. Un scénario
+        // peut n'en recevoir aucun quand les autres les ont tous, et c'est
+        // souvent la comparaison qu'on cherche : la colonne le dit ligne à
+        // ligne plutôt que de laisser déduire.
+        scenario
+          ? toolsFor(config, scenario)
+              .map((tool) => tool.name)
+              .join(" ") || "none"
+          : "",
         config.criterion,
         // L'échelle accompagne la question : une note lue seule, sans savoir ce
         // que valait « 2 », ne se relit pas.
@@ -155,9 +165,140 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[]): string {
         temperature?.max == null ? "" : String(temperature.max),
         source?.kind ?? "manual",
         source?.file_name ?? "",
-        run.notes,
         transcript(sample.messages),
       ];
     }),
   ]);
+}
+
+/** Ce qui vaut pour tout le run, dans un fichier qui se lit.
+ *
+ * Les notes et les outils ne sont pas des données de case : les répéter sur
+ * chaque ligne d'un CSV les rendait illisibles — une description d'outil de
+ * trois phrases dans une cellule de tableur n'est lue par personne. Ici elles
+ * ont la place de se lire, et le CSV garde ce qui varie d'une case à l'autre.
+ *
+ * En Markdown parce que ce fichier est fait pour être lu, par un humain ou par
+ * un agent à qui on donne le dossier entier. */
+export function runMarkdown(run: EvalRun, samples: EvalSample[]): string {
+  const config = run.config;
+  const lines: string[] = [];
+
+  lines.push(`# ${run.label ?? "Evaluation run"}`, "");
+  lines.push(`- **Run** \`${run.id}\``);
+  lines.push(`- **Launched** ${run.created_at} by ${run.user_email}`);
+  lines.push(
+    `- **Shape** ${config.scenarios.length} scenarios × ` +
+      `${config.models.targets.length} models × ${config.repetitions} repetitions` +
+      ` · ${config.turns} turn${config.turns > 1 ? "s" : ""}`,
+  );
+  lines.push(`- **Status** ${run.status}`);
+  if (run.cost_usd !== null) lines.push(`- **Cost** $${run.cost_usd}`);
+  lines.push("");
+
+  lines.push("## Notes", "");
+  lines.push(run.notes.trim() || "_None._", "");
+
+  lines.push("## What the judge was asked", "");
+  lines.push(`**Judge** \`${config.models.judge}\``, "");
+  lines.push("**Criterion**", "", config.criterion.trim(), "");
+  lines.push("**Scale**", "");
+  for (const level of sortedRubric(config.rubric)) {
+    lines.push(
+      `- \`${formatValue(level.value)}\` — ${level.meaning}` +
+        (level.excluded ? " _(left out of the average)_" : ""),
+    );
+  }
+  lines.push("");
+
+  lines.push("## Models evaluated", "");
+  for (const target of config.models.targets) lines.push(`- \`${target}\``);
+  lines.push("");
+
+  if (config.turns > 1) {
+    lines.push("## The adversary", "");
+    lines.push(`**Model** \`${config.models.adversary ?? "—"}\``, "");
+    lines.push("**Prompt**", "", config.adversary_prompt.trim() || "_None._", "");
+  }
+
+  // Les outils tels qu'ils ont été présentés au modèle : nom, description et
+  // arguments, mot pour mot. C'est ce qui permet de relire une décision
+  // d'appel — sans la description, on ne sait pas ce que le modèle lisait.
+  const tools = config.tools ?? [];
+  if (tools.length > 0) {
+    lines.push("## Tools offered", "");
+    lines.push(
+      "_Nothing was executed. Each call returned the fixed result below,",
+      "the same on every repetition._",
+      "",
+    );
+    for (const tool of tools) {
+      lines.push(`### \`${tool.name}\``, "");
+      lines.push("**Description given to the model**", "", tool.description, "");
+      if (tool.parameters.length > 0) {
+        lines.push("| parameter | type | required | description |");
+        lines.push("|---|---|---|---|");
+        for (const param of tool.parameters) {
+          lines.push(
+            `| \`${param.name}\` | ${param.type} | ${param.required ? "yes" : "no"} |` +
+              ` ${param.description} |`,
+          );
+        }
+        lines.push("");
+      }
+      lines.push("**Result returned on every call**", "", tool.result || "_Empty._", "");
+
+      // Où l'outil a servi : un outil défini mais offert à aucun scénario est
+      // une erreur silencieuse qu'on ne verrait nulle part ailleurs.
+      const offert = config.scenarios
+        .filter((scenario) =>
+          toolsFor(config, scenario).some((entry) => entry.name === tool.name),
+        )
+        .map((scenario) => scenario.title);
+      lines.push(
+        offert.length === config.scenarios.length
+          ? "_Offered to every scenario._"
+          : offert.length === 0
+            ? "_Offered to no scenario._"
+            : `_Offered to:_ ${offert.join(", ")}`,
+        "",
+      );
+
+      const appels = samples.reduce(
+        (total, sample) =>
+          total +
+          sample.messages.filter((message) =>
+            (message.tool_calls ?? []).some((call) => call.name === tool.name),
+          ).length,
+        0,
+      );
+      lines.push(`_Called ${appels} time${appels === 1 ? "" : "s"} across the run._`, "");
+    }
+  }
+
+  lines.push("## Scenarios", "");
+  for (const [index, scenario] of config.scenarios.entries()) {
+    const offerts = toolsFor(config, scenario).map((tool) => tool.name);
+    lines.push(`### ${index}. ${scenario.title}`, "");
+    if (tools.length > 0) {
+      lines.push(
+        `**Tools available** ${offerts.length === 0 ? "none" : offerts.map((n) => `\`${n}\``).join(", ")}`,
+        "",
+      );
+    }
+    lines.push("**System prompt**", "", scenario.system_prompt.trim(), "");
+    if (scenario.history && scenario.history.length > 0) {
+      lines.push(
+        "**Prior history** _(written by the experimenter, not produced by the model)_",
+        "",
+      );
+      for (const turn of scenario.history) {
+        lines.push(`- **${turn.role}** — ${turn.content}`);
+      }
+      lines.push("");
+    }
+    lines.push("**Opening message**", "", scenario.opening_message.trim(), "");
+  }
+
+  return lines.join("\n");
 }

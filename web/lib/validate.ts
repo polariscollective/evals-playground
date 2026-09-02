@@ -171,6 +171,10 @@ export function configProblem(config: unknown): string | null {
 
   const tools = toolsProblem(c.tools);
   if (tools) return tools;
+  const cap = c.max_tool_calls_per_turn;
+  if (cap !== undefined && (!Number.isInteger(cap) || cap < 1 || cap > 20)) {
+    return "consecutive tool calls per turn must be a whole number between 1 and 20";
+  }
   for (const scenario of c.scenarios) {
     const asked = scenarioToolsProblem(
       scenario.tools,

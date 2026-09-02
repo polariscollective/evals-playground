@@ -218,6 +218,7 @@ export function readConfigFile(text: string): ImportedConfig {
     },
     adversary_prompt: asString(file.adversary_prompt),
     tools: readTools(file.tools),
+    max_tool_calls_per_turn: asNumber(file.max_tool_calls_per_turn, 5),
     temperature: temperature
       ? {
           min: asNumber(temperature.min, 1),
@@ -285,7 +286,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
     temperature: config.temperature ?? null,
     models: config.models,
     adversary_prompt: config.adversary_prompt,
-    ...(config.tools && config.tools.length > 0 ? { tools: config.tools } : {}),
+    ...(config.tools && config.tools.length > 0
+      ? {
+          tools: config.tools,
+          max_tool_calls_per_turn: config.max_tool_calls_per_turn ?? 5,
+        }
+      : {}),
     scenarios: config.scenarios.map((scenario) =>
       scenario.history && scenario.history.length > 0
         ? scenario

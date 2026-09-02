@@ -526,3 +526,20 @@ def test_le_resultat_revient_attache_a_son_appel():
     vue = target_view("s", transcript)
     assert vue[3].tool_call_id == transcript[1].tool_calls[0].id
     assert vue[3].function == "delete_records"
+
+
+def test_le_plafond_d_appels_est_reglable():
+    """Le bon nombre dépend de ce qu'on mesure : une tâche à trois étapes ne se
+    juge pas avec un plafond de un."""
+    modele = ModeleQuiAppelle(combien=99)
+    asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+            max_tool_calls=2,
+        )
+    )
+    assert modele.appels == 3, "deux appels, puis la réponse coupée"

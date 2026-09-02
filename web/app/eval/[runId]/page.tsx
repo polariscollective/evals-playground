@@ -14,6 +14,7 @@ import {
   sourceCsvUrl,
 } from "@/lib/api";
 import { cellsOf } from "@/lib/matrix";
+import { toolsFor } from "@/lib/tools";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW, describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
@@ -180,6 +181,72 @@ function CopyId({ value }: { value: string }) {
 }
 
 /** Ce qu'on a demandé au juge : la question, l'échelle, et qui a jugé. */
+/** Les outils du run, tels qu'ils ont été présentés au modèle.
+ *
+ * Mot pour mot, description comprise : sans elle on ne peut pas relire une
+ * décision d'appel, puisque c'est le seul texte que le modèle avait sous les
+ * yeux au moment de décider. Le compte d'appels réels est là parce qu'un outil
+ * défini et jamais appelé est un résultat, pas un oubli. */
+function ToolsBlock({ detail }: { detail: RunDetail }) {
+  const { config } = detail.run;
+  const tools = config.tools ?? [];
+  if (tools.length === 0) return null;
+
+  const appels = (name: string) =>
+    detail.samples.reduce(
+      (total, sample) =>
+        total +
+        sample.messages.filter((message) =>
+          (message.tool_calls ?? []).some((call) => call.name === name),
+        ).length,
+      0,
+    );
+
+  return (
+    <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-medium">Tools the evaluated model could call</h2>
+        <span className="text-xs text-zinc-500">
+          nothing was executed · up to{" "}
+          {config.max_tool_calls_per_turn ?? 5} consecutive calls per turn
+        </span>
+      </div>
+      {tools.map((tool) => {
+        const offert = config.scenarios.filter((scenario) =>
+          toolsFor(config, scenario).some((entry) => entry.name === tool.name),
+        ).length;
+        return (
+          <div key={tool.name} className="space-y-1 border-t border-zinc-200 pt-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <code className="text-sm font-medium">{tool.name}</code>
+              <span className="text-xs text-zinc-500">
+                offered to {offert} of {config.scenarios.length} scenarios ·
+                called {appels(tool.name)}×
+              </span>
+            </div>
+            <p className="text-sm whitespace-pre-wrap text-zinc-800">
+              {tool.description}
+            </p>
+            {tool.parameters.length > 0 && (
+              <p className="font-mono text-xs text-zinc-600">
+                {tool.parameters
+                  .map(
+                    (param) =>
+                      `${param.name}: ${param.type}${param.required ? "" : "?"}`,
+                  )
+                  .join(", ")}
+              </p>
+            )}
+            <p className="text-xs text-zinc-500">
+              returns: <span className="font-mono">{tool.result || "(empty)"}</span>
+            </p>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function JudgeBlock({ detail }: { detail: RunDetail }) {
   const { config } = detail.run;
   return (
@@ -334,6 +401,7 @@ function DetailModal({
   onClose: () => void;
 }) {
   const [showSystem, setShowSystem] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const scenario = detail.run.config.scenarios[scenarioIndex];
   const attempts = detail.samples.filter(
     (sample) =>
@@ -387,6 +455,60 @@ function DetailModal({
             </pre>
           )}
         </div>
+
+        {/* Ce que cette case avait réellement sous la main : un scénario peut
+            n'avoir reçu aucun outil quand les autres les ont tous, et c'est
+            souvent la comparaison qu'on cherche. Avec la description, sans
+            laquelle on ne peut pas relire une décision d'appel. */}
+        {(detail.run.config.tools ?? []).length > 0 && scenario && (
+          <div className="rounded border border-zinc-300">
+            <button
+              onClick={() => setShowTools(!showTools)}
+              className="flex w-full items-center justify-between p-3 text-left text-sm"
+            >
+              Tools available to this scenario —{" "}
+              {toolsFor(detail.run.config, scenario).length === 0
+                ? "none"
+                : toolsFor(detail.run.config, scenario)
+                    .map((tool) => tool.name)
+                    .join(", ")}
+              <span>{showTools ? "−" : "+"}</span>
+            </button>
+            {showTools && (
+              <div className="space-y-3 border-t border-zinc-200 p-3">
+                {toolsFor(detail.run.config, scenario).length === 0 ? (
+                  <p className="text-xs text-zinc-600">
+                    This scenario was offered no tools, while the run defines{" "}
+                    {(detail.run.config.tools ?? []).length}.
+                  </p>
+                ) : (
+                  toolsFor(detail.run.config, scenario).map((tool) => (
+                    <div key={tool.name} className="space-y-1">
+                      <code className="text-xs font-medium">{tool.name}</code>
+                      <p className="text-xs whitespace-pre-wrap text-zinc-700">
+                        {tool.description}
+                      </p>
+                      {tool.parameters.length > 0 && (
+                        <p className="font-mono text-xs text-zinc-500">
+                          {tool.parameters
+                            .map(
+                              (param) =>
+                                `${param.name}: ${param.type}${param.required ? "" : "?"}`,
+                            )
+                            .join(", ")}
+                        </p>
+                      )}
+                      <p className="text-xs text-zinc-500">
+                        returns:{" "}
+                        <span className="font-mono">{tool.result || "(empty)"}</span>
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {detail.run.config.adversary_prompt && (
           <div className="rounded border border-red-300 bg-zinc-950 p-3 text-zinc-100">
@@ -817,9 +939,9 @@ export default function EvalRunPage({
                 <MenuItem
                   href={exportUrl(run.id, "details")}
                   onClick={close}
-                  hint="One row per cell: inputs, transcript, grade"
+                  hint="A zip: results.csv, plus run.md with the notes and the tools"
                 >
-                  Download full data
+                  Download full data (zip)
                 </MenuItem>
                 {detail.source_csv_available && (
                   <MenuItem
@@ -970,6 +1092,8 @@ export default function EvalRunPage({
       )}
 
       <JudgeBlock detail={detail} />
+
+      <ToolsBlock detail={detail} />
 
       {cells.length > 0 && (
         <section className="space-y-3">

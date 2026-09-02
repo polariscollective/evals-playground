@@ -254,6 +254,16 @@ class EvalRunConfig(BaseModel):
 
     turns: int = Field(ge=1, le=10)
 
+    max_tool_calls_per_turn: int = Field(default=5, ge=1, le=20)
+    """Combien d'appels d'affilée un modèle peut faire avant qu'on lui rende la main.
+
+    Un modèle qui appelle, lit le résultat et rappelle est le comportement réel
+    d'un agent, et c'est ce qu'on veut pouvoir observer. Mais rien n'empêche une
+    boucle : sans plafond, une seule case peut consommer le budget d'un run
+    entier. Réglable parce que le bon nombre dépend de ce qu'on mesure — une
+    tâche à trois étapes ne se juge pas avec un plafond de un.
+    """
+
     tools: list[ToolSpec] = Field(default_factory=list)
     """Les outils du run, définis une fois et offerts aux scénarios.
 

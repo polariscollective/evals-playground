@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun } from "@/lib/runs";
-import { detailsCsv, matrixCsv } from "@/lib/exports";
+import { detailsCsv, matrixCsv, runMarkdown } from "@/lib/exports";
+import { zip } from "@/lib/zip";
 import { csvResponse } from "@/lib/csv-response";
 import { isPlainView, viewFromQuery } from "@/lib/view";
 
@@ -25,10 +26,27 @@ export async function GET(
     // qui dirait autre chose que la matrice affichée serait pire qu'inutile.
     // Le détail, lui, porte les notes brutes du juge et n'a rien à en faire.
     const view = viewFromQuery(new URL(request.url).searchParams);
-    const body =
-      kind === "matrix"
-        ? matrixCsv(run, samples, view)
-        : detailsCsv(run, samples);
+
+    if (kind === "details") {
+      // Deux fichiers, parce qu'ils ne se mélangent pas : une ligne par case
+      // d'un côté, ce qui vaut pour tout le run de l'autre. Les notes et les
+      // descriptions d'outils recopiées sur chaque ligne d'un CSV n'étaient
+      // lues par personne.
+      const nom = `run-${runId}`;
+      const archive = zip([
+        { name: `${nom}/results.csv`, content: detailsCsv(run, samples) },
+        { name: `${nom}/run.md`, content: runMarkdown(run, samples) },
+      ]);
+      return new Response(new Uint8Array(archive), {
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": `attachment; filename="${nom}.zip"`,
+          "cache-control": "no-store",
+        },
+      });
+    }
+
+    const body = matrixCsv(run, samples, view);
     // Le nom du fichier porte la vue : deux exports du même run, lus
     // différemment, ne doivent pas s'écraser dans le dossier des
     // téléchargements. Le repli de l'échelle y figure aussi, sans quoi une

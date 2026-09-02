@@ -172,7 +172,7 @@ def adversary_view(
 
 
 MAX_TOOL_CALLS_PER_TURN = 5
-"""Combien de fois un modèle peut appeler avant qu'on lui rende la main.
+"""Le plafond par défaut, quand la configuration n'en fixe pas.
 
 Un modèle qui appelle, lit, rappelle est le comportement réel d'un agent, et
 c'est ce qu'on veut pouvoir observer. Mais rien n'empêche une boucle : sans
@@ -228,6 +228,7 @@ async def run_conversation(
     temperature: float | None = None,
     history: "Sequence[Turn] | None" = None,
     tools: "Sequence[ToolSpec] | None" = None,
+    max_tool_calls: int = MAX_TOOL_CALLS_PER_TURN,
     stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
     """Déroule une conversation de `turns` tours et renvoie son transcript.
@@ -252,6 +253,9 @@ async def run_conversation(
             exécuté : chaque appel reçoit le `result` écrit dans sa définition,
             le même à chaque répétition. Faire improviser la réponse
             ramènerait dans chaque case la variance qu'un run cherche à isoler.
+        max_tool_calls: Combien d'appels d'affilée avant qu'on rende la main au
+            tour suivant. Le dernier reçoit quand même sa réponse : un appel
+            resté en suspens rend le transcript invalide pour la suite.
         temperature: Appliquée au seul modèle évalué. L'adversaire tourne au
             réglage par défaut de son fournisseur : le faire varier en même
             temps rendrait toute différence de comportement inattribuable.
@@ -294,7 +298,7 @@ async def run_conversation(
         # Un tour, c'est une réponse du modèle évalué — pas un appel de modèle.
         # Un modèle outillé peut appeler, lire le résultat et rappeler avant de
         # répondre vraiment ; tout cela reste le même tour, plafonné.
-        for essai in range(MAX_TOOL_CALLS_PER_TURN + 1):
+        for essai in range(max_tool_calls + 1):
             if stopped is not None and stopped():
                 raise Cancelled("stopped before the evaluated model's turn")
             target_output = await target.generate(
@@ -326,7 +330,7 @@ async def run_conversation(
             # Chaque appel reçoit sa réponse, toujours la même. Un appel sans
             # réponse laisserait le transcript invalide pour le tour suivant :
             # les fournisseurs refusent un appel resté en suspens.
-            plafond = essai == MAX_TOOL_CALLS_PER_TURN
+            plafond = essai == max_tool_calls
             for call in appels:
                 transcript.append(
                     Turn(

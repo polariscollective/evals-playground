@@ -83,6 +83,7 @@ function EvaluateForm() {
   // Les outils du run, et ce que le scénario manuel en prend. Le mode CSV a
   // sa colonne : deux chemins vers le même champ du scénario.
   const [tools, setTools] = useState<ToolSpec[]>([]);
+  const [maxToolCalls, setMaxToolCalls] = useState(5);
   const [scenarioTools, setScenarioTools] = useState<string[] | null>(null);
 
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
@@ -170,6 +171,7 @@ function EvaluateForm() {
         setRepetitions(config.repetitions);
         setAdversaryPrompt(config.adversary_prompt);
         setTools(config.tools ?? []);
+        setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
         setTargets(config.models.targets);
         setAdversary(config.models.adversary ?? "");
         setJudge(config.models.judge);
@@ -335,6 +337,7 @@ function EvaluateForm() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       tools,
+      max_tool_calls_per_turn: maxToolCalls,
       label: label.trim() || null,
       notes,
       // La provenance suit le run : sans le nom du fichier et les colonnes
@@ -367,6 +370,7 @@ function EvaluateForm() {
       judge,
       adversaryPrompt,
       tools,
+      maxToolCalls,
       temperatureMin,
       temperatureMax,
       varyTemperature,
@@ -714,6 +718,32 @@ function EvaluateForm() {
           </span>
         </h2>
         <ToolsEditor tools={tools} onChange={setTools} />
+        {tools.length > 0 && (
+          <label className="flex items-center gap-3 text-sm">
+            <span className="text-zinc-600">
+              Consecutive calls allowed per turn
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={maxToolCalls}
+              onChange={(e) =>
+                setMaxToolCalls(
+                  Math.min(20, Math.max(1, Number(e.target.value) || 1)),
+                )
+              }
+              className="w-20 rounded border border-zinc-300 px-2 py-1"
+            />
+            <span className="text-xs text-zinc-500">
+              {/* Le plafond existe pour deux raisons opposées, et les deux
+                  comptent : voir un enchaînement, et ne pas laisser une boucle
+                  vider le budget sur une seule case. */}
+              A model may call, read the result and call again before answering —
+              all of it one turn. Three steps do not fit under a cap of one.
+            </span>
+          </label>
+        )}
       </section>
 
       {/* ---------------- Scenarios ---------------- */}
