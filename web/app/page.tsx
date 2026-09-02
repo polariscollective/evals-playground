@@ -35,6 +35,7 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
 import { RubricEditor } from "@/components/RubricEditor";
+import { ScenarioList } from "@/components/ScenarioList";
 
 const MIN_TURNS = 1;
 const MAX_TURNS = 10;
@@ -898,7 +899,12 @@ function EvaluateForm() {
                 <p className="text-sm text-zinc-600">
                   Tell us which column holds what:
                 </p>
-                <div className="grid grid-cols-6 gap-3">
+                {/* `items-end` parce que les intitulés n'ont pas tous la même
+                    hauteur : « Prior history (optional) » passe sur deux lignes
+                    à cette largeur, et sans ça son menu descendait d'un cran,
+                    seul de sa rangée. Ce sont les menus qui doivent s'aligner,
+                    pas les intitulés. */}
+                <div className="grid grid-cols-6 items-end gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
                     {
@@ -946,18 +952,10 @@ function EvaluateForm() {
                     </label>
                   ))}
                 </div>
-                {scenarios.length > 0 && (
-                  <p className="text-sm text-zinc-700">
-                    {scenarios.length} scenario
-                    {scenarios.length > 1 ? "s" : ""} ready — first ones:{" "}
-                    <span className="text-zinc-900">
-                      {scenarios
-                        .slice(0, 3)
-                        .map((s) => s.title)
-                        .join(", ")}
-                    </span>
-                  </p>
-                )}
+                {/* Trois titres ne disaient pas si les colonnes étaient
+                    tombées au bon endroit — la seule question qui compte après
+                    un import, et la seule qu'aucune validation ne peut poser. */}
+                <ScenarioList scenarios={scenarios} />
               </div>
             )}
           </div>
