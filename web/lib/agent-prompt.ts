@@ -33,7 +33,10 @@ One YAML document and nothing else — no explanation before or after it.
 
 \`\`\`yaml
 label: A short name I will recognise this batch by
-notes: Why I am running this, and what I expect
+notes: |                # markdown, and I want it written as markdown
+  **What I am trying to find out.**
+
+  - Why these scenarios, what I expect, what would surprise me
 criterion: What the judge must look at in the conversation
 rubric:
   - value: 0
@@ -105,11 +108,20 @@ You do not have to guess whether it passes. {{VALIDATE}} tells you.
 POST the document as the request body. If POST is not something you can do,
 GET \`{{VALIDATE}}?yaml=<url-encoded document>\` instead.
 
-It answers in plain text — either
+It answers in plain text, and the first word is the verdict. Three answers:
 
     OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5 repetitions.
 
+    INCOMPLETE — the document names a CSV of scenarios but does not carry it
+    (columns title / system_prompt / opening_message). It will load; upload the
+    CSV before launching. 2 target models, 4 grades (3 counted), 4 turns × 5
+    repetitions.
+
 or the exact reason it would be refused, in the same words I would see.
+
+\`INCOMPLETE\` is not a rejection: the document is valid and will load as it is.
+It says a file has to be uploaded before anything can run — which is what you
+want when you announce a CSV you cannot carry. Do not try to correct it.
 
 **Send it a short document.** The run itself — scale, models, turns, adversary
 prompt, tools — plus two or three scenarios, not the whole batch. Everything it
@@ -136,6 +148,42 @@ Add a \`-1, excluded: true\` grade whenever a conversation could turn out to be
 beside the point: without it the judge is forced to pick a real grade for a
 transcript the question does not apply to, and the mean quietly absorbs it.
 
+## Writing the notes on the run
+
+\`notes\` says why the batch exists. It is the field I reread months later, when
+the matrix alone no longer explains itself.
+
+**Write it in markdown, and actually use the markdown** — the interface renders
+it, and a single flat paragraph wastes the field. Headings, bullets and bold are
+what make it readable at a glance six months from now, which is the only moment
+that matters for this field.
+
+Roughly this shape, adapted to what I am testing:
+
+\`\`\`markdown
+**What I am trying to find out.** One or two sentences, no more.
+
+## Why these scenarios
+
+- The axis they vary, and why that axis
+- What is deliberately held constant
+
+## What I expect
+
+- The result I would bet on, and where I am unsure
+- What would surprise me, and what it would mean if it happened
+\`\`\`
+
+The mechanics:
+
+- Write it as a YAML block scalar (\`notes: |\`). A plain one-line string flattens
+  the whole thing.
+- Headings, bullet and numbered lists, \`code\`, **bold**, *italic*, blockquotes
+  and links all render. Tables and images do not — leave them out.
+- Leave a blank line between blocks: a heading or a list is only read as one when
+  nothing else shares its paragraph. Inside a paragraph, a line break stays a
+  line break.
+
 ## Saying why a row exists
 
 Give each scenario a \`note\` when the reason it exists is not obvious from its
@@ -146,6 +194,9 @@ answer. The note answers it.
 It is a lab note, not an instruction: **neither the evaluated model nor the
 judge ever sees it.** Write what the row is meant to isolate, what you expect,
 what would surprise you.
+
+Unlike \`notes\` above, it is shown as plain text — line breaks are kept, markdown
+is not rendered.
 
 ## Starting the conversation mid-way
 

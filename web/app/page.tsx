@@ -34,6 +34,7 @@ import { NotesField } from "@/components/NotesField";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
+import { configProblem } from "@/lib/validate";
 import { RubricEditor } from "@/components/RubricEditor";
 import { ScenarioList } from "@/components/ScenarioList";
 
@@ -135,6 +136,8 @@ function EvaluateForm() {
   const [judge, setJudge] = useState("");
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
+  const [estimateError, setEstimateError] = useState<string | null>(null);
   // `null` — le cas normal — laisse chaque modèle prendre la longueur de
   // réponse mesurée pour lui. Une valeur l'impose à tous : c'est une surcharge,
   // pas un réglage à remplir.
@@ -318,34 +321,6 @@ function EvaluateForm() {
       ? `Temperature must be between ${MIN_TEMPERATURE} and ${MAX_TEMPERATURE}, and the upper bound cannot be below the lower one.`
       : null;
 
-  const scenariosReady =
-    scenarios.length > 0 &&
-    scenarios.every(
-      (s) =>
-        s.title.trim() && s.system_prompt.trim() && s.opening_message.trim(),
-    );
-
-  // Une échelle utilisable : deux paliers au moins, chacun expliqué, et pas
-  // deux fois la même note — c'est par la note qu'on retrouve son sens.
-  const rubricValues = rubric.map((level) => level.value);
-  const rubricReady =
-    rubric.length >= 2 &&
-    rubric.every(
-      (level) => Number.isFinite(level.value) && level.meaning.trim() !== "",
-    ) &&
-    new Set(rubricValues).size === rubricValues.length;
-
-  const ready =
-    scenariosReady &&
-    criterion.trim() !== "" &&
-    rubricReady &&
-    targets.length > 0 &&
-    judge !== "" &&
-    (turns === 1 || (adversary !== "" && adversaryPrompt.trim() !== "")) &&
-    !turnsError &&
-    !repetitionsError &&
-    !temperatureError;
-
   const config = useCallback(
     (): EvalRunConfig => ({
       scenarios,
@@ -410,6 +385,16 @@ function EvaluateForm() {
     ],
   );
 
+  // Ce qui manque, dans les mots du serveur — ou `null` si le run peut partir.
+  //
+  // C'est `configProblem` qui décide, celui-là même qu'appellent `/api/estimate`
+  // et `/api/runs`. Le formulaire avait sa propre version de la question :
+  // moins complète — ni les outils, ni la règle des deux paliers qui comptent —
+  // et muette. Elle laissait le bouton de lancement actif pendant que le devis
+  // se taisait, puisque les deux ne demandaient pas la même chose.
+  const problem = configProblem(config());
+  const ready = problem === null;
+
   /** Écrit le formulaire dans un fichier YAML, redéposable tel quel.
    *
    * Le même format que celui demandé à l'agent : deux formats pour les deux sens
@@ -435,15 +420,27 @@ function EvaluateForm() {
     let cancelled = false;
     const timer = setTimeout(() => {
       if (!ready) {
-        if (!cancelled) setEstimate(null);
+        if (!cancelled) {
+          setEstimate(null);
+          setEstimateError(null);
+        }
         return;
       }
       estimateRun(config(), responseTokens)
         .then((result) => {
-          if (!cancelled) setEstimate(result);
+          if (!cancelled) {
+            setEstimate(result);
+            setEstimateError(null);
+          }
         })
-        .catch(() => {
-          if (!cancelled) setEstimate(null);
+        .catch((e: Error) => {
+          // Jeter ce message est ce qui a rendu l'affaire indéchiffrable : le
+          // panneau retombait sur « Complete the form » en accusant un
+          // formulaire complet.
+          if (!cancelled) {
+            setEstimate(null);
+            setEstimateError(e.message);
+          }
         });
     }, 400);
     return () => {
@@ -1285,9 +1282,11 @@ function EvaluateForm() {
               </p>
             )}
           </>
+        ) : problem ? (
+          <p className="text-sm text-amber-800">No estimate yet — {problem}.</p>
         ) : (
           <p className="text-sm text-zinc-500">
-            Complete the form to see the cost estimate.
+            {estimateError ?? "Estimating…"}
           </p>
         )}
       </section>

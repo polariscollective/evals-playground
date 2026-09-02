@@ -10,15 +10,13 @@
 // Ce qu'elle change, c'est où se paie une erreur. Sans elle : l'agent rend un
 // document, on le colle, il est refusé, on retourne le voir. Avec elle, la
 // correction se fait dans sa boucle à lui, et ce qu'on reçoit se charge.
-//
-// En `text/plain` parce que le lecteur est une machine, et parce que le message
-// de refus est déjà une phrase — celle-là même que montre la fenêtre de collage.
-import { ConfigFileError, readConfigFile } from "@/lib/config-file";
+import { verdictOf } from "@/lib/verdict";
 
-/** Le plafond du corps. Un run de deux cents scénarios avec historiques tient
- *  très en dessous ; au-delà, ce n'est plus une configuration. */
-const MAX_BYTES = 256 * 1024;
-
+/** Le verdict lui-même vit dans `lib/`, où les tests le voient. Ici, le
+ *  transport et rien d'autre.
+ *
+ * En `text/plain` parce que le lecteur est une machine, et parce que le message
+ * de refus est déjà une phrase — celle-là même que montre la fenêtre de collage. */
 function say(status: number, message: string): Response {
   return new Response(message + "\n", {
     status,
@@ -31,35 +29,9 @@ function say(status: number, message: string): Response {
   });
 }
 
-/** Le verdict, dans les mots qui servent à corriger. */
 function verdict(text: string): Response {
-  if (text.trim() === "") {
-    return say(400, "Nothing to validate. Send the YAML document.");
-  }
-  if (new TextEncoder().encode(text).length > MAX_BYTES) {
-    return say(413, `The document is over ${MAX_BYTES / 1024} kB.`);
-  }
-
-  try {
-    const { config, csv } = readConfigFile(text);
-    const counted = config.rubric.filter((level) => !level.excluded).length;
-    return say(
-      200,
-      "OK — " +
-        (csv
-          ? "scenarios from a CSV"
-          : `${config.scenarios.length} scenario${config.scenarios.length > 1 ? "s" : ""}`) +
-        `, ${config.models.targets.length} target model` +
-        `${config.models.targets.length > 1 ? "s" : ""}` +
-        `, ${config.rubric.length} grade${config.rubric.length > 1 ? "s" : ""}` +
-        ` (${counted} counted), ${config.turns} turn` +
-        `${config.turns > 1 ? "s" : ""} × ${config.repetitions} repetition` +
-        `${config.repetitions > 1 ? "s" : ""}.`,
-    );
-  } catch (error) {
-    if (error instanceof ConfigFileError) return say(422, error.message);
-    throw error;
-  }
+  const { status, message } = verdictOf(text);
+  return say(status, message);
 }
 
 /** Pour l'agent qui sait faire un POST : le document en corps brut, sans
