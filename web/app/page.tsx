@@ -506,6 +506,13 @@ function EvaluateForm() {
     setTurns(config.turns);
     setRepetitions(config.repetitions);
     setAdversaryPrompt(config.adversary_prompt);
+    // Les outils du run, que la reprise d'un run charge déjà (plus haut) et que
+    // ce chemin-ci oubliait : un document qui les définit arrivait dans un
+    // formulaire sans outils, et ses scénarios en réclamaient alors qui
+    // n'existaient plus. Le devis partait, revenait 422, et l'écran disait
+    // seulement « Complete the form ».
+    setTools(config.tools ?? []);
+    setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
     setTargets(config.models.targets);
     setAdversary(config.models.adversary ?? "");
     setJudge(config.models.judge);

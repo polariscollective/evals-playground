@@ -57,14 +57,26 @@ export function proxy(request: NextRequest) {
 // préfixe laisserait passer un chemin voisin plus long : `/api/authx`,
 // `/_next/imagex` et `/_next/staticfoo` contourneraient la porte.
 //
-// `prompt` est la seule exclusion qui expose du contenu à nous : le mode
-// d'emploi qu'on donne à un agent, lequel n'a pas de session et ne saurait pas
-// en obtenir une. Elle est en lecture seule, ne touche ni la base ni la requête,
-// et ne rend qu'un texte fixe accompagné de la liste des modèles — laquelle vit
-// dans un fichier de ce dépôt, qui est public. L'ancrage compte ici autant
-// qu'ailleurs : sans lui, un `/prompts-secrets` s'ouvrirait avec.
+// `prompt` et `validate` sont les deux exclusions qui exposent du contenu à
+// nous, et elles vont ensemble : le mode d'emploi qu'on donne à un agent, et le
+// vérificateur vers lequel ce mode d'emploi le renvoie. L'agent n'a pas de
+// session et ne saurait pas en obtenir une ; une porte sur l'une des deux les
+// rend inutiles toutes les deux.
+//
+// Ni l'une ni l'autre ne lit la base. `prompt` rend un texte fixe et la liste
+// des modèles, qui vit dans un fichier de ce dépôt public ; `validate` rend un
+// verdict sur un document que l'appelant possède déjà, selon des règles
+// publiées en clair sur `prompt`.
+//
+// Oublier cette ligne ne casse rien de visible : la route existe, ses tests
+// passent, et l'appelant anonyme reçoit l'écran de connexion — la même réponse,
+// à l'octet près, qu'une adresse qui n'existe pas. C'est ce qui est arrivé à
+// `validate` entre son commit et celui-ci.
+//
+// L'ancrage compte ici autant qu'ailleurs : sans lui, un `/prompts-secrets` ou
+// un `/validate-tout` s'ouvriraient avec.
 export const config = {
   matcher: [
-    "/((?!api/auth(?:/|$)|prompt(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$).*)",
+    "/((?!api/auth(?:/|$)|prompt(?:/|$)|validate(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$).*)",
   ],
 };
