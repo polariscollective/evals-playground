@@ -213,7 +213,8 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
 
     C'est ce qui attraperait un renommage de clé, sur lequel s'appuient le
     scorer et l'export. `stop_reason` en fait partie : c'est lui qui distingue
-    une réponse bloquée par le fournisseur d'un vrai silence du modèle.
+    une réponse bloquée par le fournisseur d'un vrai silence du modèle, et
+    `seeded` aussi : c'est lui qui empêche le juge de noter un tour posé.
     """
     config = _config(turns=1)
     state = _task_state(config)
@@ -223,7 +224,7 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
     transcript = result.metadata["transcript"]
     for entry in transcript:
         assert isinstance(entry, dict)
-        assert set(entry.keys()) == {"role", "content", "stop_reason"}
+        assert set(entry.keys()) == {"role", "content", "seeded", "stop_reason"}
         assert isinstance(entry["role"], str)
         assert isinstance(entry["content"], str)
 

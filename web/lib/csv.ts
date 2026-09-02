@@ -7,6 +7,8 @@
    la refuser, l'utilisateur croirait avoir chargé plus de scénarios qu'il
    n'en a réellement. */
 
+import type { SeededTurn } from "./types";
+
 export interface ParsedCsv {
   columns: string[];
   rows: Record<string, string>[];
@@ -95,4 +97,30 @@ export function toCsv(columns: string[], rows: Record<string, string>[]): string
     columns.map(cell).join(","),
     ...rows.map((row) => columns.map((column) => cell(row[column] ?? "")).join(",")),
   ].join("\n");
+}
+
+/** L'historique posé d'un scénario, lu dans une cellule de CSV.
+ *
+ * Du JSON dans une cellule est laid, et c'est le moins mauvais choix : un
+ * échange de six tours ne se met pas en colonnes sans figer leur nombre, et une
+ * cellule vide reste la règle — la plupart des scénarios n'ont pas d'historique.
+ *
+ * Une cellule illisible rend une liste vide plutôt que de faire échouer tout le
+ * fichier : le scénario part sans historique, ce que l'écran annonce. Refuser le
+ * lot entier pour une ligne mal échappée coûterait plus que ça ne protège. */
+export function parseHistoryCell(cell: string): SeededTurn[] {
+  const texte = (cell ?? "").trim();
+  if (texte === "") return [];
+  try {
+    const brut = JSON.parse(texte);
+    if (!Array.isArray(brut)) return [];
+    return brut
+      .map((turn) => ({
+        role: turn?.role === "assistant" ? "assistant" : "user",
+        content: String(turn?.content ?? ""),
+      }))
+      .filter((turn) => turn.content !== "") as SeededTurn[];
+  } catch {
+    return [];
+  }
 }

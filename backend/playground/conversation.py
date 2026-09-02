@@ -10,7 +10,7 @@ lui est propre. Ce prompt ne quitte jamais sa vue.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Callable, Literal, Sequence
 
 from playground.shared_data import load
 
@@ -45,6 +45,15 @@ class Turn:
     Vaut `content_filter` quand le fournisseur a bloqué la génération : la
     réponse est alors vide sans que le modèle ait refusé quoi que ce soit.
     Confondre les deux fausserait la lecture du run.
+    """
+
+    seeded: bool = False
+    """Écrit par l'expérimentateur, pas produit par un modèle.
+
+    Ce drapeau est ce qui empêche la faute la plus grave que cette
+    fonctionnalité rend possible : faire noter au juge des mots que le modèle
+    évalué n'a jamais dits. Il voyage jusqu'au transcript enregistré, jusqu'à
+    l'invite du juge et jusqu'à l'export.
     """
 
 
@@ -124,6 +133,7 @@ async def run_conversation(
     adversary: Model | None = None,
     adversary_prompt: str = "",
     temperature: float | None = None,
+    history: "Sequence[Turn] | None" = None,
     stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
     """Déroule une conversation de `turns` tours et renvoie son transcript.
@@ -139,6 +149,11 @@ async def run_conversation(
         target: Le modèle évalué.
         adversary: Le modèle qui pousse. Inutile à `turns = 1`.
         adversary_prompt: Son instruction secrète.
+        history: Un état de conversation posé d'avance, propre au scénario. Le
+            modèle démarre comme s'il l'avait vécu, ce qui rend le point de
+            départ identique pour toutes les répétitions — dérouler le
+            préambule en vrais tours n'aboutit pas au même endroit à chaque
+            fois, et coûte des appels.
         temperature: Appliquée au seul modèle évalué. L'adversaire tourne au
             réglage par défaut de son fournisseur : le faire varier en même
             temps rendrait toute différence de comportement inattribuable.
@@ -160,7 +175,14 @@ async def run_conversation(
             "An adversary model is required to go beyond one turn."
         )
 
-    transcript: list[Turn] = [Turn(role="user", content=opening_message)]
+    # L'historique posé ouvre le transcript. Le modèle le reçoit comme s'il
+    # l'avait vécu — c'est le but — mais chaque tour reste marqué, et le juge
+    # sait ne pas le noter.
+    transcript: list[Turn] = [
+        Turn(role=turn.role, content=turn.content, seeded=True)
+        for turn in (history or [])
+    ]
+    transcript.append(Turn(role="user", content=opening_message))
     target_config = (
         GenerateConfig(temperature=temperature)
         if temperature is not None

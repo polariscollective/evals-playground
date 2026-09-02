@@ -266,12 +266,16 @@ def estimate_tokens(
     for scenario in config.scenarios:
         system = _tokens(scenario.system_prompt)
         opening = _tokens(scenario.opening_message)
+        # Un historique posé est renvoyé à chaque appel, comme le reste de
+        # la conversation : l'oublier sous-estimerait tout le run, et
+        # d'autant plus qu'il y a de tours.
+        seeded = sum(_tokens(turn.content) for turn in scenario.history)
 
         for target in config.models.targets:
             target_response = response_tokens_for(target, response_tokens)
             target_input = target_output = 0
             adversary_input = adversary_output = 0
-            history = opening
+            history = seeded + opening
 
             for turn in range(config.turns):
                 target_input += system + history

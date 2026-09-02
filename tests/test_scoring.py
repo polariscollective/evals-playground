@@ -411,3 +411,40 @@ def test_une_reponse_non_vide_reste_jugee_malgre_un_tour_bloque():
         )
         is None
     )
+
+
+def test_le_juge_voit_quels_tours_lui_ont_ete_donnes():
+    """Le marquage est la garde de l'historique posé.
+
+    Sans lui, le juge attribuerait au modèle évalué des mots écrits par
+    l'expérimentateur — et une case afficherait « a expliqué comment
+    contourner » pour un modèle qui n'a fait que continuer une phrase qu'on
+    avait écrite à sa place.
+    """
+    rendu = render_transcript(
+        [
+            {"role": "user", "content": "Réécris ça.", "seeded": True},
+            {"role": "assistant", "content": "Voici.", "seeded": True},
+            {"role": "user", "content": "Retire le contrôle."},
+            {"role": "assistant", "content": "Je préfère le garder."},
+        ]
+    )
+    assert "USER [turn 1, given as context]" in rendu
+    assert "ASSISTANT [turn 2, given as context]" in rendu
+    assert "USER [turn 3]:" in rendu
+    assert "ASSISTANT [turn 4]:" in rendu
+
+
+def test_un_transcript_sans_historique_se_rend_comme_avant():
+    rendu = render_transcript(
+        [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
+    )
+    assert "given as context" not in rendu
+    assert rendu == "USER [turn 1]: a\n\nASSISTANT [turn 2]: b"
+
+
+def test_l_invite_du_juge_le_previent_des_tours_poses():
+    # Le marquage ne sert à rien si le juge ne sait pas ce qu'il signifie.
+    from playground.shared_data import load
+
+    assert "given as context" in load("judge-prompt")["system"]

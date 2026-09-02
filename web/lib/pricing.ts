@@ -112,6 +112,13 @@ export function estimateTokens(
   for (const scenario of config.scenarios) {
     const system = tokens(scenario.system_prompt);
     const opening = tokens(scenario.opening_message);
+    // Un historique posé est renvoyé à chaque appel, comme le reste de la
+    // conversation : l'oublier sous-estimerait tout le run, et d'autant plus
+    // qu'il y a de tours.
+    const seeded = (scenario.history ?? []).reduce(
+      (total, turn) => total + tokens(turn.content),
+      0,
+    );
 
     for (const target of config.models.targets) {
       const targetResponse = responseTokensFor(target, responseTokens);
@@ -119,7 +126,7 @@ export function estimateTokens(
       let targetOutput = 0;
       let adversaryInput = 0;
       let adversaryOutput = 0;
-      let history = opening;
+      let history = seeded + opening;
 
       for (let turn = 0; turn < config.turns; turn += 1) {
         targetInput += system + history;

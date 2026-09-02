@@ -478,14 +478,24 @@ function AttemptView({
             <div
               key={index}
               className={
-                message.role === "assistant"
-                  ? "rounded bg-teal-50 p-3"
-                  : "rounded bg-zinc-100 p-3"
+                // Un tour posé se distingue à l'œil : le modèle ne l'a pas
+                // produit, et le lire comme sien fausserait toute la
+                // relecture d'une case.
+                message.seeded
+                  ? "rounded border border-dashed border-zinc-400 bg-white p-3"
+                  : message.role === "assistant"
+                    ? "rounded bg-teal-50 p-3"
+                    : "rounded bg-zinc-100 p-3"
               }
             >
               <div className="mb-1 text-xs font-medium text-zinc-600">
                 turn {index + 1} ·{" "}
                 {message.role === "assistant" ? "evaluated model" : "in"}
+                {message.seeded && (
+                  <span className="ml-2 rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-700">
+                    given as context — not produced, not graded
+                  </span>
+                )}
               </div>
               {message.content.trim() ? (
                 <div className="whitespace-pre-wrap text-sm">

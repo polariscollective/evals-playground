@@ -121,7 +121,14 @@ def render_transcript(messages: list[dict[str, Any]]) -> str:
             # juge attribuerait au modèle évalué un comportement qui n'est
             # pas le sien. Autant l'étiqueter par son propre nom.
             speaker = str(role).upper()
-        lines.append(f"{speaker} [turn {index}]: {message.get('content', '')}")
+        # Le marquage est la garde de tout l'historique posé : sans lui le juge
+        # noterait le modèle pour des mots écrits par l'expérimentateur. La
+        # mention est dans le libellé du tour, pas dans une note en bas de
+        # transcript, pour qu'elle ne puisse pas être perdue de vue.
+        pose = ", given as context" if message.get("seeded") else ""
+        lines.append(
+            f"{speaker} [turn {index}{pose}]: {message.get('content', '')}"
+        )
     return "\n\n".join(lines)
 
 

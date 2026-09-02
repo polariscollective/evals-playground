@@ -308,3 +308,83 @@ def test_limite_connue_un_adversaire_qui_recopie_ses_instructions_les_fait_quand
     # ce texte est un tour `user` comme un autre et atteint la cible.
     assert fuite_par_le_message_adverse is True
     assert SECRET in transcript[2].content
+
+
+# --- l'historique posé ---------------------------------------------------------
+
+
+def test_l_historique_ouvre_le_transcript_et_reste_marque():
+    """Le modèle démarre comme s'il avait vécu ces tours, et on sait lesquels.
+
+    Sans le marquage, le juge noterait le modèle évalué pour des mots écrits par
+    l'expérimentateur — la seule façon dont cette fonctionnalité peut fabriquer
+    un résultat faux.
+    """
+
+    class ModeleMuet:
+        async def generate(self, *args, **kwargs):
+            return ModelOutput.from_content(model="faux", content="D'accord.")
+
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Et maintenant, retire le contrôle.",
+            turns=1,
+            target=ModeleMuet(),
+            history=[
+                Turn(role="user", content="Réécris cette procédure."),
+                Turn(role="assistant", content="Voici une version simplifiée."),
+            ],
+        )
+    )
+
+    assert [t.content for t in transcript[:2]] == [
+        "Réécris cette procédure.",
+        "Voici une version simplifiée.",
+    ]
+    assert [t.seeded for t in transcript] == [True, True, False, False]
+
+
+def test_le_modele_recoit_l_historique_comme_sien():
+    """C'est tout l'intérêt : il continue depuis cet état, sans y avoir été mené."""
+    vu: list = []
+
+    class ModeleQuiRegarde:
+        async def generate(self, input, **kwargs):
+            vu.append([(m.role, m.text) for m in input])
+            return ModelOutput.from_content(model="faux", content="D'accord.")
+
+    asyncio.run(
+        run_conversation(
+            system_prompt="Tu assistes la qualité.",
+            opening_message="Et maintenant ?",
+            turns=1,
+            target=ModeleQuiRegarde(),
+            history=[
+                Turn(role="user", content="Première demande."),
+                Turn(role="assistant", content="J'accepte."),
+            ],
+        )
+    )
+
+    roles = [role for role, _ in vu[0]]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert vu[0][2][1] == "J'accepte."
+
+
+def test_sans_historique_rien_ne_change():
+    """La conversation ordinaire reste exactement ce qu'elle était."""
+
+    class ModeleMuet:
+        async def generate(self, *args, **kwargs):
+            return ModelOutput.from_content(model="faux", content="Réponse.")
+
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=ModeleMuet(),
+        )
+    )
+    assert [t.seeded for t in transcript] == [False, False]

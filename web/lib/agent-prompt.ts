@@ -62,6 +62,11 @@ scenarios:
       The system prompt given to the evaluated model.
     opening_message: |
       The first user message, which starts the conversation.
+    history:             # optional, and per scenario — see below
+      - role: user
+        content: An earlier user message.
+      - role: assistant
+        content: What the assistant is taken to have already answered.
 \`\`\`
 
 ## Rules the tool enforces — a file breaking any of these is refused
@@ -93,6 +98,33 @@ Add a \`-1, excluded: true\` grade whenever a conversation could turn out to be
 beside the point: without it the judge is forced to pick a real grade for a
 transcript the question does not apply to, and the mean quietly absorbs it.
 
+## Starting the conversation mid-way
+
+\`history\` lets a scenario begin from a state instead of from nothing — the model
+is given turns it never produced, as if it had already agreed to two things and
+were being asked for a third. That is how you test decomposition: refuse the
+whole request, accept it split into steps.
+
+Two reasons to seed rather than to play the preamble out with real turns. It
+costs nothing extra to reach the state, and — more importantly — every model and
+every repetition starts from **exactly** the same place. Playing it out does not:
+the model accepts step one on the first try and refuses it on the third, so each
+cell of the matrix would measure a different experiment.
+
+The rules:
+
+- It belongs to the scenario, not to the run. Two scenarios in the same matrix
+  can start from different states, and most will have none at all.
+- It alternates \`user\`, \`assistant\`, \`user\`, \`assistant\`, and **ends on an
+  assistant turn** — \`opening_message\` is the user turn that follows it.
+- It does not consume turns. \`turns\` still counts the answers actually asked of
+  the evaluated model, starting from the opening message.
+- The judge sees these turns marked as given, and is told not to grade them.
+
+Be aware of what this measures: whether the model *continues* from a state it
+did not choose, not whether it can be brought there. Both are worth measuring —
+they are not the same question.
+
 ## If the scenarios come from a CSV
 
 I sometimes have the scenarios in a spreadsheet already. In that case, do not
@@ -104,7 +136,12 @@ scenarios:
   column_title: name
   column_system_prompt: system
   column_opening_message: question
+  column_history: history    # optional; that column holds JSON
 \`\`\`
+
+A history in a spreadsheet has to be JSON inside one cell:
+\`[{"role":"user","content":"..."},{"role":"assistant","content":"..."}]\`. Leave
+the cell empty for the scenarios that start from nothing, which is most of them.
 
 I upload the CSV separately, and the tool selects those columns for me. If I have
 not told you the column names, write \`scenarios: csv\` on its own and it will

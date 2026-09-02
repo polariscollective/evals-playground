@@ -16,6 +16,7 @@ import type {
   EvalScenario,
   ExpectedCsv,
   RubricLevel,
+  SeededTurn,
 } from "./types";
 
 export interface ImportedConfig {
@@ -44,7 +45,33 @@ function scenarioOf(entry: unknown, position: number): EvalScenario {
     title: asString(row.title),
     system_prompt: asString(row.system_prompt ?? row.system),
     opening_message: asString(row.opening_message ?? row.opening ?? row.message),
+    // L'historique posé, propre à ce scénario. Absent la plupart du temps, et
+    // absent du fichier écrit quand il l'est : un tableau vide partout ferait
+    // du bruit dans un gabarit.
+    history: readHistory(row.history, position),
   };
+}
+
+function readHistory(value: unknown, position: number): SeededTurn[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new ConfigFileError(`scenario ${position}: history must be a list.`);
+  }
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new ConfigFileError(
+        `scenario ${position}: history turn ${index + 1} is not a mapping.`,
+      );
+    }
+    const turn = entry as Record<string, unknown>;
+    const role = asString(turn.role);
+    if (role !== "user" && role !== "assistant") {
+      throw new ConfigFileError(
+        `scenario ${position}: history turn ${index + 1} needs a role of user or assistant.`,
+      );
+    }
+    return { role, content: asString(turn.content ?? turn.message) };
+  });
 }
 
 /** La partie « scénarios » du fichier : une liste, ou l'annonce d'un CSV. */
@@ -209,7 +236,16 @@ export function writeConfigFile(config: EvalRunConfig): string {
     temperature: config.temperature ?? null,
     models: config.models,
     adversary_prompt: config.adversary_prompt,
-    scenarios: config.scenarios,
+    scenarios: config.scenarios.map((scenario) =>
+      scenario.history && scenario.history.length > 0
+        ? scenario
+        : // Un `history: []` partout alourdirait le gabarit sans rien dire.
+          {
+            title: scenario.title,
+            system_prompt: scenario.system_prompt,
+            opening_message: scenario.opening_message,
+          },
+    ),
   };
 
   const entete = ["# evals-playground — load this file back with « Load a config file »."];

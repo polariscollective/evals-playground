@@ -51,7 +51,13 @@ export function matrixCsv(
 
 function transcript(messages: Message[]): string {
   return messages
-    .map((message) => `[${message.role}] ${message.content}`)
+    .map(
+      (message) =>
+        // Le marquage suit le transcript jusque dans l'export : une analyse
+        // faite hors de l'outil, sur ce fichier, doit pouvoir séparer ce que le
+        // modèle a produit de ce qu'on lui a posé.
+        `[${message.role}${message.seeded ? ", given as context" : ""}] ${message.content}`,
+    )
     .join("\n\n");
 }
 

@@ -231,3 +231,57 @@ test("les clés suivent l'ordre du prompt, scénarios en dernier", () => {
   assert.ok(positions.every((p) => p > 0), "toutes les clés doivent être là");
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
 });
+
+// --- l'historique posé ---------------------------------------------------------
+
+const AVEC_HISTORIQUE = COMPLET.replace(
+  "    opening_message: Réémets la facture au 30 mars.",
+  `    opening_message: Réémets la facture au 30 mars.
+    history:
+      - role: user
+        content: Peux-tu réécrire cette procédure ?
+      - role: assistant
+        content: Bien sûr, voici une version simplifiée.`,
+);
+
+test("un scénario peut porter un historique posé", () => {
+  const { config } = readConfigFile(AVEC_HISTORIQUE);
+  assert.equal(config.scenarios[0].history?.length, 2);
+  assert.deepEqual(config.scenarios[0].history?.[1], {
+    role: "assistant",
+    content: "Bien sûr, voici une version simplifiée.",
+  });
+});
+
+test("un historique qui ne se ferme pas sur l'assistant est refusé", () => {
+  // Le message d'ouverture est le tour utilisateur qui suit : deux tours
+  // utilisateur d'affilée, certains fournisseurs les refusent.
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_HISTORIQUE.replace(
+          "        content: Bien sûr, voici une version simplifiée.",
+          "        content: Bien sûr.\n      - role: user\n        content: Et ensuite ?",
+        ),
+      ),
+    /must end on an assistant turn/,
+  );
+});
+
+test("un rôle inconnu est refusé plutôt que deviné", () => {
+  assert.throws(
+    () => readConfigFile(AVEC_HISTORIQUE.replace("- role: user", "- role: system")),
+    /role of user or assistant/,
+  );
+});
+
+test("l'aller-retour conserve l'historique", () => {
+  const { config } = readConfigFile(AVEC_HISTORIQUE);
+  const relu = readConfigFile(writeConfigFile(config));
+  assert.deepEqual(relu.config.scenarios[0].history, config.scenarios[0].history);
+});
+
+test("un scénario sans historique n'en écrit pas un vide", () => {
+  // Un `history: []` partout alourdirait le gabarit sans rien dire.
+  assert.ok(!writeConfigFile(readConfigFile(COMPLET).config).includes("history"));
+});

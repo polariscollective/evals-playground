@@ -10,6 +10,7 @@ import type {
   ExtendRequest,
   RejudgeRequest,
   RubricLevel,
+  SeededTurn,
 } from "./types";
 
 const MIN_TURNS = 1;
@@ -51,6 +52,38 @@ export function rubricProblem(rubric: unknown): string | null {
   return null;
 }
 
+/** Ce qui cloche dans un historique posé, ou null.
+ *
+ * Il s'ouvre sur l'utilisateur et se ferme sur l'assistant, parce que le message
+ * d'ouverture est le tour utilisateur qui suit : deux tours utilisateur
+ * d'affilée, certains fournisseurs les refusent et les autres les interprètent
+ * chacun à leur façon. Le dire ici plutôt qu'au premier appel facturé.
+ *
+ * L'historique ne consomme aucun tour : `turns` compte les réponses réellement
+ * demandées au modèle évalué, à partir du message d'ouverture. */
+export function historyProblem(history: unknown, where: string): string | null {
+  if (history === undefined || history === null) return null;
+  if (!Array.isArray(history)) return `${where}: history must be a list`;
+  if (history.length === 0) return null;
+
+  for (const [index, turn] of history.entries()) {
+    const role = (turn as SeededTurn)?.role;
+    const attendu = index % 2 === 0 ? "user" : "assistant";
+    if (role !== attendu) {
+      return `${where}: history must alternate user/assistant — turn ${
+        index + 1
+      } is ${role ?? "empty"} where ${attendu} was expected`;
+    }
+    if (!isFilled((turn as SeededTurn)?.content)) {
+      return `${where}: history turn ${index + 1} is empty`;
+    }
+  }
+  if ((history.at(-1) as SeededTurn).role !== "assistant") {
+    return `${where}: history must end on an assistant turn — the opening message is the user turn that follows it`;
+  }
+  return null;
+}
+
 /** Ce qui cloche dans une configuration de run, ou null si elle tient. */
 export function configProblem(config: unknown): string | null {
   if (!config || typeof config !== "object") return "config must be an object";
@@ -67,6 +100,8 @@ export function configProblem(config: unknown): string | null {
     ) {
       return "every scenario needs a title, a system prompt and an opening message";
     }
+    const history = historyProblem(scenario.history, `scenario "${scenario.title}"`);
+    if (history) return history;
   }
 
   if (!isFilled(c.criterion)) return "the judge needs something to look at";
@@ -173,6 +208,8 @@ export function extendProblem(
     ) {
       return "every scenario needs a title, a system prompt and an opening message";
     }
+    const history = historyProblem(scenario.history, `scenario "${scenario.title}"`);
+    if (history) return history;
   }
 
   if (indices.length === 0 && nouveaux.length === 0) {

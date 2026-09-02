@@ -13,7 +13,7 @@ from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
-from playground.conversation import run_conversation
+from playground.conversation import Turn, run_conversation
 from playground.eval_schemas import EvalRunConfig
 
 
@@ -101,12 +101,19 @@ def conversation_solver(
             adversary=adversary,
             adversary_prompt=config.adversary_prompt,
             temperature=state.metadata.get("temperature"),
+            history=[
+                Turn(role=turn.role, content=turn.content)
+                for turn in scenario.history
+            ],
             stopped=stopped,
         )
         state.metadata["transcript"] = [
             {
                 "role": turn.role,
                 "content": turn.content,
+                # Le drapeau survit jusqu'en base : sans lui, relire un run six
+                # mois plus tard ne dirait plus quels tours étaient posés.
+                "seeded": turn.seeded,
                 "stop_reason": turn.stop_reason,
             }
             for turn in transcript

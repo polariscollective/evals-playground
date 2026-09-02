@@ -12,7 +12,7 @@ import {
   importConfigFile,
   sourceCsvText,
 } from "@/lib/api";
-import { parseCsv, toCsv } from "@/lib/csv";
+import { parseCsv, parseHistoryCell, toCsv } from "@/lib/csv";
 import type {
   CostEstimate,
   EvalRunConfig,
@@ -20,7 +20,9 @@ import type {
   JudgePromptPreview,
   ProviderInfo,
   RubricLevel,
+  SeededTurn,
 } from "@/lib/types";
+import { HistoryEditor } from "@/components/HistoryEditor";
 import { NotesField } from "@/components/NotesField";
 import { PromptGuide } from "@/components/PromptGuide";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -68,6 +70,9 @@ function EvaluateForm() {
   const [title, setTitle] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [openingMessage, setOpeningMessage] = useState("");
+  // L'historique du scénario saisi à la main. Le mode CSV a le sien, dans une
+  // colonne : ce sont deux chemins vers le même champ du scénario.
+  const [history, setHistory] = useState<SeededTurn[]>([]);
 
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
@@ -79,6 +84,9 @@ function EvaluateForm() {
   const [colTitle, setColTitle] = useState("");
   const [colSystem, setColSystem] = useState("");
   const [colOpening, setColOpening] = useState("");
+  // Facultative : la colonne portant l'historique posé, en JSON. La plupart
+  // des lots n'en ont pas, et le sélecteur reste alors sur « — ».
+  const [colHistory, setColHistory] = useState("");
 
   const [adversaryPrompt, setAdversaryPrompt] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -160,6 +168,7 @@ function EvaluateForm() {
           setTitle(first?.title ?? "");
           setSystemPrompt(first?.system_prompt ?? "");
           setOpeningMessage(first?.opening_message ?? "");
+          setHistory(first?.history ?? []);
           return;
         }
 
@@ -179,6 +188,7 @@ function EvaluateForm() {
           setColTitle(config.source.column_title);
           setColSystem(config.source.column_system_prompt);
           setColOpening(config.source.column_opening_message);
+          setColHistory(config.source.column_history ?? "");
           return;
         }
 
@@ -220,6 +230,7 @@ function EvaluateForm() {
           title,
           system_prompt: systemPrompt,
           opening_message: openingMessage,
+          history,
         },
       ];
     }
@@ -228,16 +239,19 @@ function EvaluateForm() {
       title: row[colTitle] ?? "",
       system_prompt: row[colSystem] ?? "",
       opening_message: row[colOpening] ?? "",
+      history: colHistory ? parseHistoryCell(row[colHistory] ?? "") : [],
     }));
   }, [
     source,
     title,
     systemPrompt,
     openingMessage,
+    history,
     csvRows,
     colTitle,
     colSystem,
     colOpening,
+    colHistory,
   ]);
 
   const turnsError =
@@ -309,6 +323,7 @@ function EvaluateForm() {
         column_title: source === "csv" ? colTitle : "",
         column_system_prompt: source === "csv" ? colSystem : "",
         column_opening_message: source === "csv" ? colOpening : "",
+        column_history: source === "csv" ? colHistory : "",
         skipped_rows: source === "csv" ? csvSkipped : 0,
       },
       temperature: {
@@ -336,6 +351,7 @@ function EvaluateForm() {
       colTitle,
       colSystem,
       colOpening,
+      colHistory,
       csvSkipped,
     ],
   );
@@ -461,6 +477,7 @@ function EvaluateForm() {
         setTitle(config.scenarios[0].title);
         setSystemPrompt(config.scenarios[0].system_prompt);
         setOpeningMessage(config.scenarios[0].opening_message);
+        setHistory(config.scenarios[0].history ?? []);
       } else {
         // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
         // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
@@ -701,6 +718,18 @@ function EvaluateForm() {
                 className="w-full rounded border border-zinc-300 p-3 font-mono text-sm"
               />
             </label>
+            {/* Avant le message d'ouverture, parce que c'est l'ordre dans
+                lequel la conversation se déroule : les tours posés d'abord, le
+                message d'ouverture ensuite. */}
+            <div className="space-y-1">
+              <span className="text-sm font-medium">
+                Prior history{" "}
+                <span className="font-normal text-zinc-500">
+                  — turns the model is given as already having happened
+                </span>
+              </span>
+              <HistoryEditor history={history} onChange={setHistory} />
+            </div>
             <label className="block space-y-1">
               <span className="text-sm font-medium">Opening message</span>
               <textarea
@@ -739,7 +768,7 @@ function EvaluateForm() {
                 <p className="text-sm text-zinc-600">
                   Tell us which column holds what:
                 </p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-4 gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
                     {
@@ -751,6 +780,13 @@ function EvaluateForm() {
                       label: "Opening message",
                       value: colOpening,
                       set: setColOpening,
+                    },
+                    // Facultative, et c'est le cas courant : un scénario sans
+                    // historique laisse ce sélecteur sur « — ».
+                    {
+                      label: "Prior history (optional)",
+                      value: colHistory,
+                      set: setColHistory,
                     },
                   ].map((f) => (
                     <label key={f.label} className="block space-y-1">

@@ -37,12 +37,64 @@ class RubricLevel(BaseModel):
     """
 
 
+class SeededTurn(BaseModel):
+    """Un tour écrit par l'expérimentateur, posé avant que la mesure commence."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+
+
 class EvalScenario(BaseModel):
     """Le décor présenté au modèle évalué."""
 
     title: str = Field(min_length=1)
     system_prompt: str = Field(min_length=1)
     opening_message: str = Field(min_length=1)
+
+    history: list[SeededTurn] = Field(default_factory=list)
+    """Un état de conversation posé d'avance, propre à ce scénario.
+
+    Sert à mesurer ce qu'un modèle fait *depuis* un état, sans avoir à l'y
+    amener : dérouler le préambule en vrais tours coûte des appels et,
+    surtout, n'aboutit pas au même endroit à chaque répétition — le modèle
+    accepte l'étape 1 une fois sur trois. Poser l'historique rend le point de
+    départ identique pour tous les modèles et toutes les répétitions, ce sans
+    quoi deux cases de la matrice ne se comparent pas.
+
+    Par scénario et non par run : deux lignes de la même matrice peuvent
+    partir d'états différents, et c'est souvent tout l'intérêt.
+
+    À assumer : on mesure « continue-t-il depuis un état qu'il n'a pas
+    choisi », pas « y arrive-t-on ». Les tours posés sont marqués dans le
+    transcript, et le juge est prévenu de ne pas les noter.
+    """
+
+    @field_validator("history")
+    @classmethod
+    def _alternate(cls, history: list[SeededTurn]) -> list[SeededTurn]:
+        """L'historique doit s'ouvrir sur l'utilisateur et se fermer sur l'assistant.
+
+        Le message d'ouverture le suit et vient de l'utilisateur : un historique
+        qui se terminerait déjà par l'utilisateur produirait deux tours
+        utilisateur d'affilée, que certains fournisseurs refusent et que les
+        autres interprètent chacun à leur façon. Autant le dire ici, où l'erreur
+        se corrige, plutôt qu'au premier appel facturé.
+        """
+        if not history:
+            return history
+        for index, turn in enumerate(history):
+            attendu = "user" if index % 2 == 0 else "assistant"
+            if turn.role != attendu:
+                raise ValueError(
+                    f"history must alternate user/assistant: turn {index + 1}"
+                    f" is {turn.role!r} where {attendu!r} was expected."
+                )
+        if history[-1].role != "assistant":
+            raise ValueError(
+                "history must end on an assistant turn — the opening message is"
+                " the user turn that follows it."
+            )
+        return history
 
 
 class TemperatureSpec(BaseModel):

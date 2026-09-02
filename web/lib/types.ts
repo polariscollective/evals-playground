@@ -25,10 +25,25 @@ export interface RubricLevel {
   excluded?: boolean;
 }
 
+export interface SeededTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface EvalScenario {
   title: string;
   system_prompt: string;
   opening_message: string;
+  /** Un état de conversation posé d'avance, propre à ce scénario.
+   *
+   * Sert à mesurer ce qu'un modèle fait *depuis* un état sans avoir à l'y
+   * amener : dérouler le préambule en vrais tours coûte des appels et n'aboutit
+   * pas au même endroit à chaque répétition. Par scénario et non par run — deux
+   * lignes de la même matrice peuvent partir d'états différents.
+   *
+   * Alterne user/assistant en commençant par l'utilisateur et en finissant par
+   * l'assistant : le message d'ouverture est le tour utilisateur qui suit. */
+  history?: SeededTurn[];
 }
 
 export interface EvalModels {
@@ -48,6 +63,8 @@ export interface ScenarioSource {
   column_title: string;
   column_system_prompt: string;
   column_opening_message: string;
+  /** La colonne portant l'historique posé, en JSON. Vide s'il n'y en a pas. */
+  column_history?: string;
   skipped_rows: number;
 }
 
@@ -77,6 +94,8 @@ export interface ExpectedCsv {
   column_title: string;
   column_system_prompt: string;
   column_opening_message: string;
+  /** Facultative : la colonne portant l'historique posé, en JSON. */
+  column_history?: string;
 }
 
 /** Ce qu'on ajoute à un run existant : une sous-matrice, et rien d'autre.
@@ -102,6 +121,8 @@ export interface ExtendRequest {
 export interface Message {
   role: "user" | "assistant";
   content: string;
+  /** Écrit par l'expérimentateur, pas produit par un modèle. */
+  seeded?: boolean;
   /** `content_filter` quand le fournisseur a bloqué la génération. */
   stop_reason?: string | null;
 }
