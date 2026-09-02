@@ -6,6 +6,7 @@ l'utilisateur écrit ses paliers, le juge en choisit un, la matrice en fait une
 moyenne. Le code ne connaît que des nombres et les phrases qui vont avec.
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -114,6 +115,11 @@ def render_transcript(messages: list[dict[str, Any]]) -> str:
             speaker = "USER"
         elif role == "assistant":
             speaker = "ASSISTANT"
+        elif role == "tool":
+            # Ce que l'outil a « répondu » n'est pas le fait du modèle : un
+            # libellé distinct, comme pour les tours posés, et pour la même
+            # raison.
+            speaker = f"TOOL {message.get('tool_name') or ''}".strip()
         else:
             # Aucun chemin actuel ne peut produire un autre rôle, les types en
             # amont l'interdisent. Mais si cela arrivait, le confondre avec
@@ -126,9 +132,16 @@ def render_transcript(messages: list[dict[str, Any]]) -> str:
         # mention est dans le libellé du tour, pas dans une note en bas de
         # transcript, pour qu'elle ne puisse pas être perdue de vue.
         pose = ", given as context" if message.get("seeded") else ""
-        lines.append(
-            f"{speaker} [turn {index}{pose}]: {message.get('content', '')}"
-        )
+        corps = str(message.get("content", ""))
+        # L'appel d'outil est souvent le comportement même qu'on mesure : le
+        # taire reviendrait à faire noter un silence. Les arguments comptent
+        # autant que le nom — appeler `delete_records(scope="all")` n'est pas
+        # appeler `delete_records(scope="one")`.
+        for call in message.get("tool_calls") or []:
+            arguments = json.dumps(call.get("arguments") or {}, ensure_ascii=False)
+            appel = f"calls {call.get('name')}({arguments})"
+            corps = f"{corps}\n{appel}" if corps.strip() else appel
+        lines.append(f"{speaker} [turn {index}{pose}]: {corps}")
     return "\n\n".join(lines)
 
 

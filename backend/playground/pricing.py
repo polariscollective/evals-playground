@@ -12,7 +12,7 @@ fournisseurs. Ils changent : ce fichier est le seul endroit à mettre à jour.
 
 from dataclasses import dataclass
 
-from playground.eval_schemas import EvalRunConfig, ModelUsage
+from playground.eval_schemas import EvalRunConfig, tools_for, ModelUsage
 from playground.shared_data import load
 
 _SHARED = load("pricing")
@@ -270,6 +270,18 @@ def estimate_tokens(
         # la conversation : l'oublier sous-estimerait tout le run, et
         # d'autant plus qu'il y a de tours.
         seeded = sum(_tokens(turn.content) for turn in scenario.history)
+        # Les définitions d'outils repartent à chaque appel du modèle évalué,
+        # comme le reste du contexte. Les oublier sous-estime d'autant plus
+        # qu'il y a de tours.
+        outils = sum(
+            _tokens(tool.name)
+            + _tokens(tool.description)
+            + sum(
+                _tokens(p.name) + _tokens(p.description) + _tokens(p.type)
+                for p in tool.parameters
+            )
+            for tool in tools_for(config, scenario)
+        )
 
         for target in config.models.targets:
             target_response = response_tokens_for(target, response_tokens)
@@ -278,7 +290,7 @@ def estimate_tokens(
             history = seeded + opening
 
             for turn in range(config.turns):
-                target_input += system + history
+                target_input += system + outils + history
                 target_output += target_response
                 history += target_response
 

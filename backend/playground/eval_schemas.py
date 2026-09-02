@@ -5,6 +5,7 @@ phases ne partagent aucune structure, et les mélanger rendrait chaque fichier
 plus difficile à tenir en tête.
 """
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -37,6 +38,58 @@ class RubricLevel(BaseModel):
     """
 
 
+TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+ToolParamType = Literal["string", "number", "integer", "boolean"]
+
+
+class ToolParam(BaseModel):
+    """Un argument d'outil, tel que le modèle devra le remplir."""
+
+    name: str = Field(min_length=1)
+    type: ToolParamType = "string"
+    description: str = ""
+    required: bool = False
+
+
+class ToolSpec(BaseModel):
+    """Un outil offert au modèle évalué.
+
+    Rien n'est exécuté : l'outil ne fait qu'exister et rendre `result`. Ce qu'on
+    mesure est la décision de l'appeler, pas ce qu'un vrai système répondrait.
+    """
+
+    name: str = Field(min_length=1)
+    """Contraint par les fournisseurs, qui refusent tout le reste."""
+
+    description: str = ""
+    """Ce que le modèle lit pour décider s'il appelle.
+
+    C'est là que vit la pression : « Supprime définitivement, irréversible » et
+    « Retire des enregistrements » ne produisent pas le même taux d'appel.
+    """
+
+    parameters: list[ToolParam] = Field(default_factory=list)
+
+    result: str = ""
+    """Ce que l'outil renvoie, toujours la même chose.
+
+    Fixe, et c'est un choix : faire improviser la réponse par un modèle
+    ramènerait dans chaque case la variance qu'un run cherche justement à
+    isoler. Un échec se simule en écrivant le message d'erreur ici.
+    """
+
+    @field_validator("name")
+    @classmethod
+    def _nom_acceptable(cls, name: str) -> str:
+        if not TOOL_NAME.match(name):
+            raise ValueError(
+                f"tool name {name!r} must match [a-zA-Z0-9_-] and be at most 64"
+                " characters — the providers refuse anything else."
+            )
+        return name
+
+
 class SeededTurn(BaseModel):
     """Un tour écrit par l'expérimentateur, posé avant que la mesure commence."""
 
@@ -50,6 +103,15 @@ class EvalScenario(BaseModel):
     title: str = Field(min_length=1)
     system_prompt: str = Field(min_length=1)
     opening_message: str = Field(min_length=1)
+
+    tools: list[str] | None = None
+    """Les outils offerts à ce scénario, par leur nom.
+
+    Trois états, et ils comptent : `None` — la clé absente — offre tous les
+    outils du run ; une liste offre ceux-là ; une liste vide n'en offre aucun.
+    Sans le troisième, on ne pourrait pas comparer une ligne avec outils à la
+    même ligne sans, ce qui est souvent la mesure qu'on cherche.
+    """
 
     history: list[SeededTurn] = Field(default_factory=list)
     """Un état de conversation posé d'avance, propre à ce scénario.
@@ -191,6 +253,14 @@ class EvalRunConfig(BaseModel):
     """
 
     turns: int = Field(ge=1, le=10)
+
+    tools: list[ToolSpec] = Field(default_factory=list)
+    """Les outils du run, définis une fois et offerts aux scénarios.
+
+    Au niveau du run parce qu'un outil décrit un monde, pas une situation : les
+    scénarios d'une même matrice partagent le décor et se distinguent par ce
+    qu'on y demande. Chacun choisit ensuite lesquels il offre.
+    """
     repetitions: int = Field(ge=1)
     models: EvalModels
     adversary_prompt: str = ""
@@ -373,3 +443,17 @@ class EvalRunRecord(BaseModel):
     """
 
     conversations: list[Conversation] = Field(default_factory=list)
+
+
+def tools_for(config: "EvalRunConfig", scenario: EvalScenario) -> list[ToolSpec]:
+    """Les outils réellement offerts à un scénario.
+
+    Trois états : la clé absente offre tout le décor du run, une liste offre ce
+    qu'elle nomme, une liste vide n'offre rien. Un nom qui ne désigne aucun
+    outil est ignoré — la validation le refuse en amont, et le job ne doit pas
+    mourir sur une configuration déjà acceptée.
+    """
+    if scenario.tools is None:
+        return list(config.tools)
+    voulus = set(scenario.tools)
+    return [tool for tool in config.tools if tool.name in voulus]

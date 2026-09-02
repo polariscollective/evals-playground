@@ -10,6 +10,7 @@ import {
   SHARED_JUDGE_PROMPT as J,
   SHARED_PRICING as S,
 } from "./shared";
+import { toolsFor } from "./tools";
 import type { CostEstimate, EvalRunConfig, ModelCost } from "./types";
 
 const PRICES = S.prices as Record<
@@ -119,6 +120,20 @@ export function estimateTokens(
       (total, turn) => total + tokens(turn.content),
       0,
     );
+    // Les définitions d'outils repartent à chaque appel du modèle évalué,
+    // comme le reste du contexte.
+    const toolTokens = toolsFor(config, scenario).reduce(
+      (total, tool) =>
+        total +
+        tokens(tool.name) +
+        tokens(tool.description) +
+        tool.parameters.reduce(
+          (sum, param) =>
+            sum + tokens(param.name) + tokens(param.description) + tokens(param.type),
+          0,
+        ),
+      0,
+    );
 
     for (const target of config.models.targets) {
       const targetResponse = responseTokensFor(target, responseTokens);
@@ -129,7 +144,7 @@ export function estimateTokens(
       let history = seeded + opening;
 
       for (let turn = 0; turn < config.turns; turn += 1) {
-        targetInput += system + history;
+        targetInput += system + toolTokens + history;
         targetOutput += targetResponse;
         history += targetResponse;
 

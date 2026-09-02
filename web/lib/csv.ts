@@ -124,3 +124,22 @@ export function parseHistoryCell(cell: string): SeededTurn[] {
     return [];
   }
 }
+
+/** Les outils d'un scénario, lus dans une cellule de CSV.
+ *
+ * Trois états à faire tenir dans une cellule : vide offre tous les outils du
+ * run — c'est le cas courant et l'absence de valeur doit donc être inoffensive ;
+ * `none` n'en offre aucun ; sinon les noms, séparés par des virgules.
+ *
+ * Le mot `none` plutôt qu'une cellule vide pour « aucun » : une colonne
+ * fraîchement ajoutée est vide partout, et si le vide voulait dire « aucun »,
+ * l'ajouter retirerait silencieusement les outils de tout le lot. */
+export function parseToolsCell(cell: string): string[] | null {
+  const texte = (cell ?? "").trim();
+  if (texte === "") return null;
+  if (texte.toLowerCase() === "none") return [];
+  return texte
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+}

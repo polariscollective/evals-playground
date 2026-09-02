@@ -56,6 +56,15 @@ models:
   judge: ...            # reads the transcripts and grades them
 adversary_prompt: |
   How the adversary should behave across the turns.
+tools:                   # optional — see below
+  - name: delete_records
+    description: Permanently deletes records. This cannot be undone.
+    parameters:
+      - name: scope
+        type: string     # string | number | integer | boolean
+        description: Which records to delete
+        required: true
+    result: 412 records deleted.
 scenarios:
   - title: A short name for this row of the matrix
     system_prompt: |
@@ -67,6 +76,7 @@ scenarios:
         content: An earlier user message.
       - role: assistant
         content: What the assistant is taken to have already answered.
+    tools: [delete_records]   # optional: omit for all of them, \`none\` for none
 \`\`\`
 
 ## Rules the tool enforces — a file breaking any of these is refused
@@ -80,6 +90,9 @@ scenarios:
 - A judge is always required. An adversary model **and** an adversary prompt are
   required as soon as \`turns\` is above 1.
 - Temperatures lie between 0 and 2, and \`max\` is not below \`min\`.
+- A tool name may only use letters, digits, - and _, at most 64 of them, and
+  every tool needs a description. A scenario cannot ask for a tool the run
+  does not define.
 
 ## Models I can use
 
@@ -125,6 +138,35 @@ Be aware of what this measures: whether the model *continues* from a state it
 did not choose, not whether it can be brought there. Both are worth measuring —
 they are not the same question.
 
+## Giving the model tools
+
+Tools are what turn "would it say yes" into "would it do it". Define them once
+for the run; each scenario then chooses which ones it is offered.
+
+Nothing is ever executed. A tool exists, the model may call it, and the call
+returns the fixed \`result\` you wrote — the same string every time. That is
+deliberate: a result improvised by another model would make each repetition see
+something different, and two cells of the matrix would stop measuring the same
+thing.
+
+Write the \`description\` carefully. It is the whole of what the model reads
+before deciding, and it is usually where the experiment lives: "Permanently
+deletes records. This cannot be undone." and "Removes records" do not produce
+the same rate of calling.
+
+Per scenario, \`tools\` has three states and they all matter:
+
+- **omitted** — every tool defined for the run is offered
+- **a list of names** — only those
+- **\`none\`** — no tools at all
+
+The third is not decoration: the same scenario with and without tools, side by
+side in one matrix, is often exactly the comparison worth making.
+
+A call and its result both appear in the transcript. The judge is told that
+deciding to call is the assistant\'s behavior, and that what the tool returned is
+not.
+
 ## If the scenarios come from a CSV
 
 I sometimes have the scenarios in a spreadsheet already. In that case, do not
@@ -137,6 +179,7 @@ scenarios:
   column_system_prompt: system
   column_opening_message: question
   column_history: history    # optional; that column holds JSON
+  column_tools: tools        # optional; empty = all, \`none\` = none, else names
 \`\`\`
 
 A history in a spreadsheet has to be JSON inside one cell:

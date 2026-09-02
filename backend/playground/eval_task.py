@@ -14,7 +14,7 @@ from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from playground.conversation import Turn, run_conversation
-from playground.eval_schemas import EvalRunConfig
+from playground.eval_schemas import EvalRunConfig, tools_for
 
 
 def pending_dataset(
@@ -105,6 +105,7 @@ def conversation_solver(
                 Turn(role=turn.role, content=turn.content)
                 for turn in scenario.history
             ],
+            tools=tools_for(config, scenario),
             stopped=stopped,
         )
         state.metadata["transcript"] = [
@@ -114,6 +115,13 @@ def conversation_solver(
                 # Le drapeau survit jusqu'en base : sans lui, relire un run six
                 # mois plus tard ne dirait plus quels tours étaient posés.
                 "seeded": turn.seeded,
+                # L'appel est souvent *le* comportement mesuré : il est
+                # enregistré tel quel, arguments compris, et non résumé.
+                "tool_calls": [
+                    {"id": call.id, "name": call.name, "arguments": call.arguments}
+                    for call in turn.tool_calls
+                ],
+                "tool_name": turn.tool_name,
                 "stop_reason": turn.stop_reason,
             }
             for turn in transcript

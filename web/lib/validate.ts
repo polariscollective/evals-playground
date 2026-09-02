@@ -11,6 +11,7 @@ import type {
   RejudgeRequest,
   RubricLevel,
   SeededTurn,
+  ToolSpec,
 } from "./types";
 
 const MIN_TURNS = 1;
@@ -48,6 +49,70 @@ export function rubricProblem(rubric: unknown): string | null {
   const comptes = (rubric as RubricLevel[]).filter((level) => !level.excluded);
   if (comptes.length < 2) {
     return "at least two grades must count towards the average";
+  }
+  return null;
+}
+
+/** Les fournisseurs n'acceptent pas d'autre forme de nom. */
+const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
+
+const TOOL_PARAM_TYPES = ["string", "number", "integer", "boolean"];
+
+/** Ce qui cloche dans les outils d'un run, ou null.
+ *
+ * Le nom est vérifié ici parce que l'erreur, sinon, tombe au premier appel
+ * facturé et sous une forme illisible : les fournisseurs refusent la requête
+ * entière sans dire quel outil est en cause. */
+export function toolsProblem(tools: unknown): string | null {
+  if (tools === undefined || tools === null) return null;
+  if (!Array.isArray(tools)) return "tools must be a list";
+
+  const seen = new Set<string>();
+  for (const tool of tools as ToolSpec[]) {
+    if (!isFilled(tool?.name)) return "every tool needs a name";
+    if (!TOOL_NAME.test(tool.name)) {
+      return `tool "${tool.name}": a name may only use letters, digits, - and _, and at most 64 of them`;
+    }
+    if (seen.has(tool.name)) return `two tools are both named "${tool.name}"`;
+    seen.add(tool.name);
+
+    if (!isFilled(tool.description)) {
+      // Un outil sans description est un outil que le modèle n'appellera
+      // jamais, ou appellera au hasard : dans les deux cas la case ne mesure
+      // pas ce qu'on croit.
+      return `tool "${tool.name}" needs a description — it is what the model reads to decide`;
+    }
+
+    const params = tool.parameters ?? [];
+    if (!Array.isArray(params)) return `tool "${tool.name}": parameters must be a list`;
+    const noms = new Set<string>();
+    for (const param of params) {
+      if (!isFilled(param?.name)) return `tool "${tool.name}": a parameter has no name`;
+      if (noms.has(param.name)) {
+        return `tool "${tool.name}": two parameters are both named "${param.name}"`;
+      }
+      noms.add(param.name);
+      if (!TOOL_PARAM_TYPES.includes(param.type)) {
+        return `tool "${tool.name}", parameter "${param.name}": type must be one of ${TOOL_PARAM_TYPES.join(", ")}`;
+      }
+    }
+  }
+  return null;
+}
+
+/** Ce qui cloche dans les outils demandés par un scénario, ou null. */
+export function scenarioToolsProblem(
+  asked: unknown,
+  available: ToolSpec[],
+  where: string,
+): string | null {
+  if (asked === undefined || asked === null) return null;
+  if (!Array.isArray(asked)) return `${where}: tools must be a list of names`;
+  const known = new Set(available.map((tool) => tool.name));
+  for (const name of asked) {
+    if (!known.has(name)) {
+      return `${where}: no tool named "${name}" is defined for this run`;
+    }
   }
   return null;
 }
@@ -102,6 +167,17 @@ export function configProblem(config: unknown): string | null {
     }
     const history = historyProblem(scenario.history, `scenario "${scenario.title}"`);
     if (history) return history;
+  }
+
+  const tools = toolsProblem(c.tools);
+  if (tools) return tools;
+  for (const scenario of c.scenarios) {
+    const asked = scenarioToolsProblem(
+      scenario.tools,
+      c.tools ?? [],
+      `scenario "${scenario.title}"`,
+    );
+    if (asked) return asked;
   }
 
   if (!isFilled(c.criterion)) return "the judge needs something to look at";

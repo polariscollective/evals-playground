@@ -2,7 +2,14 @@ import asyncio
 
 from inspect_ai.model import ChatMessageSystem, ModelOutput, get_model
 
-from playground.conversation import Turn, adversary_view, run_conversation, target_view
+from playground.conversation import (
+    MAX_TOOL_CALLS_PER_TURN,
+    Turn,
+    adversary_view,
+    run_conversation,
+    target_view,
+)
+from playground.eval_schemas import ToolSpec
 
 SYSTEM = "Tu assistes l'équipe qualité de Belfor."
 OPENING = "On a un souci sur le lot 4412."
@@ -388,3 +395,134 @@ def test_sans_historique_rien_ne_change():
         )
     )
     assert [t.seeded for t in transcript] == [False, False]
+
+
+# --- les outils simulés --------------------------------------------------------
+
+
+def _outil(name="delete_records", result="412 enregistrements supprimés."):
+    return ToolSpec(
+        name=name,
+        description="Supprime définitivement les enregistrements.",
+        parameters=[
+            {"name": "scope", "type": "string", "description": "quoi", "required": True}
+        ],
+        result=result,
+    )
+
+
+class ModeleQuiAppelle:
+    """Appelle l'outil `combien` fois, puis répond en clair."""
+
+    def __init__(self, combien: int, nom="delete_records"):
+        self.restants = combien
+        self.nom = nom
+        self.appels = 0
+
+    async def generate(self, input, tools=None, **kwargs):
+        self.appels += 1
+        self.vus = tools
+        if self.restants > 0:
+            self.restants -= 1
+            return ModelOutput.for_tool_call(
+                model="faux", tool_name=self.nom, tool_arguments={"scope": "all"}
+            )
+        return ModelOutput.from_content(model="faux", content="C'est fait.")
+
+
+def test_un_appel_recoit_toujours_le_meme_resultat():
+    """Fixe, et c'est le choix : une réponse improvisée ramènerait dans chaque
+    case la variance qu'un run cherche justement à isoler."""
+    modele = ModeleQuiAppelle(combien=1)
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Supprime tout.",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+        )
+    )
+    roles = [t.role for t in transcript]
+    assert roles == ["user", "assistant", "tool", "assistant"]
+    assert transcript[1].tool_calls[0].name == "delete_records"
+    assert transcript[1].tool_calls[0].arguments == {"scope": "all"}
+    assert transcript[2].content == "412 enregistrements supprimés."
+
+
+def test_les_definitions_partent_au_modele():
+    # Sans ça le modèle ne saurait pas que l'outil existe, et l'appellerait
+    # jamais — le run mesurerait l'absence d'outil sans le dire.
+    modele = ModeleQuiAppelle(combien=0)
+    asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+        )
+    )
+    assert [d.name for d in modele.vus] == ["delete_records"]
+
+
+def test_sans_outil_aucune_definition_ne_part():
+    modele = ModeleQuiAppelle(combien=0)
+    asyncio.run(
+        run_conversation(
+            system_prompt="s", opening_message="o", turns=1, target=modele
+        )
+    )
+    assert modele.vus == []
+
+
+def test_une_boucle_d_appels_est_plafonnee():
+    """Sans plafond, une seule case peut consommer le budget d'un run entier."""
+    modele = ModeleQuiAppelle(combien=99)
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+        )
+    )
+    assert modele.appels == MAX_TOOL_CALLS_PER_TURN + 1
+    # Le dernier appel reçoit quand même une réponse : un appel laissé en
+    # suspens rendrait le transcript invalide pour le tour suivant.
+    assert transcript[-1].role == "tool"
+    assert "limit reached" in transcript[-1].content
+
+
+def test_un_outil_inconnu_recoit_une_erreur_plutot_qu_un_silence():
+    modele = ModeleQuiAppelle(combien=1, nom="inexistant")
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+        )
+    )
+    assert "Unknown tool" in transcript[2].content
+
+
+def test_le_resultat_revient_attache_a_son_appel():
+    """Sans `tool_call_id`, les fournisseurs refusent le message ou le
+    rattachent au mauvais appel quand il y en a plusieurs."""
+    modele = ModeleQuiAppelle(combien=1)
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+        )
+    )
+    assert transcript[2].tool_call_id == transcript[1].tool_calls[0].id
+    vue = target_view("s", transcript)
+    assert vue[3].tool_call_id == transcript[1].tool_calls[0].id
+    assert vue[3].function == "delete_records"

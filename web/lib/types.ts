@@ -25,6 +25,30 @@ export interface RubricLevel {
   excluded?: boolean;
 }
 
+export type ToolParamType = "string" | "number" | "integer" | "boolean";
+
+export interface ToolParam {
+  name: string;
+  type: ToolParamType;
+  description: string;
+  required: boolean;
+}
+
+/** Un outil offert au modèle évalué.
+ *
+ * Rien n'est exécuté : l'outil existe et rend `result`. Ce qu'on mesure est la
+ * décision de l'appeler, pas ce qu'un vrai système répondrait. */
+export interface ToolSpec {
+  /** Contraint par les fournisseurs : `[a-zA-Z0-9_-]`, 64 caractères au plus. */
+  name: string;
+  /** Ce que le modèle lit pour décider. C'est là que vit la pression. */
+  description: string;
+  parameters: ToolParam[];
+  /** Ce que l'outil renvoie, toujours la même chose : sans quoi deux
+   *  répétitions ne mesureraient pas la même expérience. */
+  result: string;
+}
+
 export interface SeededTurn {
   role: "user" | "assistant";
   content: string;
@@ -44,6 +68,12 @@ export interface EvalScenario {
    * Alterne user/assistant en commençant par l'utilisateur et en finissant par
    * l'assistant : le message d'ouverture est le tour utilisateur qui suit. */
   history?: SeededTurn[];
+  /** Les outils offerts à ce scénario, par leur nom.
+   *
+   * Trois états : absent offre tous ceux du run, une liste offre ceux-là, une
+   * liste vide n'en offre aucun. Sans le troisième, on ne pourrait pas comparer
+   * une ligne avec outils à la même ligne sans. */
+  tools?: string[] | null;
 }
 
 export interface EvalModels {
@@ -65,6 +95,8 @@ export interface ScenarioSource {
   column_opening_message: string;
   /** La colonne portant l'historique posé, en JSON. Vide s'il n'y en a pas. */
   column_history?: string;
+  /** La colonne disant quels outils le scénario reçoit. Vide s'il n'y en a pas. */
+  column_tools?: string;
   skipped_rows: number;
 }
 
@@ -79,6 +111,10 @@ export interface EvalRunConfig {
   repetitions: number;
   models: EvalModels;
   adversary_prompt: string;
+  /** Les outils du run, définis une fois et offerts aux scénarios.
+   *
+   * Au niveau du run parce qu'un outil décrit un monde, pas une situation. */
+  tools?: ToolSpec[];
   temperature?: TemperatureSpec | null;
   label?: string | null;
   source?: ScenarioSource | null;
@@ -119,10 +155,14 @@ export interface ExtendRequest {
 }
 
 export interface Message {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   /** Écrit par l'expérimentateur, pas produit par un modèle. */
   seeded?: boolean;
+  /** Les outils que ce tour d'assistant a décidé d'appeler. */
+  tool_calls?: { id: string; name: string; arguments: Record<string, unknown> }[];
+  /** Sur un tour `tool` : l'outil qui a « répondu ». */
+  tool_name?: string | null;
   /** `content_filter` quand le fournisseur a bloqué la génération. */
   stop_reason?: string | null;
 }

@@ -56,7 +56,11 @@ function transcript(messages: Message[]): string {
         // Le marquage suit le transcript jusque dans l'export : une analyse
         // faite hors de l'outil, sur ce fichier, doit pouvoir séparer ce que le
         // modèle a produit de ce qu'on lui a posé.
-        `[${message.role}${message.seeded ? ", given as context" : ""}] ${message.content}`,
+        `[${message.role}${message.seeded ? ", given as context" : ""}${
+          message.tool_name ? ` ${message.tool_name}` : ""
+        }] ${message.content}${(message.tool_calls ?? [])
+          .map((call) => `\ncalls ${call.name}(${JSON.stringify(call.arguments)})`)
+          .join("")}`,
     )
     .join("\n\n");
 }

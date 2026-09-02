@@ -224,7 +224,14 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
     transcript = result.metadata["transcript"]
     for entry in transcript:
         assert isinstance(entry, dict)
-        assert set(entry.keys()) == {"role", "content", "seeded", "stop_reason"}
+        assert set(entry.keys()) == {
+            "role",
+            "content",
+            "seeded",
+            "tool_calls",
+            "tool_name",
+            "stop_reason",
+        }
         assert isinstance(entry["role"], str)
         assert isinstance(entry["content"], str)
 

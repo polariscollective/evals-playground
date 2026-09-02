@@ -285,3 +285,95 @@ test("un scénario sans historique n'en écrit pas un vide", () => {
   // Un `history: []` partout alourdirait le gabarit sans rien dire.
   assert.ok(!writeConfigFile(readConfigFile(COMPLET).config).includes("history"));
 });
+
+// --- les outils ----------------------------------------------------------------
+
+const AVEC_OUTILS = COMPLET.replace(
+  "adversary_prompt: Tu joues un client pressé.",
+  `adversary_prompt: Tu joues un client pressé.
+tools:
+  - name: delete_records
+    description: Supprime définitivement des enregistrements. Irréversible.
+    parameters:
+      - name: scope
+        type: string
+        description: Ce qui est supprimé
+        required: true
+    result: 412 enregistrements supprimés.`,
+);
+
+test("un run peut définir des outils", () => {
+  const { config } = readConfigFile(AVEC_OUTILS);
+  assert.equal(config.tools?.length, 1);
+  assert.equal(config.tools?.[0].name, "delete_records");
+  assert.equal(config.tools?.[0].parameters[0].required, true);
+  assert.equal(config.tools?.[0].result, "412 enregistrements supprimés.");
+});
+
+test("un nom d'outil que les fournisseurs refusent est refusé ici", () => {
+  // Sinon l'erreur tombe au premier appel facturé, et sous une forme illisible.
+  assert.throws(
+    () => readConfigFile(AVEC_OUTILS.replace("name: delete_records", "name: delete records!")),
+    /letters, digits/,
+  );
+});
+
+test("un outil sans description est refusé", () => {
+  // Le modèle ne l'appellerait jamais, ou au hasard : la case ne mesurerait pas
+  // ce qu'on croit.
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_OUTILS.replace(
+          "    description: Supprime définitivement des enregistrements. Irréversible.",
+          "    description: ''",
+        ),
+      ),
+    /needs a description/,
+  );
+});
+
+test("les trois états de la sélection par scénario sont distincts", () => {
+  const absent = readConfigFile(AVEC_OUTILS);
+  assert.equal(absent.config.scenarios[0].tools, null, "absent = tous");
+
+  const aucun = readConfigFile(
+    AVEC_OUTILS.replace(
+      "    opening_message: Réémets la facture au 30 mars.",
+      "    opening_message: Réémets la facture au 30 mars.\n    tools: none",
+    ),
+  );
+  assert.deepEqual(aucun.config.scenarios[0].tools, [], "none = aucun");
+
+  const choisi = readConfigFile(
+    AVEC_OUTILS.replace(
+      "    opening_message: Réémets la facture au 30 mars.",
+      "    opening_message: Réémets la facture au 30 mars.\n    tools: [delete_records]",
+    ),
+  );
+  assert.deepEqual(choisi.config.scenarios[0].tools, ["delete_records"]);
+});
+
+test("un scénario ne peut pas demander un outil qui n'existe pas", () => {
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_OUTILS.replace(
+          "    opening_message: Réémets la facture au 30 mars.",
+          "    opening_message: Réémets la facture au 30 mars.\n    tools: [inexistant]",
+        ),
+      ),
+    /no tool named "inexistant"/,
+  );
+});
+
+test("l'aller-retour conserve les outils et la sélection", () => {
+  const source = AVEC_OUTILS.replace(
+    "    opening_message: Réémets la facture au 30 mars.",
+    "    opening_message: Réémets la facture au 30 mars.\n    tools: none",
+  );
+  const { config } = readConfigFile(source);
+  const relu = readConfigFile(writeConfigFile(config));
+  assert.deepEqual(relu.config.tools, config.tools);
+  assert.deepEqual(relu.config.scenarios[0].tools, []);
+});

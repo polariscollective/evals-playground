@@ -12,7 +12,12 @@ import {
   importConfigFile,
   sourceCsvText,
 } from "@/lib/api";
-import { parseCsv, parseHistoryCell, toCsv } from "@/lib/csv";
+import {
+  parseCsv,
+  parseHistoryCell,
+  parseToolsCell,
+  toCsv,
+} from "@/lib/csv";
 import type {
   CostEstimate,
   EvalRunConfig,
@@ -21,9 +26,11 @@ import type {
   ProviderInfo,
   RubricLevel,
   SeededTurn,
+  ToolSpec,
 } from "@/lib/types";
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { NotesField } from "@/components/NotesField";
+import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PromptGuide } from "@/components/PromptGuide";
 import { RubricEditor } from "@/components/RubricEditor";
 
@@ -73,6 +80,10 @@ function EvaluateForm() {
   // L'historique du scénario saisi à la main. Le mode CSV a le sien, dans une
   // colonne : ce sont deux chemins vers le même champ du scénario.
   const [history, setHistory] = useState<SeededTurn[]>([]);
+  // Les outils du run, et ce que le scénario manuel en prend. Le mode CSV a
+  // sa colonne : deux chemins vers le même champ du scénario.
+  const [tools, setTools] = useState<ToolSpec[]>([]);
+  const [scenarioTools, setScenarioTools] = useState<string[] | null>(null);
 
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
@@ -87,6 +98,9 @@ function EvaluateForm() {
   // Facultative : la colonne portant l'historique posé, en JSON. La plupart
   // des lots n'en ont pas, et le sélecteur reste alors sur « — ».
   const [colHistory, setColHistory] = useState("");
+  // Facultative aussi : une cellule vide offre tous les outils du run, `none`
+  // n'en offre aucun, sinon les noms séparés par des virgules.
+  const [colTools, setColTools] = useState("");
 
   const [adversaryPrompt, setAdversaryPrompt] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -155,6 +169,7 @@ function EvaluateForm() {
         setTurns(config.turns);
         setRepetitions(config.repetitions);
         setAdversaryPrompt(config.adversary_prompt);
+        setTools(config.tools ?? []);
         setTargets(config.models.targets);
         setAdversary(config.models.adversary ?? "");
         setJudge(config.models.judge);
@@ -169,6 +184,7 @@ function EvaluateForm() {
           setSystemPrompt(first?.system_prompt ?? "");
           setOpeningMessage(first?.opening_message ?? "");
           setHistory(first?.history ?? []);
+          setScenarioTools(first?.tools ?? null);
           return;
         }
 
@@ -189,6 +205,7 @@ function EvaluateForm() {
           setColSystem(config.source.column_system_prompt);
           setColOpening(config.source.column_opening_message);
           setColHistory(config.source.column_history ?? "");
+          setColTools(config.source.column_tools ?? "");
           return;
         }
 
@@ -231,6 +248,7 @@ function EvaluateForm() {
           system_prompt: systemPrompt,
           opening_message: openingMessage,
           history,
+          tools: scenarioTools,
         },
       ];
     }
@@ -240,6 +258,7 @@ function EvaluateForm() {
       system_prompt: row[colSystem] ?? "",
       opening_message: row[colOpening] ?? "",
       history: colHistory ? parseHistoryCell(row[colHistory] ?? "") : [],
+      tools: colTools ? parseToolsCell(row[colTools] ?? "") : null,
     }));
   }, [
     source,
@@ -247,11 +266,13 @@ function EvaluateForm() {
     systemPrompt,
     openingMessage,
     history,
+    scenarioTools,
     csvRows,
     colTitle,
     colSystem,
     colOpening,
     colHistory,
+    colTools,
   ]);
 
   const turnsError =
@@ -313,6 +334,7 @@ function EvaluateForm() {
         judge,
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
+      tools,
       label: label.trim() || null,
       notes,
       // La provenance suit le run : sans le nom du fichier et les colonnes
@@ -324,6 +346,7 @@ function EvaluateForm() {
         column_system_prompt: source === "csv" ? colSystem : "",
         column_opening_message: source === "csv" ? colOpening : "",
         column_history: source === "csv" ? colHistory : "",
+        column_tools: source === "csv" ? colTools : "",
         skipped_rows: source === "csv" ? csvSkipped : 0,
       },
       temperature: {
@@ -343,6 +366,7 @@ function EvaluateForm() {
       adversary,
       judge,
       adversaryPrompt,
+      tools,
       temperatureMin,
       temperatureMax,
       varyTemperature,
@@ -352,6 +376,7 @@ function EvaluateForm() {
       colSystem,
       colOpening,
       colHistory,
+      colTools,
       csvSkipped,
     ],
   );
@@ -478,6 +503,7 @@ function EvaluateForm() {
         setSystemPrompt(config.scenarios[0].system_prompt);
         setOpeningMessage(config.scenarios[0].opening_message);
         setHistory(config.scenarios[0].history ?? []);
+        setScenarioTools(config.scenarios[0].tools ?? null);
       } else {
         // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
         // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
@@ -677,6 +703,19 @@ function EvaluateForm() {
         hint="Why are you running this? What do you expect?"
       />
 
+      {/* ---------------- Tools ---------------- */}
+      {/* Avant les scénarios, parce qu'un outil décrit le monde dans lequel ils
+          se déroulent : on pose le décor, puis ce qu'on y demande. */}
+      <section className="space-y-3">
+        <h2 className="font-medium">
+          Tools{" "}
+          <span className="text-sm font-normal text-zinc-500">
+            — what the evaluated model can decide to call. Optional.
+          </span>
+        </h2>
+        <ToolsEditor tools={tools} onChange={setTools} />
+      </section>
+
       {/* ---------------- Scenarios ---------------- */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
@@ -730,6 +769,11 @@ function EvaluateForm() {
               </span>
               <HistoryEditor history={history} onChange={setHistory} />
             </div>
+            <ScenarioTools
+              tools={tools}
+              selected={scenarioTools}
+              onChange={setScenarioTools}
+            />
             <label className="block space-y-1">
               <span className="text-sm font-medium">Opening message</span>
               <textarea
@@ -768,7 +812,7 @@ function EvaluateForm() {
                 <p className="text-sm text-zinc-600">
                   Tell us which column holds what:
                 </p>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-5 gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
                     {
@@ -787,6 +831,11 @@ function EvaluateForm() {
                       label: "Prior history (optional)",
                       value: colHistory,
                       set: setColHistory,
+                    },
+                    {
+                      label: "Tools (optional)",
+                      value: colTools,
+                      set: setColTools,
                     },
                   ].map((f) => (
                     <label key={f.label} className="block space-y-1">

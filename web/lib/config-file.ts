@@ -17,6 +17,8 @@ import type {
   ExpectedCsv,
   RubricLevel,
   SeededTurn,
+  ToolParamType,
+  ToolSpec,
 } from "./types";
 
 export interface ImportedConfig {
@@ -49,7 +51,25 @@ function scenarioOf(entry: unknown, position: number): EvalScenario {
     // absent du fichier écrit quand il l'est : un tableau vide partout ferait
     // du bruit dans un gabarit.
     history: readHistory(row.history, position),
+    // Trois états à préserver : absent offre tous les outils du run, une liste
+    // offre ceux-là, `none` n'en offre aucun. Les confondre ferait disparaître
+    // la comparaison « la même ligne, avec et sans outils ».
+    tools: readScenarioTools(row.tools, position),
   };
+}
+
+function readScenarioTools(value: unknown, position: number): string[] | null {
+  if (value === undefined || value === null) return null;
+  // `tools: none` est la façon lisible de dire « aucun » dans un fichier écrit
+  // à la main. YAML rendrait `~` ou `null`, qui veut dire « absent » — donc
+  // « tous » — et l'écart entre les deux est exactement ce qui compte ici.
+  if (value === "none") return [];
+  if (!Array.isArray(value)) {
+    throw new ConfigFileError(
+      `scenario ${position}: tools must be a list of names, or \`none\`.`,
+    );
+  }
+  return value.map((name) => asString(name));
 }
 
 function readHistory(value: unknown, position: number): SeededTurn[] {
@@ -118,6 +138,34 @@ function readScenarios(value: unknown): {
   throw new ConfigFileError("scenarios is missing.");
 }
 
+function readTools(value: unknown): ToolSpec[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new ConfigFileError("tools must be a list.");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new ConfigFileError(`tool ${index + 1} is not a mapping.`);
+    }
+    const tool = entry as Record<string, unknown>;
+    const params = tool.parameters;
+    return {
+      name: asString(tool.name),
+      description: asString(tool.description),
+      parameters: Array.isArray(params)
+        ? params.map((param) => {
+            const row = (param ?? {}) as Record<string, unknown>;
+            return {
+              name: asString(row.name),
+              type: (asString(row.type) || "string") as ToolParamType,
+              description: asString(row.description),
+              required: row.required === true,
+            };
+          })
+        : [],
+      result: asString(tool.result ?? tool.output),
+    };
+  });
+}
+
 function readRubric(value: unknown): RubricLevel[] {
   if (!Array.isArray(value)) throw new ConfigFileError("rubric is missing.");
   return value.map((entry, position) => {
@@ -169,6 +217,7 @@ export function readConfigFile(text: string): ImportedConfig {
       judge: asString(models.judge),
     },
     adversary_prompt: asString(file.adversary_prompt),
+    tools: readTools(file.tools),
     temperature: temperature
       ? {
           min: asNumber(temperature.min, 1),
@@ -236,6 +285,7 @@ export function writeConfigFile(config: EvalRunConfig): string {
     temperature: config.temperature ?? null,
     models: config.models,
     adversary_prompt: config.adversary_prompt,
+    ...(config.tools && config.tools.length > 0 ? { tools: config.tools } : {}),
     scenarios: config.scenarios.map((scenario) =>
       scenario.history && scenario.history.length > 0
         ? scenario
@@ -244,6 +294,9 @@ export function writeConfigFile(config: EvalRunConfig): string {
             title: scenario.title,
             system_prompt: scenario.system_prompt,
             opening_message: scenario.opening_message,
+            ...(scenario.tools == null
+              ? {}
+              : { tools: scenario.tools.length === 0 ? "none" : scenario.tools }),
           },
     ),
   };

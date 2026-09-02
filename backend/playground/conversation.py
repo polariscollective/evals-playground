@@ -9,15 +9,20 @@ L'adversaire voit la même conversation en miroir — ses propres messages en
 lui est propre. Ce prompt ne quitte jamais sa vue.
 """
 
-from dataclasses import dataclass
-from typing import Callable, Literal, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Callable, Literal, Sequence
 
+from playground.eval_schemas import ToolSpec
 from playground.shared_data import load
+
+from inspect_ai.tool import ToolCall, ToolDef, ToolParams
+from inspect_ai.util import JSONSchema
 
 from inspect_ai.model import (
     ChatMessage,
     ChatMessageAssistant,
     ChatMessageSystem,
+    ChatMessageTool,
     ChatMessageUser,
     GenerateConfig,
     Model,
@@ -34,10 +39,23 @@ class Cancelled(Exception):
 
 
 @dataclass
+class ToolCallRecord:
+    """Un appel d'outil décidé par le modèle évalué.
+
+    C'est souvent *le* comportement mesuré — « a-t-il appelé `delete_records` »
+    — donc il est enregistré tel quel, arguments compris, et non résumé.
+    """
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
 class Turn:
     """Un tour de la conversation, du point de vue du modèle évalué."""
 
-    role: Literal["user", "assistant"]
+    role: Literal["user", "assistant", "tool"]
     content: str
     stop_reason: str | None = None
     """Pourquoi le modèle s'est arrêté, quand c'est lui qui a parlé.
@@ -46,6 +64,15 @@ class Turn:
     réponse est alors vide sans que le modèle ait refusé quoi que ce soit.
     Confondre les deux fausserait la lecture du run.
     """
+
+    tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    """Les outils que ce tour d'assistant a décidé d'appeler."""
+
+    tool_call_id: str | None = None
+    """Sur un tour `tool` : l'appel auquel ce résultat répond."""
+
+    tool_name: str | None = None
+    """Sur un tour `tool` : l'outil qui a « répondu »."""
 
     seeded: bool = False
     """Écrit par l'expérimentateur, pas produit par un modèle.
@@ -67,8 +94,28 @@ def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]
     for turn in transcript:
         if turn.role == "user":
             messages.append(ChatMessageUser(content=turn.content))
+        elif turn.role == "tool":
+            # Le résultat doit revenir au modèle attaché à son appel : sans
+            # `tool_call_id`, les fournisseurs refusent le message ou le
+            # rattachent au mauvais appel quand il y en a plusieurs.
+            messages.append(
+                ChatMessageTool(
+                    content=turn.content,
+                    tool_call_id=turn.tool_call_id,
+                    function=turn.tool_name,
+                )
+            )
         else:
-            messages.append(ChatMessageAssistant(content=turn.content))
+            messages.append(
+                ChatMessageAssistant(
+                    content=turn.content,
+                    tool_calls=[
+                        ToolCall(id=call.id, function=call.name, arguments=call.arguments)
+                        for call in turn.tool_calls
+                    ]
+                    or None,
+                )
+            )
     return messages
 
 
@@ -124,6 +171,52 @@ def adversary_view(
     return messages
 
 
+MAX_TOOL_CALLS_PER_TURN = 5
+"""Combien de fois un modèle peut appeler avant qu'on lui rende la main.
+
+Un modèle qui appelle, lit, rappelle est le comportement réel d'un agent, et
+c'est ce qu'on veut pouvoir observer. Mais rien n'empêche une boucle : sans
+plafond, une seule case peut consommer le budget d'un run entier.
+"""
+
+
+def tool_definitions(tools: "Sequence[ToolSpec]") -> list[ToolDef]:
+    """Les outils du run, traduits pour inspect.
+
+    Rien n'est exécuté : la fonction rendue est un leurre, jamais appelée. C'est
+    `run_conversation` qui répond, avec le `result` écrit dans la définition —
+    la même réponse à chaque répétition, sans quoi deux cases de la matrice ne
+    mesureraient pas la même chose.
+
+    Le format d'un fournisseur à l'autre n'est pas notre affaire : inspect
+    traduit `ToolDef` vers celui de chacun.
+    """
+
+    async def jamais_appelee(**_: Any) -> str:  # pragma: no cover
+        raise AssertionError("les outils sont simulés, jamais exécutés")
+
+    definitions = []
+    for spec in tools:
+        params = ToolParams(
+            properties={
+                param.name: JSONSchema(
+                    type=param.type, description=param.description
+                )
+                for param in spec.parameters
+            },
+            required=[p.name for p in spec.parameters if p.required],
+        )
+        definitions.append(
+            ToolDef(
+                tool=jamais_appelee,
+                name=spec.name,
+                description=spec.description,
+                parameters=params,
+            )
+        )
+    return definitions
+
+
 async def run_conversation(
     *,
     system_prompt: str,
@@ -134,6 +227,7 @@ async def run_conversation(
     adversary_prompt: str = "",
     temperature: float | None = None,
     history: "Sequence[Turn] | None" = None,
+    tools: "Sequence[ToolSpec] | None" = None,
     stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
     """Déroule une conversation de `turns` tours et renvoie son transcript.
@@ -154,6 +248,10 @@ async def run_conversation(
             départ identique pour toutes les répétitions — dérouler le
             préambule en vrais tours n'aboutit pas au même endroit à chaque
             fois, et coûte des appels.
+        tools: Les outils offerts au modèle évalué pour ce scénario. Rien n'est
+            exécuté : chaque appel reçoit le `result` écrit dans sa définition,
+            le même à chaque répétition. Faire improviser la réponse
+            ramènerait dans chaque case la variance qu'un run cherche à isoler.
         temperature: Appliquée au seul modèle évalué. L'adversaire tourne au
             réglage par défaut de son fournisseur : le faire varier en même
             temps rendrait toute différence de comportement inattribuable.
@@ -189,24 +287,64 @@ async def run_conversation(
         else GenerateConfig()
     )
 
+    definitions = tool_definitions(tools or [])
+    results = {spec.name: spec.result for spec in (tools or [])}
+
     for turn_index in range(turns):
-        if stopped is not None and stopped():
-            raise Cancelled("stopped before the evaluated model's turn")
-        target_output = await target.generate(
-            input=target_view(system_prompt, transcript),
-            config=target_config,
-        )
-        transcript.append(
-            Turn(
-                role="assistant",
-                content=target_output.completion,
-                stop_reason=(
-                    target_output.choices[0].stop_reason
-                    if target_output.choices
-                    else None
-                ),
+        # Un tour, c'est une réponse du modèle évalué — pas un appel de modèle.
+        # Un modèle outillé peut appeler, lire le résultat et rappeler avant de
+        # répondre vraiment ; tout cela reste le même tour, plafonné.
+        for essai in range(MAX_TOOL_CALLS_PER_TURN + 1):
+            if stopped is not None and stopped():
+                raise Cancelled("stopped before the evaluated model's turn")
+            target_output = await target.generate(
+                input=target_view(system_prompt, transcript),
+                config=target_config,
+                tools=definitions,
             )
-        )
+            appels = target_output.message.tool_calls or []
+            transcript.append(
+                Turn(
+                    role="assistant",
+                    content=target_output.completion,
+                    stop_reason=(
+                        target_output.choices[0].stop_reason
+                        if target_output.choices
+                        else None
+                    ),
+                    tool_calls=[
+                        ToolCallRecord(
+                            id=call.id, name=call.function, arguments=call.arguments
+                        )
+                        for call in appels
+                    ],
+                )
+            )
+            if not appels:
+                break
+
+            # Chaque appel reçoit sa réponse, toujours la même. Un appel sans
+            # réponse laisserait le transcript invalide pour le tour suivant :
+            # les fournisseurs refusent un appel resté en suspens.
+            plafond = essai == MAX_TOOL_CALLS_PER_TURN
+            for call in appels:
+                transcript.append(
+                    Turn(
+                        role="tool",
+                        content=(
+                            results.get(
+                                call.function,
+                                f"Unknown tool {call.function!r}.",
+                            )
+                            if not plafond
+                            else "Tool call limit reached for this turn."
+                        ),
+                        tool_call_id=call.id,
+                        tool_name=call.function,
+                    )
+                )
+            if plafond:
+                break
 
         if turn_index == turns - 1:
             break
