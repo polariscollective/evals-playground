@@ -6,7 +6,15 @@
 // littéral reste donc écrit là-bas, et un test tient leur accord.
 
 /** Les répertoires ouverts, ancrés sur `/` ou la fin exacte. Sans l'ancrage, un
- *  simple préfixe laisserait passer un chemin voisin plus long. */
+ *  simple préfixe laisserait passer un chemin voisin plus long.
+ *
+ * Ouvrir un chemin ici ne le rend pas sûr : ça enlève seulement la porte. Ce
+ * qui reste derrière doit s'autoriser lui-même. `prompt` et `validate` ne
+ * lisent rien — un texte fixe, un verdict sur ce que l'appelant envoie déjà.
+ * `shared`, lui, lit la base : c'est `loadPublicRun` qui refuse un run non
+ * publié, avec le même message qu'un run inconnu, et c'est lui qui fait
+ * autorité — pas cette liste. Toute future entrée sous ce préfixe hérite de
+ * cette obligation, silencieusement : rien ici ne la rappelle par fichier. */
 export const OPEN_PREFIXES = [
   // La connexion elle-même, sans quoi personne ne peut entrer.
   "api/auth",
@@ -14,7 +22,7 @@ export const OPEN_PREFIXES = [
   // pas de session et ne saurait pas en obtenir une.
   "prompt",
   "validate",
-  // Un run publié, et plus tard ce que l'agent viendra y lire.
+  // Un run publié.
   "shared",
   "_next/static",
   "_next/image",

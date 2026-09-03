@@ -2,8 +2,10 @@
 //
 // Composant serveur, et un fichier à part : la page privée fait 1374 lignes et
 // une quinzaine de boutons qui écrivent. Y passer un `readOnly` ferait dépendre
-// la sûreté du fait que chaque bouton futur y pense. Ici, la lecture seule est
-// une propriété du fichier — aucun chemin d'écriture n'y existe.
+// la sûreté du fait que chaque bouton futur y pense. Ici, aucun chemin
+// d'écriture *à cette page* n'existe — l'unique écriture qui a lieu est la
+// purge des runs bloqués que `loadRun` déclenche pour tout appelant, publié ou
+// non ; voir la note sur `loadPublicRun`.
 //
 // La page refuse par elle-même quand le run n'est pas publié. Le proxy ne fait
 // qu'aiguiller ; il ne prouve rien, exactement comme pour `requireUser`.
@@ -12,6 +14,13 @@ import { NotFound, loadPublicRun } from "@/lib/runs";
 import { cellsOf } from "@/lib/matrix";
 import { renderMarkdown } from "@/lib/markdown";
 import { cellStyle, formatMean, formatValue, sortedRubric } from "@/lib/rubric";
+import { MessageView } from "@/components/MessageView";
+
+/** Une adresse qui n'a pas cette forme n'est un run pour personne : autant le
+ *  dire tout de suite plutôt que de laisser Postgres refuser un `uuid` mal
+ *  formé et remonter en 500. Une route publique reçoit des liens tronqués et
+ *  des robots, pas seulement des adresses copiées avec soin. */
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function SharedRun({
   params,
@@ -19,6 +28,7 @@ export default async function SharedRun({
   params: Promise<{ runId: string }>;
 }) {
   const { runId } = await params;
+  if (!RUN_ID.test(runId)) notFound();
 
   let detail;
   try {
@@ -164,12 +174,7 @@ export default async function SharedRun({
                 <p className="text-zinc-600">{sample.justification}</p>
               )}
               {(sample.messages ?? []).map((message, turn) => (
-                <p key={turn} className="whitespace-pre-wrap">
-                  <span className="mr-2 font-mono text-xs text-zinc-400">
-                    {message.role.toUpperCase()}
-                  </span>
-                  {message.content}
-                </p>
+                <MessageView key={turn} message={message} index={turn} />
               ))}
             </div>
           </details>

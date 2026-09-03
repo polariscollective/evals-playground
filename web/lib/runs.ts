@@ -16,6 +16,7 @@ import {
 import { addEstimates, estimateCost } from "./pricing";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import { withoutIdentity } from "./public-run";
+import type { PublicRunDetail } from "./public-run";
 import type {
   EvalRun,
   EvalRunConfig,
@@ -104,7 +105,7 @@ export async function loadRuns(): Promise<RunSummary[]> {
  */
 export async function loadRun(
   runId: string,
-  options: { withTranscripts?: boolean } = {},
+  options: { withTranscripts?: boolean; withSourceCsvFlag?: boolean } = {},
 ): Promise<RunDetail> {
   await failStaleRuns();
 
@@ -126,11 +127,18 @@ export async function loadRun(
     sample.usage ??= {};
   }
 
+  // `sourceCsv` ramène la colonne entière — plusieurs centaines de kilo-octets
+  // possibles — pour n'en garder qu'un booléen. `loadPublicRun` n'a personne à
+  // qui le montrer : le bouton de téléchargement n'existe que sur la page
+  // privée. Lui épargner cette lecture est le seul but de `withSourceCsvFlag`.
+  const sourceCsvAvailable =
+    options.withSourceCsvFlag === false ? false : Boolean(await sourceCsv(runId));
+
   return {
     run,
     samples,
     progress: progressOf(samples),
-    source_csv_available: Boolean(await sourceCsv(runId)),
+    source_csv_available: sourceCsvAvailable,
   };
 }
 
@@ -392,14 +400,23 @@ export async function extendRun(
  * message : de dehors, les deux doivent se ressembler, sinon l'adresse dit qui
  * existe.
  *
+ * La seule écriture qui a lieu ici passe par `loadRun`, qui purge les runs
+ * bloqués avant même de savoir si celui-ci est public — `failStaleRuns` tourne
+ * pour tout appelant, authentifié ou non. Sans danger : son prédicat ne dépend
+ * que de `status` et `updated_at`, jamais de ce que l'appelant fournit, et
+ * l'appel est throttlé à une fois toutes les 30 secondes par processus. Mais
+ * ce n'est pas rien non plus — le nommer ici évite qu'un futur appel ajouté
+ * dans `loadRun` s'y glisse sans que quiconque se demande s'il est encore
+ * acceptable devant un appelant anonyme.
+ *
  * Throws:
  *   NotFound: si aucun run ne porte cet identifiant, ou s'il n'est pas publié.
  */
 export async function loadPublicRun(
   runId: string,
   options: { withTranscripts?: boolean } = {},
-): Promise<RunDetail> {
-  const detail = await loadRun(runId, options);
+): Promise<PublicRunDetail> {
+  const detail = await loadRun(runId, { ...options, withSourceCsvFlag: false });
   if (!detail.run.is_public) throw new NotFound(`Unknown run: ${runId}`);
   return withoutIdentity(detail);
 }
