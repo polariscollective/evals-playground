@@ -15,6 +15,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost } from "./pricing";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
+import { withoutIdentity } from "./public-run";
 import type {
   EvalRun,
   EvalRunConfig,
@@ -378,4 +379,27 @@ export async function extendRun(
     { id: `eq.${runId}` },
   );
   return cases.length;
+}
+
+/** Un run publié, tel qu'un inconnu peut le lire.
+ *
+ * Un run inconnu et un run non publié lèvent la même erreur, avec le même
+ * message : de dehors, les deux doivent se ressembler, sinon l'adresse dit qui
+ * existe.
+ *
+ * Throws:
+ *   NotFound: si aucun run ne porte cet identifiant, ou s'il n'est pas publié.
+ */
+export async function loadPublicRun(
+  runId: string,
+  options: { withTranscripts?: boolean } = {},
+): Promise<RunDetail> {
+  const detail = await loadRun(runId, options);
+  if (!detail.run.is_public) throw new NotFound(`Unknown run: ${runId}`);
+  return withoutIdentity(detail);
+}
+
+/** Publier ou dépublier. Le seul endroit qui écrit cette colonne. */
+export async function setPublic(runId: string, isPublic: boolean): Promise<void> {
+  await update(RUNS, { is_public: isPublic }, { id: `eq.${runId}` });
 }
