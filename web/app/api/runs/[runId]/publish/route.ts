@@ -18,8 +18,10 @@ export async function POST(
   if ("response" in user) return user.response;
 
   const { runId } = await params;
-  const body = (await request.json().catch(() => ({}))) as { public?: unknown };
-  if (typeof body.public !== "boolean") {
+  const body = (await request.json().catch(() => null)) as {
+    public?: unknown;
+  } | null;
+  if (typeof body?.public !== "boolean") {
     return NextResponse.json(
       { error: "public must be true or false" },
       { status: 422 },
