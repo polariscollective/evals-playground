@@ -202,6 +202,9 @@ export interface EvalRun {
   error: string | null;
   config: EvalRunConfig;
   notes: string;
+  /** Publié : `/shared/<id>` répond hors session. Écrit par la seule route
+   *  `/api/runs/<id>/publish`. */
+  is_public: boolean;
   total_samples: number;
   usage: Record<string, ModelUsage>;
   cost_usd: number | null;
