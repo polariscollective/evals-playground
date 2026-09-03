@@ -106,6 +106,13 @@ export const saveNotes = (runId: string, notes: string) =>
     body: JSON.stringify({ notes }),
   });
 
+/** Publie un run, ou le dépublie. Rend l'adresse publique, ou null. */
+export const publishRun = (runId: string, isPublic: boolean) =>
+  request<{ ok: true; url: string | null }>(`/api/runs/${runId}/publish`, {
+    method: "POST",
+    body: JSON.stringify({ public: isPublic }),
+  });
+
 /** Estime un run. Sans `responseTokens`, chaque modèle prend sa longueur mesurée. */
 export const estimateRun = (
   config: EvalRunConfig,
