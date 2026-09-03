@@ -202,6 +202,9 @@ export interface EvalRun {
   error: string | null;
   config: EvalRunConfig;
   notes: string;
+  /** Écrite après coup, distincte de `notes` qui est le préambule. Jamais
+   *  portée par `config` : une duplication ne la reprend pas. */
+  analysis: string;
   /** Publié : `/shared/<id>` répond hors session. Écrit par la seule route
    *  `/api/runs/<id>/publish`. */
   is_public: boolean;

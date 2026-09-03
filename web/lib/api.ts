@@ -106,6 +106,13 @@ export const saveNotes = (runId: string, notes: string) =>
     body: JSON.stringify({ notes }),
   });
 
+/** Écrite après coup, distincte des notes qui sont le préambule. */
+export const saveAnalysis = (runId: string, analysis: string) =>
+  request<{ ok: true }>(`/api/runs/${runId}/analysis`, {
+    method: "PUT",
+    body: JSON.stringify({ analysis }),
+  });
+
 /** Publie un run, ou le dépublie. Rend l'adresse publique, ou null. */
 export const publishRun = (runId: string, isPublic: boolean) =>
   request<{ ok: true; url: string | null }>(`/api/runs/${runId}/publish`, {

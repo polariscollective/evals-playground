@@ -227,6 +227,11 @@ export async function saveNotes(runId: string, notes: string): Promise<void> {
   await update(RUNS, { notes }, { id: `eq.${runId}` });
 }
 
+/** Écrite après coup, jamais portée par `config` : voir `EvalRun.analysis`. */
+export async function saveAnalysis(runId: string, analysis: string): Promise<void> {
+  await update(RUNS, { analysis }, { id: `eq.${runId}` });
+}
+
 export async function recordStart(
   runId: string,
   started: { execution: string; origin: string },

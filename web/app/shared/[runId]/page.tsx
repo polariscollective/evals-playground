@@ -118,6 +118,17 @@ export default async function SharedRun({
         </section>
       )}
 
+      {run.analysis.trim() !== "" && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-medium">Run Analysis</h2>
+          <div
+            className="prose-sm space-y-2"
+            // Sûr : `renderMarkdown` échappe tout le HTML d'entrée.
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(run.analysis) }}
+          />
+        </section>
+      )}
+
       <section className="space-y-2">
         <h2 className="text-lg font-medium">Scenarios</h2>
         {scenarios.map((scenario, index) => (

@@ -10,6 +10,7 @@ import {
   matrixCsvText,
   publishRun,
   rejudgeRun,
+  saveAnalysis,
   retryFailedCells,
   saveNotes,
   sourceCsvUrl,
@@ -783,6 +784,7 @@ export default function EvalRunPage({
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [analysis, setAnalysis] = useState("");
   const [rejudging, setRejudging] = useState(false);
   const [extending, setExtending] = useState(false);
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
@@ -820,6 +822,9 @@ export default function EvalRunPage({
         // Amorcé une seule fois : le rafraîchissement d'un run en cours ne doit
         // pas écraser une note en train d'être écrite.
         setNotes((current) => (current === "" ? loaded.run.notes : current));
+        setAnalysis((current) =>
+          current === "" ? loaded.run.analysis : current,
+        );
       } catch (e) {
         setError((e as Error).message);
       }
@@ -1427,6 +1432,18 @@ export default function EvalRunPage({
         rows={8}
         onSave={async (next) => {
           await saveNotes(run.id, next);
+        }}
+      />
+
+      <NotesField
+        key={run.id}
+        label="Run Analysis"
+        value={analysis}
+        onChange={setAnalysis}
+        rows={8}
+        hint="Written after the fact — what the results actually show."
+        onSave={async (next) => {
+          await saveAnalysis(run.id, next);
         }}
       />
       {openScenario !== null && (

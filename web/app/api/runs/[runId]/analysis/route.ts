@@ -1,0 +1,35 @@
+import { NextResponse } from "next/server";
+import { requireUser } from "@/auth";
+import { NotFound, loadRun, saveAnalysis } from "@/lib/runs";
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ runId: string }> },
+) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
+  const { runId } = await params;
+  const body = (await request.json().catch(() => null)) as
+    | { analysis?: unknown }
+    | null;
+  if (typeof body?.analysis !== "string") {
+    return NextResponse.json(
+      { error: "analysis must be a string" },
+      { status: 422 },
+    );
+  }
+  try {
+    // Vérifier l'existence d'abord : un PATCH PostgREST sur un identifiant
+    // inconnu ne touche aucune ligne et répond 204, ce qui se lirait comme un
+    // enregistrement réussi.
+    await loadRun(runId);
+  } catch (error) {
+    if (error instanceof NotFound) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+    throw error;
+  }
+  await saveAnalysis(runId, body.analysis);
+  return NextResponse.json({ ok: true });
+}

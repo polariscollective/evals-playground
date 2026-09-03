@@ -15,6 +15,7 @@ export function NotesField({
   onSave,
   hint = "What are you testing, what did you notice?",
   rows = 4,
+  label = "Notes",
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -23,6 +24,10 @@ export function NotesField({
   /** Hauteur de la zone d'édition. Plus grande sur la page d'un run, où l'on
       écrit ses conclusions, que sur le formulaire, où l'on note une intention. */
   rows?: number;
+  /** Le titre affiché. Le composant sert aussi à l'analyse d'un run — même
+   *  lecture markdown, même geste d'édition, seul le titre distingue le
+   *  préambule de l'analyse écrite après coup. */
+  label?: string;
 }) {
   // On ouvre en édition quand il n'y a rien à lire : afficher un bloc vide
   // avec un bouton « Edit » demanderait un clic pour rien.
@@ -46,7 +51,7 @@ export function NotesField({
   return (
     <section className="rounded border border-zinc-300 p-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Notes</h2>
+        <h2 className="text-sm font-medium">{label}</h2>
         {editing ? (
           <button
             type="button"
