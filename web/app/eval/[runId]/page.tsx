@@ -1375,7 +1375,10 @@ export default function EvalRunPage({
       <NotesField
         // La clé force un remontage quand le run change : sans elle, l'état
         // local du composant survivrait à la navigation d'un run à l'autre.
-        key={run.id}
+        // Distincte de celle du champ Run Analysis, juste en dessous — deux
+        // instances du même composant, à la même profondeur, ne peuvent pas
+        // partager une clé sans que React confonde leur état local.
+        key={`${run.id}-notes`}
         value={notes}
         onChange={setNotes}
         rows={8}
@@ -1385,7 +1388,7 @@ export default function EvalRunPage({
       />
 
       <NotesField
-        key={run.id}
+        key={`${run.id}-analysis`}
         label="Run Analysis"
         value={analysis}
         onChange={setAnalysis}
