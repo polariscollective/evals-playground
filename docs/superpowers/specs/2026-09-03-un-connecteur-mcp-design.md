@@ -22,7 +22,7 @@ avec une vraie identité, pas juste des routes ouvertes comme `/prompt`.
 
 ```
 claude.ai  →  /mcp                                    (le protocole MCP)
-           →  /mcp/authorize, /mcp/token, /mcp/register, /.well-known/…
+           →  /mcp/authorize, /mcp/token, /.well-known/…
                                                         (OAuth pour s'y connecter)
 ```
 
@@ -30,51 +30,66 @@ claude.ai  →  /mcp                                    (le protocole MCP)
 machines sans cookie de session, qui s'autorisent elles-mêmes plutôt que de
 compter sur le proxy.
 
-### L'identité, un proxy devant Google
+### L'identité : un serveur d'autorisation qui ne vérifie l'identité de personne
 
 MCP demande un vrai flux OAuth pour qu'un connecteur distant se « connecte » —
-pas un jeton collé à la main. On ne réinvente pas de vérification d'identité :
-`/mcp/authorize` renvoie directement vers Google, avec les mêmes
-`AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` et le même `isAllowedEmail` qu'utilise
-déjà `auth.ts`. Une fois l'email revenu et vérifié, `/mcp/token` émet un
-jeton MCP propre, sans rapport avec le cookie de session NextAuth.
+pas un jeton collé à la main, et il en va d'une vraie différence : c'est ce
+flux qui donne une identité *par personne*, quand un jeton partagé (l'option
+« request headers » de claude.ai) ne distinguerait plus qui, dans l'équipe,
+fait la demande. On ne réinvente pas de vérification d'identité pour autant :
+`/mcp/authorize` renvoie vers l'écran de connexion déjà en place — la session
+NextAuth existante, donc `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` et
+`isAllowedEmail` tels qu'`auth.ts` les applique déjà. Une fois la session
+là, `/mcp/token` émet un jeton MCP propre, sans rapport avec le cookie de
+session NextAuth.
+
+Pas d'enregistrement dynamique de client (DCR) : `client_id` est fixe —
+`MCP_CLIENT_ID` — saisi à la main à l'ajout du connecteur dans claude.ai
+(« Use your own OAuth client »), ce que permet un connecteur qui n'est jamais
+distribué à d'autres organisations. Une table de clients devient donc inutile.
 
 Deux tables neuves, dans `polaris-supabase` sous `evals/supabase/migrations/`,
 en PR séparée et fusionnée d'abord — comme pour `is_public`, rien ici ne tourne
 sans elles :
 
 ```sql
-create table public.mcp_clients (
-  id text primary key,              -- délivré à l'enregistrement dynamique
-  redirect_uris text[] not null,
+create table public.mcp_auth_codes (
+  code_hash text primary key,
+  user_email text not null,
+  redirect_uri text not null,
+  code_challenge text not null,
+  expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
 
-create table public.mcp_grants (
+create table public.mcp_tokens (
   access_token_hash text primary key,
-  refresh_token_hash text not null,
-  client_id text not null references public.mcp_clients(id),
+  refresh_token_hash text not null unique,
   user_email text not null,
-  expires_at timestamptz not null,
+  access_expires_at timestamptz not null,
+  refresh_expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
 ```
 
-Chaque appel d'outil résout son jeton en `email` via `requireMcpUser`,
-parallèle à `requireUser` : un jeton inconnu ou expiré rend l'erreur MCP
-attendue, un jeton valide retombe sur le même `email` que produirait une
-session normale, et donc sur les mêmes fonctions de `lib/runs.ts` que le reste
-de l'application — aucun code de lecture n'est dupliqué pour l'agent.
+Chaque appel d'outil résout son jeton en `email` : un jeton inconnu ou expiré
+rend l'erreur MCP attendue, un jeton valide retombe sur le même `email` que
+produirait une session normale, et donc sur les mêmes fonctions de
+`lib/runs.ts` que le reste de l'application — aucun code de lecture n'est
+dupliqué pour l'agent.
 
 Une petite page de réglages liste les autorisations actives par email et
-permet de révoquer une ligne de `mcp_grants` : couper l'accès ne doit pas
+permet de révoquer une ligne de `mcp_tokens` : couper l'accès ne doit pas
 dépendre de claude.ai de l'autre côté.
 
-Le protocole lui-même — transport HTTP de MCP, enregistrement dynamique de
-client, PKCE — s'appuiera sur `@modelcontextprotocol/sdk`, qui documente ce
-patron de serveur d'autorisation « proxy devant un fournisseur existant » :
-c'est le seul morceau du projet qui est protocolaire plutôt que produit, et
-c'est aussi le plus gros.
+Le transport HTTP de MCP et la vérification du jeton porteur (le 401 avec
+`WWW-Authenticate`, les métadonnées de ressource protégée) s'appuient sur
+`mcp-handler`. Ce qu'aucun paquet maintenu ne fournit, en revanche, c'est le
+serveur d'autorisation lui-même — celui qui *émet* les codes et les jetons :
+le SDK MCP l'a scindé fin juillet, et la seule implémentation qui en tenait
+lieu ne vit plus que dans un paquet gelé, avec l'avertissement de ne pas s'en
+servir en production. `/mcp/authorize` et `/mcp/token` sont donc écrits ici,
+protocolaires plutôt que produit, et c'est le plus gros morceau du projet.
 
 ### Les cinq outils
 
