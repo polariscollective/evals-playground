@@ -13,6 +13,26 @@ import {
 import { toolsFor } from "./tools";
 import type { CostEstimate, EvalRunConfig, ModelCost } from "./types";
 
+// Un tarif unique par modèle, sans palier — et ce n'est vrai qu'à peu près.
+//
+// Grok double les siens au-delà de 200 000 jetons d'entrée. Tant que les runs
+// tenaient en dix tours, l'écart n'existait pas, et le plan de la carte
+// multi-modèles l'écarte en une phrase : « un run de ce produit n'en approche
+// pas — dix tours d'une conversation font quelques milliers de jetons ». Le
+// plafond est passé à cent, et l'argument est tombé avec : chaque tour renvoie
+// tout l'historique, donc avec les réponses les plus longues du catalogue
+// (5 954 jetons mesurés) une requête des derniers tours passe le seuil.
+//
+// Ce qu'on sous-estime alors est un run Grok très long, et sans le dire. Le
+// jumeau Python fait le même calcul plat sur les jetons réellement consommés
+// (`backend/playground/pricing.py`) : le coût *constaté* dérive donc pareil,
+// pas seulement le devis.
+//
+// Rien n'est fait, et c'est délibéré : personne ne mène un run pareil
+// aujourd'hui. Le jour où quelqu'un en mène un, il y a deux façons de le
+// traiter — modéliser le palier des deux côtés, ou avertir dans le panneau
+// quand un run Grok le franchit. D'ici là, cette note est là pour que le trou
+// ne se redécouvre pas par une facture.
 const PRICES = S.prices as Record<
   string,
   { input_per_mtok: number; output_per_mtok: number }
