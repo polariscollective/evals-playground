@@ -15,7 +15,7 @@ import type {
 } from "./types";
 
 const MIN_TURNS = 1;
-const MAX_TURNS = 10;
+const MAX_TURNS = 100;
 
 function isFilled(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";

@@ -71,10 +71,10 @@ scenarios:
 
 test("un document qui ne charge pas est refusé, et la phrase dit pourquoi", () => {
   const { status, message } = verdictOf(
-    AVEC_SCENARIO.replace("turns: 4", "turns: 40"),
+    AVEC_SCENARIO.replace("turns: 4", "turns: 400"),
   );
   assert.equal(status, 422);
-  assert.equal(message, "turns must be between 1 and 10");
+  assert.equal(message, "turns must be between 1 and 100");
   assert.doesNotMatch(message, /^(OK|INCOMPLETE)/);
 });
 

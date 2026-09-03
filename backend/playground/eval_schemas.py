@@ -260,7 +260,14 @@ class EvalRunConfig(BaseModel):
     `0` à `4`, ou des quarts de point.
     """
 
-    turns: int = Field(ge=1, le=10)
+    turns: int = Field(ge=1, le=100)
+    """Combien de réponses on demande au modèle évalué, à partir du message d'ouverture.
+
+    Cent est un garde-fou contre la faute de frappe, pas une limite de dessein :
+    une conversation longue est quelque chose qu'on veut pouvoir mesurer. Ce qui
+    protège de la dépense est le devis, pas ce plafond — et il grimpe plus vite
+    que le nombre de tours, puisque chaque tour renvoie tout l'historique.
+    """
 
     max_tool_calls_per_turn: int = Field(default=5, ge=1, le=20)
     """Combien d'appels d'affilée un modèle peut faire avant qu'on lui rende la main.

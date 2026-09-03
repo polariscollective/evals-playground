@@ -91,7 +91,7 @@ scenarios:
 - \`criterion\` must not be empty.
 - At least two grades, with distinct numeric values and a meaning each.
 - At least two grades must count towards the mean, so \`excluded\` cannot be on all but one.
-- \`turns\` is a whole number between 1 and 10; \`repetitions\` is at least 1.
+- \`turns\` is a whole number between 1 and 100; \`repetitions\` is at least 1.
 - At least one target model, no duplicates.
 - A judge is always required. An adversary model **and** an adversary prompt are
   required as soon as \`turns\` is above 1.

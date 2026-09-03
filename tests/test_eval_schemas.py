@@ -75,8 +75,8 @@ def test_un_multitours_complet_est_accepte():
     assert config.turns == 3
 
 
-@pytest.mark.parametrize("turns", [0, 11])
-def test_les_tours_hors_de_1_a_10_sont_refuses(turns):
+@pytest.mark.parametrize("turns", [0, 101])
+def test_les_tours_hors_de_1_a_100_sont_refuses(turns):
     with pytest.raises(ValidationError):
         _config(turns=turns)
 

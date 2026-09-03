@@ -39,7 +39,7 @@ import { RubricEditor } from "@/components/RubricEditor";
 import { ScenarioList } from "@/components/ScenarioList";
 
 const MIN_TURNS = 1;
-const MAX_TURNS = 10;
+const MAX_TURNS = 100;
 const MIN_REPETITIONS = 1;
 const MIN_TEMPERATURE = 0;
 const MAX_TEMPERATURE = 2;
