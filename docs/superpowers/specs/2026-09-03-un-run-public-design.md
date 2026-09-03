@@ -69,11 +69,17 @@ export const OPEN_PREFIXES = [
 export function proxyMatcher(): string;
 ```
 
-`proxy.ts` n'écrit plus son expression régulière à la main ; il l'appelle. Un
-chemin ouvert ajouté sans exclusion devient un test rouge au lieu d'un silence.
-L'ancrage de chaque entrée ne bouge pas, et c'est lui que le test tient :
-`/validate` et `/shared/<id>` ouverts, `/validatex`, `/prompts-secrets` et
-`/sharedx` fermés.
+`proxy.ts` ne peut pas *appeler* cette fonction : Next exige que `matcher` soit
+une constante analysable à la compilation, et « ignore » silencieusement toute
+valeur dynamique — le proxy tournerait alors sur tous les chemins, ce qui est
+la panne muette qu'on cherche justement à supprimer. Le littéral reste donc
+écrit à la main dans `proxy.ts`.
+
+Ce que le test tient, c'est leur **accord** : il lit le littéral dans le fichier
+et le compare à ce que rend `proxyMatcher()`. Un chemin ouvert ajouté à la liste
+sans être reporté dans le proxy devient rouge, et le comportement du motif se
+teste à côté — `/validate` et `/shared/<id>` ouverts, `/validatex`,
+`/prompts-secrets` et `/sharedx` fermés.
 
 ### La page publique n'est pas la page privée avec un drapeau
 
