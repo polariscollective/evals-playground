@@ -8,6 +8,7 @@ import {
   extendRun,
   getRun,
   matrixCsvText,
+  publishRun,
   rejudgeRun,
   retryFailedCells,
   saveNotes,
@@ -803,6 +804,10 @@ export default function EvalRunPage({
   const [open, setOpen] = useState<{ scenario: number; target: string } | null>(
     null,
   );
+  // L'adresse publique quand le run est publié, `null` sinon.
+  const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
 
   const load = useCallback(
     async (withTranscripts: boolean) => {
@@ -811,6 +816,7 @@ export default function EvalRunPage({
         // Même raison que sur la liste : un run terminé qu'on garde ouvert ne
         // doit pas faire clignoter sa matrice.
         setDetail((current) => keepIfUnchanged(current, loaded));
+        setPublicUrl(loaded.run.is_public ? `/shared/${loaded.run.id}` : null);
         // Amorcé une seule fois : le rafraîchissement d'un run en cours ne doit
         // pas écraser une note en train d'être écrite.
         setNotes((current) => (current === "" ? loaded.run.notes : current));
@@ -891,6 +897,19 @@ export default function EvalRunPage({
       await load(transcripts);
     } catch (e) {
       setError((e as Error).message);
+    }
+  };
+
+  const publish = async (isPublic: boolean) => {
+    setPublishing(true);
+    try {
+      const { url } = await publishRun(run.id, isPublic);
+      setPublicUrl(url);
+      setConfirmingPublish(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPublishing(false);
     }
   };
   const targets = run.config.models.targets;
@@ -1001,6 +1020,20 @@ export default function EvalRunPage({
                 >
                   Duplicate
                 </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    close();
+                    if (publicUrl) publish(false);
+                    else setConfirmingPublish(true);
+                  }}
+                  hint={
+                    publicUrl
+                      ? "Kills the link"
+                      : "A link anyone can open, read only"
+                  }
+                >
+                  {publicUrl ? "Unpublish" : "Publish…"}
+                </MenuItem>
                 {!running && (
                   <MenuItem
                     onClick={() => {
@@ -1072,6 +1105,13 @@ export default function EvalRunPage({
           </Menu>
         </div>
       </div>
+
+      {publicUrl && (
+        <p className="text-sm text-zinc-500">
+          Published — anyone with this link can read it:{" "}
+          <code className="rounded bg-zinc-100 px-1">{publicUrl}</code>
+        </p>
+      )}
 
       {running && (
         <p className="rounded border border-zinc-300 p-3 text-sm">
@@ -1180,6 +1220,42 @@ export default function EvalRunPage({
             },
           ]}
         />
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmingPublish}
+        title="Publish this run?"
+        confirmLabel="Publish"
+        busy={publishing}
+        onConfirm={() => publish(true)}
+        onCancel={() => setConfirmingPublish(false)}
+      >
+        <p className="text-sm">
+          Anyone with the link will be able to read it, without signing in. The
+          link is not listed anywhere, and unpublishing kills it.
+        </p>
+        <ConfirmRows
+          rows={[
+            {
+              label: "Results",
+              count: detail.samples.length,
+              fate: "scores, judge justifications and full conversations",
+            },
+            {
+              label: "Scenarios",
+              count: run.config.scenarios.length,
+              fate: "titles, system prompts, opening messages and their notes",
+            },
+            {
+              label: "Your notes",
+              count: run.notes.trim() === "" ? 0 : 1,
+              fate: "published with the rest",
+            },
+          ]}
+        />
+        <p className="text-sm text-zinc-500">
+          Your email address is the only thing kept back.
+        </p>
       </ConfirmDialog>
 
       {extending && !running && (
