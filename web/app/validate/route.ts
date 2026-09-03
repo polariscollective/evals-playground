@@ -10,6 +10,7 @@
 // Ce qu'elle change, c'est où se paie une erreur. Sans elle : l'agent rend un
 // document, on le colle, il est refusé, on retourne le voir. Avec elle, la
 // correction se fait dans sa boucle à lui, et ce qu'on reçoit se charge.
+import { costSentence } from "@/lib/pricing";
 import { verdictOf } from "@/lib/verdict";
 
 /** Le verdict lui-même vit dans `lib/`, où les tests le voient. Ici, le
@@ -30,7 +31,7 @@ function say(status: number, message: string): Response {
 }
 
 function verdict(text: string): Response {
-  const { status, message } = verdictOf(text);
+  const { status, message } = verdictOf(text, costSentence);
   return say(status, message);
 }
 

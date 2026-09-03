@@ -26,6 +26,14 @@ export interface Verdict {
   message: string;
 }
 
+/** De quoi chiffrer le run, passé de l'extérieur.
+ *
+ * `estimateCost` remonte jusqu'à `shared/pricing.json` par un alias de chemin
+ * que `node --test` ne sait pas résoudre : l'importer ici rendrait ce module
+ * intestable, c'est-à-dire exactement ce qu'on vient de lui éviter. La route
+ * passe `costSentence`, les tests passent ce qu'ils veulent. */
+export type Pricer = (config: EvalRunConfig) => string | null;
+
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
 }
@@ -57,7 +65,7 @@ function csvGap(columns: string[]): string {
 }
 
 /** Le verdict, dans les mots qui servent à corriger. */
-export function verdictOf(text: string): Verdict {
+export function verdictOf(text: string, priceOf?: Pricer): Verdict {
   if (text.trim() === "") {
     return { status: 400, message: "Nothing to validate. Send the YAML document." };
   }
@@ -78,9 +86,15 @@ export function verdictOf(text: string): Verdict {
           ])} ` + shape(config),
       };
     }
+    // Le prix ne va qu'au document complet : un document qui annonce un CSV
+    // n'a aucun scénario, et le coût est précisément ce qui dépend de leur
+    // nombre — le seul chiffre que la forme du run ne porte pas.
+    const price = priceOf?.(config) ?? null;
     return {
       status: 200,
-      message: `OK — ${plural(config.scenarios.length, "scenario")}, ${shape(config)}`,
+      message:
+        `OK — ${plural(config.scenarios.length, "scenario")}, ${shape(config)}` +
+        (price ? ` ${price}` : ""),
     };
   } catch (error) {
     if (error instanceof ConfigFileError) {

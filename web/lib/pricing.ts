@@ -275,6 +275,43 @@ export function estimateCost(
   };
 }
 
+/** Combien coûterait ce run, en une phrase — pour `/validate`, dont le lecteur
+ *  est un agent qui n'a pas d'écran.
+ *
+ * Deux chiffres plutôt qu'un, parce que le prompt demande à l'agent d'envoyer un
+ * document court : deux ou trois scénarios, pas le lot entier. Le total porte
+ * donc sur ce qu'il a envoyé, et le prix par scénario est ce qui se multiplie.
+ * Ne rendre que le total inviterait à prendre une sonde de trois lignes pour le
+ * devis d'un lot de quarante.
+ *
+ * La fourchette n'est pas une précaution de langage : entre une réponse courte
+ * et une longue, le même run va du simple au décuple, et c'est la longueur des
+ * réponses qu'on ne saura jamais d'avance. */
+export function costSentence(config: EvalRunConfig): string | null {
+  if (config.scenarios.length === 0) return null;
+
+  const estimate = estimateCost(config, null);
+  const each = estimate.usd / config.scenarios.length;
+
+  return (
+    `About ${estimate.model_calls} model calls, roughly ${money(estimate.usd)}` +
+    ` for the document as sent — ${money(each)} per scenario, so multiply by the` +
+    ` size of the real batch. Between ${money(estimate.min_usd)} and` +
+    ` ${money(estimate.max_usd)} depending on how long the answers run.` +
+    (estimate.unpriced_models.length
+      ? ` No price on file for ${estimate.unpriced_models.join(", ")}:` +
+        " the real cost is higher."
+      : "")
+  );
+}
+
+/** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
+ *  centime — un prix par scénario tombe souvent là, et « $0.00 » n'apprend
+ *  rien. */
+function money(usd: number): string {
+  return `$${usd >= 0.01 ? usd.toFixed(2) : usd.toFixed(4)}`;
+}
+
 /** Deux devis mis bout à bout, pour un run qu'on a complété en plusieurs fois.
  *
  * Sans ça, compléter un run laisserait face à face un coût réel qui a grandi et

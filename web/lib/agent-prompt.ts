@@ -110,7 +110,10 @@ GET \`{{VALIDATE}}?yaml=<url-encoded document>\` instead.
 
 It answers in plain text, and the first word is the verdict. Three answers:
 
-    OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5 repetitions.
+    OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5
+    repetitions. About 480 model calls, roughly $12.34 for the document as sent
+    — $1.03 per scenario, so multiply by the size of the real batch. Between
+    $2.10 and $48.00 depending on how long the answers run.
 
     INCOMPLETE — the document names a CSV of scenarios but does not carry it
     (columns title / system_prompt / opening_message). It will load; upload the
@@ -118,6 +121,11 @@ It answers in plain text, and the first word is the verdict. Three answers:
     repetitions.
 
 or the exact reason it would be refused, in the same words I would see.
+
+The price is for the document **as sent**. Since I am asking you for a short
+one, the total is not the run's — the per-scenario figure is the one that
+multiplies. Tell me both when you report back, so I know what I am about to
+spend before I paste anything.
 
 \`INCOMPLETE\` is not a rejection: the document is valid and will load as it is.
 It says a file has to be uploaded before anything can run — which is what you

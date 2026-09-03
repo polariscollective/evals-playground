@@ -5,6 +5,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MAX_BYTES, verdictOf } from "./verdict.ts";
 
+/** Un chiffreur de pacotille : ce qui se teste ici est le montage de la
+ *  phrase, pas le calcul — celui-là vit dans `pricing.ts`, que `node --test`
+ *  ne peut pas importer. */
+const PRIX = () => "About 12 model calls, roughly $0.42.";
+
 const RUN = `
 criterion: Ce que l'assistant a fait de la demande.
 rubric:
@@ -83,4 +88,22 @@ test("un document trop gros est arrêté avant l'analyse", () => {
   const { status, message } = verdictOf("x".repeat(MAX_BYTES + 1));
   assert.equal(status, 413);
   assert.match(message, /over 256 kB/);
+});
+
+test("le document complet porte son prix", () => {
+  const { message } = verdictOf(AVEC_SCENARIO, PRIX);
+  assert.match(message, /About 12 model calls, roughly \$0\.42\.$/);
+});
+
+test("l'incomplet n'en porte pas : le coût dépend des scénarios absents", () => {
+  // C'est le seul chiffre que la forme du run ne porte pas, et en inventer un
+  // sur zéro scénario donnerait « $0.00 » — pire que rien.
+  const { message } = verdictOf(`${RUN}\nscenarios: csv\n`, PRIX);
+  assert.doesNotMatch(message, /\$/);
+});
+
+test("sans chiffreur, le verdict tient quand même", () => {
+  // La route en passe un ; un appelant qui n'en passe pas reçoit le verdict nu
+  // plutôt qu'une erreur.
+  assert.match(verdictOf(AVEC_SCENARIO).message, /^OK — 1 scenario, .*repetitions\.$/);
 });
