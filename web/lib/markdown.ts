@@ -48,48 +48,90 @@ function inline(text: string): string {
   );
 }
 
-/** Markdown vers HTML. L'entrée est traitée comme du texte, jamais comme du HTML. */
+const HEADING = /^(#{1,4})\s+(.*)$/;
+const BULLET = /^\s*[-*]\s+/;
+const NUMBERED = /^\s*\d+[.)]\s+/;
+/** Le chevron est déjà passé par l'échappement quand on le cherche. */
+const QUOTE = /^\s*&gt;\s?/;
+
+/** Les lignes consécutives, à partir de `from`, qui répondent à `pattern`. */
+function run(lines: string[], from: number, pattern: RegExp): string[] {
+  const out: string[] = [];
+  for (let i = from; i < lines.length && pattern.test(lines[i]); i += 1) {
+    out.push(lines[i]);
+  }
+  return out;
+}
+
+function items(lines: string[], marker: RegExp): string {
+  return lines.map((l) => `<li>${inline(l.replace(marker, ""))}</li>`).join("");
+}
+
+/** Ce qui ouvre autre chose qu'un paragraphe. */
+function opensBlock(line: string): boolean {
+  return (
+    HEADING.test(line) ||
+    BULLET.test(line) ||
+    NUMBERED.test(line) ||
+    QUOTE.test(line)
+  );
+}
+
+/** Markdown vers HTML. L'entrée est traitée comme du texte, jamais comme du HTML.
+ *
+ * La lecture se fait ligne à ligne, et non bloc par bloc. La version d'avant
+ * demandait qu'un paragraphe soit tout entier de la même espèce : un titre ne
+ * comptait que seul entre deux lignes vides, une liste que si aucune ligne n'en
+ * sortait. Écrire un titre et enchaîner juste dessous — ce que fait tout le
+ * monde — rendait le dièse en toutes lettres. */
 export function renderMarkdown(source: string): string {
   const escaped = escapeHtml(source);
-  const blocks = escaped.split(/\n{2,}/);
   const html: string[] = [];
 
-  for (const block of blocks) {
+  for (const block of escaped.split(/\n{2,}/)) {
     const lines = block.split("\n").filter((l) => l.trim() !== "");
-    if (lines.length === 0) continue;
+    let i = 0;
 
-    const heading = lines[0].match(/^(#{1,4})\s+(.*)$/);
-    if (heading && lines.length === 1) {
-      const level = heading[1].length + 1; // h1 est réservé au titre de la page
-      html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
-      continue;
+    while (i < lines.length) {
+      const heading = lines[i].match(HEADING);
+      if (heading) {
+        const level = heading[1].length + 1; // h1 est réservé au titre de la page
+        html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+        i += 1;
+        continue;
+      }
+
+      const bullets = run(lines, i, BULLET);
+      if (bullets.length > 0) {
+        html.push(`<ul>${items(bullets, BULLET)}</ul>`);
+        i += bullets.length;
+        continue;
+      }
+
+      const numbered = run(lines, i, NUMBERED);
+      if (numbered.length > 0) {
+        html.push(`<ol>${items(numbered, NUMBERED)}</ol>`);
+        i += numbered.length;
+        continue;
+      }
+
+      const quoted = run(lines, i, QUOTE);
+      if (quoted.length > 0) {
+        const texte = quoted.map((l) => l.replace(QUOTE, "")).join(" ");
+        html.push(`<blockquote>${inline(texte)}</blockquote>`);
+        i += quoted.length;
+        continue;
+      }
+
+      // Un simple retour à la ligne reste un retour à la ligne : dans une note
+      // prise à la volée, il est presque toujours voulu.
+      const paragraph: string[] = [];
+      while (i < lines.length && !opensBlock(lines[i])) {
+        paragraph.push(lines[i]);
+        i += 1;
+      }
+      html.push(`<p>${paragraph.map(inline).join("<br />")}</p>`);
     }
-
-    if (lines.every((l) => /^\s*[-*]\s+/.test(l))) {
-      const items = lines
-        .map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`)
-        .join("");
-      html.push(`<ul>${items}</ul>`);
-      continue;
-    }
-
-    if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) {
-      const items = lines
-        .map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`)
-        .join("");
-      html.push(`<ol>${items}</ol>`);
-      continue;
-    }
-
-    if (lines.every((l) => /^\s*&gt;\s?/.test(l))) {
-      const quoted = lines.map((l) => l.replace(/^\s*&gt;\s?/, "")).join(" ");
-      html.push(`<blockquote>${inline(quoted)}</blockquote>`);
-      continue;
-    }
-
-    // Un simple retour à la ligne reste un retour à la ligne : dans une note
-    // prise à la volée, il est presque toujours voulu.
-    html.push(`<p>${lines.map(inline).join("<br />")}</p>`);
   }
 
   return html.join("");
