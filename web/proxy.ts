@@ -51,32 +51,11 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(new URL("/api/auth/signin", request.nextUrl.origin));
 }
 
-// Cinq exclusions ne passent pas du tout par ici ; tout le reste atteint la
-// fonction ci-dessus. Chacune est ancrée par `(?:/|$)` — répertoire ou fin
-// exacte — sauf `favicon.ico$`, un fichier unique. Sans ancrage, un simple
-// préfixe laisserait passer un chemin voisin plus long : `/api/authx`,
-// `/_next/imagex` et `/_next/staticfoo` contourneraient la porte.
-//
-// `prompt` et `validate` sont les deux exclusions qui exposent du contenu à
-// nous, et elles vont ensemble : le mode d'emploi qu'on donne à un agent, et le
-// vérificateur vers lequel ce mode d'emploi le renvoie. L'agent n'a pas de
-// session et ne saurait pas en obtenir une ; une porte sur l'une des deux les
-// rend inutiles toutes les deux.
-//
-// Ni l'une ni l'autre ne lit la base. `prompt` rend un texte fixe et la liste
-// des modèles, qui vit dans un fichier de ce dépôt public ; `validate` rend un
-// verdict sur un document que l'appelant possède déjà, selon des règles
-// publiées en clair sur `prompt`.
-//
-// Oublier cette ligne ne casse rien de visible : la route existe, ses tests
-// passent, et l'appelant anonyme reçoit l'écran de connexion — la même réponse,
-// à l'octet près, qu'une adresse qui n'existe pas. C'est ce qui est arrivé à
-// `validate` entre son commit et celui-ci.
-//
-// L'ancrage compte ici autant qu'ailleurs : sans lui, un `/prompts-secrets` ou
-// un `/validate-tout` s'ouvriraient avec.
+// Ce littéral doit rester égal à ce que rend `proxyMatcher()` dans
+// `lib/public-paths.ts` : Next exige une constante ici et ignore une valeur
+// calculée. `public-paths.test.mts` tient l'accord des deux.
 export const config = {
   matcher: [
-    "/((?!api/auth(?:/|$)|prompt(?:/|$)|validate(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$).*)",
+    "/((?!api/auth(?:/|$)|prompt(?:/|$)|validate(?:/|$)|shared(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$).*)",
   ],
 };
