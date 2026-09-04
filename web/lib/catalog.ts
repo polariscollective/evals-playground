@@ -1,6 +1,6 @@
 // Le catalogue des modèles proposés, avec leurs tarifs. Partagé avec Python —
 // voir `shared/pricing.json`.
-import { SHARED_PRICING } from "./shared";
+import { SHARED_PRICING } from "./shared.ts";
 import type { ProviderInfo } from "./types";
 
 const PROVIDER_ENV: Record<string, string[]> = Object.fromEntries(

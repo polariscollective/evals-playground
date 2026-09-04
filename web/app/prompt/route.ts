@@ -1,5 +1,4 @@
-import { agentPrompt } from "@/lib/agent-prompt";
-import { catalog } from "@/lib/catalog";
+import { agentModels, agentPrompt } from "@/lib/agent-prompt";
 
 /** L'adresse publique sous laquelle on a été appelé.
  *
@@ -30,14 +29,7 @@ function originOf(request: Request): string {
  * En `text/plain` parce que le lecteur est une machine : du HTML lui ferait
  * traverser une mise en page pour retrouver le texte qu'on lui destine. */
 export async function GET(request: Request) {
-  const models = catalog().flatMap((provider) =>
-    provider.models.map((model) => ({
-      id: model.id,
-      label: `${provider.label} ${model.label}`,
-    })),
-  );
-
-  return new Response(agentPrompt(models, originOf(request)), {
+  return new Response(agentPrompt(agentModels(), originOf(request)), {
     headers: {
       "content-type": "text/plain; charset=utf-8",
       // Le contenu ne bouge qu'avec un déploiement : cinq minutes de cache

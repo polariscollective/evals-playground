@@ -8,6 +8,7 @@
 // La liste des modèles est passée en argument plutôt qu'écrite en dur : elle
 // vient du catalogue, et un agent qui invente un identifiant produit un run qui
 // meurt au premier appel.
+import { catalog } from "./catalog.ts";
 
 const TEMPLATE = `I need you to write the configuration for an evaluation I am about to run.
 
@@ -308,6 +309,18 @@ guess them.
 REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
 is missing.
 `;
+
+/** Les modèles du catalogue, sous la forme que lit `agentPrompt` — partagée
+ *  entre `/prompt` et l'outil MCP `read_prompt`, pour qu'une seule liste
+ *  existe. */
+export function agentModels(): { id: string; label: string }[] {
+  return catalog().flatMap((provider) =>
+    provider.models.map((model) => ({
+      id: model.id,
+      label: `${provider.label} ${model.label}`,
+    })),
+  );
+}
 
 /** Le prompt, avec les modèles réellement disponibles et l'adresse du
  *  vérificateur.
