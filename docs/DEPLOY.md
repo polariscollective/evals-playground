@@ -33,6 +33,7 @@ AUTH_GOOGLE_SECRET
 AUTH_SECRET                    openssl rand -base64 32
 ALLOWED_EMAILS                 adresses autorisées, séparées par des virgules
 ALLOWED_DOMAINS                domaines autorisés, idem
+MCP_CLIENT_ID                  openssl rand -hex 16 — voir « Le connecteur MCP »
 ```
 
 **Aucune clé de fournisseur.** Aucune route n'appelle un modèle : le devis est
@@ -50,6 +51,28 @@ gcloud secrets versions access latest --secret=BATCH_TRIGGER_CALLERS \
 ### Google OAuth
 
 L'URI de redirection à déclarer : `https://<domaine-vercel>/api/auth/callback/google`.
+
+### Le connecteur MCP
+
+`MCP_CLIENT_ID` n'a rien à voir avec Google : c'est une chaîne qu'on invente,
+et la seule chose qui identifie claude.ai auprès de `/mcp/authorize` et
+`/mcp/token`. Sans elle, ces deux routes rendent un 500 sans rien expliquer.
+
+Côté claude.ai, une fois l'application déployée — Réglages → Connectors → Add
+custom connector :
+
+| champ | valeur |
+|---|---|
+| Remote MCP server URL | `https://<domaine-vercel>/mcp` |
+| Authentication | *Always required* |
+| OAuth client | *Use your own OAuth client* |
+| Client ID | la valeur de `MCP_CLIENT_ID` |
+| Client Secret | **vide** |
+
+Le secret reste vide parce qu'il n'existe pas : le serveur n'en vérifie aucun,
+c'est PKCE qui tient l'échange. Les réglages d'authentification ne se modifient
+pas après coup — pour en changer un, il faut retirer le connecteur et le
+rajouter.
 
 ## Le moteur — Cloud Run Job
 
