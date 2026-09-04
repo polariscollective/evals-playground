@@ -4,8 +4,8 @@
 // contexte réel autour de la première occurrence trouvée.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countMatches, searchRuns } from "./run-search.ts";
-import type { RunSummary } from "./types";
+import { countMatches, searchRuns, type RunTags } from "./run-search.ts";
+import type { RunSummary, Tag } from "./types";
 
 /** Un `RunSummary` minimal, avec seulement ce que `searchRuns` regarde. Le
  *  cast tient parce que `searchRuns` ne lit rien d'autre — même pattern que
@@ -43,6 +43,18 @@ function runSummary(fields: {
     },
     mean: fields.mean ?? null,
   } as unknown as RunSummary;
+}
+
+/** Une `RunTags` construite à partir de `{ id: [libellés] }` — un `Tag` par
+ *  libellé, l'identifiant et la couleur n'important à aucun test ici. */
+function tagsMap(entries: Record<string, string[]>): RunTags {
+  const map: RunTags = new Map();
+  let nextId = 1;
+  for (const [runId, labels] of Object.entries(entries)) {
+    const tags: Tag[] = labels.map((label) => ({ id: nextId++, label, color: "#000000" }));
+    map.set(runId, tags);
+  }
+  return map;
 }
 
 test("sans requête, les `limit` runs les plus récents, dans l'ordre d'entrée", () => {
@@ -93,6 +105,7 @@ test("la fiche porte toute la forme attendue", () => {
     total_samples: 30,
     mean: 0.6,
     cost_usd: 1.23,
+    tags: [],
   });
 });
 
@@ -257,6 +270,82 @@ test("`countMatches` respecte `status` et vaut zéro sans correspondance", () =>
   assert.equal(countMatches(runs, { query: "cible" }), 2);
   assert.equal(countMatches(runs, { query: "cible", status: "error" }), 1);
   assert.equal(countMatches(runs, { query: "introuvable" }), 0);
+});
+
+test("les libellés des tags d'un run remontent dans sa fiche, dans l'ordre porté par `tagsByRun`", () => {
+  const runs = [
+    runSummary({ id: "a", created_at: "2026-09-03" }),
+    runSummary({ id: "b", created_at: "2026-09-02" }),
+  ];
+  const tags = tagsMap({ a: ["urgent", "api"] });
+  const hits = searchRuns(runs, {}, tags);
+  assert.deepEqual(hits.find((h) => h.id === "a")!.tags, ["urgent", "api"]);
+  assert.deepEqual(hits.find((h) => h.id === "b")!.tags, []);
+});
+
+test("`tag` ne garde que les runs qui portent ce libellé", () => {
+  const runs = [
+    runSummary({ id: "a", created_at: "2026-09-03" }),
+    runSummary({ id: "b", created_at: "2026-09-02" }),
+    runSummary({ id: "c", created_at: "2026-09-01" }),
+  ];
+  const tags = tagsMap({ a: ["api"], b: ["frontend"], c: ["api", "urgent"] });
+  const hits = searchRuns(runs, { tag: "api" }, tags);
+  assert.deepEqual(hits.map((h) => h.id), ["a", "c"]);
+});
+
+test("`tag` est insensible à la casse", () => {
+  const runs = [runSummary({ id: "a", created_at: "2026-09-03" })];
+  const tags = tagsMap({ a: ["API"] });
+  assert.deepEqual(searchRuns(runs, { tag: "api" }, tags).map((h) => h.id), ["a"]);
+  assert.deepEqual(searchRuns(runs, { tag: "ApI" }, tags).map((h) => h.id), ["a"]);
+});
+
+test("`tag` matche le libellé entier, pas une sous-chaîne : `api` ne remonte pas un tag `rapide`", () => {
+  const runs = [
+    runSummary({ id: "a", created_at: "2026-09-03" }),
+    runSummary({ id: "b", created_at: "2026-09-02" }),
+  ];
+  const tags = tagsMap({ a: ["api"], b: ["rapide"] });
+  assert.deepEqual(searchRuns(runs, { tag: "api" }, tags).map((h) => h.id), ["a"]);
+});
+
+test("`tag` se combine avec `query`", () => {
+  const runs = [
+    runSummary({ id: "a", created_at: "2026-09-03", notes: "porte la cible" }),
+    runSummary({ id: "b", created_at: "2026-09-02", notes: "porte la cible" }),
+    runSummary({ id: "c", created_at: "2026-09-01", notes: "sans rapport" }),
+  ];
+  const tags = tagsMap({ a: ["api"], b: ["frontend"], c: ["api"] });
+  const hits = searchRuns(runs, { query: "cible", tag: "api" }, tags);
+  assert.deepEqual(hits.map((h) => h.id), ["a"]);
+});
+
+test("`tag` se combine avec `status`", () => {
+  const runs = [
+    runSummary({ id: "a", created_at: "2026-09-03", status: "done" }),
+    runSummary({ id: "b", created_at: "2026-09-02", status: "error" }),
+    runSummary({ id: "c", created_at: "2026-09-01", status: "error" }),
+  ];
+  const tags = tagsMap({ a: ["api"], b: ["api"], c: ["frontend"] });
+  const hits = searchRuns(runs, { status: "error", tag: "api" }, tags);
+  assert.deepEqual(hits.map((h) => h.id), ["b"]);
+});
+
+test("un tag inconnu rend une liste vide, pas une erreur", () => {
+  const runs = [runSummary({ id: "a", created_at: "2026-09-03" })];
+  const tags = tagsMap({ a: ["api"] });
+  assert.deepEqual(searchRuns(runs, { tag: "introuvable" }, tags), []);
+  assert.equal(countMatches(runs, { tag: "introuvable" }, tags), 0);
+});
+
+test("`countMatches` respecte `tag`", () => {
+  const runs = [
+    runSummary({ id: "a", created_at: "2026-09-03" }),
+    runSummary({ id: "b", created_at: "2026-09-02" }),
+  ];
+  const tags = tagsMap({ a: ["api"], b: ["frontend"] });
+  assert.equal(countMatches(runs, { tag: "api" }, tags), 1);
 });
 
 test("l'extrait vient du premier champ qui correspond, dans l'ordre label puis criterion puis notes puis analysis", () => {

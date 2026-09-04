@@ -17,6 +17,7 @@ import { costSentence } from "@/lib/pricing";
 import { NotFound, loadRun, loadRuns, loadSampleTranscript } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
+import { tagsByRun } from "@/lib/tags";
 import { verdictOf } from "@/lib/verdict";
 import type { RunDetail } from "@/lib/types";
 
@@ -183,9 +184,10 @@ const handler = createMcpHandler((server) => {
       description:
         "Find runs by recency or by text — case-insensitive substring match, not regex or full-text search — " +
         "in label, notes, analysis, and the judging criterion. Returns short cards (id, label, status, dates, " +
-        "target models, scenario count, sample count, mean score, cost), each with a snippet showing the " +
-        "matching context when a query was given — never the full notes or the results matrix. Follow up with " +
-        "get_run_metadata or get_run_results on the runs you want to look at more closely.",
+        "target models, scenario count, sample count, mean score, cost, tags), each with a snippet showing the " +
+        "matching context when a query was given — never the full notes or the results matrix. Filterable by " +
+        "status and by tag. Follow up with get_run_metadata or get_run_results on the runs you want to look at " +
+        "more closely.",
       inputSchema: z.object({
         query: z
           .string()
@@ -203,13 +205,20 @@ const handler = createMcpHandler((server) => {
           .string()
           .optional()
           .describe("Keep only runs with this exact status: triggered, running, done, error, or cancelled."),
+        tag: z
+          .string()
+          .optional()
+          .describe(
+            "Keep only runs carrying this tag, matched on its exact label, case-insensitively — not a " +
+              "substring. Each card's `tags` field lists the labels a run carries.",
+          ),
       }),
     },
-    async ({ query, limit, status }) => {
-      const summaries = await loadRuns();
-      const hits = searchRuns(summaries, { query, limit, status });
+    async ({ query, limit, status, tag }) => {
+      const [summaries, tags] = await Promise.all([loadRuns(), tagsByRun()]);
+      const hits = searchRuns(summaries, { query, limit, status, tag }, tags);
       const result = {
-        total_matches: countMatches(summaries, { query, status }),
+        total_matches: countMatches(summaries, { query, status, tag }, tags),
         showing: hits.length,
         runs: hits,
       };

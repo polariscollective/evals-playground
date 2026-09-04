@@ -7,7 +7,7 @@
 // des rares parties du connecteur que `node --test` couvre vraiment. Pas de
 // `server-only` ici : `route.ts` charge les runs, cette fonction ne fait que
 // les trier et les découper.
-import type { EvalRun, RunStatus, RunSummary } from "./types";
+import type { EvalRun, RunStatus, RunSummary, Tag } from "./types";
 
 /** Une fiche courte — jamais les notes entières ni la matrice. L'agent
  *  rappelle `get_run_metadata` ou `get_run_results` sur ce qu'il retient. */
@@ -22,6 +22,9 @@ export interface SearchHit {
   total_samples: number;
   mean: number | null;
   cost_usd: number | null;
+  /** Les libellés des tags du run, dans l'ordre où `tagsByRun` les porte —
+   *  jamais la couleur : un agent ne peint rien. Vide si le run n'en a pas. */
+  tags: string[];
   /** Seulement si une requête a été donnée : les champs qui la portent. */
   matched_in?: MatchedField[];
   /** Seulement si une requête a été donnée : le texte autour de la première
@@ -33,7 +36,17 @@ export interface SearchOptions {
   query?: string;
   limit?: number;
   status?: string;
+  /** Ne garder que les runs qui portent ce libellé de tag, sans casse, en
+   *  égalité exacte — jamais en sous-chaîne : `api` ne doit pas remonter un
+   *  tag `rapide`. */
+  tag?: string;
 }
+
+/** Les tags d'un run, par identifiant de run — la forme que rend
+ *  `tagsByRun()` (`lib/tags.ts`). Passée en argument plutôt qu'importée : ce
+ *  module reste pur, chargeable par `node --test`, et `lib/tags.ts` est
+ *  `server-only`. */
+export type RunTags = Map<string, Tag[]>;
 
 type MatchedField = "label" | "notes" | "analysis" | "criterion";
 
@@ -66,13 +79,17 @@ const SNIPPET_MAX = 250;
  * agent ne fasse jamais planter ni sur-matcher. L'ordre d'entrée est
  * préservé.
  *
- * `status`, dans les deux cas, filtre en égalité stricte sur `run.status`. */
+ * `status`, dans tous les cas, filtre en égalité stricte sur `run.status`, et
+ * `tag` sur le libellé exact d'un tag du run (sans casse) — les tags eux-mêmes
+ * viennent de `tagsByRun`, pas de `summaries`, et par défaut aucun run n'en
+ * porte. */
 export function searchRuns(
   summaries: RunSummary[],
   options: SearchOptions = {},
+  tagsByRun: RunTags = new Map(),
 ): SearchHit[] {
   const limit = clampLimit(options.limit);
-  return hitsOf(summaries, options).slice(0, limit);
+  return hitsOf(summaries, tagsByRun, options).slice(0, limit);
 }
 
 /** Combien de runs correspondent — avant que `limit` n'en coupe l'affichage.
@@ -81,8 +98,9 @@ export function searchRuns(
 export function countMatches(
   summaries: RunSummary[],
   options: Omit<SearchOptions, "limit"> = {},
+  tagsByRun: RunTags = new Map(),
 ): number {
-  return hitsOf(summaries, options).length;
+  return hitsOf(summaries, tagsByRun, options).length;
 }
 
 /** Toutes les fiches qui correspondent, dans l'ordre d'entrée, sans encore
@@ -90,22 +108,29 @@ export function countMatches(
  *  `searchRuns` et `countMatches` pour qu'elles ne divergent jamais. */
 function hitsOf(
   summaries: RunSummary[],
+  tagsByRun: RunTags,
   options: Omit<SearchOptions, "limit">,
 ): SearchHit[] {
   const query = options.query?.trim();
+  const tag = options.tag?.trim().toLowerCase();
 
-  const filtered = options.status
+  let filtered = options.status
     ? summaries.filter((summary) => summary.run.status === options.status)
     : summaries;
+  if (tag) {
+    filtered = filtered.filter((summary) =>
+      (tagsByRun.get(summary.run.id) ?? []).some((t) => t.label.toLowerCase() === tag),
+    );
+  }
 
-  if (!query) return filtered.map((summary) => cardOf(summary));
+  if (!query) return filtered.map((summary) => cardOf(summary, tagsByRun));
 
   const needle = query.toLowerCase();
   const hits: SearchHit[] = [];
   for (const summary of filtered) {
     const match = matchOf(summary.run, needle);
     if (!match) continue;
-    hits.push({ ...cardOf(summary), matched_in: match.matched_in, snippet: match.snippet });
+    hits.push({ ...cardOf(summary, tagsByRun), matched_in: match.matched_in, snippet: match.snippet });
   }
   return hits;
 }
@@ -115,7 +140,7 @@ function clampLimit(limit: number | undefined): number {
   return Math.min(MAX_LIMIT, Math.max(1, Math.floor(limit)));
 }
 
-function cardOf(summary: RunSummary): SearchHit {
+function cardOf(summary: RunSummary, tagsByRun: RunTags): SearchHit {
   const { run } = summary;
   return {
     id: run.id,
@@ -128,6 +153,7 @@ function cardOf(summary: RunSummary): SearchHit {
     total_samples: run.total_samples,
     mean: summary.mean,
     cost_usd: run.cost_usd,
+    tags: (tagsByRun.get(run.id) ?? []).map((tag) => tag.label),
   };
 }
 
