@@ -41,7 +41,11 @@ export async function POST(
     throw error;
   }
 
-  const problem = extendProblem(body, detail.run.config.scenarios.length);
+  const problem = extendProblem(
+    body,
+    detail.run.config.scenarios.length,
+    detail.run.config.tools ?? [],
+  );
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
   if (detail.run.status === "triggered" || detail.run.status === "running") {

@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { getCatalog } from "@/lib/api";
 import { parseCsv } from "@/lib/csv";
 import { HistoryEditor } from "@/components/HistoryEditor";
-import { ScenarioTools } from "@/components/ToolsEditor";
+import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import type {
@@ -19,6 +19,7 @@ import type {
   EvalScenario,
   ExtendRequest,
   ProviderInfo,
+  ToolSpec,
 } from "@/lib/types";
 
 /** Un CSV reversé, avant qu'on ait dit quelles colonnes lire. */
@@ -118,12 +119,21 @@ export function ExtendPanel({
   // relire, et un titre n'a jamais suffi pour ça — c'est déjà pour cette
   // raison que la page du run l'ouvre en entier.
   const [looking, setLooking] = useState<number | null>(null);
+  // Les outils que cette extension ajoute au décor du run.
+  const [newTools, setNewTools] = useState<ToolSpec[]>([]);
+  // Les scénarios existants qui n'avaient nommé aucun outil héritent-ils des
+  // nouveaux ? Sans réponse, on ne soumet pas : c'est un choix, pas un défaut.
+  const [forExisting, setForExisting] = useState<boolean | null>(null);
 
   useEffect(() => {
     getCatalog()
       .then(setCatalog)
       .catch(() => setCatalog([]));
   }, []);
+
+  // Les scénarios qui n'ont jamais nommé leurs outils : eux seuls sont
+  // concernés par la question, les autres ayant déjà leur liste écrite.
+  const aHériter = config.scenarios.filter((scenario) => scenario.tools == null);
 
   const toggle = <T,>(list: T[], value: T): T[] =>
     list.includes(value)
@@ -172,6 +182,12 @@ export function ExtendPanel({
           min === null
             ? null
             : { min, max: tempMax.trim() === "" ? null : Number(tempMax) },
+        ...(newTools.length > 0
+          ? {
+              new_tools: newTools,
+              new_tools_for_existing: forExisting ?? true,
+            }
+          : {}),
       });
     } catch (e) {
       setError((e as Error).message);
@@ -600,6 +616,65 @@ export function ExtendPanel({
             </>
           )}
         </p>
+        {/* Ajouter un outil au décor du run. Permis parce qu'un scénario
+            choisissait déjà les siens : deux lignes d'une même matrice n'ont
+            jamais eu le même décor. Ce qui reste interdit, et que la
+            validation refuse, est d'en *redéfinir* un — les cases déjà jouées
+            se reliraient alors comme ayant eu celui-ci. */}
+        <details className="text-sm">
+          <summary className="cursor-pointer text-zinc-600">
+            Add tools to the run
+            {newTools.length > 0 && ` — ${newTools.length} new`}
+          </summary>
+          <div className="mt-2 space-y-3">
+            <ToolsEditor tools={newTools} onChange={setNewTools} />
+
+            {newTools.length > 0 && aHériter.length > 0 && (
+              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
+                <p className="font-medium text-amber-900">
+                  {aHériter.length} existing scenario
+                  {aHériter.length > 1 ? "s" : ""} never named their tools, so
+                  they take whatever the run defines. Should the new one
+                  {newTools.length > 1 ? "s" : ""} count for them too?
+                </p>
+                {/* Le point qui rend le choix décidable : ce qui a déjà tourné
+                    ne bouge pas. On ne décide que de ce qu'une ré-exécution de
+                    ces scénarios verrait — en les recouvrant ici même avec
+                    d'autres modèles, ou plus tard. */}
+                <p className="text-xs text-amber-900">
+                  Cells already run are unaffected either way — they are done.
+                  This only decides what those scenarios would see if they are
+                  run again, here or later.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForExisting(true)}
+                    className={`cursor-pointer rounded border px-2 py-1 text-xs ${
+                      forExisting === true
+                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        : "border-amber-400 hover:bg-amber-100"
+                    }`}
+                  >
+                    Yes — they get the new tools when re-run
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForExisting(false)}
+                    className={`cursor-pointer rounded border px-2 py-1 text-xs ${
+                      forExisting === false
+                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        : "border-amber-400 hover:bg-amber-100"
+                    }`}
+                  >
+                    No — freeze them on the tools they have
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </details>
+
         <div className="flex gap-2">
           <button
             onClick={onCancel}
@@ -609,7 +684,17 @@ export function ExtendPanel({
           </button>
           <button
             onClick={submit}
-            disabled={busy || added === 0 || targets.length === 0}
+            disabled={
+              busy ||
+              added === 0 ||
+              targets.length === 0 ||
+              // Tant que la question est posée, elle doit être répondue : un
+              // défaut silencieux déciderait à la place de l'utilisateur ce
+              // que ses anciens scénarios reverront.
+              (newTools.length > 0 &&
+                aHériter.length > 0 &&
+                forExisting === null)
+            }
             className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700 disabled:cursor-default disabled:opacity-40"
           >
             {busy ? "Adding…" : `Add ${added} cell${added > 1 ? "s" : ""}`}

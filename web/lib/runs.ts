@@ -332,9 +332,32 @@ export async function extendRun(
   if (!run) throw new NotFound(runId);
 
   const config = run.config;
-  const scenarios = [...config.scenarios, ...request.new_scenarios];
+
+  // Les outils du run après cette extension. `extendProblem` a déjà refusé un
+  // nom qui en redéfinirait un : ajouter est sans effet sur le passé.
+  const outilsAvant = config.tools ?? [];
+  const outils = [...outilsAvant, ...(request.new_tools ?? [])];
+
+  // Un scénario sans clé `tools` veut dire « tous ceux du run », résolu à la
+  // lecture et non figé à l'exécution. Ajouter un outil le lui donnerait donc
+  // rétroactivement — non pas dans les cases déjà jouées, qui sont faites,
+  // mais dans toute ré-exécution de ce scénario. Quand on ne le veut pas, on
+  // écrit noir sur blanc les outils qui existaient : même comportement, rendu
+  // explicite au moment où il allait cesser d'être vrai.
+  const gèle =
+    (request.new_tools ?? []).length > 0 &&
+    request.new_tools_for_existing === false;
+  const anciens = gèle
+    ? config.scenarios.map((scenario) =>
+        scenario.tools == null
+          ? { ...scenario, tools: outilsAvant.map((tool) => tool.name) }
+          : scenario,
+      )
+    : config.scenarios;
+
+  const scenarios = [...anciens, ...request.new_scenarios];
   const nouveaux = request.new_scenarios.map(
-    (_, offset) => config.scenarios.length + offset,
+    (_, offset) => anciens.length + offset,
   );
   const indices = [...new Set([...request.scenario_indices, ...nouveaux])].sort(
     (a, b) => a - b,
@@ -379,6 +402,7 @@ export async function extendRun(
   // sur la première matrice, et ne mesurerait plus l'estimation mais l'ajout.
   const ajout = estimateCost({
     ...config,
+    tools: outils,
     scenarios: indices
       .map((index) => scenarios[index])
       .filter((scenario) => Boolean(scenario)),
@@ -392,6 +416,7 @@ export async function extendRun(
     {
       config: {
         ...config,
+        tools: outils,
         scenarios,
         models: { ...config.models, targets },
         temperature,

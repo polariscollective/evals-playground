@@ -166,6 +166,19 @@ export interface ExtendRequest {
   /** Combien de répétitions ajouter à chaque couple retenu. */
   repetitions: number;
   temperature?: TemperatureSpec | null;
+  /** Des outils à ajouter au décor du run.
+   *
+   * Ajouter est permis, redéfinir non : un outil qui reprendrait un nom
+   * existant ferait relire les cases déjà jouées comme ayant eu celui-ci. */
+  new_tools?: ToolSpec[];
+  /** Les scénarios existants qui n'avaient nommé aucun outil — donc « tous
+   *  ceux du run » — héritent-ils des nouveaux ?
+   *
+   * Ne change rien aux cases déjà jouées, qui sont faites : seulement ce que
+   * verrait une ré-exécution de ces scénarios, en les recouvrant avec d'autres
+   * modèles ou d'autres essais. `false` fige leur liste sur les outils qui
+   * existaient, pour qu'ils revoient exactement ce qu'ils ont toujours vu. */
+  new_tools_for_existing?: boolean;
 }
 
 export interface Message {

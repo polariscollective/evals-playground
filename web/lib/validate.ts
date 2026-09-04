@@ -252,9 +252,25 @@ export function rejudgeProblem(request: unknown): string | null {
 export function extendProblem(
   request: unknown,
   scenarioCount: number,
+  runTools: ToolSpec[] = [],
 ): string | null {
   if (!request || typeof request !== "object") return "body must be an object";
   const r = request as ExtendRequest;
+
+  // Les outils ajoutés d'abord : les scénarios qui suivent ont le droit de les
+  // nommer, puisqu'ils existeront quand les cases tourneront.
+  const ajoutés = r.new_tools ?? [];
+  const outils = toolsProblem(ajoutés);
+  if (outils) return outils;
+  for (const tool of ajoutés) {
+    if (runTools.some((existant) => existant.name === tool.name)) {
+      // Ajouter un outil est sans effet sur le passé ; en redéfinir un ne
+      // l'est pas. Les cases déjà jouées se reliraient comme ayant eu
+      // celui-ci, alors qu'elles en avaient un autre sous ce nom.
+      return `the run already defines a tool named "${tool.name}"`;
+    }
+  }
+  const disponibles = [...runTools, ...ajoutés];
 
   if (!Array.isArray(r.targets) || r.targets.length === 0) {
     return "at least one model is required";
@@ -290,6 +306,12 @@ export function extendProblem(
     }
     const history = historyProblem(scenario.history, `scenario "${scenario.title}"`);
     if (history) return history;
+    const asked = scenarioToolsProblem(
+      scenario.tools,
+      disponibles,
+      `scenario "${scenario.title}"`,
+    );
+    if (asked) return asked;
   }
 
   if (indices.length === 0 && nouveaux.length === 0) {
