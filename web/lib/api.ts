@@ -207,6 +207,13 @@ export const setRunTags = (runId: string, tagIds: number[]) =>
     body: JSON.stringify({ tag_ids: tagIds }),
   });
 
+/** Jumelle de `setRunTags`, pour un brouillon plutôt qu'un run. */
+export const setDraftTags = (draftId: string, tagIds: number[]) =>
+  request<{ ok: true }>(`/api/runs/drafts/${draftId}/tags`, {
+    method: "PUT",
+    body: JSON.stringify({ tag_ids: tagIds }),
+  });
+
 /** Estime un run. Sans `responseTokens`, chaque modèle prend sa longueur mesurée. */
 export const estimateRun = (
   config: EvalRunConfig,

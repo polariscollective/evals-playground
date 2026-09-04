@@ -8,14 +8,17 @@ import {
   getMe,
   getRuns,
   getTagAssignments,
+  getTags,
+  setDraftTags,
+  setRunTags,
   softDeleteRun,
 } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
 import { publicRunPath } from "@/lib/run-id";
-import { colorClasses } from "@/lib/tag-colors";
 import { CopyButton, CopyId, PublicIcon } from "@/components/CopyButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { TagField } from "@/components/TagField";
 import type { Draft, RunSummary, Tag } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -65,27 +68,6 @@ function TrashIcon() {
   );
 }
 
-/** Les pastilles d'une ligne, en lecture seule.
- *
- * On tague depuis la page d'un run ou d'un brouillon, jamais depuis cette
- * liste — ni croix, ni champ. Une ligne sans tag ne rend rien : pas de case
- * vide, pas de séparateur qui traîne. */
-function TagChips({ tags }: { tags: Tag[] }) {
-  if (tags.length === 0) return null;
-  return (
-    <div className="mt-1 flex flex-wrap items-center gap-1">
-      {tags.map((tag) => (
-        <span
-          key={tag.id}
-          className={`rounded-full px-2 py-0.5 text-xs ${colorClasses(tag.color)}`}
-        >
-          {tag.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 /** Les brouillons en attente — ce qu'un agent a proposé, pas encore lancé.
  *
  * Ouvrir mène au formulaire d'évaluation prérempli, pas à un écran de
@@ -118,12 +100,19 @@ function LaunchedToggle({
 function DraftList({
   drafts,
   draftTags,
+  catalog,
+  onTagsSaved,
   onDiscard,
   showLaunched,
   onToggleLaunched,
 }: {
   drafts: Draft[] | null;
   draftTags: Record<string, Tag[]>;
+  /** Le catalogue entier, pour le champ éditable de chaque ligne. */
+  catalog: Tag[];
+  /** Après un ajout, un retrait ou une création réussis : relit le
+   *  catalogue et les affectations. */
+  onTagsSaved: () => Promise<void>;
   onDiscard: (draft: Draft) => void;
   showLaunched: boolean;
   onToggleLaunched: () => void;
@@ -207,7 +196,13 @@ function DraftList({
                   </span>
                 )}
               </div>
-              <TagChips tags={draftTags[draft.id] ?? []} />
+              <TagField
+                compact
+                tags={draftTags[draft.id] ?? []}
+                catalog={catalog}
+                onSave={(ids) => setDraftTags(draft.id, ids)}
+                onSaved={onTagsSaved}
+              />
             </div>
             {/* « Launch » ouvre le formulaire plutôt que de lancer sur-le-champ :
                 un brouillon vient d'un agent, et on veut pouvoir le corriger
@@ -249,13 +244,17 @@ export default function RunsPage() {
   // chose est prévu — encore faut-il pouvoir les retrouver.
   const [showLaunched, setShowLaunched] = useState(false);
   const [me, setMe] = useState<string | null>(null);
-  // Les pastilles des deux listes, en un seul appel — pas une requête par
-  // ligne. Un échec les laisse simplement absentes plutôt que de casser toute
-  // la page : ce ne sont que des labels à côté d'une ligne.
+  // Les tags des deux listes, en un seul appel — pas une requête par ligne.
+  // Le catalogue les accompagne : `TagField` en a besoin pour ses suggestions,
+  // et le relire après chaque changement est ce qui le tient juste — un
+  // retrait peut vider un tag de son dernier lien et le faire disparaître.
+  // Un échec laisse simplement les deux absents plutôt que de casser toute la
+  // page : ce ne sont que des pastilles à côté d'une ligne.
   const [tagAssignments, setTagAssignments] = useState<{
     runs: Record<string, Tag[]>;
     drafts: Record<string, Tag[]>;
   }>({ runs: {}, drafts: {} });
+  const [tagCatalog, setTagCatalog] = useState<Tag[]>([]);
   // Les miens par défaut : la base est partagée, et la liste de tout le monde
   // enterre la sienne au bout de quelques semaines. Ce qu'on cherche en
   // ouvrant cette page est presque toujours un run qu'on a lancé soi-même.
@@ -290,11 +289,21 @@ export default function RunsPage() {
       .catch(() => setMe(null));
   }, []);
 
-  useEffect(() => {
-    getTagAssignments()
-      .then(setTagAssignments)
-      .catch(() => setTagAssignments({ runs: {}, drafts: {} }));
+  const loadTags = useCallback(async () => {
+    try {
+      const [catalog, assignments] = await Promise.all([getTags(), getTagAssignments()]);
+      setTagCatalog(catalog);
+      setTagAssignments(assignments);
+    } catch {
+      setTagCatalog([]);
+      setTagAssignments({ runs: {}, drafts: {} });
+    }
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(loadTags, 0);
+    return () => clearTimeout(timer);
+  }, [loadTags]);
 
   const confirmDelete = async () => {
     if (!confirming) return;
@@ -415,6 +424,8 @@ export default function RunsPage() {
         <DraftList
           drafts={draftsVus}
           draftTags={tagAssignments.drafts}
+          catalog={tagCatalog}
+          onTagsSaved={loadTags}
           onDiscard={(draft) => setConfirming({ kind: "draft", draft })}
           showLaunched={showLaunched}
           onToggleLaunched={toggleLaunched}
@@ -500,7 +511,13 @@ export default function RunsPage() {
                         </CopyButton>
                       )}
                     </div>
-                    <TagChips tags={tagAssignments.runs[run.id] ?? []} />
+                    <TagField
+                      compact
+                      tags={tagAssignments.runs[run.id] ?? []}
+                      catalog={tagCatalog}
+                      onSave={(ids) => setRunTags(run.id, ids)}
+                      onSaved={loadTags}
+                    />
                     {/* Qui l'a lancé. Tout le monde voit tous les runs : sans
                         l'auteur, une liste chargée ne dit plus à qui s'adresser
                         quand un run surprend. */}

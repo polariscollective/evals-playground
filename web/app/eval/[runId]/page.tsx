@@ -8,12 +8,15 @@ import {
   exportUrl,
   extendRun,
   getRun,
+  getRunTags,
+  getTags,
   matrixCsvText,
   publishRun,
   rejudgeRun,
   saveAnalysis,
   retryFailedCells,
   saveNotes,
+  setRunTags,
   sourceCsvUrl,
 } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
@@ -34,7 +37,7 @@ import {
 import { NotesField } from "@/components/NotesField";
 import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
-import type { RubricLevel, RunDetail } from "@/lib/types";
+import type { RubricLevel, RunDetail, Tag } from "@/lib/types";
 
 /** Repasser le juge sur un run terminé, avec une autre question. */
 function RejudgePanel({
@@ -181,6 +184,32 @@ export default function EvalRunPage({
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
+  // Le catalogue et les tags de ce run, pour `TagField` — qui ne les charge
+  // plus lui-même. `tagsLoaded` évite d'afficher « No tags yet. » un instant
+  // avant que la vraie réponse n'arrive.
+  const [tagCatalog, setTagCatalog] = useState<Tag[]>([]);
+  const [runTags, setRunTagsState] = useState<Tag[]>([]);
+  const [tagsLoaded, setTagsLoaded] = useState(false);
+
+  const loadTags = useCallback(async () => {
+    try {
+      const [catalog, current] = await Promise.all([getTags(), getRunTags(runId)]);
+      setTagCatalog(catalog);
+      setRunTagsState(current);
+    } catch {
+      // Laissés tels quels plutôt que de casser la page : ce ne sont que des
+      // pastilles, pas la matrice.
+    } finally {
+      setTagsLoaded(true);
+    }
+  }, [runId]);
+
+  useEffect(() => {
+    // Même raison que pour `load` ci-dessous : un timer plutôt qu'un appel
+    // direct dans le corps de l'effet.
+    const timer = setTimeout(() => loadTags(), 0);
+    return () => clearTimeout(timer);
+  }, [loadTags]);
 
   const load = useCallback(
     async (withTranscripts: boolean) => {
@@ -460,7 +489,19 @@ export default function EvalRunPage({
         </div>
       </div>
 
-      <TagField runId={run.id} />
+      <section className="rounded border border-zinc-300 p-3">
+        <h2 className="text-sm font-medium">Tags</h2>
+        {tagsLoaded ? (
+          <TagField
+            tags={runTags}
+            catalog={tagCatalog}
+            onSave={(ids) => setRunTags(run.id, ids)}
+            onSaved={loadTags}
+          />
+        ) : (
+          <p className="mt-2 text-xs text-zinc-400">Loading…</p>
+        )}
+      </section>
 
       {/* D'où il sort, quand il sort d'un brouillon. Le lien rouvre le
           formulaire dessus : c'est là qu'on repart de la même configuration.
