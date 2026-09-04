@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { DraftNotFound, deleteDraft, loadDraft } from "@/lib/drafts";
+import {
+  DraftNotFound,
+  discardDraft,
+  loadDraft,
+  markDraftLaunched,
+} from "@/lib/drafts";
 
 /** Le contenu d'un brouillon, pour que le formulaire l'ouvre prérempli.
  *
@@ -28,15 +33,13 @@ export async function GET(
   }
 }
 
-/** Écarter un brouillon.
+/** Jeter un brouillon : la corbeille.
  *
- * Appelée après un lancement réussi depuis le formulaire : le brouillon a
- * servi, et le laisser en attente ferait croire qu'il reste à lancer. C'est
- * aussi le seul geste qui permet d'en refuser un sans attendre le balayage.
+ * Il sort de la liste et son adresse cesse de répondre — c'est ce qui le
+ * distingue d'un brouillon lancé. Rien n'est effacé pour autant.
  *
- * Silencieuse sur un brouillon déjà absent : deux onglets qui lancent le même
- * brouillon ne doivent pas produire une erreur sur le second, dont le travail
- * a par ailleurs réussi. */
+ * Silencieuse sur un brouillon déjà jeté : deux onglets qui font le même
+ * geste ne doivent pas produire une erreur sur le second. */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -45,6 +48,33 @@ export async function DELETE(
   if ("response" in user) return user.response;
 
   const { draftId } = await params;
-  await deleteDraft(draftId);
+  await discardDraft(draftId);
+  return NextResponse.json({ ok: true });
+}
+
+/** Marquer un brouillon comme lancé, et dire quel run il a produit.
+ *
+ * Appelée par le formulaire après un lancement réussi : le brouillon a servi,
+ * et le laisser en attente ferait croire qu'il reste à faire. Son adresse
+ * reste ouverte, contrairement à la corbeille. */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ draftId: string }> },
+) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
+  const { draftId } = await params;
+  const body = (await request.json().catch(() => null)) as {
+    launched_run_id?: unknown;
+  } | null;
+  if (typeof body?.launched_run_id !== "string") {
+    return NextResponse.json(
+      { error: "launched_run_id must be a run id" },
+      { status: 422 },
+    );
+  }
+
+  await markDraftLaunched(draftId, body.launched_run_id);
   return NextResponse.json({ ok: true });
 }

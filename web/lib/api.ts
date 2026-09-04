@@ -114,12 +114,27 @@ export const getDraft = (draftId: string) =>
     `/api/runs/drafts/${draftId}`,
   );
 
+/** L'adresse de qui regarde, pour pouvoir filtrer « les miens ». */
+export const getMe = () => request<{ email: string }>("/api/me");
+
 /** Les brouillons en attente, de qui que ce soit. */
 export const getDrafts = () => request<Draft[]>("/api/runs/drafts");
 
-/** Écarte un brouillon : il a été lancé, ou on n'en veut pas. */
+/** Jette un brouillon : il sort de la liste et son adresse cesse de répondre. */
 export const discardDraft = (draftId: string) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}`, { method: "DELETE" });
+
+/** Marque un brouillon comme lancé, en disant ce qu'il a produit. Son adresse
+ *  reste ouverte, contrairement à la corbeille. */
+export const markDraftLaunched = (draftId: string, runId: string) =>
+  request<{ ok: true }>(`/api/runs/drafts/${draftId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ launched_run_id: runId }),
+  });
+
+/** Écarte un run des listes et de la lecture publique. Rien n'est effacé. */
+export const softDeleteRun = (runId: string) =>
+  request<{ ok: true }>(`/api/runs/${runId}/delete`, { method: "POST" });
 
 /** Écrite après coup, distincte des notes qui sont le préambule. */
 export const saveAnalysis = (runId: string, analysis: string) =>

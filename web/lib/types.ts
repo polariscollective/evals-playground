@@ -208,6 +208,8 @@ export interface EvalRun {
   /** Publié : `/shared/<id>` répond hors session. Écrit par la seule route
    *  `/api/runs/<id>/publish`. */
   is_public: boolean;
+  /** Écarté des listes et de la lecture publique. Rien n'est effacé. */
+  deleted_at: string | null;
   total_samples: number;
   usage: Record<string, ModelUsage>;
   cost_usd: number | null;
@@ -296,6 +298,14 @@ export interface Draft {
   csv_text: string | null;
   created_by: string;
   created_at: string;
+  /** Jeté : sort de la liste, et son adresse ne répond plus. */
+  deleted_at: string | null;
+  /** Lancé : sort de la liste, mais son adresse reste ouverte — on peut vouloir
+   *  relancer la même chose. */
+  launched_at: string | null;
+  /** Le run qu'il a produit, s'il en a produit un. Répond après coup à « d'où
+   *  vient ce run ». */
+  launched_run_id: string | null;
 }
 
 /** Un run ouvert : sa configuration, ses cases, sa matrice. */

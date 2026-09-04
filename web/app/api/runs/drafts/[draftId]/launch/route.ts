@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { DraftNotFound, deleteDraft, loadDraft } from "@/lib/drafts";
+import { DraftNotFound, loadDraft, markDraftLaunched } from "@/lib/drafts";
 import { createRun, failToStart, recordStart } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
@@ -36,6 +36,8 @@ export async function POST(
     await failToStart(run.id, reason);
     return NextResponse.json({ run_id: run.id, error: reason }, { status: 502 });
   }
-  await deleteDraft(draftId);
+  // Marqué lancé, pas effacé : il sort de la liste d'attente, garde son
+  // adresse ouverte pour un relancement, et dit désormais ce qu'il a produit.
+  await markDraftLaunched(draftId, run.id);
   return NextResponse.json({ run_id: run.id }, { status: 201 });
 }

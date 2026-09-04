@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   createRun,
-  discardDraft,
+  markDraftLaunched,
   estimateRun,
   getCatalog,
   getDraft,
@@ -641,12 +641,12 @@ function EvaluateForm() {
         config(),
         source === "csv" ? csvText : null,
       );
-      // Le brouillon a servi : le laisser en attente ferait croire qu'il reste
-      // à lancer, et on ne saurait plus lequel a produit quoi. Après la
-      // création, jamais avant — un lancement qui échoue doit laisser de quoi
-      // recommencer. Un échec d'effacement ne fait pas échouer le lancement :
-      // le run existe, c'est lui qui compte, et le balayage ramassera le reste.
-      if (draftOf) await discardDraft(draftOf).catch(() => {});
+      // Le brouillon a servi : marqué lancé, avec le run qu'il a produit. Il
+      // sort de la liste d'attente sans être jeté — son adresse reste ouverte
+      // si l'on veut relancer la même chose. Après la création, jamais avant :
+      // un lancement qui échoue doit laisser de quoi recommencer. Et un échec
+      // de marquage ne fait pas échouer le lancement, le run existe.
+      if (draftOf) await markDraftLaunched(draftOf, run_id).catch(() => {});
       router.push(`/eval/${run_id}`);
     } catch (e) {
       setError((e as Error).message);

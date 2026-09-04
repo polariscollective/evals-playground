@@ -66,6 +66,9 @@ export async function loadRuns(): Promise<RunSummary[]> {
 
   const runs = await select<EvalRun>(RUNS, {
     select: "*",
+    // Un run écarté ne se lit plus nulle part : ni la liste, ni la page
+    // publique, ni les outils MCP, qui passent tous par ici.
+    deleted_at: "is.null",
     order: "created_at.desc",
   });
   if (runs.length === 0) return [];
@@ -112,8 +115,11 @@ export async function loadRun(
   const runs = await select<EvalRun>(RUNS, {
     id: `eq.${runId}`,
     select: "*",
+    deleted_at: "is.null",
     limit: 1,
   });
+  // Écarté ou inexistant lèvent la même erreur : de dehors, les deux doivent
+  // se ressembler.
   if (runs.length === 0) throw new NotFound(`Unknown run: ${runId}`);
   const run = runs[0];
 
@@ -421,6 +427,16 @@ export async function loadPublicRun(
   return withoutIdentity(detail);
 }
 
+/** Écarter un run des listes et de la lecture publique, sans rien effacer.
+ *
+ * Un run coûte de l'argent et porte des notes : le rendre irrécupérable sur un
+ * clic serait disproportionné. La ligne reste, `deleted_at` la sort de partout
+ * — `loadRun` et `loadRuns` filtrent dessus, donc la page, la liste, la
+ * lecture publique et les outils MCP l'ignorent tous du même coup. */
+export async function softDeleteRun(runId: string): Promise<void> {
+  await update(RUNS, { deleted_at: NOW }, { id: `eq.${runId}` });
+}
+
 /** Publier ou dépublier. Le seul endroit qui écrit cette colonne. */
 export async function setPublic(runId: string, isPublic: boolean): Promise<void> {
   await update(RUNS, { is_public: isPublic }, { id: `eq.${runId}` });
@@ -430,8 +446,14 @@ export async function setPublic(runId: string, isPublic: boolean): Promise<void>
  *  dizaines de cases, et les ramener toutes pour n'en rendre qu'une serait le
  *  genre de coût caché qui ne se voit qu'en production.
  *
+ * Le run est vérifié d'abord, et c'est le seul but de cette lecture : les cases
+ * ne portent pas `deleted_at`, il vit sur le run. Sans ce contrôle, un run
+ * écarté continuerait de rendre ses trajectoires une à une — la seule porte
+ * qu'un filtre posé sur `eval_samples` seul n'aurait pas fermée.
+ *
  * Throws:
- *   NotFound: si aucune case ne porte ce triplet, dans ce run.
+ *   NotFound: si le run est inconnu ou écarté, ou si aucune case ne porte ce
+ *   triplet.
  */
 export async function loadSampleTranscript(
   runId: string,
@@ -439,6 +461,14 @@ export async function loadSampleTranscript(
   targetModel: string,
   repetition: number,
 ): Promise<EvalSample> {
+  const vivants = await select<{ id: string }>(RUNS, {
+    id: `eq.${runId}`,
+    select: "id",
+    deleted_at: "is.null",
+    limit: 1,
+  });
+  if (vivants.length === 0) throw new NotFound(`Unknown run: ${runId}`);
+
   const rows = await select<EvalSample>(SAMPLES, {
     run_id: `eq.${runId}`,
     scenario_index: `eq.${scenarioIndex}`,

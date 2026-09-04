@@ -2,7 +2,7 @@
 // être lancé — le geste de lancer reste un clic humain, sur la page que
 // createDraft rend adressable.
 import "server-only";
-import { DRAFTS, insert, remove, rpc, select } from "./supabase";
+import { DRAFTS, NOW, insert, rpc, select, update } from "./supabase";
 import type { Draft, EvalRunConfig } from "./types";
 
 export class DraftNotFound extends Error {}
@@ -41,7 +41,14 @@ async function sweepStaleDrafts(): Promise<void> {
 /** Throws: DraftNotFound si aucun brouillon ne porte cet identifiant. */
 export async function loadDraft(id: string): Promise<Draft> {
   await sweepStaleDrafts();
-  const rows = await select<Draft>(DRAFTS, { id: `eq.${id}`, select: "*", limit: 1 });
+  // Un brouillon lancé reste ouvrable — on peut vouloir relancer la même
+  // chose. Un brouillon jeté, non : lui seul disparaît de cette lecture.
+  const rows = await select<Draft>(DRAFTS, {
+    id: `eq.${id}`,
+    select: "*",
+    deleted_at: "is.null",
+    limit: 1,
+  });
   const draft = rows[0];
   if (!draft) throw new DraftNotFound(`Unknown draft: ${id}`);
   return draft;
@@ -53,9 +60,33 @@ export async function loadDraft(id: string): Promise<Draft> {
  * l'équipe, comme un run l'est une fois lancé — tout le monde voit tout. */
 export async function loadDrafts(): Promise<Draft[]> {
   await sweepStaleDrafts();
-  return select<Draft>(DRAFTS, { select: "*", order: "created_at.desc" });
+  return select<Draft>(DRAFTS, {
+    select: "*",
+    // Ce qui attend : ni lancé, ni jeté.
+    deleted_at: "is.null",
+    launched_at: "is.null",
+    order: "created_at.desc",
+  });
 }
 
-export async function deleteDraft(id: string): Promise<void> {
-  await remove(DRAFTS, { id: `eq.${id}` });
+/** Jeter un brouillon : il sort de la liste, et son adresse ne répond plus. */
+export async function discardDraft(id: string): Promise<void> {
+  await update(DRAFTS, { deleted_at: NOW }, { id: `eq.${id}` });
+}
+
+/** Marquer un brouillon comme lancé, et dire ce qu'il a produit.
+ *
+ * Il sort de la liste d'attente — il a servi — mais son adresse reste
+ * ouverte : rouvrir un brouillon lancé pour relancer la même chose est un
+ * geste légitime. `launched_run_id` répond après coup à « d'où vient ce
+ * run », que la disparition pure et simple rendait impossible. */
+export async function markDraftLaunched(
+  id: string,
+  runId: string,
+): Promise<void> {
+  await update(
+    DRAFTS,
+    { launched_at: NOW, launched_run_id: runId },
+    { id: `eq.${id}` },
+  );
 }
