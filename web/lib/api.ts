@@ -176,3 +176,18 @@ export async function matrixCsvText(
   if (!response.ok) throw new Error(await readError(response));
   return (await response.text()).replace(/^﻿/, "");
 }
+
+export interface McpGrant {
+  access_token_hash: string;
+  user_email: string;
+  created_at: string;
+  refresh_expires_at: string;
+}
+
+export const listMcpConnections = () => request<McpGrant[]>("/api/mcp/connections");
+
+export const revokeMcpConnection = (accessTokenHash: string) =>
+  request<{ ok: true }>("/api/mcp/connections", {
+    method: "DELETE",
+    body: JSON.stringify({ access_token_hash: accessTokenHash }),
+  });
