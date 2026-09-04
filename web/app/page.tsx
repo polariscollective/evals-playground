@@ -186,30 +186,38 @@ function EvaluateForm() {
    * champs : un brouillon n'est qu'une configuration qu'on n'a pas encore
    * lancée. Le CSV arrive déjà résolu — la reprise le lit depuis le run, le
    * brouillon le porte avec lui. */
+  /** Remplir le formulaire depuis une configuration.
+   *
+   * Chaque champ retombe sur le défaut du formulaire vide, parce que la
+   * configuration peut être incomplète : un brouillon manuel a le droit de
+   * n'avoir qu'un nom — c'est sa raison d'être — et le type `EvalRunConfig`
+   * décrit ce qui est lançable, pas ce qui est enregistrable. Sans ces
+   * défauts, rouvrir un brouillon à peine commencé fait tomber la page. */
   const fillFromConfig = useCallback(
     (config: EvalRunConfig, label: string, csvText: string | null) => {
+      const scenarios = config.scenarios ?? [];
       setLabel(label);
       setNotes(config.notes ?? "");
-      setCriterion(config.criterion);
-      setRubric(config.rubric);
-      setTurns(config.turns);
-      setRepetitions(config.repetitions);
-      setAdversaryPrompt(config.adversary_prompt);
+      setCriterion(config.criterion ?? "");
+      setRubric(config.rubric ?? DEFAULT_RUBRIC);
+      setTurns(config.turns ?? 1);
+      setRepetitions(config.repetitions ?? 5);
+      setAdversaryPrompt(config.adversary_prompt ?? "");
       setTools(config.tools ?? []);
       setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
-      setTargets(config.models.targets);
-      setAdversary(config.models.adversary ?? "");
-      setJudge(config.models.judge);
+      setTargets(config.models?.targets ?? []);
+      setAdversary(config.models?.adversary ?? "");
+      setJudge(config.models?.judge ?? "");
       setTemperatureMin(config.temperature?.min ?? 1);
       setVaryTemperature(config.temperature?.max != null);
       setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
 
       // Un seul scénario tient dans le mode manuel ; au-delà, le formulaire
       // passe par un CSV, quitte à le reconstruire depuis les scénarios.
-      const enCsv = config.source?.kind === "csv" || config.scenarios.length > 1;
+      const enCsv = config.source?.kind === "csv" || scenarios.length > 1;
       if (!enCsv) {
         setSource("manual");
-        const first = config.scenarios[0];
+        const first = scenarios[0];
         setTitle(first?.title ?? "");
         setSystemPrompt(first?.system_prompt ?? "");
         setOpeningMessage(first?.opening_message ?? "");
@@ -238,7 +246,7 @@ function EvaluateForm() {
 
       // Pas de fichier : le lot reconstruit a le même contenu que l'original,
       // seule sa mise en forme est perdue.
-      const { columns, rows } = rebuildCsv(config.scenarios);
+      const { columns, rows } = rebuildCsv(scenarios);
       setCsvText(toCsv(columns, rows));
       setCsvColumns(columns);
       setCsvRows(rows);
