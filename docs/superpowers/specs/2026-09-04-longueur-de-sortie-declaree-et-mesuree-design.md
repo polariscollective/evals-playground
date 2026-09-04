@@ -136,17 +136,25 @@ Un module neuf, `web/lib/measured-length.ts`, testable seul, sans base ni
 réseau : il prend les cases d'un run et rend les longueurs.
 
 ```
-moyenne(scénario) =  Σ usage[target].output_tokens
+moyenne(scénario) =    Σ usage[target].output_tokens
                      ─────────────────────────────────
-                     Σ réponses d'assistant non seeded
+                       turns × nombre de cases retenues
 
      sur les cases `done` où target ∉ { juge, adversaire }
 ```
 
-Le dénominateur se compte sur `messages` — les tours `assistant` sans
-`seeded` — et non sur `turns`, parce qu'un tour à outils vaut plusieurs appels
-facturés. C'est bien « jetons par appel » qu'il faut, l'estimateur additionnant
-appel par appel.
+**Le dénominateur est `turns`, pas le nombre d'appels réels.** L'estimateur
+n'ajoute `target_response` que `turns` fois par conversation : il n'a aucun
+modèle des appels d'outils. Diviser par les appels réellement facturés donnerait
+`turns × (O / C)` avec `C ≥ turns`, donc un devis systématiquement bas dès qu'un
+scénario emploie des outils. En divisant par `turns`, le devis reproduit
+exactement le total observé, la mesure absorbant l'inflation des outils. Ce
+n'est donc pas « jetons par appel HTTP » mais « jetons de sortie par tour de
+conversation », qui est l'unité dans laquelle l'estimateur raisonne.
+
+Conséquence pratique : la mesure n'a besoin que de `usage`, jamais de
+`messages`. La requête ramène `scenario_index,target_model,status,usage` — pas
+les transcripts, qui pèsent des centaines de kilo-octets.
 
 **Pourquoi cette exclusion, et pourquoi elle ne coûte rien.** `usage` est
 indexé par nom de modèle, jamais par rôle : quand le modèle évalué est aussi le
@@ -191,7 +199,7 @@ quand on peut, déclaré sinon :
 ```
 adversaire(run) =  Σ usage[adversary].output_tokens
                    ─────────────────────────────────
-                   Σ (turns − 1) des cases retenues
+                   (turns − 1) × nombre de cases retenues
 
      sur les cases `done` où adversary ∉ { targets, juge }
 ```
@@ -268,9 +276,10 @@ des deux côtés.
 
 `web/lib/measured-length.test.mts` — le cœur, et ce qu'on veut protéger :
 
-- une case propre rend `output_tokens / nombre de réponses` ;
-- un tour à outils compte plusieurs appels, pas un ;
-- les tours `seeded` ne comptent pas ;
+- une case propre rend `output_tokens / turns` ;
+- deux cases du même scénario se mettent en commun, jetons et tours ensemble ;
+- un scénario dont les cases ont appelé des outils est quand même reproduit
+  exactement : `turns × moyenne` retombe sur les `output_tokens` observés ;
 - une case où le modèle évalué est aussi le juge est écartée ;
 - idem s'il est l'adversaire ;
 - un scénario sans case propre retombe sur la moyenne du run ;
