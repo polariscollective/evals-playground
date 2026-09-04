@@ -10,8 +10,9 @@ import { createDraft } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { costSentence } from "@/lib/pricing";
-import { NotFound, loadRun, loadSampleTranscript } from "@/lib/runs";
+import { NotFound, loadRun, loadRuns, loadSampleTranscript } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
+import { countMatches, searchRuns } from "@/lib/run-search";
 import { verdictOf } from "@/lib/verdict";
 import type { RunDetail } from "@/lib/types";
 
@@ -169,6 +170,47 @@ const handler = createMcpHandler((server) => {
         messages: sample.messages,
       };
       return { content: [{ type: "text", text: JSON.stringify(trajectory, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "search_runs",
+    {
+      title: "Search runs",
+      description:
+        "Find runs by recency or by text — case-insensitive substring match, not regex or full-text search — " +
+        "in label, notes, analysis, and the judging criterion. Returns short cards (id, label, status, dates, " +
+        "target models, scenario count, sample count, mean score, cost), each with a snippet showing the " +
+        "matching context when a query was given — never the full notes or the results matrix. Follow up with " +
+        "get_run_metadata or get_run_results on the runs you want to look at more closely.",
+      inputSchema: z.object({
+        query: z
+          .string()
+          .optional()
+          .describe(
+            "Text to look for, case-insensitively, as a literal substring — not a pattern — in label, notes, " +
+              "analysis, or the judging criterion. Omit to just list the most recent runs.",
+          ),
+        limit: z
+          .number()
+          .int()
+          .optional()
+          .describe("How many cards to return, newest first. Default 10, maximum 50."),
+        status: z
+          .string()
+          .optional()
+          .describe("Keep only runs with this exact status: triggered, running, done, error, or cancelled."),
+      }),
+    },
+    async ({ query, limit, status }) => {
+      const summaries = await loadRuns();
+      const hits = searchRuns(summaries, { query, limit, status });
+      const result = {
+        total_matches: countMatches(summaries, { query, status }),
+        showing: hits.length,
+        runs: hits,
+      };
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
 
