@@ -100,10 +100,32 @@ protocolaires plutôt que produit, et c'est le plus gros morceau du projet.
 | `get_run_metadata` | le run sans ses cases : label, statut, coût, modèles, notes, `is_public` | `loadRun`, sans les `samples` |
 | `get_run_results` | la matrice — une ligne par scénario, la moyenne par modèle, le nombre de répétitions comptées | `lib/matrix.ts`, la même fonction que la page privée, pas les `samples` bruts |
 | `get_run_trajectory` | la conversation d'**une seule case** (scénario × modèle × répétition) | une fonction neuve, ciblée, qui ne lit que cette ligne |
+| `search_runs` | les runs récents, ou ceux dont le texte porte un mot : une fiche courte et l'extrait qui correspond | `loadRuns`, puis une fonction pure de `lib/` — aucune requête neuve |
 
-Aucun outil ne lance de run — confirmé, ça reste un clic humain. Aucun outil
-ne liste les runs non plus : même principe que `/shared`, l'humain donne
-l'identifiant à l'agent, l'application ne devient pas un répertoire.
+Aucun outil ne lance de run — confirmé, ça reste un clic humain.
+
+**`search_runs` revient sur une décision de ce dessin, et sciemment.** La
+version d'origine n'offrait aucun moyen de lister : l'humain donnait
+l'identifiant, et l'application ne devenait pas un répertoire. À l'usage, ça
+oblige à savoir d'avance quel run on cherche — alors que la question qu'on pose
+vraiment à un agent est « as-tu déjà vu un run qui parlait de ça ? ». La
+recherche répond à celle-là.
+
+Ce qu'on lui concède reste borné : elle ne rend qu'une fiche courte par run,
+jamais les notes entières ni la matrice — l'agent rappelle
+`get_run_metadata` ou `get_run_results` sur les deux ou trois qu'il retient.
+C'est le même partage que le reste des outils : il choisit ce qu'il charge.
+Et elle ne montre rien qu'un humain connecté ne voie déjà sur `/runs`.
+
+Le filtrage se fait en TypeScript et non en SQL, sur ce que `loadRuns` a déjà
+ramené. Trois raisons plutôt qu'une : le mot-clé de l'agent ne touche jamais
+une expression de filtre PostgREST, donc rien à assainir ; la logique de
+correspondance et de découpe d'extrait devient une fonction pure, donc l'une
+des rares parties de ce connecteur que `node --test` couvre vraiment ; et
+aucune requête n'est à écrire. Le prix est de lire tous les runs pour n'en
+rendre que dix, ce que la page `/runs` fait déjà à chaque chargement. Le jour
+où ça pèse, le remède est une vue d'agrégation en base — pas un index
+bricolé ici.
 
 `get_run_trajectory` mérite sa propre requête plutôt que de réutiliser
 `loadRun(..., { withTranscripts: true })` et de découper après coup : un run
@@ -154,10 +176,14 @@ oubli.
 
 ## Ce qui n'y est pas
 
-Pas d'outil pour lancer un run depuis l'agent, pas de liste de runs, pas de
-suppression d'un brouillon par l'agent lui-même, pas de rafraîchissement de
-jeton géré à la main — le SDK MCP s'en charge côté client. Chacun de ces
-manques est un choix, aucun n'est bloqué par ce dessin.
+Pas d'outil pour lancer un run depuis l'agent, pas de suppression d'un
+brouillon par l'agent lui-même, pas de rafraîchissement de jeton géré à la
+main — le SDK MCP s'en charge côté client. Pas de recherche plein-texte non
+plus : `search_runs` cherche une sous-chaîne, pas des mots apparentés, et ne
+sait pas classer par pertinence — d'où son tri par date, qui ne prétend rien.
+Un vrai `tsvector` avec son index GIN est l'étape d'après, et elle demandera
+une migration. Chacun de ces manques est un choix, aucun n'est bloqué par ce
+dessin.
 
 ## Comment on vérifie
 
