@@ -15,12 +15,7 @@ import { cellsOf } from "@/lib/matrix";
 import { renderMarkdown } from "@/lib/markdown";
 import { cellStyle, formatMean, formatValue, sortedRubric } from "@/lib/rubric";
 import { MessageView } from "@/components/MessageView";
-
-/** Une adresse qui n'a pas cette forme n'est un run pour personne : autant le
- *  dire tout de suite plutôt que de laisser Postgres refuser un `uuid` mal
- *  formé et remonter en 500. Une route publique reçoit des liens tronqués et
- *  des robots, pas seulement des adresses copiées avec soin. */
-const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isRunId } from "@/lib/run-id";
 
 export default async function SharedRun({
   params,
@@ -28,7 +23,7 @@ export default async function SharedRun({
   params: Promise<{ runId: string }>;
 }) {
   const { runId } = await params;
-  if (!RUN_ID.test(runId)) notFound();
+  if (!isRunId(runId)) notFound();
 
   let detail;
   try {
