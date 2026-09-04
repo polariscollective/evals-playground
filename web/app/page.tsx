@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   createRun,
   markDraftLaunched,
+  saveDraft,
+  updateDraft,
   estimateRun,
   getCatalog,
   getDraft,
@@ -630,6 +632,38 @@ function EvaluateForm() {
       setJudgePrompt(await previewJudgePrompt(criterion, rubric));
     } catch (e) {
       setError((e as Error).message);
+    }
+  };
+
+  // Ce que l'enregistrement vient de faire, le temps qu'on le lise.
+  const [draftNotice, setDraftNotice] = useState("");
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  /** Mettre le formulaire de côté, dans l'état où il est.
+   *
+   * Aucune validation, contrairement au lancement : c'est précisément quand il
+   * manque des morceaux qu'on veut y revenir plus tard. Rouvrir un brouillon
+   * et réenregistrer le réécrit plutôt que d'en semer un second. */
+  const saveAsDraft = async () => {
+    setError(null);
+    setSavingDraft(true);
+    try {
+      const csv = source === "csv" ? csvText : null;
+      if (draftOf) {
+        await updateDraft(draftOf, config(), csv);
+        setDraftNotice("Draft updated.");
+      } else {
+        const { id } = await saveDraft(config(), csv);
+        // L'adresse dans la barre suit : réenregistrer met à jour celui-ci au
+        // lieu d'en créer un troisième.
+        router.replace(`/?draft=${id}`);
+        setDraftNotice("Saved as draft.");
+      }
+      setTimeout(() => setDraftNotice(""), 4000);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingDraft(false);
     }
   };
 
@@ -1341,15 +1375,44 @@ function EvaluateForm() {
         )}
       </section>
 
-      <button
-        onClick={launch}
-        disabled={!ready || launching}
-        className="rounded bg-zinc-900 px-4 py-2 text-white disabled:opacity-40"
-      >
-        {launching
-          ? "Launching…"
-          : `Launch ${scenarios.length * targets.length * repetitions} conversations`}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={launch}
+          disabled={!ready || launching}
+          className="rounded bg-zinc-900 px-4 py-2 text-white disabled:opacity-40"
+        >
+          {launching
+            ? "Launching…"
+            : `Launch ${scenarios.length * targets.length * repetitions} conversations`}
+        </button>
+        {/* Jamais désactivé, à la différence du lancement : un formulaire
+            incomplet est exactement ce qu'on veut pouvoir mettre de côté. */}
+        {/* Le nom est la seule chose exigée : tout le reste a le droit de
+            manquer, c'est ce qui distingue un brouillon d'un lancement. Sans
+            lui, la liste d'attente n'aurait que des lignes sans titre. */}
+        <button
+          onClick={saveAsDraft}
+          disabled={savingDraft || label.trim() === ""}
+          title={
+            label.trim() === ""
+              ? "Give the run a name first — it is how you will find this draft again"
+              : undefined
+          }
+          className="rounded border border-zinc-300 px-4 py-2 hover:bg-zinc-50 disabled:opacity-40"
+        >
+          {savingDraft ? "Saving…" : draftOf ? "Update draft" : "Save as draft"}
+        </button>
+        {label.trim() === "" && (
+          <span className="text-sm text-zinc-500">
+            Name the run to save it as a draft.
+          </span>
+        )}
+        {draftNotice && (
+          <span className="text-sm text-teal-700">
+            {draftNotice} Find it under Runs → Show drafts.
+          </span>
+        )}
+      </div>
     </main>
   );
 }

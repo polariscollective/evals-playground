@@ -121,6 +121,24 @@ export const getMe = () => request<{ email: string }>("/api/me");
 /** Les brouillons en attente, de qui que ce soit. */
 export const getDrafts = () => request<Draft[]>("/api/runs/drafts");
 
+/** Met le formulaire de côté, valide ou non. Rend l'identifiant du brouillon. */
+export const saveDraft = (config: EvalRunConfig, csvText: string | null) =>
+  request<{ id: string }>("/api/runs/drafts", {
+    method: "POST",
+    body: JSON.stringify({ config, csv_text: csvText }),
+  });
+
+/** Réécrit un brouillon rouvert, plutôt que d'en semer un second. */
+export const updateDraft = (
+  draftId: string,
+  config: EvalRunConfig,
+  csvText: string | null,
+) =>
+  request<{ ok: true }>(`/api/runs/drafts/${draftId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ config, csv_text: csvText }),
+  });
+
 /** Jette un brouillon : il sort de la liste et son adresse cesse de répondre. */
 export const discardDraft = (draftId: string) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}`, { method: "DELETE" });

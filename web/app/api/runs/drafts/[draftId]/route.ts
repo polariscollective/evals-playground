@@ -5,7 +5,9 @@ import {
   discardDraft,
   loadDraft,
   markDraftLaunched,
+  updateDraft,
 } from "@/lib/drafts";
+import type { EvalRunConfig } from "@/lib/types";
 
 /** Le contenu d'un brouillon, pour que le formulaire l'ouvre prérempli.
  *
@@ -52,11 +54,17 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
-/** Marquer un brouillon comme lancé, et dire quel run il a produit.
+/** Les deux façons de reprendre un brouillon en main.
  *
- * Appelée par le formulaire après un lancement réussi : le brouillon a servi,
- * et le laisser en attente ferait croire qu'il reste à faire. Son adresse
- * reste ouverte, contrairement à la corbeille. */
+ * `launched_run_id` : il a servi, on dit ce qu'il a produit. Il sort de la
+ * liste d'attente sans être jeté — son adresse reste ouverte.
+ *
+ * `config` : on le réécrit en place, après l'avoir rouvert et corrigé.
+ * Remplacer plutôt qu'en semer un second, sans quoi la liste d'attente
+ * accumulerait des doublons dont on ne saurait plus lequel est le bon.
+ *
+ * Pas de validation sur le second : un brouillon manuel a le droit d'être
+ * incomplet, c'est même sa raison d'être. */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -67,14 +75,26 @@ export async function PATCH(
   const { draftId } = await params;
   const body = (await request.json().catch(() => null)) as {
     launched_run_id?: unknown;
+    config?: unknown;
+    csv_text?: unknown;
   } | null;
-  if (typeof body?.launched_run_id !== "string") {
-    return NextResponse.json(
-      { error: "launched_run_id must be a run id" },
-      { status: 422 },
-    );
+
+  if (typeof body?.launched_run_id === "string") {
+    await markDraftLaunched(draftId, body.launched_run_id);
+    return NextResponse.json({ ok: true });
   }
 
-  await markDraftLaunched(draftId, body.launched_run_id);
-  return NextResponse.json({ ok: true });
+  if (body && typeof body.config === "object" && body.config !== null) {
+    await updateDraft(
+      draftId,
+      body.config as EvalRunConfig,
+      typeof body.csv_text === "string" ? body.csv_text : null,
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  return NextResponse.json(
+    { error: "send either launched_run_id or config" },
+    { status: 422 },
+  );
 }

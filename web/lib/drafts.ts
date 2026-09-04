@@ -9,14 +9,21 @@ export class DraftNotFound extends Error {}
 
 export type { Draft };
 
+/** Enregistrer un brouillon.
+ *
+ * `origin` est demandé plutôt que deviné : c'est ce qui dit, en le rouvrant,
+ * si une configuration incomplète est une anomalie ou l'état normal du
+ * travail. L'outil MCP ne dépose que du valide — il valide avant — quand le
+ * formulaire dépose ce qu'il a sous la main. */
 export async function createDraft(
   config: EvalRunConfig,
   csvText: string | null,
   createdBy: string,
+  origin: "manual" | "mcp",
 ): Promise<string> {
   const rows = await insert<Draft>(
     DRAFTS,
-    { config, csv_text: csvText, created_by: createdBy },
+    { config, csv_text: csvText, created_by: createdBy, origin },
     { returning: true },
   );
   return rows[0].id;
@@ -67,6 +74,31 @@ export async function loadDrafts(): Promise<Draft[]> {
     launched_at: "is.null",
     order: "created_at.desc",
   });
+}
+
+/** Réécrire un brouillon en place, depuis le formulaire.
+ *
+ * Rouvrir un brouillon, le corriger et l'enregistrer doit le remplacer, pas en
+ * semer un second : la liste d'attente ne veut pas de doublons dont on ne
+ * saurait plus lequel est le bon.
+ *
+ * Il repasse `manual`, même s'il venait d'un agent. La pastille ne dit pas qui
+ * l'a créé mais si son contenu a été validé : `submit_draft_run` ne dépose que
+ * du valide, et cette garantie tombe dès qu'une main réécrit la configuration
+ * sans repasser par là. Garder `mcp` ferait mentir la pastille précisément où
+ * elle sert — devant un brouillon incomplet, à décider si c'est une anomalie
+ * ou le travail en cours. La provenance d'origine se perd ; c'est le prix, et
+ * elle disait moins que la garantie. */
+export async function updateDraft(
+  id: string,
+  config: EvalRunConfig,
+  csvText: string | null,
+): Promise<void> {
+  await update(
+    DRAFTS,
+    { config, csv_text: csvText, origin: "manual" },
+    { id: `eq.${id}` },
+  );
 }
 
 /** Jeter un brouillon : il sort de la liste, et son adresse ne répond plus. */

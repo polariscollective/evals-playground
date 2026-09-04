@@ -106,13 +106,34 @@ function DraftList({
               <div className="font-medium">
                 {draft.config.label || "Untitled run"}
               </div>
-              <div className="text-xs text-zinc-600">
-                {draft.config.scenarios.length} scenario
-                {draft.config.scenarios.length > 1 ? "s" : ""} ×{" "}
-                {draft.config.models.targets.length} model
-                {draft.config.models.targets.length > 1 ? "s" : ""} ×{" "}
-                {draft.config.repetitions} · submitted by {draft.created_by} ·{" "}
-                {formatDate(draft.created_at)}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+                {/* D'où il vient change ce qu'on lit d'un champ manquant :
+                    l'agent n'a pu déposer que du valide, le formulaire dépose
+                    ce qu'on avait sous la main. */}
+                <span
+                  className={
+                    draft.origin === "manual"
+                      ? "rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-700"
+                      : "rounded bg-teal-100 px-1.5 py-0.5 text-teal-900"
+                  }
+                  title={
+                    draft.origin === "manual"
+                      ? "Enregistré depuis le formulaire — peut être incomplet"
+                      : "Soumis par un agent — validé au dépôt"
+                  }
+                >
+                  {draft.origin === "manual" ? "manual" : "MCP"}
+                </span>
+                <span>
+                  {/* Tolérant à l'incomplet : un brouillon manuel peut n'avoir
+                      encore ni scénario ni modèle. */}
+                  {draft.config.scenarios?.length ?? 0} scenario
+                  {(draft.config.scenarios?.length ?? 0) > 1 ? "s" : ""} ×{" "}
+                  {draft.config.models?.targets?.length ?? 0} model
+                  {(draft.config.models?.targets?.length ?? 0) > 1 ? "s" : ""} ×{" "}
+                  {draft.config.repetitions ?? 0} · submitted by{" "}
+                  {draft.created_by} · {formatDate(draft.created_at)}
+                </span>
               </div>
             </div>
             {/* « Launch » ouvre le formulaire plutôt que de lancer sur-le-champ :

@@ -298,6 +298,10 @@ export interface Draft {
   csv_text: string | null;
   created_by: string;
   created_at: string;
+  /** `manual` : enregistré depuis le formulaire, possiblement incomplet — on y
+   *  revient plus tard. `mcp` : soumis par un agent, donc valide au moment où
+   *  il a été écrit. */
+  origin: "manual" | "mcp";
   /** Jeté : sort de la liste, et son adresse ne répond plus. */
   deleted_at: string | null;
   /** Lancé : sort de la liste, mais son adresse reste ouverte — on peut vouloir

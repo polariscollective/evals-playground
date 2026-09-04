@@ -253,7 +253,7 @@ const handler = createMcpHandler((server) => {
         return { content: [{ type: "text", text: verdict.message }], isError: true };
       }
       const { config } = readConfigFile(yaml);
-      const draftId = await createDraft(config, null, callerEmail(ctx));
+      const draftId = await createDraft(config, null, callerEmail(ctx), "mcp");
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return {
         content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draftId}` }],
