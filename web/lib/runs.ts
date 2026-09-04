@@ -7,9 +7,11 @@ import { overallMean, progressOf } from "./matrix";
 import {
   NOW,
   RUNS,
+  RUN_TAGS,
   SAMPLES,
   failStaleRuns,
   insert,
+  remove,
   select,
   update,
 } from "./supabase";
@@ -437,9 +439,21 @@ export async function loadPublicRun(
  * Un run coûte de l'argent et porte des notes : le rendre irrécupérable sur un
  * clic serait disproportionné. La ligne reste, `deleted_at` la sort de partout
  * — `loadRun` et `loadRuns` filtrent dessus, donc la page, la liste, la
- * lecture publique et les outils MCP l'ignorent tous du même coup. */
+ * lecture publique et les outils MCP l'ignorent tous du même coup.
+ *
+ * Le run une fois marqué, ses liens de tags sont retirés : un tag ne vit que
+ * tant qu'une chose *vivante* le porte, et la mise à la corbeille ne compte
+ * plus comme vivante. Le déclencheur `delete_orphan_tag` fait le reste — si
+ * ce lien était le dernier, le tag disparaît avec lui. Sans ce retrait, un
+ * run à la corbeille garderait un tag en vie sans qu'on le voie nulle part.
+ *
+ * `deleted_at` est posé avant : si le retrait des liens échoue, le run reste
+ * simplement à la corbeille avec ses tags encore accrochés — l'état
+ * d'aujourd'hui, sans danger. L'ordre inverse détacherait les tags d'un run
+ * qui, si la suppression suivante échouait, ne serait même pas écarté. */
 export async function softDeleteRun(runId: string): Promise<void> {
   await update(RUNS, { deleted_at: NOW }, { id: `eq.${runId}` });
+  await remove(RUN_TAGS, { run_id: `eq.${runId}` });
 }
 
 /** Publier ou dépublier. Le seul endroit qui écrit cette colonne. */

@@ -2,7 +2,7 @@
 // être lancé — le geste de lancer reste un clic humain, sur la page que
 // createDraft rend adressable.
 import "server-only";
-import { DRAFTS, NOW, insert, rpc, select, update } from "./supabase";
+import { DRAFTS, DRAFT_TAGS, NOW, insert, remove, rpc, select, update } from "./supabase";
 import type { Draft, EvalRunConfig } from "./types";
 
 export class DraftNotFound extends Error {}
@@ -113,9 +113,21 @@ export async function updateDraft(
   );
 }
 
-/** Jeter un brouillon : il sort de la liste, et son adresse ne répond plus. */
+/** Jeter un brouillon : il sort de la liste, et son adresse ne répond plus.
+ *
+ * Ses liens de tags sont retirés à la suite : un tag ne survit que porté par
+ * quelque chose de vivant, et un brouillon jeté ne l'est plus. C'est ce qui
+ * fait tenir « détaché partout = supprimé » même pour ce qui part à la
+ * corbeille — le déclencheur `delete_orphan_tag` supprime le tag si ce lien
+ * était le dernier.
+ *
+ * `deleted_at` d'abord, le retrait ensuite : si celui-ci échoue, le brouillon
+ * reste jeté avec ses tags encore accrochés, sans conséquence — l'inverse
+ * détacherait les tags d'un brouillon qui, si la suppression suivante
+ * échouait, ne serait même pas jeté. */
 export async function discardDraft(id: string): Promise<void> {
   await update(DRAFTS, { deleted_at: NOW }, { id: `eq.${id}` });
+  await remove(DRAFT_TAGS, { draft_id: `eq.${id}` });
 }
 
 /** Marquer un brouillon comme lancé.
