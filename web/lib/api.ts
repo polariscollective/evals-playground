@@ -3,6 +3,7 @@
 // donc jamais la clé de service.
 import type {
   CostEstimate,
+  Draft,
   EvalRunConfig,
   ExpectedCsv,
   JudgePromptPreview,
@@ -112,6 +113,13 @@ export const getDraft = (draftId: string) =>
   request<{ config: EvalRunConfig; csv_text: string | null }>(
     `/api/runs/drafts/${draftId}`,
   );
+
+/** Les brouillons en attente, de qui que ce soit. */
+export const getDrafts = () => request<Draft[]>("/api/runs/drafts");
+
+/** Écarte un brouillon : il a été lancé, ou on n'en veut pas. */
+export const discardDraft = (draftId: string) =>
+  request<{ ok: true }>(`/api/runs/drafts/${draftId}`, { method: "DELETE" });
 
 /** Écrite après coup, distincte des notes qui sont le préambule. */
 export const saveAnalysis = (runId: string, analysis: string) =>

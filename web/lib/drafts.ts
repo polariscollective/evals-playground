@@ -3,17 +3,11 @@
 // createDraft rend adressable.
 import "server-only";
 import { DRAFTS, insert, remove, rpc, select } from "./supabase";
-import type { EvalRunConfig } from "./types";
+import type { Draft, EvalRunConfig } from "./types";
 
 export class DraftNotFound extends Error {}
 
-export interface Draft {
-  id: string;
-  config: EvalRunConfig;
-  csv_text: string | null;
-  created_by: string;
-  created_at: string;
-}
+export type { Draft };
 
 export async function createDraft(
   config: EvalRunConfig,
@@ -51,6 +45,15 @@ export async function loadDraft(id: string): Promise<Draft> {
   const draft = rows[0];
   if (!draft) throw new DraftNotFound(`Unknown draft: ${id}`);
   return draft;
+}
+
+/** Tous les brouillons en attente, du plus récent au plus ancien.
+ *
+ * Sans filtre sur l'auteur : un brouillon est une proposition faite à
+ * l'équipe, comme un run l'est une fois lancé — tout le monde voit tout. */
+export async function loadDrafts(): Promise<Draft[]> {
+  await sweepStaleDrafts();
+  return select<Draft>(DRAFTS, { select: "*", order: "created_at.desc" });
 }
 
 export async function deleteDraft(id: string): Promise<void> {

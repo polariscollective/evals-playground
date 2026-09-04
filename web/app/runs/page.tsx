@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { getRuns } from "@/lib/api";
+import { getDrafts, getRuns } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
 import { publicRunPath } from "@/lib/run-id";
 import { CopyButton, CopyId, PublicIcon } from "@/components/CopyButton";
-import type { RunSummary } from "@/lib/types";
+import type { Draft, RunSummary } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
   triggered: "starting",
@@ -39,9 +39,76 @@ function formatDate(iso: string): string {
 }
 
 
+/** Les brouillons en attente — ce qu'un agent a proposé, pas encore lancé.
+ *
+ * Ouvrir mène au formulaire d'évaluation prérempli, pas à un écran de
+ * lecture : ce qu'on veut faire d'un brouillon est le relire, le corriger et
+ * le lancer. Un brouillon lancé disparaît d'ici — sans quoi on ne saurait plus
+ * lequel reste à faire.
+ *
+ * De qui que ce soit : un brouillon est une proposition faite à l'équipe. */
+function DraftList({ drafts }: { drafts: Draft[] | null }) {
+  if (drafts === null) {
+    return <p className="text-sm text-zinc-500">Loading drafts…</p>;
+  }
+  if (drafts.length === 0) {
+    return (
+      <p className="rounded border border-zinc-300 p-4 text-sm text-zinc-600">
+        No draft waiting. Agents submit them with{" "}
+        <code className="rounded bg-zinc-100 px-1">submit_draft_run</code>.
+      </p>
+    );
+  }
+
+  return (
+    <section className="space-y-2 rounded border border-amber-300 bg-amber-50 p-4">
+      <h2 className="text-sm font-medium text-amber-900">
+        {drafts.length} draft{drafts.length > 1 ? "s" : ""} waiting to be
+        launched
+      </h2>
+      <ul className="space-y-2">
+        {drafts.map((draft) => (
+          <li
+            key={draft.id}
+            className="flex flex-wrap items-baseline justify-between gap-3 border-t border-amber-200 pt-2 text-sm"
+          >
+            <div>
+              <div className="font-medium">
+                {draft.config.label || "Untitled run"}
+              </div>
+              <div className="text-xs text-zinc-600">
+                {draft.config.scenarios.length} scenario
+                {draft.config.scenarios.length > 1 ? "s" : ""} ×{" "}
+                {draft.config.models.targets.length} model
+                {draft.config.models.targets.length > 1 ? "s" : ""} ×{" "}
+                {draft.config.repetitions} · submitted by {draft.created_by} ·{" "}
+                {formatDate(draft.created_at)}
+              </div>
+            </div>
+            {/* « Launch » ouvre le formulaire plutôt que de lancer sur-le-champ :
+                un brouillon vient d'un agent, et on veut pouvoir le corriger
+                avant de dépenser. */}
+            <Link
+              href={`/?draft=${draft.id}`}
+              className="shrink-0 rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700"
+            >
+              Launch…
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default function RunsPage() {
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Les brouillons ne se chargent qu'à la demande : la plupart du temps il n'y
+  // en a aucun, et une requête de plus à chaque ouverture de la liste des runs
+  // se paierait pour rien.
+  const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [showDrafts, setShowDrafts] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +125,17 @@ export default function RunsPage() {
     const timer = setTimeout(load, 0);
     return () => clearTimeout(timer);
   }, [load]);
+
+  const toggleDrafts = async () => {
+    const next = !showDrafts;
+    setShowDrafts(next);
+    if (!next || drafts !== null) return;
+    try {
+      setDrafts(await getDrafts());
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   // Tant qu'un run tourne, la liste se rafraîchit : c'est le seul endroit d'où
   // l'on peut suivre plusieurs runs à la fois.
@@ -85,12 +163,23 @@ export default function RunsPage() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Every evaluation run, most recent first. Open one to see its matrix.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
+          <p className="mt-1 text-sm text-zinc-600">
+            Every evaluation run, most recent first. Open one to see its matrix.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggleDrafts}
+          className="shrink-0 rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
+        >
+          {showDrafts ? "Hide drafts" : "Show drafts"}
+        </button>
       </header>
+
+      {showDrafts && <DraftList drafts={drafts} />}
 
       {runs.length === 0 ? (
         <p className="rounded border border-zinc-300 p-4 text-sm text-zinc-600">

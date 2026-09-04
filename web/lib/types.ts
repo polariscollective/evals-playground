@@ -286,6 +286,18 @@ export interface RunSummary {
   repetitions: [number, number];
 }
 
+/** Un run soumis par un agent, sauvegardé sans être lancé.
+ *
+ * Le geste de lancer reste un clic humain : c'est toute la raison d'être de
+ * cette table plutôt que d'un run créé directement. */
+export interface Draft {
+  id: string;
+  config: EvalRunConfig;
+  csv_text: string | null;
+  created_by: string;
+  created_at: string;
+}
+
 /** Un run ouvert : sa configuration, ses cases, sa matrice. */
 export interface RunDetail {
   run: EvalRun;

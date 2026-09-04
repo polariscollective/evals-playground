@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   createRun,
+  discardDraft,
   estimateRun,
   getCatalog,
   getDraft,
@@ -640,6 +641,12 @@ function EvaluateForm() {
         config(),
         source === "csv" ? csvText : null,
       );
+      // Le brouillon a servi : le laisser en attente ferait croire qu'il reste
+      // à lancer, et on ne saurait plus lequel a produit quoi. Après la
+      // création, jamais avant — un lancement qui échoue doit laisser de quoi
+      // recommencer. Un échec d'effacement ne fait pas échouer le lancement :
+      // le run existe, c'est lui qui compte, et le balayage ramassera le reste.
+      if (draftOf) await discardDraft(draftOf).catch(() => {});
       router.push(`/eval/${run_id}`);
     } catch (e) {
       setError((e as Error).message);
