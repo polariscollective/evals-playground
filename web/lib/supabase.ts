@@ -13,6 +13,7 @@ import "server-only";
 
 export const RUNS = "eval_runs";
 export const SAMPLES = "eval_samples";
+export const DRAFTS = "eval_run_drafts";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *
