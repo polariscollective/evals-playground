@@ -1,10 +1,14 @@
-// Le serveur MCP. Un outil pour l'instant : read_prompt, qui ne fait que
-// rejouer /prompt — la preuve que la chaîne OAuth marche de bout en bout
-// avant d'y ajouter ce qui touche vraiment aux runs.
+// Le serveur MCP : lire les runs, et en déposer un sans le lancer.
+//
+// Aucun outil ne démarre quoi que ce soit — submit_draft_run valide, chiffre et
+// pose un brouillon, le lancement reste un clic humain. Les descriptions le
+// disent en premier plutôt qu'en dernier : un agent qui croit risquer de
+// dépenser l'argent de quelqu'un n'appelle pas l'outil, et se rabat sur ce
+// qu'il imagine plus doux.
 import { createMcpHandler, getPublicOrigin, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { agentModels, agentPrompt } from "@/lib/agent-prompt";
+import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
 import { readConfigFile } from "@/lib/config-file";
 import { createDraft } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
@@ -52,16 +56,15 @@ const handler = createMcpHandler((server) => {
     {
       title: "Read the run-writing prompt",
       description:
-        "The instructions for writing an evals-playground run as YAML — the same document served at /prompt.",
+        "How to write an evals-playground run as YAML: the format, the rules that would refuse a " +
+        "document, the models available, and how to hand the finished one over. Read it before writing a run.",
       inputSchema: z.object({}),
     },
-    async (_args, ctx) => {
-      // `ctx.http.req` : la requête d'origine, vérifiée dans
-      // @modelcontextprotocol/server. `agentPrompt` accepte une origine vide
-      // — elle écrit alors /validate en relatif, ce qu'un agent qui vient de
-      // lire cette page résout de lui-même.
-      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
-      return { content: [{ type: "text", text: agentPrompt(agentModels(), origin) }] };
+    async () => {
+      // La variante MCP, pas celle de /prompt : elle renvoie vers
+      // submit_draft_run plutôt que vers le vérificateur HTTP, qui n'est pas
+      // une porte que cet agent-là a de raison d'ouvrir.
+      return { content: [{ type: "text", text: mcpAgentPrompt(agentModels()) }] };
     },
   );
 
@@ -217,11 +220,20 @@ const handler = createMcpHandler((server) => {
   server.registerTool(
     "submit_draft_run",
     {
-      title: "Submit a run as a draft",
+      title: "Check a run and save it as a draft",
       description:
-        "Validates a run written as YAML (same rules as /validate) and saves it as a draft a human reviews and launches. Never starts the run.",
+        "Nothing is launched and nothing is spent by calling this: no model is called, no evaluation " +
+        "starts. It is the validator — it applies to a YAML run configuration exactly the checks that " +
+        "would refuse it later. A document that fails comes back with the reason and is not saved, so " +
+        "being wrong here costs only a round trip. One that passes is saved as a draft and comes back " +
+        "with the run's estimated cost and the draft's address, where a human reviews it and decides " +
+        "whether to launch it. Call it once, on the complete document.",
       inputSchema: z.object({
-        yaml: z.string().describe("The run, as a YAML document — see read_prompt."),
+        yaml: z
+          .string()
+          .describe(
+            "The complete run, as a YAML document — every scenario written out, no CSV. See read_prompt.",
+          ),
       }),
     },
     async ({ yaml }, ctx) => {
