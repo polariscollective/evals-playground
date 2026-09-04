@@ -6,6 +6,9 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, agentPrompt } from "@/lib/agent-prompt";
 import { verifyAccessToken } from "@/lib/mcp-auth";
+import { NotFound, loadRun } from "@/lib/runs";
+import { cellsOf, overallMean } from "@/lib/matrix";
+import { isRunId } from "@/lib/run-id";
 
 const handler = createMcpHandler((server) => {
   server.registerTool(
@@ -23,6 +26,93 @@ const handler = createMcpHandler((server) => {
       // lire cette page résout de lui-même.
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return { content: [{ type: "text", text: agentPrompt(agentModels(), origin) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_run_metadata",
+    {
+      title: "Get run metadata",
+      description:
+        "Label, status, cost, models, notes and analysis for one run — no results, no transcripts.",
+      inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
+    },
+    async ({ run_id }) => {
+      if (!isRunId(run_id)) {
+        return { content: [{ type: "text", text: `Not a run id: ${run_id}` }], isError: true };
+      }
+      let run;
+      try {
+        run = (await loadRun(run_id, { withTranscripts: false, withSourceCsvFlag: false })).run;
+      } catch (error) {
+        if (error instanceof NotFound) {
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
+      const metadata = {
+        id: run.id,
+        label: run.label,
+        status: run.status,
+        user_email: run.user_email,
+        created_at: run.created_at,
+        started_at: run.started_at,
+        finished_at: run.finished_at,
+        is_public: run.is_public,
+        notes: run.notes,
+        analysis: run.analysis,
+        total_samples: run.total_samples,
+        cost_usd: run.cost_usd,
+        criterion: run.config.criterion,
+        rubric: run.config.rubric,
+        models: run.config.models,
+        scenario_count: run.config.scenarios.length,
+      };
+      return { content: [{ type: "text", text: JSON.stringify(metadata, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_run_results",
+    {
+      title: "Get run results",
+      description:
+        "The matrix: mean grade per scenario × model, judged/errored/pending counts and cost — no transcripts.",
+      inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
+    },
+    async ({ run_id }) => {
+      if (!isRunId(run_id)) {
+        return { content: [{ type: "text", text: `Not a run id: ${run_id}` }], isError: true };
+      }
+      let detail;
+      try {
+        detail = await loadRun(run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      } catch (error) {
+        if (error instanceof NotFound) {
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
+      const { run, samples } = detail;
+      const cells = cellsOf(samples, run.config.scenarios.length, run.config.rubric);
+      const results = {
+        overall_mean: overallMean(samples, run.config.rubric),
+        scenarios: run.config.scenarios.map((scenario, index) => ({
+          title: scenario.title,
+          by_model: run.config.models.targets.map((model) => {
+            const cell = cells[index]?.[model];
+            return {
+              model,
+              mean: cell?.mean ?? null,
+              judged: cell?.judged ?? 0,
+              errored: cell?.errored ?? 0,
+              pending: cell?.pending ?? 0,
+              cost_usd: cell?.cost_usd ?? 0,
+            };
+          }),
+        })),
+      };
+      return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
     },
   );
 }, {});
