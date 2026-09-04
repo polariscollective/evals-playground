@@ -90,13 +90,20 @@ export function PublicIcon() {
   );
 }
 
-/** Copie l'identifiant d'un run — le geste le plus fréquent, partagé par la
- *  liste des runs et la page d'un run. */
-export function CopyId({ value }: { value: string }) {
+/** Copie un identifiant, run ou brouillon — le geste le plus fréquent, partagé
+ *  par les deux listes et la page d'un run. `title` dit lequel : le bouton se
+ *  lit à la souris, et « Copy run id » sur un brouillon mentirait. */
+export function CopyId({
+  value,
+  title = "Copy run id",
+}: {
+  value: string;
+  title?: string;
+}) {
   return (
     <CopyButton
       value={value}
-      title="Copy run id"
+      title={title}
       className="inline-flex items-center gap-1 rounded px-1 font-mono text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
     >
       {(copied) => (

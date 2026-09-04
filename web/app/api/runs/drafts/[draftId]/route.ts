@@ -56,8 +56,9 @@ export async function DELETE(
 
 /** Les deux façons de reprendre un brouillon en main.
  *
- * `launched_run_id` : il a servi, on dit ce qu'il a produit. Il sort de la
- * liste d'attente sans être jeté — son adresse reste ouverte.
+ * `launched` : il a servi. Il sort de la liste d'attente sans être jeté — son
+ * adresse reste ouverte, et ce qu'il a produit se lit sur le run, qui porte
+ * `draft_id`.
  *
  * `config` : on le réécrit en place, après l'avoir rouvert et corrigé.
  * Remplacer plutôt qu'en semer un second, sans quoi la liste d'attente
@@ -74,13 +75,13 @@ export async function PATCH(
 
   const { draftId } = await params;
   const body = (await request.json().catch(() => null)) as {
-    launched_run_id?: unknown;
+    launched?: unknown;
     config?: unknown;
     csv_text?: unknown;
   } | null;
 
-  if (typeof body?.launched_run_id === "string") {
-    await markDraftLaunched(draftId, body.launched_run_id);
+  if (body?.launched === true) {
+    await markDraftLaunched(draftId);
     return NextResponse.json({ ok: true });
   }
 
@@ -94,7 +95,7 @@ export async function PATCH(
   }
 
   return NextResponse.json(
-    { error: "send either launched_run_id or config" },
+    { error: "send either launched: true or config" },
     { status: 422 },
   );
 }

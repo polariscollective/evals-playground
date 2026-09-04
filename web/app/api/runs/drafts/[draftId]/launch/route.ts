@@ -29,7 +29,7 @@ export async function POST(
   const problem = configProblem(draft.config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  const run = await createRun(draft.config, user.email, draft.csv_text);
+  const run = await createRun(draft.config, user.email, draft.csv_text, draftId);
   try {
     await recordStart(run.id, await startJob(run.id, "run"));
   } catch (error) {
@@ -52,8 +52,9 @@ export async function POST(
     console.error(`Could not copy tags from draft ${draftId} to run ${run.id}:`, (error as Error).message);
   }
 
-  // Marqué lancé, pas effacé : il sort de la liste d'attente, garde son
-  // adresse ouverte pour un relancement, et dit désormais ce qu'il a produit.
-  await markDraftLaunched(draftId, run.id);
+  // Marqué lancé, pas effacé : il sort de la liste d'attente et garde son
+  // adresse ouverte pour un relancement. Ce qu'il a produit se lit sur le run,
+  // qui porte `draft_id` — plusieurs peuvent le porter.
+  await markDraftLaunched(draftId);
   return NextResponse.json({ run_id: run.id }, { status: 201 });
 }

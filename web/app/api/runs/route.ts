@@ -24,13 +24,22 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     config?: EvalRunConfig;
     csv_text?: string | null;
+    draft_id?: string | null;
   } | null;
 
   const problem = configProblem(body?.config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  // L'auteur vient de la session, jamais de ce que le client prétend.
-  const run = await createRun(body!.config!, user.email, body?.csv_text ?? null);
+  // L'auteur vient de la session, jamais de ce que le client prétend. Le
+  // brouillon d'origine, lui, ne peut venir que du client : c'est lui qui sait
+  // sur quoi le formulaire était ouvert, et s'en tromper ne fait qu'attribuer
+  // une provenance, jamais un droit.
+  const run = await createRun(
+    body!.config!,
+    user.email,
+    body?.csv_text ?? null,
+    body?.draft_id ?? null,
+  );
 
   try {
     await recordStart(run.id, await startJob(run.id, "run"));

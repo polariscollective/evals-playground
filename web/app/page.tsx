@@ -674,13 +674,14 @@ function EvaluateForm() {
       const { run_id } = await createRun(
         config(),
         source === "csv" ? csvText : null,
+        draftOf,
       );
-      // Le brouillon a servi : marqué lancé, avec le run qu'il a produit. Il
-      // sort de la liste d'attente sans être jeté — son adresse reste ouverte
-      // si l'on veut relancer la même chose. Après la création, jamais avant :
-      // un lancement qui échoue doit laisser de quoi recommencer. Et un échec
-      // de marquage ne fait pas échouer le lancement, le run existe.
-      if (draftOf) await markDraftLaunched(draftOf, run_id).catch(() => {});
+      // Le brouillon a servi : marqué lancé. Il sort de la liste d'attente sans
+      // être jeté — son adresse reste ouverte si l'on veut relancer la même
+      // chose. Après la création, jamais avant : un lancement qui échoue doit
+      // laisser de quoi recommencer. Et un échec de marquage ne fait pas
+      // échouer le lancement, le run existe — c'est lui qui porte le lien.
+      if (draftOf) await markDraftLaunched(draftOf).catch(() => {});
       router.push(`/eval/${run_id}`);
     } catch (e) {
       setError((e as Error).message);

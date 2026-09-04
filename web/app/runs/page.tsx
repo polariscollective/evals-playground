@@ -94,38 +94,74 @@ function TagChips({ tags }: { tags: Tag[] }) {
  * lequel reste à faire.
  *
  * De qui que ce soit : un brouillon est une proposition faite à l'équipe. */
+/** Le bouton qui rouvre la liste aux brouillons déjà lancés. Sorti du titre
+ *  pour que celui-ci continue de compter ce qui attend, et non ce qui est
+ *  affiché. */
+function LaunchedToggle({
+  showLaunched,
+  onToggle,
+}: {
+  showLaunched: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-900 hover:bg-amber-100"
+    >
+      {showLaunched ? "Hide launched" : "Show launched"}
+    </button>
+  );
+}
+
 function DraftList({
   drafts,
   draftTags,
   onDiscard,
+  showLaunched,
+  onToggleLaunched,
 }: {
   drafts: Draft[] | null;
   draftTags: Record<string, Tag[]>;
   onDiscard: (draft: Draft) => void;
+  showLaunched: boolean;
+  onToggleLaunched: () => void;
 }) {
   if (drafts === null) {
     return <p className="text-sm text-zinc-500">Loading drafts…</p>;
   }
   if (drafts.length === 0) {
     return (
-      <p className="rounded border border-zinc-300 p-4 text-sm text-zinc-600">
-        No draft waiting here. Agents submit them with{" "}
-        <code className="rounded bg-zinc-100 px-1">submit_draft_run</code>.
-      </p>
+      <div className="space-y-2 rounded border border-zinc-300 p-4 text-sm text-zinc-600">
+        <p>
+          No draft waiting here. Agents submit them with{" "}
+          <code className="rounded bg-zinc-100 px-1">submit_draft_run</code>.
+        </p>
+        <LaunchedToggle showLaunched={showLaunched} onToggle={onToggleLaunched} />
+      </div>
     );
   }
 
+  const waiting = drafts.filter((draft) => !draft.launched_at).length;
+
   return (
     <section className="space-y-2 rounded border border-amber-300 bg-amber-50 p-4">
-      <h2 className="text-sm font-medium text-amber-900">
-        {drafts.length} draft{drafts.length > 1 ? "s" : ""} waiting to be
-        launched
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-medium text-amber-900">
+          {waiting} draft{waiting === 1 ? "" : "s"} waiting to be launched
+        </h2>
+        <LaunchedToggle showLaunched={showLaunched} onToggle={onToggleLaunched} />
+      </div>
       <ul className="space-y-2">
         {drafts.map((draft) => (
           <li
             key={draft.id}
-            className="flex flex-wrap items-baseline justify-between gap-3 border-t border-amber-200 pt-2 text-sm"
+            className={
+              "flex flex-wrap items-baseline justify-between gap-3 border-t border-amber-200 pt-2 text-sm" +
+              // Déjà lancé : présent, mais visiblement plus dans la file.
+              (draft.launched_at ? " opacity-60" : "")
+            }
           >
             <div>
               <div className="font-medium">
@@ -159,6 +195,17 @@ function DraftList({
                   {draft.config.repetitions ?? 0} · submitted by{" "}
                   {draft.created_by} · {formatDate(draft.created_at)}
                 </span>
+                {/* L'identifiant se copie : c'est ce qu'on colle à un agent
+                    pour qu'il reprenne ce brouillon. */}
+                <CopyId value={draft.id} title="Copy draft id" />
+                {draft.launched_at && (
+                  <span
+                    className="rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-700"
+                    title="Sorti de la file — son adresse reste ouverte"
+                  >
+                    launched {formatDate(draft.launched_at)}
+                  </span>
+                )}
               </div>
               <TagChips tags={draftTags[draft.id] ?? []} />
             </div>
@@ -170,7 +217,7 @@ function DraftList({
                 href={`/?draft=${draft.id}`}
                 className="rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700"
               >
-                Launch…
+                {draft.launched_at ? "Launch again…" : "Launch…"}
               </Link>
               <button
                 type="button"
@@ -197,6 +244,10 @@ export default function RunsPage() {
   // se paierait pour rien.
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
+  // Les brouillons déjà lancés sortent de la file par défaut : elle est faite
+  // pour ce qui attend. Mais ils gardent leur adresse, et relancer la même
+  // chose est prévu — encore faut-il pouvoir les retrouver.
+  const [showLaunched, setShowLaunched] = useState(false);
   const [me, setMe] = useState<string | null>(null);
   // Les pastilles des deux listes, en un seul appel — pas une requête par
   // ligne. Un échec les laisse simplement absentes plutôt que de casser toute
@@ -268,15 +319,28 @@ export default function RunsPage() {
     }
   };
 
+  const fetchDrafts = async (withLaunched: boolean) => {
+    try {
+      setDrafts(await getDrafts(withLaunched));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const toggleDrafts = async () => {
     const next = !showDrafts;
     setShowDrafts(next);
     if (!next || drafts !== null) return;
-    try {
-      setDrafts(await getDrafts());
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    await fetchDrafts(showLaunched);
+  };
+
+  /** Rouvrir la liste aux lancés demande une requête de plus : ils ne sont pas
+   *  déjà là, la route par défaut ne les rend pas. */
+  const toggleLaunched = async () => {
+    const next = !showLaunched;
+    setShowLaunched(next);
+    setDrafts(null);
+    await fetchDrafts(next);
   };
 
   // Tant qu'un run tourne, la liste se rafraîchit : c'est le seul endroit d'où
@@ -352,6 +416,8 @@ export default function RunsPage() {
           drafts={draftsVus}
           draftTags={tagAssignments.drafts}
           onDiscard={(draft) => setConfirming({ kind: "draft", draft })}
+          showLaunched={showLaunched}
+          onToggleLaunched={toggleLaunched}
         />
       )}
 

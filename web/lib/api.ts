@@ -74,10 +74,16 @@ export const getRun = (runId: string, withTranscripts = false) =>
 
 /** Lance un run. Le CSV téléversé est conservé, pour le retélécharger et pour
  * relancer depuis la même source. */
-export const createRun = (config: EvalRunConfig, csvText?: string | null) =>
+/** `draftId` dit d'où sort le run, quand le formulaire était ouvert sur un
+ *  brouillon. Il n'ouvre aucun droit — il n'attribue qu'une provenance. */
+export const createRun = (
+  config: EvalRunConfig,
+  csvText?: string | null,
+  draftId?: string | null,
+) =>
   request<{ run_id: string }>("/api/runs", {
     method: "POST",
-    body: JSON.stringify({ config, csv_text: csvText ?? null }),
+    body: JSON.stringify({ config, csv_text: csvText ?? null, draft_id: draftId ?? null }),
   });
 
 export const rejudgeRun = (runId: string, body: RejudgeRequest) =>
@@ -118,8 +124,10 @@ export const getDraft = (draftId: string) =>
 /** L'adresse de qui regarde, pour pouvoir filtrer « les miens ». */
 export const getMe = () => request<{ email: string }>("/api/me");
 
-/** Les brouillons en attente, de qui que ce soit. */
-export const getDrafts = () => request<Draft[]>("/api/runs/drafts");
+/** Les brouillons en attente, de qui que ce soit. `withLaunched` y ajoute
+ *  ceux qui ont déjà servi — on peut vouloir relancer la même chose. */
+export const getDrafts = (withLaunched = false) =>
+  request<Draft[]>(`/api/runs/drafts${withLaunched ? "?launched=1" : ""}`);
 
 /** Met le formulaire de côté, valide ou non. Rend l'identifiant du brouillon. */
 export const saveDraft = (config: EvalRunConfig, csvText: string | null) =>
@@ -143,12 +151,12 @@ export const updateDraft = (
 export const discardDraft = (draftId: string) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}`, { method: "DELETE" });
 
-/** Marque un brouillon comme lancé, en disant ce qu'il a produit. Son adresse
- *  reste ouverte, contrairement à la corbeille. */
-export const markDraftLaunched = (draftId: string, runId: string) =>
+/** Marque un brouillon comme lancé. Son adresse reste ouverte, contrairement
+ *  à la corbeille ; ce qu'il a produit se lit sur le run. */
+export const markDraftLaunched = (draftId: string) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}`, {
     method: "PATCH",
-    body: JSON.stringify({ launched_run_id: runId }),
+    body: JSON.stringify({ launched: true }),
   });
 
 /** Écarte un run des listes et de la lecture publique. Rien n'est effacé. */

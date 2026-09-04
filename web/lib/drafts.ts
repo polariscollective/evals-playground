@@ -64,14 +64,20 @@ export async function loadDraft(id: string): Promise<Draft> {
 /** Tous les brouillons en attente, du plus récent au plus ancien.
  *
  * Sans filtre sur l'auteur : un brouillon est une proposition faite à
- * l'équipe, comme un run l'est une fois lancé — tout le monde voit tout. */
-export async function loadDrafts(): Promise<Draft[]> {
+ * l'équipe, comme un run l'est une fois lancé — tout le monde voit tout.
+ *
+ * `withLaunched` rouvre la liste à ceux qui ont déjà servi. Ils en sortent par
+ * défaut parce que la liste d'attente est faite pour ce qui attend ; mais ils
+ * gardent leur adresse, et relancer la même chose est un geste prévu — encore
+ * faut-il pouvoir les retrouver. Les jetés, eux, ne reviennent jamais. */
+export async function loadDrafts(
+  options: { withLaunched?: boolean } = {},
+): Promise<Draft[]> {
   await sweepStaleDrafts();
   return select<Draft>(DRAFTS, {
     select: "*",
-    // Ce qui attend : ni lancé, ni jeté.
     deleted_at: "is.null",
-    launched_at: "is.null",
+    ...(options.withLaunched ? {} : { launched_at: "is.null" }),
     order: "created_at.desc",
   });
 }
@@ -112,19 +118,15 @@ export async function discardDraft(id: string): Promise<void> {
   await update(DRAFTS, { deleted_at: NOW }, { id: `eq.${id}` });
 }
 
-/** Marquer un brouillon comme lancé, et dire ce qu'il a produit.
+/** Marquer un brouillon comme lancé.
  *
  * Il sort de la liste d'attente — il a servi — mais son adresse reste
  * ouverte : rouvrir un brouillon lancé pour relancer la même chose est un
- * geste légitime. `launched_run_id` répond après coup à « d'où vient ce
- * run », que la disparition pure et simple rendait impossible. */
-export async function markDraftLaunched(
-  id: string,
-  runId: string,
-): Promise<void> {
-  await update(
-    DRAFTS,
-    { launched_at: NOW, launched_run_id: runId },
-    { id: `eq.${id}` },
-  );
+ * geste légitime, et `launched_at` dit donc le *dernier* lancement.
+ *
+ * Ce qu'il a produit ne se note plus ici. Une case unique ne peut pas tenir
+ * plusieurs runs, et le second lancement effaçait le premier : c'est
+ * `eval_runs.draft_id` qui porte le lien, autant de fois qu'il le faut. */
+export async function markDraftLaunched(id: string): Promise<void> {
+  await update(DRAFTS, { launched_at: NOW }, { id: `eq.${id}` });
 }

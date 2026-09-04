@@ -220,6 +220,11 @@ export interface EvalRun {
   /** Le devis calculé au lancement, à comparer à `cost_usd`. null sur les runs
    *  antérieurs à son enregistrement. */
   estimate: CostEstimate | null;
+  /** Le brouillon dont ce run est sorti, s'il en vient d'un. Plusieurs runs
+   *  peuvent désigner le même : relancer un brouillon est prévu. Sans clé
+   *  étrangère — la provenance survit à la disparition du brouillon, et
+   *  l'identifiant peut donc ne plus rien désigner. */
+  draft_id: string | null;
 }
 
 /** Une ligne d'`eval_samples` : une case de la matrice. */
@@ -307,9 +312,6 @@ export interface Draft {
   /** Lancé : sort de la liste, mais son adresse reste ouverte — on peut vouloir
    *  relancer la même chose. */
   launched_at: string | null;
-  /** Le run qu'il a produit, s'il en a produit un. Répond après coup à « d'où
-   *  vient ce run ». */
-  launched_run_id: string | null;
 }
 
 /** Un run ouvert : sa configuration, ses cases, sa matrice. */

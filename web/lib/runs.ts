@@ -170,6 +170,7 @@ export async function createRun(
   config: EvalRunConfig,
   userEmail: string,
   csvText: string | null,
+  draftId: string | null = null,
 ): Promise<EvalRun> {
   const total =
     config.scenarios.length * config.models.targets.length * config.repetitions;
@@ -187,6 +188,10 @@ export async function createRun(
       // être celui que ce code produit, pas celui qu'un client affirme avoir
       // vu. Sans ça, la comparaison d'après ne mesurerait plus rien.
       estimate: estimateCost(config),
+      // D'où il sort, quand il sort d'un brouillon. Porté par le run et non
+      // par le brouillon : relancer le même brouillon est prévu, et une case
+      // unique de l'autre côté écraserait le run précédent.
+      draft_id: draftId,
     },
     { returning: true },
   );

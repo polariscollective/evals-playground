@@ -6,12 +6,17 @@ import type { EvalRunConfig } from "@/lib/types";
 /** Les brouillons en attente, de qui que ce soit.
  *
  * Un brouillon est une proposition faite à l'équipe : le filtrer par auteur
- * cacherait à celui qui peut le lancer ce qu'un agent vient de lui soumettre. */
-export async function GET() {
+ * cacherait à celui qui peut le lancer ce qu'un agent vient de lui soumettre.
+ *
+ * `?launched=1` rouvre la liste à ceux qui ont déjà servi : ils gardent leur
+ * adresse, et relancer la même chose est prévu. Hors de la liste par défaut,
+ * qui est celle de ce qui attend. */
+export async function GET(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
 
-  return NextResponse.json(await loadDrafts());
+  const withLaunched = new URL(request.url).searchParams.get("launched") === "1";
+  return NextResponse.json(await loadDrafts({ withLaunched }));
 }
 
 /** Enregistrer le formulaire en l'état, valide ou non.

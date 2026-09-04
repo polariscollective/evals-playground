@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   cancelRun,
@@ -460,6 +461,20 @@ export default function EvalRunPage({
       </div>
 
       <TagField runId={run.id} />
+
+      {/* D'où il sort, quand il sort d'un brouillon. Le lien rouvre le
+          formulaire dessus : c'est là qu'on repart de la même configuration.
+          L'identifiant peut ne plus rien désigner — un brouillon jeté à la
+          main disparaît, et la provenance du run lui survit exprès. */}
+      {run.draft_id && (
+        <p className="text-sm text-zinc-500">
+          Launched from{" "}
+          <Link href={`/?draft=${run.draft_id}`} className="underline">
+            the draft it came from
+          </Link>
+          .
+        </p>
+      )}
 
       {publicUrl && (
         <p className="flex items-center gap-1 text-sm text-zinc-500">
