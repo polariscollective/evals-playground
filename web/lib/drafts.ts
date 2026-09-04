@@ -3,7 +3,7 @@
 // createDraft rend adressable.
 import "server-only";
 import { DRAFTS, DRAFT_TAGS, NOW, insert, remove, rpc, select, update } from "./supabase";
-import type { Draft, EvalRunConfig } from "./types";
+import type { Draft, EvalRunConfig, ExtendRequest } from "./types";
 
 export class DraftNotFound extends Error {}
 
@@ -15,6 +15,33 @@ export type { Draft };
  * si une configuration incomplète est une anomalie ou l'état normal du
  * travail. L'outil MCP ne dépose que du valide — il valide avant — quand le
  * formulaire dépose ce qu'il a sous la main. */
+/** Proposer d'agrandir un run, sans y toucher.
+ *
+ * Rien n'est appliqué au run : ni les modèles, ni les scénarios, ni les outils
+ * que la demande propose d'ajouter. Le brouillon ne porte qu'une intention, et
+ * c'est le panneau d'extension qui l'exécute après confirmation — un brouillon
+ * qu'on jette doit laisser le run exactement comme il était. */
+export async function createExtendDraft(
+  runId: string,
+  request: ExtendRequest,
+  createdBy: string,
+  origin: "manual" | "mcp",
+): Promise<string> {
+  const rows = await insert<Draft>(
+    DRAFTS,
+    {
+      kind: "extend",
+      extends_run_id: runId,
+      config: request,
+      csv_text: null,
+      created_by: createdBy,
+      origin,
+    },
+    { returning: true },
+  );
+  return rows[0].id;
+}
+
 export async function createDraft(
   config: EvalRunConfig,
   csvText: string | null,
@@ -23,7 +50,7 @@ export async function createDraft(
 ): Promise<string> {
   const rows = await insert<Draft>(
     DRAFTS,
-    { config, csv_text: csvText, created_by: createdBy, origin },
+    { kind: "run", config, csv_text: csvText, created_by: createdBy, origin },
     { returning: true },
   );
   return rows[0].id;

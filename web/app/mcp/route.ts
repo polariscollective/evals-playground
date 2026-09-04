@@ -11,7 +11,13 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
-import { DraftNotFound, createDraft, loadDraft, updateDraft } from "@/lib/drafts";
+import {
+  DraftNotFound,
+  createDraft,
+  createExtendDraft,
+  loadDraft,
+  updateDraft,
+} from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { costSentence } from "@/lib/pricing";
@@ -19,6 +25,7 @@ import { NotFound, loadRun, loadRuns, loadSampleTranscript } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
 import { addRunTags, loadTags, setDraftTags, tagsByRun, tagsForLabels, tagsOf } from "@/lib/tags";
+import { extendProblem } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
 import type { Draft, RunDetail } from "@/lib/types";
 
@@ -330,7 +337,22 @@ const handler = createMcpHandler((server) => {
     async ({ draft_id }) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
-      return { content: [{ type: "text", text: writeConfigFile(found.draft.config) }] };
+      const { draft } = found;
+      // Un brouillon d'extension ne se rend pas en YAML de run : ce qu'il
+      // porte est une sous-matrice à ajouter, pas une évaluation complète.
+      if (draft.kind !== "run") {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `This draft extends run ${draft.extends_run_id} rather than describing a new one.\n\n` +
+                JSON.stringify(draft.config, null, 2),
+            },
+          ],
+        };
+      }
+      return { content: [{ type: "text", text: writeConfigFile(draft.config) }] };
     },
   );
 
@@ -438,6 +460,137 @@ const handler = createMcpHandler((server) => {
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return {
         content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draftId}` }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "extend_run",
+    {
+      title: "Propose adding to an existing run",
+      description:
+        "Nothing is launched and nothing is spent by calling this. It proposes adding a sub-matrix to a " +
+        "run that already exists — more models, more repetitions, more scenarios — and saves that " +
+        "proposal as a draft. A human opens it on the run's page, reviews it and decides. The run is " +
+        "not touched until they do. What cannot be changed by extending: the judge, the scale, the " +
+        "criterion and the number of turns — a second batch judged differently would not be comparable " +
+        "to the first, and a matrix exists to be compared.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run's UUID."),
+        scenario_indices: z
+          .array(z.number().int().min(0))
+          .default([])
+          .describe(
+            "Scenarios already in the run to cover again, 0-based in scenario order. Use them to add " +
+              "models or repetitions to what is already there.",
+          ),
+        new_scenarios: z
+          .array(
+            z.object({
+              title: z.string(),
+              system_prompt: z.string(),
+              opening_message: z.string(),
+              note: z.string().optional().describe("Why this scenario exists. Neither the model nor the judge sees it."),
+              tools: z
+                .array(z.string())
+                .nullable()
+                .optional()
+                .describe(
+                  "Tool names this scenario may call. Omit for every tool the run defines, [] for none.",
+                ),
+            }),
+          )
+          .default([])
+          .describe("Scenarios to add to the run, appended after the existing ones."),
+        targets: z
+          .array(z.string())
+          .describe("Models to cover — already evaluated in this run or not."),
+        repetitions: z.number().int().min(1).describe("How many attempts to add per cell."),
+        new_tools: z
+          .array(
+            z.object({
+              name: z.string(),
+              description: z.string(),
+              result: z.string().describe("What the tool returns, always the same thing."),
+              parameters: z
+                .array(
+                  z.object({
+                    name: z.string(),
+                    type: z.enum(["string", "number", "integer", "boolean"]),
+                    description: z.string(),
+                    required: z.boolean(),
+                  }),
+                )
+                .default([]),
+            }),
+          )
+          .optional()
+          .describe(
+            "Tools to add to the run's set. Adding is allowed; redefining an existing name is not — " +
+              "cells already run would be read as having had this one.",
+          ),
+        new_tools_for_existing: z
+          .boolean()
+          .optional()
+          .describe(
+            "Only meaningful alongside new_tools, and only for scenarios that never named their tools — " +
+              "those take whatever the run defines. true: they get the new tools if they are run again. " +
+              "false: their current tools are written out, so re-running them shows what they always saw. " +
+              "Cells already run are unaffected either way. The human confirms this before anything is " +
+              "applied.",
+          ),
+      }),
+    },
+    async (input, ctx) => {
+      const found = await runOrError(input.run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      if ("error" in found) return found.error;
+      const { run } = found.run;
+
+      const request = {
+        scenario_indices: input.scenario_indices,
+        new_scenarios: input.new_scenarios,
+        targets: input.targets,
+        repetitions: input.repetitions,
+        ...(input.new_tools ? { new_tools: input.new_tools } : {}),
+        ...(input.new_tools_for_existing === undefined
+          ? {}
+          : { new_tools_for_existing: input.new_tools_for_existing }),
+      };
+
+      // Les mêmes contrôles que la route d'extension, au dépôt plutôt qu'au
+      // lancement : un agent doit savoir tout de suite que sa proposition ne
+      // tient pas, et un brouillon en attente doit être lançable.
+      const problem = extendProblem(
+        request,
+        run.config.scenarios.length,
+        run.config.tools ?? [],
+      );
+      if (problem) {
+        return { content: [{ type: "text", text: problem }], isError: true };
+      }
+
+      const draftId = await createExtendDraft(
+        input.run_id,
+        request,
+        callerEmail(ctx),
+        "mcp",
+      );
+      const cells =
+        (input.scenario_indices.length + input.new_scenarios.length) *
+        input.targets.length *
+        input.repetitions;
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Saved as a draft extension of "${run.label ?? input.run_id}": ` +
+              `${cells} cell${cells > 1 ? "s" : ""} to add. Nothing has been ` +
+              `spent, and the run is unchanged until a human confirms it.\n\n` +
+              `${origin}/eval/${input.run_id}?extend=${draftId}`,
+          },
+        ],
       };
     },
   );

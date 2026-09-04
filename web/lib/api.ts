@@ -117,9 +117,7 @@ export const saveNotes = (runId: string, notes: string) =>
 /** Le contenu d'un brouillon soumis par un agent, pour ouvrir le formulaire
  *  dessus plutôt que de le montrer dans une page à part. */
 export const getDraft = (draftId: string) =>
-  request<{ config: EvalRunConfig; csv_text: string | null }>(
-    `/api/runs/drafts/${draftId}`,
-  );
+  request<Draft>(`/api/runs/drafts/${draftId}`);
 
 /** L'adresse de qui regarde, pour pouvoir filtrer « les miens ». */
 export const getMe = () => request<{ email: string }>("/api/me");

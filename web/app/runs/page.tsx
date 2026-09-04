@@ -51,6 +51,16 @@ function formatDate(iso: string): string {
 }
 
 
+/** Comment appeler un brouillon à l'écran.
+ *
+ * Un brouillon de run porte le nom qu'on lui a donné ; une extension n'en a
+ * pas — ce qu'elle propose n'est pas un run mais un ajout à un run qui, lui,
+ * a déjà un nom. */
+function draftName(draft: Draft): string {
+  if (draft.kind === "extend") return "an extension of an existing run";
+  return draft.config.label || "Untitled run";
+}
+
 /** Une corbeille, discrète jusqu'au survol : le geste est rare et réversible,
  *  il n'a pas à peser dans la page. */
 function TrashIcon() {
@@ -154,7 +164,9 @@ function DraftList({
           >
             <div>
               <div className="font-medium">
-                {draft.config.label || "Untitled run"}
+                {draft.kind === "extend"
+                  ? "Add to an existing run"
+                  : draftName(draft)}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600">
                 {/* D'où il vient change ce qu'on lit d'un champ manquant :
@@ -174,15 +186,37 @@ function DraftList({
                 >
                   {draft.origin === "manual" ? "manual" : "MCP"}
                 </span>
+                {draft.kind === "extend" && (
+                  <span
+                    className="rounded bg-zinc-900 px-1.5 py-0.5 text-white"
+                    title="Agrandit un run existant plutôt que d'en lancer un nouveau"
+                  >
+                    extend
+                  </span>
+                )}
                 <span>
-                  {/* Tolérant à l'incomplet : un brouillon manuel peut n'avoir
-                      encore ni scénario ni modèle. */}
-                  {draft.config.scenarios?.length ?? 0} scenario
-                  {(draft.config.scenarios?.length ?? 0) > 1 ? "s" : ""} ×{" "}
-                  {draft.config.models?.targets?.length ?? 0} model
-                  {(draft.config.models?.targets?.length ?? 0) > 1 ? "s" : ""} ×{" "}
-                  {draft.config.repetitions ?? 0} · submitted by{" "}
-                  {draft.created_by} · {formatDate(draft.created_at)}
+                  {/* Une extension ne se compte pas comme un run : ses
+                      scénarios sont ceux qu'elle ajoute, en plus de ceux que
+                      le run porte déjà. Tolérant à l'incomplet par ailleurs :
+                      un brouillon manuel peut n'avoir encore ni scénario ni
+                      modèle. */}
+                  {draft.kind === "extend"
+                    ? `${draft.config.scenario_indices.length + draft.config.new_scenarios.length} scenario${
+                        draft.config.scenario_indices.length +
+                          draft.config.new_scenarios.length >
+                        1
+                          ? "s"
+                          : ""
+                      } × ${draft.config.targets.length} model${
+                        draft.config.targets.length > 1 ? "s" : ""
+                      } × ${draft.config.repetitions} added`
+                    : `${draft.config.scenarios?.length ?? 0} scenario${
+                        (draft.config.scenarios?.length ?? 0) > 1 ? "s" : ""
+                      } × ${draft.config.models?.targets?.length ?? 0} model${
+                        (draft.config.models?.targets?.length ?? 0) > 1 ? "s" : ""
+                      } × ${draft.config.repetitions ?? 0}`}{" "}
+                  · submitted by {draft.created_by} ·{" "}
+                  {formatDate(draft.created_at)}
                 </span>
                 {/* L'identifiant se copie : c'est ce qu'on colle à un agent
                     pour qu'il reprenne ce brouillon. */}
@@ -208,17 +242,28 @@ function DraftList({
                 un brouillon vient d'un agent, et on veut pouvoir le corriger
                 avant de dépenser. */}
             <div className="flex shrink-0 items-center gap-2">
+              {/* Une extension ne se lance pas depuis le formulaire : elle
+                  s'ajoute à un run, donc elle s'ouvre sur la page de ce run,
+                  dans le panneau prévu pour ça. */}
               <Link
-                href={`/?draft=${draft.id}`}
+                href={
+                  draft.kind === "extend"
+                    ? `/eval/${draft.extends_run_id}?extend=${draft.id}`
+                    : `/?draft=${draft.id}`
+                }
                 className="rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700"
               >
-                {draft.launched_at ? "Launch again…" : "Launch…"}
+                {draft.kind === "extend"
+                  ? "Open the run…"
+                  : draft.launched_at
+                    ? "Launch again…"
+                    : "Launch…"}
               </Link>
               <button
                 type="button"
                 onClick={() => onDiscard(draft)}
                 title="Discard this draft"
-                aria-label={`Discard draft ${draft.config.label || draft.id}`}
+                aria-label={`Discard draft ${draftName(draft)}`}
                 className="rounded p-1 text-zinc-400 hover:bg-red-100 hover:text-red-800"
               >
                 <TrashIcon />
@@ -616,7 +661,7 @@ export default function RunsPage() {
         <p className="text-sm">
           <strong className="font-medium">
             {confirming?.kind === "draft"
-              ? confirming.draft.config.label || "Untitled run"
+              ? draftName(confirming.draft)
               : (confirming?.label ?? "")}
           </strong>{" "}
           {confirming?.kind === "draft"

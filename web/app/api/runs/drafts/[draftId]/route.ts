@@ -22,11 +22,9 @@ export async function GET(
 
   const { draftId } = await params;
   try {
-    const draft = await loadDraft(draftId);
-    return NextResponse.json({
-      config: draft.config,
-      csv_text: draft.csv_text,
-    });
+    // Le brouillon entier : le genre en fait partie, et l'appelant ne peut
+    // pas lire sa charge sans savoir comment la lire.
+    return NextResponse.json(await loadDraft(draftId));
   } catch (error) {
     if (error instanceof DraftNotFound) {
       return NextResponse.json({ error: error.message }, { status: 404 });

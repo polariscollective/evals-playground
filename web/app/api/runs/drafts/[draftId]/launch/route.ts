@@ -26,6 +26,21 @@ export async function POST(
     throw error;
   }
 
+  // Un brouillon d'extension ne se lance pas ici : il n'a pas de run à créer,
+  // il en agrandit un. Son lancement passe par le panneau d'extension, sur la
+  // page du run concerné, parce qu'il demande une confirmation humaine — c'est
+  // là que les outils proposés s'appliquent enfin.
+  if (draft.kind !== "run") {
+    return NextResponse.json(
+      {
+        error:
+          "this draft extends a run — open it from the run's page instead",
+        extends_run_id: draft.extends_run_id,
+      },
+      { status: 409 },
+    );
+  }
+
   const problem = configProblem(draft.config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 

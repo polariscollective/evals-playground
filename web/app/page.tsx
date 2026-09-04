@@ -270,9 +270,18 @@ function EvaluateForm() {
     let cancelled = false;
 
     getDraft(draftOf)
-      .then(({ config, csv_text }) => {
+      .then((draft) => {
         if (cancelled) return;
-        fillFromConfig(config, config.label ?? "", csv_text);
+        // Une extension ne se remplit pas ici : elle s'ajoute à un run
+        // existant, sur la page de ce run. La liste des brouillons y mène
+        // directement ; cette adresse-ci n'aurait rien à en faire.
+        if (draft.kind !== "run") {
+          setError(
+            "That draft extends an existing run — open it from that run's page.",
+          );
+          return;
+        }
+        fillFromConfig(draft.config, draft.config.label ?? "", draft.csv_text);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(`Could not open that draft: ${e.message}`);

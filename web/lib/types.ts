@@ -320,9 +320,9 @@ export interface RunSummary {
  *
  * Le geste de lancer reste un clic humain : c'est toute la raison d'être de
  * cette table plutôt que d'un run créé directement. */
-export interface Draft {
+/** Ce que tout brouillon porte, quoi qu'il propose. */
+interface DraftCommon {
   id: string;
-  config: EvalRunConfig;
   csv_text: string | null;
   created_by: string;
   created_at: string;
@@ -335,7 +335,33 @@ export interface Draft {
   /** Lancé : sort de la liste, mais son adresse reste ouverte — on peut vouloir
    *  relancer la même chose. */
   launched_at: string | null;
+  /** Ce qu'il a produit, s'il a été lancé. Répond après coup à « d'où vient ce
+   *  run ». */
+  launched_run_id: string | null;
 }
+
+/** Un run à lancer. */
+export interface RunDraft extends DraftCommon {
+  kind: "run";
+  config: EvalRunConfig;
+  extends_run_id: null;
+}
+
+/** Une sous-matrice à ajouter à un run existant.
+ *
+ * `config` porte une `ExtendRequest` : c'est la même colonne en base, et
+ * `kind` dit comment la lire. L'union discriminée fait le reste — lire une
+ * `EvalRunConfig` sur un brouillon d'extension ne compile pas.
+ *
+ * Rien n'est appliqué au run tant qu'il n'est pas lancé, outils proposés
+ * compris : un brouillon qu'on jette doit laisser le run intact. */
+export interface ExtendDraft extends DraftCommon {
+  kind: "extend";
+  config: ExtendRequest;
+  extends_run_id: string;
+}
+
+export type Draft = RunDraft | ExtendDraft;
 
 /** Un run ouvert : sa configuration, ses cases, sa matrice. */
 export interface RunDetail {

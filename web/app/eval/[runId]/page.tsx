@@ -2,11 +2,13 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   cancelRun,
   exportUrl,
   extendRun,
+  getDraft,
+  markDraftLaunched,
   getRun,
   getRunTags,
   getTags,
@@ -37,7 +39,12 @@ import {
 import { NotesField } from "@/components/NotesField";
 import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
-import type { RubricLevel, RunDetail, Tag } from "@/lib/types";
+import type {
+  ExtendRequest,
+  RubricLevel,
+  RunDetail,
+  Tag,
+} from "@/lib/types";
 
 /** Repasser le juge sur un run terminé, avec une autre question. */
 function RejudgePanel({
@@ -154,6 +161,7 @@ export default function EvalRunPage({
   params: Promise<{ runId: string }>;
 }) {
   const { runId } = use(params);
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +169,11 @@ export default function EvalRunPage({
   const [analysis, setAnalysis] = useState("");
   const [rejudging, setRejudging] = useState(false);
   const [extending, setExtending] = useState(false);
+  // Une extension proposée par un agent, ouverte depuis la liste des
+  // brouillons. Elle ne préremplit que le panneau : rien n'est appliqué au run
+  // tant que personne n'a confirmé, outils proposés compris.
+  const [proposal, setProposal] = useState<ExtendRequest | null>(null);
+  const [proposalId, setProposalId] = useState<string | null>(null);
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
   // pas un résultat, et un rechargement ramène la lecture ordinaire.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
@@ -232,6 +245,31 @@ export default function EvalRunPage({
     [runId],
   );
 
+  // `?extend=<id>` : on vient de la liste des brouillons avec une proposition à
+  // relire. Le panneau s'ouvre dessus plutôt que vide.
+  useEffect(() => {
+    const draftId = searchParams.get("extend");
+    if (!draftId) return;
+    let cancelled = false;
+    getDraft(draftId)
+      .then((draft) => {
+        if (cancelled) return;
+        if (draft.kind !== "extend") {
+          setError("That draft is a run to launch, not an extension.");
+          return;
+        }
+        setProposal(draft.config);
+        setProposalId(draftId);
+        setExtending(true);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(`Could not open that draft: ${e.message}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
+
   useEffect(() => {
     // Passer par un timer plutôt que d'appeler load() dans le corps de
     // l'effet : celui-ci déclenche un setState synchrone, ce que la règle
@@ -251,7 +289,7 @@ export default function EvalRunPage({
 
   if (error) {
     return (
-      <main className="mx-auto max-w-5xl p-8">
+      <main className="mx-auto max-w-6xl p-8">
         <p
           role="alert"
           className="rounded border border-red-400 bg-red-50 p-3 text-red-800"
@@ -262,7 +300,7 @@ export default function EvalRunPage({
     );
   }
 
-  if (!detail) return <main className="mx-auto max-w-5xl p-8">Loading…</main>;
+  if (!detail) return <main className="mx-auto max-w-6xl p-8">Loading…</main>;
 
   const { run, progress } = detail;
   const copyMatrix = async () => {
@@ -318,7 +356,7 @@ export default function EvalRunPage({
   };
 
   return (
-    <main className="mx-auto max-w-5xl space-y-6 p-8">
+    <main className="mx-auto max-w-6xl space-y-6 p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -690,10 +728,19 @@ export default function EvalRunPage({
         <ExtendPanel
           run={run}
           repetitionRange={repetitionRange(detail.samples)}
+          proposal={proposal}
           onCancel={() => setExtending(false)}
           onSubmit={async (request) => {
             await extendRun(run.id, request);
+            // Le brouillon a servi : marqué lancé, donc sorti de la liste
+            // d'attente sans être jeté. Après l'extension, jamais avant — une
+            // extension qui échoue doit laisser de quoi recommencer.
+            if (proposalId) {
+              await markDraftLaunched(proposalId).catch(() => {});
+            }
             setExtending(false);
+            setProposal(null);
+            setProposalId(null);
             await load(transcripts);
           }}
         />

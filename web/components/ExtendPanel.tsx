@@ -81,32 +81,52 @@ export function ExtendPanel({
   run,
   /** Combien d'essais chaque couple porte déjà, du plus petit au plus grand. */
   repetitionRange,
+  /** Une extension déjà écrite — par un agent, en brouillon — que le panneau
+   *  ouvre remplie plutôt que vide.
+   *
+   * Elle n'est qu'un point de départ : tout reste modifiable, et rien n'est
+   * appliqué au run avant la confirmation. C'est aussi vrai des outils qu'elle
+   * propose d'ajouter, et de la réponse qu'elle donne sur les anciens
+   * scénarios — on peut la changer avant de valider. */
+  proposal = null,
   onCancel,
   onSubmit,
 }: {
   run: EvalRun;
   repetitionRange: [number, number];
+  proposal?: ExtendRequest | null;
   onCancel: () => void;
   onSubmit: (request: ExtendRequest) => Promise<void>;
 }) {
   const config = run.config;
 
+  // Tout ce qui suit part de la proposition quand il y en a une, et de l'état
+  // ordinaire sinon. Les valeurs initiales seulement : une fois le panneau
+  // ouvert, plus rien ne le réécrit sous les doigts.
   const [indices, setIndices] = useState<number[]>(
-    config.scenarios.map((_, index) => index),
+    proposal ? proposal.scenario_indices : config.scenarios.map((_, i) => i),
   );
-  const [byHand, setByHand] = useState<EvalScenario[]>([]);
+  const [byHand, setByHand] = useState<EvalScenario[]>(
+    proposal ? proposal.new_scenarios : [],
+  );
   const [csv, setCsv] = useState<LoadedCsv | null>(null);
   const [colTitle, setColTitle] = useState("");
   const [colSystem, setColSystem] = useState("");
   const [colOpening, setColOpening] = useState("");
-  const [targets, setTargets] = useState<string[]>(config.models.targets);
-  const [repetitions, setRepetitions] = useState(1);
-  const [tempMin, setTempMin] = useState(
-    config.temperature ? String(config.temperature.min) : "",
+  const [targets, setTargets] = useState<string[]>(
+    proposal ? proposal.targets : config.models.targets,
   );
-  const [tempMax, setTempMax] = useState(
-    config.temperature?.max == null ? "" : String(config.temperature.max),
+  const [repetitions, setRepetitions] = useState(
+    proposal ? proposal.repetitions : 1,
   );
+  const [tempMin, setTempMin] = useState(() => {
+    const temperature = proposal?.temperature ?? config.temperature;
+    return temperature ? String(temperature.min) : "";
+  });
+  const [tempMax, setTempMax] = useState(() => {
+    const temperature = proposal?.temperature ?? config.temperature;
+    return temperature?.max == null ? "" : String(temperature.max);
+  });
   const [catalog, setCatalog] = useState<ProviderInfo[]>([]);
   const [manual, setManual] = useState<EvalScenario>({
     title: "",
@@ -120,10 +140,16 @@ export function ExtendPanel({
   // raison que la page du run l'ouvre en entier.
   const [looking, setLooking] = useState<number | null>(null);
   // Les outils que cette extension ajoute au décor du run.
-  const [newTools, setNewTools] = useState<ToolSpec[]>([]);
+  const [newTools, setNewTools] = useState<ToolSpec[]>(
+    proposal?.new_tools ?? [],
+  );
   // Les scénarios existants qui n'avaient nommé aucun outil héritent-ils des
   // nouveaux ? Sans réponse, on ne soumet pas : c'est un choix, pas un défaut.
-  const [forExisting, setForExisting] = useState<boolean | null>(null);
+  // La réponse de la proposition n'est qu'un défaut affiché : c'est l'humain
+  // qui tranche, et il peut la changer avant de confirmer.
+  const [forExisting, setForExisting] = useState<boolean | null>(
+    proposal?.new_tools_for_existing ?? null,
+  );
 
   useEffect(() => {
     getCatalog()
