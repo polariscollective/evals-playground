@@ -17,7 +17,7 @@ import { costSentence } from "@/lib/pricing";
 import { NotFound, loadRun, loadRuns, loadSampleTranscript } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
-import { tagsByRun } from "@/lib/tags";
+import { addRunTags, loadTags, setDraftTags, tagsByRun, tagsForLabels, tagsOf } from "@/lib/tags";
 import { verdictOf } from "@/lib/verdict";
 import type { RunDetail } from "@/lib/types";
 
@@ -227,6 +227,23 @@ const handler = createMcpHandler((server) => {
   );
 
   server.registerTool(
+    "list_tags",
+    {
+      title: "List tags",
+      description:
+        "The tags that exist right now, as labels — nothing else useful to an agent, colors are the " +
+        "interface's business. Check here before proposing one for submit_draft_run or set_run_tags: " +
+        "passing a label that doesn't match one of these (case-insensitively) creates a new tag, so " +
+        "reusing what's here avoids inventing \"regression\" when \"régression\" already exists.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      const tags = await loadTags();
+      return { content: [{ type: "text", text: JSON.stringify(tags.map((tag) => tag.label), null, 2) }] };
+    },
+  );
+
+  server.registerTool(
     "submit_draft_run",
     {
       title: "Check a run and save it as a draft",
@@ -243,9 +260,17 @@ const handler = createMcpHandler((server) => {
           .describe(
             "The complete run, as a YAML document — every scenario written out, no CSV. See read_prompt.",
           ),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Labels to attach to the draft — not ids, an agent thinks in words. A label that doesn't " +
+              "match an existing one (case-insensitively) creates a new tag; see list_tags first to " +
+              "reuse rather than duplicate.",
+          ),
       }),
     },
-    async ({ yaml }, ctx) => {
+    async ({ yaml, tags }, ctx) => {
       const verdict = verdictOf(yaml, costSentence);
       if (verdict.status !== 200 || verdict.message.startsWith("INCOMPLETE")) {
         // INCOMPLETE annonce un CSV que ce canal ne sait pas porter — un
@@ -254,9 +279,42 @@ const handler = createMcpHandler((server) => {
       }
       const { config } = readConfigFile(yaml);
       const draftId = await createDraft(config, null, callerEmail(ctx), "mcp");
+      if (tags && tags.length > 0) {
+        // Après la création, jamais avant : un document refusé n'écrit ni
+        // brouillon ni tag.
+        const created = await tagsForLabels(tags);
+        await setDraftTags(draftId, created.map((tag) => tag.id));
+      }
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return {
         content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draftId}` }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_run_tags",
+    {
+      title: "Add tags to a run",
+      description:
+        "Adds these labels to the tags a run already carries — the union, never a replacement: this " +
+        "tool cannot remove a tag, and nothing a human placed is ever erased by calling it. Removing a " +
+        "tag is a human gesture, done in the interface. A label that doesn't match an existing one " +
+        "(case-insensitively) creates a new tag; see list_tags first to reuse rather than duplicate.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run's UUID."),
+        tags: z.array(z.string()).describe("Labels to add — not ids."),
+      }),
+    },
+    async ({ run_id, tags }) => {
+      const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      if ("error" in result) return result.error;
+      const created = await tagsForLabels(tags);
+      const runId = result.run.run.id;
+      await addRunTags(runId, created.map((tag) => tag.id));
+      const current = await tagsOf(runId);
+      return {
+        content: [{ type: "text", text: JSON.stringify(current.map((tag) => tag.label), null, 2) }],
       };
     },
   );
