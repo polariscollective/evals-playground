@@ -337,11 +337,15 @@ Commit : `feat: les tags, leur palette et leur accès`.
 **Files:**
 - Create: `web/app/api/tags/route.ts` (GET, POST)
 - Create: `web/app/api/runs/[runId]/tags/route.ts` (PUT)
-- Modify: `web/lib/api.ts` — `getTags`, `createTag`, `setRunTags`
 
 **Interfaces:**
 - Consumes: `loadTags`, `createTag`, `setRunTags` (Task 2), `requireUser`.
-- Produces: `GET /api/tags`, `POST /api/tags`, `PUT /api/runs/<id>/tags`, et leurs pendants clients.
+- Produces: `GET /api/tags`, `POST /api/tags`, `PUT /api/runs/<id>/tags`.
+
+> **Les appels clients de `web/lib/api.ts` ne sont pas ici.** Ils ont été
+> déplacés dans la Task 4, qui est la seule à les consommer — une autre session
+> travaillait dans ce fichier au moment d'écrire, et rien n'oblige à s'y croiser
+> pour du code que personne n'appelle encore.
 
 - [ ] **Step 1: Écrire les routes**
 
