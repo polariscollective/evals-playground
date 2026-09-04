@@ -1,7 +1,19 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun } from "@/lib/runs";
-import { setRunTags } from "@/lib/tags";
+import { setRunTags, tagsOf } from "@/lib/tags";
+
+/** Les tags de ce run — ce que `TagField` charge à l'affichage. */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ runId: string }> },
+) {
+  const user = await requireUser();
+  if ("response" in user) return user.response;
+
+  const { runId } = await params;
+  return NextResponse.json(await tagsOf(runId));
+}
 
 /** Pose la liste des tags d'un run, telle quelle. */
 export async function PUT(

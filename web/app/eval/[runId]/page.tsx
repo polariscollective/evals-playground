@@ -31,6 +31,7 @@ import {
   repetitionRange,
 } from "@/components/RunRead";
 import { NotesField } from "@/components/NotesField";
+import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
 import type { RubricLevel, RunDetail } from "@/lib/types";
 
@@ -457,6 +458,8 @@ export default function EvalRunPage({
           </Menu>
         </div>
       </div>
+
+      <TagField runId={run.id} />
 
       {publicUrl && (
         <p className="flex items-center gap-1 text-sm text-zinc-500">

@@ -39,6 +39,25 @@ export async function createTag(label: string): Promise<Tag> {
   return rows[0];
 }
 
+/** Les tags d'un seul run.
+ *
+ * `tagsByRun` ci-dessous ramène tout en une lecture pour la liste des runs ;
+ * ici l'appelant n'en veut qu'un, et charger toute la table pour ça serait le
+ * mauvais compromis — la page d'un run ne lit qu'un identifiant. */
+export async function tagsOf(runId: string): Promise<Tag[]> {
+  const links = await select<{ tag_id: number }>(RUN_TAGS, {
+    select: "tag_id",
+    run_id: `eq.${runId}`,
+  });
+  if (links.length === 0) return [];
+  const ids = [...new Set(links.map((link) => link.tag_id))];
+  return select<Tag>(TAGS, {
+    select: "id,label,color",
+    id: `in.(${ids.join(",")})`,
+    order: "label.asc",
+  });
+}
+
 /** Les tags de chaque run, par identifiant de run.
  *
  * Une seule lecture pour tous les runs, comme `loadRuns` le fait pour les

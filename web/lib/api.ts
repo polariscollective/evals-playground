@@ -13,6 +13,7 @@ import type {
   RubricLevel,
   RunDetail,
   RunSummary,
+  Tag,
 } from "./types";
 import { PLAIN_VIEW, viewToQuery, type MatrixView } from "./view";
 
@@ -148,6 +149,27 @@ export const publishRun = (runId: string, isPublic: boolean) =>
   request<{ ok: true; url: string | null }>(`/api/runs/${runId}/publish`, {
     method: "POST",
     body: JSON.stringify({ public: isPublic }),
+  });
+
+export const getTags = () => request<Tag[]>("/api/tags");
+
+/** Crée un tag, ou rend celui qui porte déjà ce libellé — la route ne
+ *  distingue pas les deux cas, et l'appelant n'a pas besoin qu'elle le fasse. */
+export const createTag = (label: string) =>
+  request<Tag>("/api/tags", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+
+export const getRunTags = (runId: string) =>
+  request<Tag[]>(`/api/runs/${runId}/tags`);
+
+/** Pose la liste des tags d'un run, telle quelle : ce qu'elle contenait avant
+ *  est remplacé, pas complété. */
+export const setRunTags = (runId: string, tagIds: number[]) =>
+  request<{ ok: true }>(`/api/runs/${runId}/tags`, {
+    method: "PUT",
+    body: JSON.stringify({ tag_ids: tagIds }),
   });
 
 /** Estime un run. Sans `responseTokens`, chaque modèle prend sa longueur mesurée. */
