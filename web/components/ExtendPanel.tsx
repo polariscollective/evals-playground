@@ -10,6 +10,9 @@
 import { useEffect, useState } from "react";
 import { getCatalog } from "@/lib/api";
 import { parseCsv } from "@/lib/csv";
+import { HistoryEditor } from "@/components/HistoryEditor";
+import { ScenarioTools } from "@/components/ToolsEditor";
+import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import type {
   EvalRun,
@@ -111,6 +114,10 @@ export function ExtendPanel({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Le scénario qu'on regarde. Décider de recouvrir une ligne demande de la
+  // relire, et un titre n'a jamais suffi pour ça — c'est déjà pour cette
+  // raison que la page du run l'ouvre en entier.
+  const [looking, setLooking] = useState<number | null>(null);
 
   useEffect(() => {
     getCatalog()
@@ -220,7 +227,22 @@ export function ExtendPanel({
                     checked={indices.includes(index)}
                     onChange={() => setIndices((c) => toggle(c, index))}
                   />
-                  <span>{scenario.title}</span>
+                  <span className="grow">{scenario.title}</span>
+                  {/* Le même geste que sur la page du run : le titre ouvre ce
+                      qui définit la ligne — sa note, son historique, ses
+                      outils. Sur douze scénarios qui ne varient que d'un axe,
+                      le titre seul ne dit pas lequel on recouvre. */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setLooking(index);
+                    }}
+                    title="What this scenario is, and why"
+                    className="shrink-0 cursor-pointer rounded px-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                  >
+                    view
+                  </button>
                 </label>
               ))}
             </div>
@@ -236,7 +258,35 @@ export function ExtendPanel({
                     key={`${scenario.title}-${index}`}
                     className="flex items-start gap-2 text-sm"
                   >
-                    <span className="grow">{scenario.title}</span>
+                    <span className="grow">
+                      {scenario.title}
+                      {/* Ce qu'il porte en plus du triplet de base : sans ça,
+                          une note ou un historique qu'on vient d'écrire
+                          disparaît de la vue au moment où on l'ajoute. */}
+                      {(scenario.note ||
+                        (scenario.history ?? []).length > 0 ||
+                        scenario.tools !== undefined) && (
+                        <span className="ml-2 text-xs text-zinc-500">
+                          {[
+                            scenario.note && "note",
+                            (scenario.history ?? []).length > 0 &&
+                              `${scenario.history!.length} seeded turn${
+                                scenario.history!.length > 1 ? "s" : ""
+                              }`,
+                            scenario.tools !== undefined &&
+                              (scenario.tools === null
+                                ? null
+                                : scenario.tools.length === 0
+                                  ? "no tools"
+                                  : `${scenario.tools.length} tool${
+                                      scenario.tools.length > 1 ? "s" : ""
+                                    }`),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      )}
+                    </span>
                     <button
                       onClick={() =>
                         setByHand((c) => c.filter((_, i) => i !== index))
@@ -281,6 +331,31 @@ export function ExtendPanel({
                   onChange={(e) =>
                     setManual({ ...manual, opening_message: e.target.value })
                   }
+                />
+                {/* Ni le modèle ni le juge ne la voient : c'est une note de
+                    laboratoire, et elle répond à « pourquoi cette ligne »
+                    six mois plus tard. */}
+                <input
+                  className={FIELD}
+                  placeholder="Note — why this scenario exists (optional)"
+                  value={manual.note ?? ""}
+                  onChange={(e) =>
+                    setManual({ ...manual, note: e.target.value })
+                  }
+                />
+                <div>
+                  <span className="text-xs text-zinc-500">
+                    Prior history — turns given as already having happened
+                  </span>
+                  <HistoryEditor
+                    history={manual.history ?? []}
+                    onChange={(history) => setManual({ ...manual, history })}
+                  />
+                </div>
+                <ScenarioTools
+                  tools={config.tools ?? []}
+                  selected={manual.tools ?? null}
+                  onChange={(tools) => setManual({ ...manual, tools })}
                 />
                 <button
                   disabled={
@@ -541,6 +616,14 @@ export function ExtendPanel({
           </button>
         </div>
       </div>
+
+      {looking !== null && (
+        <ScenarioModal
+          run={run}
+          index={looking}
+          onClose={() => setLooking(null)}
+        />
+      )}
     </section>
   );
 }
