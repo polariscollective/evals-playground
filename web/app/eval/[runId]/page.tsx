@@ -24,6 +24,7 @@ import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
 import { Dialog } from "@/components/Dialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
 import { ViewControls } from "@/components/ViewControls";
+import { CopyButton, CopyId, CopyIcon } from "@/components/CopyButton";
 import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
 import { MessageView } from "@/components/MessageView";
 import { NotesField } from "@/components/NotesField";
@@ -138,50 +139,6 @@ function ScoreBadge({
       {formatValue(sample.score)}
       {meaning ? ` — ${meaning}` : ""}
     </span>
-  );
-}
-
-/** Copie un texte dans le presse-papier et le confirme brièvement.
-
-    `navigator.clipboard` n'existe pas hors contexte sécurisé. On retombe alors
-    sur une sélection manuelle plutôt que d'échouer en silence. */
-function CopyId({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      window.prompt("Copy the run id:", value);
-    }
-  };
-
-  return (
-    <button
-      onClick={copy}
-      title="Copy run id"
-      aria-label={`Copy run id ${value}`}
-      className="inline-flex items-center gap-1 rounded px-1 font-mono text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-    >
-      {value}
-      {copied ? (
-        <span className="text-teal-700">copied</span>
-      ) : (
-        <svg
-          viewBox="0 0 16 16"
-          className="h-3 w-3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden="true"
-        >
-          <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-          <path d="M10.5 3.5H3.5a1 1 0 0 0-1 1v7" />
-        </svg>
-      )}
-    </button>
   );
 }
 
@@ -1061,9 +1018,26 @@ export default function EvalRunPage({
       </div>
 
       {publicUrl && (
-        <p className="text-sm text-zinc-500">
+        <p className="flex items-center gap-1 text-sm text-zinc-500">
           Published — anyone with this link can read it:{" "}
           <code className="rounded bg-zinc-100 px-1">{publicUrl}</code>
+          {/* Le lien copié est absolu : celui qui le reçoit n'a pas le
+              contexte de cette fenêtre, et une adresse relative ne lui dirait
+              rien. `window.location.origin` n'est lu qu'au clic — jamais
+              pendant le rendu, où il n'existe pas côté serveur. */}
+          <CopyButton
+            value={() => `${window.location.origin}${publicUrl}`}
+            title="Copy the public link"
+            className="rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            {(copied) =>
+              copied ? (
+                <span className="text-teal-700">copied</span>
+              ) : (
+                <CopyIcon />
+              )
+            }
+          </CopyButton>
         </p>
       )}
 

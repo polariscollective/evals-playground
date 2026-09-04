@@ -7,3 +7,10 @@ export const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 export function isRunId(value: string): boolean {
   return RUN_ID.test(value);
 }
+
+/** L'adresse publique d'un run, relative à ce serveur. La route de
+ *  publication et l'interface la construisent toutes deux : un seul endroit
+ *  qui sait qu'elle commence par `/shared/`. */
+export function publicRunPath(runId: string): string {
+  return `/shared/${runId}`;
+}

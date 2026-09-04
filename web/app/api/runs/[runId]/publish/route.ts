@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun, setPublic } from "@/lib/runs";
+import { publicRunPath } from "@/lib/run-id";
 
 /** Publier un run, ou le dépublier.
  *
@@ -43,6 +44,6 @@ export async function POST(
   await setPublic(runId, body.public);
   return NextResponse.json({
     ok: true,
-    url: body.public ? `/shared/${runId}` : null,
+    url: body.public ? publicRunPath(runId) : null,
   });
 }

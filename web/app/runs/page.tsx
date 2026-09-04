@@ -5,6 +5,8 @@ import Link from "next/link";
 import { getRuns } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
+import { publicRunPath } from "@/lib/run-id";
+import { CopyButton, CopyId, PublicIcon } from "@/components/CopyButton";
 import type { RunSummary } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -36,51 +38,6 @@ function formatDate(iso: string): string {
       });
 }
 
-
-/** Copie un texte dans le presse-papier et le confirme brièvement.
-
-    `navigator.clipboard` n'existe pas hors contexte sécurisé — sur un accès
-    autre que localhost, par exemple. On retombe alors sur une sélection
-    manuelle plutôt que d'échouer en silence. */
-function CopyId({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      window.prompt("Copy the run id:", value);
-    }
-  };
-
-  return (
-    <button
-      onClick={copy}
-      title="Copy run id"
-      aria-label={`Copy run id ${value}`}
-      className="inline-flex items-center gap-1 rounded px-1 font-mono text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-    >
-      {value}
-      {copied ? (
-        <span className="text-teal-700">copied</span>
-      ) : (
-        <svg
-          viewBox="0 0 16 16"
-          className="h-3 w-3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden="true"
-        >
-          <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-          <path d="M10.5 3.5H3.5a1 1 0 0 0-1 1v7" />
-        </svg>
-      )}
-    </button>
-  );
-}
 
 export default function RunsPage() {
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
@@ -188,6 +145,30 @@ export default function RunsPage() {
                         >
                           local
                         </span>
+                      )}
+                      {/* Le badge lui-même est le signal : en ambre, il ne
+                          se voit que sur un run publié, et sa seule présence
+                          dit « n'importe qui avec ce lien peut le lire ». Le
+                          clic copie l'adresse absolue, pas seulement l'id. */}
+                      {run.is_public && (
+                        <CopyButton
+                          value={() =>
+                            `${window.location.origin}${publicRunPath(run.id)}`
+                          }
+                          title="Copy the public link"
+                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 hover:bg-amber-200"
+                        >
+                          {(copied) =>
+                            copied ? (
+                              "copied"
+                            ) : (
+                              <>
+                                <PublicIcon />
+                                public
+                              </>
+                            )
+                          }
+                        </CopyButton>
                       )}
                     </div>
                     {/* Qui l'a lancé. Tout le monde voit tous les runs : sans
