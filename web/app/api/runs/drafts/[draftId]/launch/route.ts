@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { DraftNotFound, loadDraft, markDraftLaunched } from "@/lib/drafts";
 import { createRun, failToStart, recordStart } from "@/lib/runs";
+import { setRunTags, tagsOfDraft } from "@/lib/tags";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
 
@@ -36,6 +37,21 @@ export async function POST(
     await failToStart(run.id, reason);
     return NextResponse.json({ run_id: run.id, error: reason }, { status: 502 });
   }
+  // Recopier les tags maintenant : le run existe et tourne, et le brouillon
+  // est encore lisible — après markDraftLaunched ce ne serait pas plus
+  // dangereux ici, mais autant rester du bon côté de la frontière. Un échec
+  // ici ne doit pas faire échouer la réponse : le run est déjà lancé, le
+  // signaler en erreur mentirait à l'appelant sur ce qui a réussi. On
+  // journalise donc plutôt que de relancer l'erreur.
+  try {
+    const tags = await tagsOfDraft(draftId);
+    if (tags.length > 0) {
+      await setRunTags(run.id, tags.map((tag) => tag.id));
+    }
+  } catch (error) {
+    console.error(`Could not copy tags from draft ${draftId} to run ${run.id}:`, (error as Error).message);
+  }
+
   // Marqué lancé, pas effacé : il sort de la liste d'attente, garde son
   // adresse ouverte pour un relancement, et dit désormais ce qu'il a produit.
   await markDraftLaunched(draftId, run.id);
