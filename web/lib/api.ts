@@ -106,6 +106,13 @@ export const saveNotes = (runId: string, notes: string) =>
     body: JSON.stringify({ notes }),
   });
 
+/** Le contenu d'un brouillon soumis par un agent, pour ouvrir le formulaire
+ *  dessus plutôt que de le montrer dans une page à part. */
+export const getDraft = (draftId: string) =>
+  request<{ config: EvalRunConfig; csv_text: string | null }>(
+    `/api/runs/drafts/${draftId}`,
+  );
+
 /** Écrite après coup, distincte des notes qui sont le préambule. */
 export const saveAnalysis = (runId: string, analysis: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/analysis`, {

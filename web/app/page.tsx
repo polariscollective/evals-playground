@@ -6,6 +6,7 @@ import {
   createRun,
   estimateRun,
   getCatalog,
+  getDraft,
   getRun,
   previewJudgePrompt,
   exportConfigFile,
@@ -84,6 +85,7 @@ function EvaluateForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const relaunchOf = searchParams.get("from");
+  const draftOf = searchParams.get("draft");
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
 
   const [label, setLabel] = useState("");
@@ -175,6 +177,101 @@ function EvaluateForm() {
       .catch((e: Error) => setError(e.message));
   }, [relaunchOf]);
 
+  /** Poser une configuration dans le formulaire.
+   *
+   * Reprendre un run et ouvrir un brouillon remplissent exactement les mêmes
+   * champs : un brouillon n'est qu'une configuration qu'on n'a pas encore
+   * lancée. Le CSV arrive déjà résolu — la reprise le lit depuis le run, le
+   * brouillon le porte avec lui. */
+  const fillFromConfig = useCallback(
+    (config: EvalRunConfig, label: string, csvText: string | null) => {
+      setLabel(label);
+      setNotes(config.notes ?? "");
+      setCriterion(config.criterion);
+      setRubric(config.rubric);
+      setTurns(config.turns);
+      setRepetitions(config.repetitions);
+      setAdversaryPrompt(config.adversary_prompt);
+      setTools(config.tools ?? []);
+      setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
+      setTargets(config.models.targets);
+      setAdversary(config.models.adversary ?? "");
+      setJudge(config.models.judge);
+      setTemperatureMin(config.temperature?.min ?? 1);
+      setVaryTemperature(config.temperature?.max != null);
+      setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
+
+      // Un seul scénario tient dans le mode manuel ; au-delà, le formulaire
+      // passe par un CSV, quitte à le reconstruire depuis les scénarios.
+      const enCsv = config.source?.kind === "csv" || config.scenarios.length > 1;
+      if (!enCsv) {
+        setSource("manual");
+        const first = config.scenarios[0];
+        setTitle(first?.title ?? "");
+        setSystemPrompt(first?.system_prompt ?? "");
+        setOpeningMessage(first?.opening_message ?? "");
+        setHistory(first?.history ?? []);
+        setScenarioTools(first?.tools ?? null);
+        setScenarioNote(first?.note ?? "");
+        return;
+      }
+
+      setSource("csv");
+      if (csvText !== null) {
+        const parsed = parseCsv(csvText);
+        setCsvText(csvText);
+        setCsvColumns(parsed.columns);
+        setCsvRows(parsed.rows);
+        setCsvSkipped(parsed.skipped);
+        setCsvName(config.source?.file_name ?? "scenarios.csv");
+        setColTitle(config.source?.column_title ?? "title");
+        setColSystem(config.source?.column_system_prompt ?? "system_prompt");
+        setColOpening(config.source?.column_opening_message ?? "opening_message");
+        setColHistory(config.source?.column_history ?? "");
+        setColTools(config.source?.column_tools ?? "");
+        setColNote(config.source?.column_note ?? "");
+        return;
+      }
+
+      // Pas de fichier : le lot reconstruit a le même contenu que l'original,
+      // seule sa mise en forme est perdue.
+      const { columns, rows } = rebuildCsv(config.scenarios);
+      setCsvText(toCsv(columns, rows));
+      setCsvColumns(columns);
+      setCsvRows(rows);
+      setCsvSkipped(0);
+      setCsvName(config.source?.file_name || "rebuilt.csv");
+      setColTitle("title");
+      setColSystem("system_prompt");
+      setColOpening("opening_message");
+      setColNote(columns.includes("note") ? "note" : "");
+      setColHistory(columns.includes("history") ? "history" : "");
+      setColTools(columns.includes("tools") ? "tools" : "");
+    },
+    [],
+  );
+
+  // Ouvrir un brouillon soumis par un agent : le même formulaire, prérempli,
+  // qu'on peut modifier avant de lancer. Pas d'écran à part — ce qu'on veut
+  // faire d'un brouillon est exactement ce qu'on fait d'un run qu'on compose.
+  useEffect(() => {
+    if (!draftOf) return;
+    let cancelled = false;
+
+    getDraft(draftOf)
+      .then(({ config, csv_text }) => {
+        if (cancelled) return;
+        fillFromConfig(config, config.label ?? "", csv_text);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(`Could not open that draft: ${e.message}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftOf, fillFromConfig]);
+
   // Relancer un run : le formulaire reprend exactement ses paramètres.
   useEffect(() => {
     if (!relaunchOf) return;
@@ -183,77 +280,23 @@ function EvaluateForm() {
     getRun(relaunchOf)
       .then(async ({ run, source_csv_available }) => {
         if (cancelled) return;
-        const config = run.config;
-        setLabel(run.label ?? "");
-        setNotes(config.notes ?? "");
-        setCriterion(config.criterion);
-        setRubric(config.rubric);
-        setTurns(config.turns);
-        setRepetitions(config.repetitions);
-        setAdversaryPrompt(config.adversary_prompt);
-        setTools(config.tools ?? []);
-        setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
-        setTargets(config.models.targets);
-        setAdversary(config.models.adversary ?? "");
-        setJudge(config.models.judge);
-        setTemperatureMin(config.temperature?.min ?? 1);
-        setVaryTemperature(config.temperature?.max != null);
-        setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
-
-        if (config.source?.kind !== "csv") {
-          setSource("manual");
-          const first = config.scenarios[0];
-          setTitle(first?.title ?? "");
-          setSystemPrompt(first?.system_prompt ?? "");
-          setOpeningMessage(first?.opening_message ?? "");
-          setHistory(first?.history ?? []);
-          setScenarioTools(first?.tools ?? null);
-          setScenarioNote(first?.note ?? "");
-          return;
-        }
-
-        setSource("csv");
-        const text = source_csv_available
-          ? await sourceCsvText(relaunchOf).catch(() => null)
-          : null;
+        // Le fichier d'origine s'il a été gardé ; sinon `fillFromConfig` le
+        // reconstruit depuis les scénarios du run.
+        const text =
+          run.config.source?.kind === "csv" && source_csv_available
+            ? await sourceCsvText(relaunchOf).catch(() => null)
+            : null;
         if (cancelled) return;
 
-        if (text !== null) {
-          const parsed = parseCsv(text);
-          setCsvText(text);
-          setCsvColumns(parsed.columns);
-          setCsvRows(parsed.rows);
-          setCsvSkipped(parsed.skipped);
-          setCsvName(config.source.file_name);
-          setColTitle(config.source.column_title);
-          setColSystem(config.source.column_system_prompt);
-          setColOpening(config.source.column_opening_message);
-          setColHistory(config.source.column_history ?? "");
-          setColTools(config.source.column_tools ?? "");
-          setColNote(config.source.column_note ?? "");
-          return;
-        }
+        fillFromConfig(run.config, run.label ?? "", text);
 
-        // Ce run est antérieur à la conservation du fichier. Ses scénarios
-        // sont dans le record : le lot reconstruit a le même contenu que
-        // l'original, seule sa mise en forme est perdue.
-        const { columns, rows } = rebuildCsv(config.scenarios);
-        setCsvText(toCsv(columns, rows));
-        setCsvColumns(columns);
-        setCsvRows(rows);
-        setCsvSkipped(0);
-        setCsvName(config.source.file_name || "rebuilt.csv");
-        setColTitle("title");
-        setColSystem("system_prompt");
-        setColOpening("opening_message");
-        setColNote(columns.includes("note") ? "note" : "");
-        setColHistory(columns.includes("history") ? "history" : "");
-        setColTools(columns.includes("tools") ? "tools" : "");
-        setRelaunchNote(
-          "The original CSV was not kept for that run. The scenarios were" +
-            " rebuilt from the run itself — same content, original formatting" +
-            " lost.",
-        );
+        if (run.config.source?.kind === "csv" && text === null) {
+          setRelaunchNote(
+            "The original CSV was not kept for that run. The scenarios were" +
+              " rebuilt from the run itself — same content, original formatting" +
+              " lost.",
+          );
+        }
       })
       .catch((e: Error) => {
         if (!cancelled) setError(`Could not reload that run: ${e.message}`);
@@ -262,7 +305,7 @@ function EvaluateForm() {
     return () => {
       cancelled = true;
     };
-  }, [relaunchOf]);
+  }, [relaunchOf, fillFromConfig]);
 
   const scenarios: EvalScenario[] = useMemo(() => {
     if (source === "manual") {
