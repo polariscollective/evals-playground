@@ -16,6 +16,7 @@ export const SAMPLES = "eval_samples";
 export const DRAFTS = "eval_run_drafts";
 export const TAGS = "tags";
 export const RUN_TAGS = "eval_run_tags";
+export const DRAFT_TAGS = "eval_run_draft_tags";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *

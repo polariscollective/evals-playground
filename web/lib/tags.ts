@@ -1,7 +1,7 @@
 // Lire et écrire les tags. Le seul endroit qui connaît la forme des deux
 // tables de nomenclature.
 import "server-only";
-import { RUN_TAGS, TAGS, insert, remove, select } from "./supabase";
+import { DRAFT_TAGS, RUN_TAGS, TAGS, insert, remove, select } from "./supabase";
 import { nextColor } from "./tag-colors";
 import type { Tag } from "./types";
 
@@ -91,5 +91,93 @@ export async function setRunTags(runId: string, tagIds: number[]): Promise<void>
   await insert(
     RUN_TAGS,
     tagIds.map((tagId) => ({ run_id: runId, tag_id: tagId })),
+  );
+}
+
+/** Les tags d'un seul brouillon. Jumelle de `tagsOf`. */
+export async function tagsOfDraft(draftId: string): Promise<Tag[]> {
+  const links = await select<{ tag_id: number }>(DRAFT_TAGS, {
+    select: "tag_id",
+    draft_id: `eq.${draftId}`,
+  });
+  if (links.length === 0) return [];
+  const ids = [...new Set(links.map((link) => link.tag_id))];
+  return select<Tag>(TAGS, {
+    select: "id,label,color",
+    id: `in.(${ids.join(",")})`,
+    order: "label.asc",
+  });
+}
+
+/** Pose exactement ces tags sur ce brouillon : remplace, comme `setRunTags`. */
+export async function setDraftTags(draftId: string, tagIds: number[]): Promise<void> {
+  await remove(DRAFT_TAGS, { draft_id: `eq.${draftId}` });
+  if (tagIds.length === 0) return;
+  await insert(
+    DRAFT_TAGS,
+    tagIds.map((tagId) => ({ draft_id: draftId, tag_id: tagId })),
+  );
+}
+
+/** Les tags de chaque brouillon, par identifiant de brouillon. Jumelle de
+ *  `tagsByRun`, pour la liste des brouillons. */
+export async function tagsByDraft(): Promise<Map<string, Tag[]>> {
+  const [tags, links] = await Promise.all([
+    loadTags(),
+    select<{ draft_id: string; tag_id: number }>(DRAFT_TAGS, {
+      select: "draft_id,tag_id",
+    }),
+  ]);
+  const byId = new Map(tags.map((tag) => [tag.id, tag]));
+  const byDraft = new Map<string, Tag[]>();
+  for (const link of links) {
+    const tag = byId.get(link.tag_id);
+    if (!tag) continue;
+    const list = byDraft.get(link.draft_id);
+    if (list) list.push(tag);
+    else byDraft.set(link.draft_id, [tag]);
+  }
+  return byDraft;
+}
+
+/** Chaque libellé passé par `createTag` : réutilisé s'il existe déjà (sans
+ *  casse), créé sinon. C'est par là qu'un agent nomme ses tags en mots plutôt
+ *  qu'en identifiants.
+ *
+ * Dédupliqué sans casse avant l'aller-retour : le même libellé répété deux
+ * fois dans la liste ne doit pas chercher/créer deux fois la même ligne. */
+export async function tagsForLabels(labels: string[]): Promise<Tag[]> {
+  const seen = new Set<string>();
+  const tags: Tag[] = [];
+  for (const label of labels) {
+    const key = label.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(await createTag(label));
+  }
+  return tags;
+}
+
+/** Ajoute ces tags à ceux que porte déjà ce run, sans en retirer aucun.
+ *
+ * C'est la seule écriture qu'un agent aura sur un run existant. `setRunTags`
+ * remplace la liste entière ; la lui confier laisserait un agent effacer en
+ * silence des tags qu'un humain a posés. L'union est une contrainte de
+ * sécurité, pas une commodité.
+ *
+ * Insérer un lien déjà présent violerait la clé primaire composite
+ * (`run_id`, `tag_id`) : on calcule donc la différence et on ne pose que ce
+ * qui manque. */
+export async function addRunTags(runId: string, tagIds: number[]): Promise<void> {
+  const existing = await select<{ tag_id: number }>(RUN_TAGS, {
+    select: "tag_id",
+    run_id: `eq.${runId}`,
+  });
+  const already = new Set(existing.map((link) => link.tag_id));
+  const missing = [...new Set(tagIds)].filter((tagId) => !already.has(tagId));
+  if (missing.length === 0) return;
+  await insert(
+    RUN_TAGS,
+    missing.map((tagId) => ({ run_id: runId, tag_id: tagId })),
   );
 }
