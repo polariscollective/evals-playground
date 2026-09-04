@@ -9,6 +9,30 @@ import { verifyAccessToken } from "@/lib/mcp-auth";
 import { NotFound, loadRun } from "@/lib/runs";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { isRunId } from "@/lib/run-id";
+import type { RunDetail } from "@/lib/types";
+
+/** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
+ *  rendre telle quelle — un id malformé ou un run inconnu se traitent pareil
+ *  des deux appelants. */
+async function runOrError(
+  runId: string,
+  options: Parameters<typeof loadRun>[1],
+): Promise<
+  | { run: RunDetail }
+  | { error: { content: { type: "text"; text: string }[]; isError: true } }
+> {
+  if (!isRunId(runId)) {
+    return { error: { content: [{ type: "text", text: `Not a run id: ${runId}` }], isError: true } };
+  }
+  try {
+    return { run: await loadRun(runId, options) };
+  } catch (error) {
+    if (error instanceof NotFound) {
+      return { error: { content: [{ type: "text", text: error.message }], isError: true } };
+    }
+    throw error;
+  }
+}
 
 const handler = createMcpHandler((server) => {
   server.registerTool(
@@ -38,18 +62,9 @@ const handler = createMcpHandler((server) => {
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
-      if (!isRunId(run_id)) {
-        return { content: [{ type: "text", text: `Not a run id: ${run_id}` }], isError: true };
-      }
-      let run;
-      try {
-        run = (await loadRun(run_id, { withTranscripts: false, withSourceCsvFlag: false })).run;
-      } catch (error) {
-        if (error instanceof NotFound) {
-          return { content: [{ type: "text", text: error.message }], isError: true };
-        }
-        throw error;
-      }
+      const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      if ("error" in result) return result.error;
+      const { run } = result.run;
       const metadata = {
         id: run.id,
         label: run.label,
@@ -81,19 +96,9 @@ const handler = createMcpHandler((server) => {
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
-      if (!isRunId(run_id)) {
-        return { content: [{ type: "text", text: `Not a run id: ${run_id}` }], isError: true };
-      }
-      let detail;
-      try {
-        detail = await loadRun(run_id, { withTranscripts: false, withSourceCsvFlag: false });
-      } catch (error) {
-        if (error instanceof NotFound) {
-          return { content: [{ type: "text", text: error.message }], isError: true };
-        }
-        throw error;
-      }
-      const { run, samples } = detail;
+      const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      if ("error" in result) return result.error;
+      const { run, samples } = result.run;
       const cells = cellsOf(samples, run.config.scenarios.length, run.config.rubric);
       const results = {
         overall_mean: overallMean(samples, run.config.rubric),
