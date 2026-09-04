@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { listGrants, revokeGrant } from "@/lib/mcp-auth";
+import { listGrants, revokeAllGrants, revokeGrant } from "@/lib/mcp-auth";
 
 export async function GET() {
   const user = await requireUser();
@@ -17,7 +17,15 @@ export async function DELETE(request: Request) {
 
   const body = (await request.json().catch(() => null)) as {
     access_token_hash?: string;
+    all?: boolean;
   } | null;
+
+  // Tout couper d'un geste. L'email vient de la session comme pour une
+  // révocation unitaire : « all » ne veut jamais dire celles de tout le monde.
+  if (body?.all) {
+    return NextResponse.json({ ok: true, revoked: await revokeAllGrants(user.email) });
+  }
+
   if (!body?.access_token_hash) {
     return NextResponse.json({ error: "access_token_hash is required" }, { status: 422 });
   }

@@ -234,6 +234,11 @@ export interface McpGrant {
   user_email: string;
   created_at: string;
   refresh_expires_at: string;
+  last_used_at: string | null;
+  client_label: string | null;
+  /** `authorization_code` : née d'un tour d'autorisation complet.
+   *  `refresh_token` : née d'une rotation, donc d'une chaîne qui vit. */
+  born: "authorization_code" | "refresh_token";
 }
 
 export const listMcpConnections = () => request<McpGrant[]>("/api/mcp/connections");
@@ -242,4 +247,11 @@ export const revokeMcpConnection = (accessTokenHash: string) =>
   request<{ ok: true }>("/api/mcp/connections", {
     method: "DELETE",
     body: JSON.stringify({ access_token_hash: accessTokenHash }),
+  });
+
+/** Tout couper. Borné à l'email de la session côté route, jamais ici. */
+export const revokeAllMcpConnections = () =>
+  request<{ ok: true; revoked: number }>("/api/mcp/connections", {
+    method: "DELETE",
+    body: JSON.stringify({ all: true }),
   });

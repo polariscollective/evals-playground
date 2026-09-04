@@ -41,6 +41,10 @@ function tokenResponse(pair: {
 export async function POST(request: Request) {
   const form = await request.formData();
   const grantType = form.get("grant_type");
+  // Le seul indice sur qui appelle : l'échange se fait de serveur à serveur,
+  // sans session ni navigateur. Gardé tel quel sur le grant, il permet de
+  // distinguer claude.ai d'un client qui ferait son propre OAuth en local.
+  const userAgent = request.headers.get("user-agent");
 
   if (grantType === "authorization_code") {
     const code = String(form.get("code") ?? "");
@@ -59,12 +63,14 @@ export async function POST(request: Request) {
       return oauthError(400, "invalid_grant", "code_verifier does not match");
     }
 
-    return tokenResponse(await issueTokenPair(consumed.user_email));
+    return tokenResponse(
+      await issueTokenPair(consumed.user_email, { born: "authorization_code", userAgent }),
+    );
   }
 
   if (grantType === "refresh_token") {
     const refreshToken = String(form.get("refresh_token") ?? "");
-    const pair = await rotateRefreshToken(refreshToken);
+    const pair = await rotateRefreshToken(refreshToken, userAgent);
     if (!pair) return oauthError(400, "invalid_grant", "unknown or expired refresh token");
     return tokenResponse(pair);
   }

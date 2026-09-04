@@ -7,7 +7,8 @@
 // `isAllowedEmail`.
 import "server-only";
 import { newToken, hashOf } from "./mcp-crypto";
-import { insert, remove, removeReturning, select } from "./supabase";
+import { clientLabelOf, needsTouch } from "./mcp-grants";
+import { NOW, insert, remove, removeReturning, rpc, select, update } from "./supabase";
 
 export const AUTH_CODES = "mcp_auth_codes";
 export const TOKENS = "mcp_tokens";
@@ -79,7 +80,18 @@ export interface TokenPair {
   expiresIn: number;
 }
 
-export async function issueTokenPair(userEmail: string): Promise<TokenPair> {
+/** D'où vient un couple de jetons.
+ *
+ * Une rotation efface sa ligne et en pose une neuve : une ligne restée
+ * `authorization_code` est donc une chaîne qui n'a jamais été rafraîchie une
+ * seule fois. C'est ce qui permet de lire, sur l'écran des connexions, si un
+ * client rafraîchit vraiment ou s'il refait le tour complet à chaque fois. */
+export type GrantOrigin = "authorization_code" | "refresh_token";
+
+export async function issueTokenPair(
+  userEmail: string,
+  provenance: { born: GrantOrigin; userAgent?: string | null },
+): Promise<TokenPair> {
   const accessToken = newToken();
   const refreshToken = newToken();
   await insert(TOKENS, {
@@ -88,29 +100,47 @@ export async function issueTokenPair(userEmail: string): Promise<TokenPair> {
     user_email: userEmail,
     access_expires_at: future(ACCESS_TOKEN_TTL_MS),
     refresh_expires_at: future(REFRESH_TOKEN_TTL_MS),
+    born: provenance.born,
+    client_label: clientLabelOf(provenance.userAgent),
   });
   return { accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_MS / 1000 };
 }
 
-/** L'email derrière un jeton d'accès, ou `null` s'il est inconnu ou expiré. */
+/** L'email derrière un jeton d'accès, ou `null` s'il est inconnu ou expiré.
+ *
+ * Marque au passage la connexion comme vivante — au plus une fois par
+ * intervalle, et jamais au point de faire échouer l'appel : une horodate de
+ * confort ne doit pas coûter l'outil qu'on était en train de rendre. */
 export async function verifyAccessToken(token: string): Promise<string | null> {
-  const rows = await select<{ user_email: string; access_expires_at: string }>(
-    TOKENS,
-    {
-      access_token_hash: `eq.${hashOf(token)}`,
-      select: "user_email,access_expires_at",
-      limit: 1,
-    },
-  );
+  const hash = hashOf(token);
+  const rows = await select<{
+    user_email: string;
+    access_expires_at: string;
+    last_used_at: string | null;
+  }>(TOKENS, {
+    access_token_hash: `eq.${hash}`,
+    select: "user_email,access_expires_at,last_used_at",
+    limit: 1,
+  });
   const row = rows[0];
   if (!row || isPast(row.access_expires_at)) return null;
+  if (needsTouch(row.last_used_at)) {
+    try {
+      await update(TOKENS, { last_used_at: NOW }, { access_token_hash: `eq.${hash}` });
+    } catch (error) {
+      console.error("last_used_at:", (error as Error).message);
+    }
+  }
   return row.user_email;
 }
 
 /** Rotation : l'ancien couple meurt, un nouveau naît pour le même email.
  *  `null` si le jeton de rafraîchissement est inconnu ou expiré — jamais «
  *  presque » : Claude retente sur un `invalid_grant` net. */
-export async function rotateRefreshToken(refreshToken: string): Promise<TokenPair | null> {
+export async function rotateRefreshToken(
+  refreshToken: string,
+  userAgent?: string | null,
+): Promise<TokenPair | null> {
   const hash = hashOf(refreshToken);
   const rows = await select<{ user_email: string; refresh_expires_at: string }>(
     TOKENS,
@@ -119,7 +149,7 @@ export async function rotateRefreshToken(refreshToken: string): Promise<TokenPai
   const row = rows[0];
   if (!row || isPast(row.refresh_expires_at)) return null;
   await remove(TOKENS, { refresh_token_hash: `eq.${hash}` });
-  return issueTokenPair(row.user_email);
+  return issueTokenPair(row.user_email, { born: "refresh_token", userAgent });
 }
 
 export interface Grant {
@@ -127,13 +157,38 @@ export interface Grant {
   user_email: string;
   created_at: string;
   refresh_expires_at: string;
+  last_used_at: string | null;
+  client_label: string | null;
+  born: GrantOrigin;
 }
 
-/** Les connexions actives d'un email, pour l'écran qui permet de les révoquer. */
+let lastSweep = 0;
+
+/** Efface codes périmés et connexions oubliées avant toute lecture — même
+ *  patron que `sweepStaleDrafts`, avec un intervalle large : rien de ce que ce
+ *  balai ramasse n'est urgent, puisque toute lecture vérifie déjà sa propre
+ *  échéance. Il n'est là que pour que l'écran ne finisse pas en cimetière. */
+async function sweepExpiredGrants(): Promise<void> {
+  const now = Date.now();
+  if (now - lastSweep < 5 * 60 * 1000) return;
+  lastSweep = now;
+  try {
+    await rpc("sweep_expired_mcp_grants");
+  } catch (error) {
+    console.error("sweep_expired_mcp_grants:", (error as Error).message);
+  }
+}
+
+/** Les connexions actives d'un email, pour l'écran qui permet de les révoquer.
+ *
+ * Filtrées sur l'email de la session, jamais sur autre chose : on ne voit que
+ * les siennes, et cet écran n'apprend l'existence de personne d'autre. */
 export async function listGrants(userEmail: string): Promise<Grant[]> {
+  await sweepExpiredGrants();
   return select<Grant>(TOKENS, {
     user_email: `eq.${userEmail}`,
-    select: "access_token_hash,user_email,created_at,refresh_expires_at",
+    select:
+      "access_token_hash,user_email,created_at,refresh_expires_at,last_used_at,client_label,born",
     order: "created_at.desc",
   });
 }
@@ -155,4 +210,14 @@ export async function revokeGrant(
     user_email: `eq.${userEmail}`,
   });
   return removed.length > 0;
+}
+
+/** Tout couper d'un coup, et rendre combien sont tombées.
+ *
+ * Le geste qui manquait : une ligne révoquée au hasard n'apprend pas laquelle
+ * des neuf autres ouvrait encore la porte. Borné au même email que le reste —
+ * c'est le filtre, pas une vérification faite après coup. */
+export async function revokeAllGrants(userEmail: string): Promise<number> {
+  const removed = await removeReturning(TOKENS, { user_email: `eq.${userEmail}` });
+  return removed.length;
 }

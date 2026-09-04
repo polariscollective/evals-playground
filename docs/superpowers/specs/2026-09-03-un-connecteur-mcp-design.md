@@ -207,6 +207,39 @@ brouillons non lancés après sept jours : sans lui, un agent qui essaie
 plusieurs formulations avant de trouver la bonne laisserait des déchets
 permanents.
 
+### Une connexion, et ce qu'elle dit d'elle-même
+
+`mcp_tokens` ne portait qu'un couple de jetons. Dix lignes s'y ressemblaient
+donc toutes, et l'écran ne pouvait répondre ni à « laquelle sert encore » ni à
+« qui s'est connecté ». Trois colonnes le permettent :
+
+| colonne | ce qu'elle répond |
+|---|---|
+| `last_used_at` | la connexion vit-elle encore — touchée à la vérification du jeton, au plus une fois par tranche de cinq minutes |
+| `client_label` | l'agent utilisateur de l'échange de jeton, brut, jamais traduit en nom commercial |
+| `born` | `authorization_code` ou `refresh_token` |
+
+`born` est un diagnostic, et c'est la colonne qui compte. Une rotation efface
+sa ligne et en pose une neuve : une ligne restée `authorization_code` est donc
+une chaîne **qui n'a jamais été rafraîchie une seule fois**. Plusieurs de ces
+lignes-là veulent dire que le client refait tout le tour d'autorisation au
+lieu de renouveler son jeton — ce qu'on a observé sans pouvoir l'expliquer, et
+qu'on saura lire la prochaine fois.
+
+Ce qu'on n'a pas fait, et pourquoi : une nouvelle autorisation **ne remplace
+pas** les précédentes. Ce serait la façon la plus courte d'avoir une ligne et
+une seule, mais le connecteur est légitimement joignable depuis plusieurs
+surfaces à la fois, et rien ne les distingue — se connecter depuis l'une
+couperait l'autre en silence. À la place, les grants périssent : le balai
+existant, jusqu'ici appelé de nulle part, ramasse maintenant ce que personne
+n'utilise depuis trente jours, et un bouton « Disconnect all » coupe tout d'un
+geste. Une clé oubliée qui reste valide quatre-vingt-dix jours était le vrai
+risque, pas le nombre de lignes.
+
+L'écran ne montre que les connexions de la session — c'était déjà le cas
+(`listGrants(user.email)`, et la révocation vérifie le propriétaire), mais il
+répétait cet email à chaque ligne, où il n'apprenait rien.
+
 ### La porte
 
 Deux entrées de plus dans `OPEN_PREFIXES` (`web/lib/public-paths.ts`) :
@@ -241,6 +274,8 @@ dessin.
 | `get_run_trajectory` sur une case qui n'existe pas | 404, pas de fuite du reste du run |
 | `/mcp` sans jeton, depuis un navigateur anonyme | pas l'écran de connexion HTML — une erreur MCP |
 | `read_prompt` depuis un client MCP | aucune mention de `/validate`, aucune forme CSV |
+| appeler un outil, puis rouvrir `/settings/connections` | la ligne qui sert porte un « last used » frais, les autres non |
+| « Disconnect all », puis rappeler un outil | erreur d'autorisation ; se reconnecter en repose une, et une seule |
 
 Deux fonctions continuent de faire autorité et se testent dans `lib/` :
 `withoutIdentity`, inchangée, et `proxyMatcher`, à réétendre pour couvrir
