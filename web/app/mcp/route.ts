@@ -5,10 +5,14 @@ import { createMcpHandler, getPublicOrigin, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, agentPrompt } from "@/lib/agent-prompt";
+import { readConfigFile } from "@/lib/config-file";
+import { createDraft } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
-import { NotFound, loadRun, loadSampleTranscript } from "@/lib/runs";
 import { cellsOf, overallMean } from "@/lib/matrix";
+import { costSentence } from "@/lib/pricing";
+import { NotFound, loadRun, loadSampleTranscript } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
+import { verdictOf } from "@/lib/verdict";
 import type { RunDetail } from "@/lib/types";
 
 /** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
@@ -32,6 +36,13 @@ async function runOrError(
     }
     throw error;
   }
+}
+
+/** L'email posé par `verifyToken` dans `extra`. `unknown` s'il manque, ce qui
+ *  ne devrait arriver que si `withMcpAuth` change de forme. */
+function callerEmail(ctx: { http?: { authInfo?: AuthInfo } }): string {
+  const email = ctx.http?.authInfo?.extra?.email;
+  return typeof email === "string" ? email : "unknown";
 }
 
 const handler = createMcpHandler((server) => {
@@ -158,6 +169,32 @@ const handler = createMcpHandler((server) => {
         messages: sample.messages,
       };
       return { content: [{ type: "text", text: JSON.stringify(trajectory, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "submit_draft_run",
+    {
+      title: "Submit a run as a draft",
+      description:
+        "Validates a run written as YAML (same rules as /validate) and saves it as a draft a human reviews and launches. Never starts the run.",
+      inputSchema: z.object({
+        yaml: z.string().describe("The run, as a YAML document — see read_prompt."),
+      }),
+    },
+    async ({ yaml }, ctx) => {
+      const verdict = verdictOf(yaml, costSentence);
+      if (verdict.status !== 200 || verdict.message.startsWith("INCOMPLETE")) {
+        // INCOMPLETE annonce un CSV que ce canal ne sait pas porter — un
+        // agent écrit les scénarios en clair, comme le prompt le demande.
+        return { content: [{ type: "text", text: verdict.message }], isError: true };
+      }
+      const { config } = readConfigFile(yaml);
+      const draftId = await createDraft(config, null, callerEmail(ctx));
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      return {
+        content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draftId}` }],
+      };
     },
   );
 }, {});
