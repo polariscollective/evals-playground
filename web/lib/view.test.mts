@@ -249,3 +249,46 @@ test("une valeur substituée étire l'échelle, une exclusion non", () => {
     { min: -1, max: 3 },
   );
 });
+
+// --- la répartition des notes dans une case -----------------------------------
+
+test("une case garde le compte par note, pas seulement leur moyenne", () => {
+  // Le cas qui motive tout : deux cases de même moyenne, l'une serrée,
+  // l'autre partagée. Sans le détail, un lecteur ne peut pas les distinguer —
+  // et c'est précisément la différence entre « le modèle hésite un peu » et
+  // « le modèle fait deux choses opposées selon les fois ».
+  // Toutes deux à 1,8 sur cinq répétitions : quatre essais serrés autour de 2
+  // d'un côté, trois refus francs et deux explications de l'autre.
+  const serrée = cellsOf(
+    [sample(2), sample(2), sample(2), sample(2), sample(1)],
+    1,
+    RUBRIC,
+  )[0].m;
+  const partagée = cellsOf(
+    [sample(3), sample(3), sample(3), sample(0), sample(0)],
+    1,
+    RUBRIC,
+  )[0].m;
+
+  assert.equal(serrée.mean, 1.8);
+  assert.equal(partagée.mean, 1.8);
+  assert.deepEqual(serrée.grades, { "1": 1, "2": 4 });
+  assert.deepEqual(partagée.grades, { "0": 2, "3": 3 });
+});
+
+test("le compte ne retient que ce qui entre dans la moyenne", () => {
+  // Un « sans objet » est une réponse, pas une note : il est compté à part
+  // dans `excluded`, et l'inclure ici ferait mentir une répartition qu'on lit
+  // à côté d'une moyenne calculée sans lui.
+  const cell = cellsOf([sample(3), sample(-1), sample(null)], 1, RUBRIC)[0].m;
+
+  assert.deepEqual(cell.grades, { "3": 1 });
+  assert.equal(cell.excluded, 1);
+  assert.equal(cell.unjudged, 1);
+  assert.equal(cell.judged, 1);
+});
+
+test("une case sans note n'a pas de répartition inventée", () => {
+  const cell = cellsOf([sample(null)], 1, RUBRIC)[0].m;
+  assert.deepEqual(cell.grades, {});
+});

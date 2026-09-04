@@ -276,6 +276,16 @@ export interface Cell {
   excluded: number;
   pending: number;
   mean: number | null;
+  /** Combien de fois chaque note a été donnée dans cette case.
+   *
+   * Une moyenne ne distingue pas un consensus d'un partage : 1,8 peut être
+   * cinq essais serrés ou un 0 et quatre 2, et sur un scénario comportemental
+   * c'est toute la différence entre « le modèle hésite » et « le modèle fait
+   * deux choses opposées selon les fois ».
+   *
+   * Ne compte que ce qui entre dans la moyenne : un « sans objet » est une
+   * réponse, pas une note, et vit dans `excluded`. */
+  grades: Record<string, number>;
   /** Somme de ce qu'ont coûté les cases de cette case de matrice. */
   cost_usd: number;
 }

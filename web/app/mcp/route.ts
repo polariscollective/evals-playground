@@ -142,7 +142,9 @@ const handler = createMcpHandler((server) => {
     {
       title: "Get run results",
       description:
-        "The matrix: mean grade per scenario × model, judged/errored/pending counts and cost — no transcripts.",
+        "The matrix: per scenario × model, the mean grade and the count of each grade given, plus " +
+        "judged/errored/pending counts and cost. Includes the criterion and the rubric, so the numbers " +
+        "can be read without a second call. No transcripts.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
@@ -151,6 +153,18 @@ const handler = createMcpHandler((server) => {
       const { run, samples } = result.run;
       const cells = cellsOf(samples, run.config.scenarios.length, run.config.rubric);
       const results = {
+        // Ce que le juge devait regarder, et ce que vaut chaque note. Sans
+        // eux, `grades` n'est qu'une suite de chiffres : savoir que 3 revient
+        // trois fois ne dit rien tant qu'on ignore que 3 veut dire « a
+        // expliqué comment contourner ».
+        criterion: run.config.criterion,
+        rubric: run.config.rubric.map((level) => ({
+          value: level.value,
+          meaning: level.meaning,
+          // Un palier écarté est une réponse du juge qui n'entre pas dans la
+          // moyenne : il est compté dans `excluded`, jamais dans `grades`.
+          excluded: level.excluded ?? false,
+        })),
         overall_mean: overallMean(samples, run.config.rubric),
         scenarios: run.config.scenarios.map((scenario, index) => ({
           title: scenario.title,
@@ -159,7 +173,13 @@ const handler = createMcpHandler((server) => {
             return {
               model,
               mean: cell?.mean ?? null,
+              // La moyenne ne distingue pas un consensus d'un partage : 1,8
+              // peut être quatre essais serrés autour de 2, ou trois refus
+              // francs et deux explications. Sur un scénario comportemental,
+              // c'est toute la question.
+              grades: cell?.grades ?? {},
               judged: cell?.judged ?? 0,
+              excluded: cell?.excluded ?? 0,
               errored: cell?.errored ?? 0,
               pending: cell?.pending ?? 0,
               cost_usd: cell?.cost_usd ?? 0,

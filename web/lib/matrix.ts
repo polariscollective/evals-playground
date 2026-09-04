@@ -38,6 +38,7 @@ function emptyCell(): Cell {
     excluded: 0,
     pending: 0,
     mean: null,
+    grades: {},
     cost_usd: 0,
   };
 }
@@ -102,7 +103,13 @@ export function cellsOf(
     const separator = key.indexOf(" ");
     const index = Number(key.slice(0, separator));
     const target = key.slice(separator + 1);
-    cells[index][target].mean = aggregate(values, view.aggregate);
+    const cell = cells[index][target];
+    cell.mean = aggregate(values, view.aggregate);
+    // Les notes étaient déjà gardées entières pour la médiane ; les compter
+    // ici ne coûte rien de plus et rend lisible ce qu'une moyenne cache.
+    for (const value of values) {
+      cell.grades[value] = (cell.grades[value] ?? 0) + 1;
+    }
   }
 
   return cells;
