@@ -29,18 +29,32 @@ export function NotesField({
    *  préambule de l'analyse écrite après coup. */
   label?: string;
 }) {
-  // On ouvre en édition quand il n'y a rien à lire : afficher un bloc vide
-  // avec un bouton « Edit » demanderait un clic pour rien.
-  const [editing, setEditing] = useState(value.trim() === "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** Ce que l'utilisateur a décidé, ou `null` s'il n'a rien décidé.
+   *
+   * Dérivé plutôt que synchronisé : tant que personne n'a touché au champ, son
+   * mode suit ce qu'il contient — vide, on ouvre en édition, parce qu'un bloc
+   * vide avec un bouton « Edit » demanderait un clic pour rien ; rempli, on
+   * affiche le markdown rendu.
+   *
+   * C'est ce qui manquait : le mode se décidait au seul montage, où le champ
+   * est vide sur le formulaire. Une note qui arrive après — un brouillon
+   * ouvert, une configuration collée, un run repris — restait donc en édition,
+   * et il fallait cliquer sur « Save » pour voir son propre markdown.
+   *
+   * Dès qu'on écrit ou qu'on clique sur « Edit », la décision est prise et
+   * plus rien ne referme le champ sous les doigts. */
+  const [choisi, setChoisi] = useState<boolean | null>(null);
+  const editing = choisi ?? value.trim() === "";
 
   const save = async () => {
     setSaving(true);
     try {
       if (onSave) await onSave(value);
       setError(null);
-      setEditing(false);
+      setChoisi(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -64,7 +78,7 @@ export function NotesField({
         ) : (
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => setChoisi(true)}
             className="rounded border border-zinc-300 px-2 py-0.5 text-xs"
           >
             Edit
@@ -76,7 +90,12 @@ export function NotesField({
         <>
           <textarea
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              // Écrire vaut décision : sans ça, vider le champ le refermerait
+              // au caractère près.
+              setChoisi(true);
+              onChange(e.target.value);
+            }}
             rows={rows}
             placeholder={hint}
             className="mt-2 w-full rounded border border-zinc-300 p-2 font-mono text-sm"
