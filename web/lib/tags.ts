@@ -82,16 +82,44 @@ export async function tagsByRun(): Promise<Map<string, Tag[]>> {
   return byRun;
 }
 
-/** Pose exactement ces tags sur ce run : les liens d'avant sont effacés, les
- *  nouveaux écrits. Remplacer plutôt qu'ajouter/retirer un à un laisse
- *  l'appelant envoyer l'état qu'il veut, sans calculer de différence. */
+/** Pose exactement ces tags sur ce run : ce qui manque est inséré, ce qui n'y
+ *  est plus est retiré — jamais tout effacé puis tout réécrit.
+ *
+ * Un tag qui reste dans la liste avant et après ne doit jamais, même un
+ * instant, perdre son dernier lien : la tâche suivante pose un déclencheur
+ * qui supprime un tag devenu orphelin, et PostgREST envoie un `remove` et un
+ * `insert` comme deux requêtes HTTP — donc deux transactions distinctes,
+ * qu'aucun `deferred` ne peut recoller. Remplacer `[A]` par `[A, B]` en
+ * effaçant d'abord tout détacherait A, le déclencheur le supprimerait, et
+ * l'insertion qui suit échouerait sur une clé étrangère pointant vers un tag
+ * qui n'existe plus. Ne toucher que la différence évite qu'A soit jamais sans
+ * lien.
+ *
+ * L'insertion passe avant la suppression : les deux ensembles sont
+ * disjoints par construction (un tag ne peut pas à la fois arriver et
+ * partir), donc l'ordre ne change rien à ce que la table contient au final —
+ * mais si la seconde requête échoue en cours de route, mieux vaut garder un
+ * lien de trop (retiré plus tard) que perdre un lien voulu. */
 export async function setRunTags(runId: string, tagIds: number[]): Promise<void> {
-  await remove(RUN_TAGS, { run_id: `eq.${runId}` });
-  if (tagIds.length === 0) return;
-  await insert(
-    RUN_TAGS,
-    tagIds.map((tagId) => ({ run_id: runId, tag_id: tagId })),
-  );
+  const existing = await select<{ tag_id: number }>(RUN_TAGS, {
+    select: "tag_id",
+    run_id: `eq.${runId}`,
+  });
+  const before = new Set(existing.map((link) => link.tag_id));
+  const after = new Set(tagIds);
+
+  const toAdd = [...after].filter((tagId) => !before.has(tagId));
+  const toRemove = [...before].filter((tagId) => !after.has(tagId));
+
+  if (toAdd.length > 0) {
+    await insert(
+      RUN_TAGS,
+      toAdd.map((tagId) => ({ run_id: runId, tag_id: tagId })),
+    );
+  }
+  if (toRemove.length > 0) {
+    await remove(RUN_TAGS, { run_id: `eq.${runId}`, tag_id: `in.(${toRemove.join(",")})` });
+  }
 }
 
 /** Les tags d'un seul brouillon. Jumelle de `tagsOf`. */
@@ -109,14 +137,28 @@ export async function tagsOfDraft(draftId: string): Promise<Tag[]> {
   });
 }
 
-/** Pose exactement ces tags sur ce brouillon : remplace, comme `setRunTags`. */
+/** Pose exactement ces tags sur ce brouillon : par différence, comme
+ *  `setRunTags` — pour la même raison, jumelle jusque dans le commentaire. */
 export async function setDraftTags(draftId: string, tagIds: number[]): Promise<void> {
-  await remove(DRAFT_TAGS, { draft_id: `eq.${draftId}` });
-  if (tagIds.length === 0) return;
-  await insert(
-    DRAFT_TAGS,
-    tagIds.map((tagId) => ({ draft_id: draftId, tag_id: tagId })),
-  );
+  const existing = await select<{ tag_id: number }>(DRAFT_TAGS, {
+    select: "tag_id",
+    draft_id: `eq.${draftId}`,
+  });
+  const before = new Set(existing.map((link) => link.tag_id));
+  const after = new Set(tagIds);
+
+  const toAdd = [...after].filter((tagId) => !before.has(tagId));
+  const toRemove = [...before].filter((tagId) => !after.has(tagId));
+
+  if (toAdd.length > 0) {
+    await insert(
+      DRAFT_TAGS,
+      toAdd.map((tagId) => ({ draft_id: draftId, tag_id: tagId })),
+    );
+  }
+  if (toRemove.length > 0) {
+    await remove(DRAFT_TAGS, { draft_id: `eq.${draftId}`, tag_id: `in.(${toRemove.join(",")})` });
+  }
 }
 
 /** Les tags de chaque brouillon, par identifiant de brouillon. Jumelle de
