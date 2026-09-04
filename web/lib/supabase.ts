@@ -14,6 +14,8 @@ import "server-only";
 export const RUNS = "eval_runs";
 export const SAMPLES = "eval_samples";
 export const DRAFTS = "eval_run_drafts";
+export const TAGS = "tags";
+export const RUN_TAGS = "eval_run_tags";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *
