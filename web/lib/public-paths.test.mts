@@ -16,6 +16,11 @@ test("les chemins ouverts passent la porte sans session", () => {
     // Sans la chaîne de requête : `isOpen` prend un `pathname`, comme le
     // `matcher` de Next — la query n'en fait jamais partie.
     "/_next/image",
+    "/mcp",
+    "/mcp/authorize",
+    "/mcp/token",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-protected-resource",
   ]) {
     assert.equal(isOpen(path), true, path);
   }
@@ -31,6 +36,8 @@ test("leurs voisins de préfixe restent fermés", () => {
     "/sharedx",
     "/prompts-secrets",
     "/favicon.icon",
+    "/mcpx",
+    "/mcp-secrets",
   ]) {
     assert.equal(isOpen(path), false, path);
   }

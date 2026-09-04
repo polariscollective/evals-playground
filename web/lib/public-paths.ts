@@ -24,6 +24,10 @@ export const OPEN_PREFIXES = [
   "validate",
   // Un run publié.
   "shared",
+  // Le connecteur MCP et son serveur d'autorisation : une machine sans
+  // session, comme prompt et validate.
+  "mcp",
+  ".well-known",
   "_next/static",
   "_next/image",
 ];
