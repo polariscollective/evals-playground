@@ -425,3 +425,35 @@ export async function loadPublicRun(
 export async function setPublic(runId: string, isPublic: boolean): Promise<void> {
   await update(RUNS, { is_public: isPublic }, { id: `eq.${runId}` });
 }
+
+/** Une seule conversation, sans charger le reste du run — un run porte des
+ *  dizaines de cases, et les ramener toutes pour n'en rendre qu'une serait le
+ *  genre de coût caché qui ne se voit qu'en production.
+ *
+ * Throws:
+ *   NotFound: si aucune case ne porte ce triplet, dans ce run.
+ */
+export async function loadSampleTranscript(
+  runId: string,
+  scenarioIndex: number,
+  targetModel: string,
+  repetition: number,
+): Promise<EvalSample> {
+  const rows = await select<EvalSample>(SAMPLES, {
+    run_id: `eq.${runId}`,
+    scenario_index: `eq.${scenarioIndex}`,
+    target_model: `eq.${targetModel}`,
+    repetition: `eq.${repetition}`,
+    select: "*",
+    limit: 1,
+  });
+  const sample = rows[0];
+  if (!sample) {
+    throw new NotFound(
+      `Unknown sample: run ${runId}, scenario ${scenarioIndex}, ${targetModel}, repetition ${repetition}`,
+    );
+  }
+  sample.messages ??= [];
+  sample.usage ??= {};
+  return sample;
+}
