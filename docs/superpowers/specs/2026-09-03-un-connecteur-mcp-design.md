@@ -134,6 +134,51 @@ pour n'en rendre qu'une serait le genre de coût caché qui ne se voit qu'en
 production. La fonction neuve sélectionne directement la ligne d'`eval_samples`
 demandée.
 
+### `read_prompt` ne rend pas ce que rend `/prompt`
+
+Le tableau ci-dessus disait « inchangé, juste appelable sans lien à coller ».
+C'est faux, et ça se voyait à l'usage : l'agent branché en MCP recevait
+l'adresse absolue de `/validate` et allait y frapper, alors qu'il avait
+`submit_draft_run` dans la main.
+
+Les deux documents décrivent le même format et les mêmes règles — c'est un seul
+gabarit, `TEMPLATE`, et il doit le rester : deux copies dériveraient en silence
+le jour où `configProblem` change. Mais ils ne s'adressent pas au même lecteur.
+
+`/prompt` est lu par un humain qui le colle chez un agent nu. La seule prise de
+cet agent sur l'application est HTTP, d'où l'origine absolue et un `POST
+/validate` ; il rend le YAML, et c'est l'humain qui le transporte.
+
+`read_prompt` est lu par un agent qui a déjà les outils. Quatre passages
+divergent, remplis par `agentPrompt` ou par `mcpAgentPrompt` :
+
+| trou | canal HTTP | canal MCP |
+|---|---|---|
+| `{{CHECK}}` | `POST /validate`, puis écrire le document complet | `submit_draft_run`, un seul appel, sur le document complet |
+| `{{SAMPLE}}` | « seule l'étape de vérification travaille sur une poignée » | il n'y a plus d'étape courte |
+| `{{CSV}}` | la forme `scenarios: from csv`, et le téléversement séparé | ce canal ne porte pas de CSV — écrire les scénarios |
+| `{{CLOSING}}` | `REPLACE THIS LINE`, que l'humain édite avant de coller | l'expérience est déjà dans la conversation |
+
+**L'étape de vérification courte disparaît en MCP.** Elle existait pour deux
+raisons, et les deux tombent : la limite de longueur du GET n'a plus cours, et
+un document refusé ne coûte qu'un aller-retour puisque l'erreur sort avant
+`createDraft` — rien n'est écrit. Un document court *accepté*, lui, poserait un
+brouillon à jeter et rendrait une URL qui n'est pas la bonne. L'agent écrit donc
+tout, et appelle une fois.
+
+**Le CSV n'est pas offert en MCP** parce que l'outil le refuse : un document qui
+annonce un CSV rend `INCOMPLETE`, et `submit_draft_run` traite ça en erreur —
+un brouillon dont les scénarios manquent n'est pas un brouillon. Le tableur reste
+un chemin, mais c'est celui du formulaire web.
+
+**La description de `submit_draft_run` met la garantie en premier.** Un agent
+qui craint de dépenser l'argent de quelqu'un n'appelle pas l'outil et se rabat
+sur ce qu'il croit inoffensif — c'est-à-dire `/validate`, exactement ce qu'on
+vient de lui retirer. Le titre ne commence donc plus par « Submit », et le corps
+dit avant tout le reste que rien n'est exécuté, qu'aucun modèle n'est appelé,
+qu'un refus n'écrit rien et qu'un succès rend le coût estimé. C'est un
+validateur qui laisse une trace adressable, pas un bouton de lancement.
+
 ### Le brouillon, une table à part
 
 `eval_runs` n'a pas d'état « pas encore lancé » — une ligne qui existe a déjà
@@ -195,6 +240,7 @@ dessin.
 | ouvrir l'URL de brouillon rendue | le YAML et le coût, un bouton Lancer, rien d'autre tant qu'on ne clique pas |
 | `get_run_trajectory` sur une case qui n'existe pas | 404, pas de fuite du reste du run |
 | `/mcp` sans jeton, depuis un navigateur anonyme | pas l'écran de connexion HTML — une erreur MCP |
+| `read_prompt` depuis un client MCP | aucune mention de `/validate`, aucune forme CSV |
 
 Deux fonctions continuent de faire autorité et se testent dans `lib/` :
 `withoutIdentity`, inchangée, et `proxyMatcher`, à réétendre pour couvrir
