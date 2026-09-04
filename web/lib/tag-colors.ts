@@ -35,7 +35,12 @@ export function nextColor(usedCount: number): TagColor {
 
 /** Les classes d'une couleur. Une valeur inconnue — écrite à la main en base,
  *  ou venue d'une palette plus ancienne — rend du neutre plutôt que rien : un
- *  tag sans classe serait invisible. */
+ *  tag sans classe serait invisible.
+ *
+ *  `Object.hasOwn` plutôt qu'un simple accès : `CLASSES` reste un objet
+ *  ordinaire, et une couleur valant `"toString"` ou `"constructor"`
+ *  trouverait sinon une méthode héritée du prototype au lieu de retomber sur
+ *  le neutre — exactement le cas que ce commentaire prétend couvrir. */
 export function colorClasses(color: string): string {
-  return CLASSES[color as TagColor] ?? NEUTRAL;
+  return Object.hasOwn(CLASSES, color) ? CLASSES[color as TagColor] : NEUTRAL;
 }

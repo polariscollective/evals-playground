@@ -7,15 +7,26 @@ export default function ConnectionsPage() {
   const [grants, setGrants] = useState<McpGrant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    listMcpConnections()
+  function refresh() {
+    return listMcpConnections()
       .then(setGrants)
       .catch((e) => setError((e as Error).message));
+  }
+
+  useEffect(() => {
+    refresh();
   }, []);
 
-  async function revoke(hash: string) {
-    await revokeMcpConnection(hash);
-    setGrants((current) => current?.filter((g) => g.access_token_hash !== hash) ?? null);
+  /** Rafraîchit depuis le serveur plutôt que de retirer la ligne
+   *  localement : un jeton d'accès tourne à chaque rafraîchissement, et
+   *  l'empreinte affichée peut donc déjà être périmée — seule la base sait ce
+   *  qui a vraiment disparu. En cas d'échec, l'erreur reste affichée et la
+   *  ligne reste en place plutôt que de disparaître à tort. */
+  function revoke(hash: string) {
+    setError(null);
+    revokeMcpConnection(hash)
+      .then(refresh)
+      .catch((e) => setError((e as Error).message));
   }
 
   return (
@@ -39,7 +50,7 @@ export default function ConnectionsPage() {
             <div>
               <p>{grant.user_email}</p>
               <p className="text-zinc-500">
-                Connected {new Date(grant.created_at).toLocaleString()}
+                Last refreshed {new Date(grant.created_at).toLocaleString()}
               </p>
             </div>
             <button

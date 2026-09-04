@@ -116,6 +116,24 @@ export async function remove(table: string, filters: Params): Promise<void> {
   await request("DELETE", table, { params: filters });
 }
 
+/** Supprime, et rend les lignes effacées — contrairement à `remove`, qui n'en
+ *  garde pas trace. `Prefer: return=representation` fait porter par PostgREST
+ *  la même distinction que `insert({ returning: true })` : sans elle, un
+ *  filtre qui ne touche aucune ligne et un filtre qui en efface une se
+ *  répondent tous les deux par un succès muet. Un appelant à qui cette
+ *  différence importe — révoquer, par exemple — doit pouvoir la lire. */
+export async function removeReturning<T = Record<string, unknown>>(
+  table: string,
+  filters: Params,
+): Promise<T[]> {
+  return (
+    ((await request("DELETE", table, {
+      params: filters,
+      prefer: "return=representation",
+    })) as T[]) ?? []
+  );
+}
+
 export async function rpc<T = unknown>(
   fn: string,
   args: Record<string, unknown> = {},

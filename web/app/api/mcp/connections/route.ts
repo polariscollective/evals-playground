@@ -21,6 +21,12 @@ export async function DELETE(request: Request) {
   if (!body?.access_token_hash) {
     return NextResponse.json({ error: "access_token_hash is required" }, { status: 422 });
   }
-  await revokeGrant(body.access_token_hash, user.email);
+  const revoked = await revokeGrant(body.access_token_hash, user.email);
+  if (!revoked) {
+    return NextResponse.json(
+      { error: "No matching connection — it may already have been revoked." },
+      { status: 404 },
+    );
+  }
   return NextResponse.json({ ok: true });
 }

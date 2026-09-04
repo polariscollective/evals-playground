@@ -14,18 +14,24 @@ function tokenResponse(pair: {
   refreshToken: string;
   expiresIn: number;
 }) {
-  return NextResponse.json({
-    access_token: pair.accessToken,
-    token_type: "Bearer",
-    expires_in: pair.expiresIn,
-    refresh_token: pair.refreshToken,
-    // `offline_access` avec `evals`, et pas `evals` seul : un jeton de
-    // rafraîchissement est toujours émis, et rendre une portée plus étroite
-    // que celle demandée dit au client qu'il ne l'a pas obtenue (RFC 6749
-    // §5.1). Il en conclurait n'avoir aucun rafraîchissement, et la connexion
-    // mourrait en silence au bout d'une heure.
-    scope: "evals offline_access",
-  });
+  return NextResponse.json(
+    {
+      access_token: pair.accessToken,
+      token_type: "Bearer",
+      expires_in: pair.expiresIn,
+      refresh_token: pair.refreshToken,
+      // `offline_access` avec `evals`, et pas `evals` seul : un jeton de
+      // rafraîchissement est toujours émis, et rendre une portée plus étroite
+      // que celle demandée dit au client qu'il ne l'a pas obtenue (RFC 6749
+      // §5.1). Il en conclurait n'avoir aucun rafraîchissement, et la connexion
+      // mourrait en silence au bout d'une heure.
+      scope: "evals offline_access",
+    },
+    // RFC 6749 §5.1 : une réponse de jeton porte toujours cet en-tête. Rien ne
+    // met en cache cette route aujourd'hui — elle est dynamique — donc ce
+    // n'est encore qu'une question de conformité, pas un bug vécu.
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 /** L'échange de code, et le rafraîchissement — les deux à la même adresse,

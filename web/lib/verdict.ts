@@ -28,10 +28,11 @@ export interface Verdict {
 
 /** De quoi chiffrer le run, passé de l'extérieur.
  *
- * `estimateCost` remonte jusqu'à `shared/pricing.json` par un alias de chemin
- * que `node --test` ne sait pas résoudre : l'importer ici rendrait ce module
- * intestable, c'est-à-dire exactement ce qu'on vient de lui éviter. La route
- * passe `costSentence`, les tests passent ce qu'ils veulent. */
+ * `pricing.ts` est une dépendance plus lourde que le reste de ce module — il
+ * lit `shared/pricing.json` et fait le calcul du devis. L'importer ici
+ * coudrait cette charge à un module qui n'a par ailleurs qu'à comparer des
+ * nombres, et qui reste ainsi trivialement testable. La route passe
+ * `costSentence`, les tests passent ce qu'ils veulent. */
 export type Pricer = (config: EvalRunConfig) => string | null;
 
 function plural(count: number, word: string): string {

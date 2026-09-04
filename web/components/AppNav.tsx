@@ -34,6 +34,9 @@ export function AppNav() {
       <Link href="/juges" className="font-medium">
         Judges
       </Link>
+      <Link href="/settings/connections" className="font-medium">
+        Connections
+      </Link>
     </nav>
   );
 }

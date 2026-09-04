@@ -9,6 +9,13 @@ export async function loadTags(): Promise<Tag[]> {
   return select<Tag>(TAGS, { select: "id,label,color", order: "label.asc" });
 }
 
+/** `%` et `_` sont des jokers pour `ilike`, et `\` les échappe : un libellé
+ *  qui en porte un — « 100% », par exemple — matcherait autrement n'importe
+ *  quoi et se dédupliquerait sur la mauvaise ligne. */
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 /** Crée un tag, ou rend celui qui porte déjà ce libellé.
  *
  * La casse ne distingue pas deux tags : l'index unique est posé sur
@@ -18,7 +25,7 @@ export async function createTag(label: string): Promise<Tag> {
   const trimmed = label.trim();
   const existing = await select<Tag>(TAGS, {
     select: "id,label,color",
-    label: `ilike.${trimmed}`,
+    label: `ilike.${escapeIlike(trimmed)}`,
     limit: 1,
   });
   if (existing[0]) return existing[0];

@@ -7,7 +7,7 @@
 // `isAllowedEmail`.
 import "server-only";
 import { newToken, hashOf } from "./mcp-crypto";
-import { insert, remove, select } from "./supabase";
+import { insert, remove, removeReturning, select } from "./supabase";
 
 export const AUTH_CODES = "mcp_auth_codes";
 export const TOKENS = "mcp_tokens";
@@ -139,10 +139,20 @@ export async function listGrants(userEmail: string): Promise<Grant[]> {
 }
 
 /** Révoque une connexion : son propriétaire doit correspondre, sans quoi
- *  n'importe quel email connecté pourrait couper celle d'un autre. */
-export async function revokeGrant(accessTokenHash: string, userEmail: string): Promise<void> {
-  await remove(TOKENS, {
+ *  n'importe quel email connecté pourrait couper celle d'un autre.
+ *
+ *  Rend `true` quand une ligne a vraiment disparu. C'est la seule façon de
+ *  savoir : un jeton d'accès tourne à chaque rafraîchissement
+ *  (`rotateRefreshToken` efface la ligne et en pose une neuve), si bien que
+ *  l'empreinte que tient l'écran peut désigner une ligne déjà partie — et
+ *  cette révocation-là ne doit pas se faire passer pour une réussite. */
+export async function revokeGrant(
+  accessTokenHash: string,
+  userEmail: string,
+): Promise<boolean> {
+  const removed = await removeReturning(TOKENS, {
     access_token_hash: `eq.${accessTokenHash}`,
     user_email: `eq.${userEmail}`,
   });
+  return removed.length > 0;
 }

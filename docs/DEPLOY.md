@@ -17,9 +17,10 @@ Régler le Root Directory sur `web` d'abord : la détection se refait alors sur
 ce dossier, y trouve `next` dans `package.json`, et le bon préréglage se
 propose tout seul.
 
-Sans le second, le build échoue sur `@shared/pricing.json` : les tarifs et les
-gabarits du prompt du juge sont partagés avec le Python, et les recopier dans
-`web/` serait exactement ce qu'on cherche à éviter.
+Sans le second, le build échoue : `web/lib/shared.ts` lit `shared/pricing.json`
+et les gabarits du prompt du juge par chemin relatif, hors de `web/`. Ces
+fichiers sont partagés avec le Python, et les recopier dans `web/` serait
+exactement ce qu'on cherche à éviter.
 
 ### Les variables d'environnement
 
