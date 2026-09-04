@@ -6,7 +6,7 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, agentPrompt } from "@/lib/agent-prompt";
 import { verifyAccessToken } from "@/lib/mcp-auth";
-import { NotFound, loadRun } from "@/lib/runs";
+import { NotFound, loadRun, loadSampleTranscript } from "@/lib/runs";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { isRunId } from "@/lib/run-id";
 import type { RunDetail } from "@/lib/types";
@@ -118,6 +118,46 @@ const handler = createMcpHandler((server) => {
         })),
       };
       return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_run_trajectory",
+    {
+      title: "Get one conversation",
+      description:
+        "The full transcript of one cell — one scenario × model × repetition — including the judge's grade and justification.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run's UUID."),
+        scenario_index: z.number().int().min(0).describe("0-based, in scenario order."),
+        target_model: z.string(),
+        repetition: z.number().int().min(0).describe("0-based."),
+      }),
+    },
+    async ({ run_id, scenario_index, target_model, repetition }) => {
+      if (!isRunId(run_id)) {
+        return { content: [{ type: "text", text: `Not a run id: ${run_id}` }], isError: true };
+      }
+      let sample;
+      try {
+        sample = await loadSampleTranscript(run_id, scenario_index, target_model, repetition);
+      } catch (error) {
+        if (error instanceof NotFound) {
+          return { content: [{ type: "text", text: error.message }], isError: true };
+        }
+        throw error;
+      }
+      const trajectory = {
+        scenario_title: sample.scenario_title,
+        target_model: sample.target_model,
+        repetition: sample.repetition,
+        status: sample.status,
+        score: sample.score,
+        justification: sample.justification,
+        error: sample.error,
+        messages: sample.messages,
+      };
+      return { content: [{ type: "text", text: JSON.stringify(trajectory, null, 2) }] };
     },
   );
 }, {});
