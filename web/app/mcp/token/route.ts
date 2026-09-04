@@ -19,7 +19,12 @@ function tokenResponse(pair: {
     token_type: "Bearer",
     expires_in: pair.expiresIn,
     refresh_token: pair.refreshToken,
-    scope: "evals",
+    // `offline_access` avec `evals`, et pas `evals` seul : un jeton de
+    // rafraîchissement est toujours émis, et rendre une portée plus étroite
+    // que celle demandée dit au client qu'il ne l'a pas obtenue (RFC 6749
+    // §5.1). Il en conclurait n'avoir aucun rafraîchissement, et la connexion
+    // mourrait en silence au bout d'une heure.
+    scope: "evals offline_access",
   });
 }
 

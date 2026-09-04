@@ -1,6 +1,7 @@
 // L'écran de consentement d'un serveur d'autorisation qui ne vérifie
 // l'identité de personne lui-même : il renvoie vers Google, déjà en place.
 import { NextResponse } from "next/server";
+import { getPublicOrigin } from "mcp-handler";
 import { getSessionEmail } from "@/auth";
 import { clientId, issueAuthCode, REDIRECT_URI } from "@/lib/mcp-auth";
 
@@ -69,8 +70,14 @@ export async function GET(request: Request) {
 
   const email = await getSessionEmail();
   if (!email) {
-    const signin = new URL("/api/auth/signin", url.origin);
-    signin.searchParams.set("callbackUrl", url.toString());
+    // Pas `url.origin` : derrière le proxy de Vercel, `request.url` porte
+    // l'hôte interne, et le `callbackUrl` désignerait alors une origine que
+    // NextAuth juge étrangère et réécrit en `/`. L'utilisateur se connecterait
+    // à Google pour atterrir sur l'accueil, pendant que claude.ai attend un
+    // code qui n'arriverait jamais. Même raison que `originOf` dans `/prompt`.
+    const origin = getPublicOrigin(request);
+    const signin = new URL("/api/auth/signin", origin);
+    signin.searchParams.set("callbackUrl", `${origin}${url.pathname}${url.search}`);
     return NextResponse.redirect(signin);
   }
 
@@ -122,5 +129,9 @@ export async function POST(request: Request) {
   const back = new URL(redirectUri);
   back.searchParams.set("code", code);
   if (state) back.searchParams.set("state", state);
-  return NextResponse.redirect(back);
+  // 303, et surtout pas le 307 que `NextResponse.redirect` pose par défaut :
+  // un 307 conserve la méthode, si bien que le navigateur rejouait ce renvoi
+  // en POST sur l'adresse de retour de claude.ai, qui répond « Method Not
+  // Allowed » — une réponse d'autorisation OAuth se livre en GET.
+  return NextResponse.redirect(back, 303);
 }
