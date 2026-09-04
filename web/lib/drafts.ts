@@ -88,15 +88,21 @@ export async function loadDrafts(): Promise<Draft[]> {
  * sans repasser par là. Garder `mcp` ferait mentir la pastille précisément où
  * elle sert — devant un brouillon incomplet, à décider si c'est une anomalie
  * ou le travail en cours. La provenance d'origine se perd ; c'est le prix, et
- * elle disait moins que la garantie. */
+ * elle disait moins que la garantie.
+ *
+ * D'où le paramètre plutôt qu'une constante : `update_draft_run` valide avant
+ * d'écrire, exactement comme `submit_draft_run`, et la garantie tient donc
+ * encore après son passage. Le défaut reste `manual` — c'est le formulaire qui
+ * appelle le plus souvent, et c'est lui qui ne garantit rien. */
 export async function updateDraft(
   id: string,
   config: EvalRunConfig,
   csvText: string | null,
+  origin: "manual" | "mcp" = "manual",
 ): Promise<void> {
   await update(
     DRAFTS,
-    { config, csv_text: csvText, origin: "manual" },
+    { config, csv_text: csvText, origin },
     { id: `eq.${id}` },
   );
 }

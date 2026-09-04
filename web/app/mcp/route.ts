@@ -1,4 +1,5 @@
-// Le serveur MCP : lire les runs, et en déposer un sans le lancer.
+// Le serveur MCP : lire les runs, en reprendre la configuration, et en
+// déposer un sans le lancer.
 //
 // Aucun outil ne démarre quoi que ce soit — submit_draft_run valide, chiffre et
 // pose un brouillon, le lancement reste un clic humain. Les descriptions le
@@ -9,8 +10,8 @@ import { createMcpHandler, getPublicOrigin, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
-import { readConfigFile } from "@/lib/config-file";
-import { createDraft } from "@/lib/drafts";
+import { readConfigFile, writeConfigFile } from "@/lib/config-file";
+import { DraftNotFound, createDraft, loadDraft, updateDraft } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { costSentence } from "@/lib/pricing";
@@ -19,7 +20,7 @@ import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
 import { addRunTags, loadTags, setDraftTags, tagsByRun, tagsForLabels, tagsOf } from "@/lib/tags";
 import { verdictOf } from "@/lib/verdict";
-import type { RunDetail } from "@/lib/types";
+import type { Draft, RunDetail } from "@/lib/types";
 
 /** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
  *  rendre telle quelle — un id malformé ou un run inconnu se traitent pareil
@@ -42,6 +43,39 @@ async function runOrError(
     }
     throw error;
   }
+}
+
+/** Le brouillon derrière un `draft_id`, ou la réponse d'erreur à rendre telle
+ *  quelle. Même forme que `runOrError`, et même raison : un identifiant
+ *  malformé et un brouillon inconnu se traitent pareil.
+ *
+ *  `isRunId` ne vérifie qu'une forme d'UUID, celle que portent aussi les
+ *  brouillons — la fonction dit « run » parce que c'est là qu'elle est née,
+ *  pas parce qu'elle en saurait plus. */
+async function draftOrError(
+  draftId: string,
+): Promise<
+  | { draft: Draft }
+  | { error: { content: { type: "text"; text: string }[]; isError: true } }
+> {
+  if (!isRunId(draftId)) {
+    return {
+      error: { content: [{ type: "text", text: `Not a draft id: ${draftId}` }], isError: true },
+    };
+  }
+  try {
+    return { draft: await loadDraft(draftId) };
+  } catch (error) {
+    if (error instanceof DraftNotFound) {
+      return { error: { content: [{ type: "text", text: error.message }], isError: true } };
+    }
+    throw error;
+  }
+}
+
+/** Une erreur d'outil, dans la forme que le protocole attend. */
+function toolError(message: string) {
+  return { content: [{ type: "text" as const, text: message }], isError: true as const };
 }
 
 /** L'email posé par `verifyToken` dans `extra`. `unknown` s'il manque, ce qui
@@ -240,6 +274,102 @@ const handler = createMcpHandler((server) => {
     async () => {
       const tags = await loadTags();
       return { content: [{ type: "text", text: JSON.stringify(tags.map((tag) => tag.label), null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_run_config",
+    {
+      title: "Get a run's configuration",
+      description:
+        "The run as it was configured, given back as the YAML document that would produce it again — " +
+        "every scenario written out, the scale, the models, the adversary prompt. No results and no " +
+        "transcripts: those are get_run_results and get_run_trajectory. This is what to read when the " +
+        "task is to change something about an existing run rather than write one from nothing: take " +
+        "this, edit it, and hand it to submit_draft_run. A run with many scenarios makes a long document.",
+      inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
+    },
+    async ({ run_id }) => {
+      const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      if ("error" in result) return result.error;
+      return { content: [{ type: "text", text: writeConfigFile(result.run.run.config) }] };
+    },
+  );
+
+  server.registerTool(
+    "get_draft_config",
+    {
+      title: "Get a draft's configuration",
+      description:
+        "The same thing for a draft that has not been launched yet: its configuration as a YAML " +
+        "document you can edit. Any draft can be read — a draft is a proposal made to the whole " +
+        "team — but only its own author can rewrite it with update_draft_run.",
+      inputSchema: z
+        .object({ draft_id: z.string().describe("The draft's UUID, from its address.") }),
+    },
+    async ({ draft_id }) => {
+      const found = await draftOrError(draft_id);
+      if ("error" in found) return found.error;
+      return { content: [{ type: "text", text: writeConfigFile(found.draft.config) }] };
+    },
+  );
+
+  server.registerTool(
+    "update_draft_run",
+    {
+      title: "Rewrite a draft in place",
+      description:
+        "Nothing is launched and nothing is spent by calling this, exactly like submit_draft_run: it " +
+        "checks the document first, and only then replaces the draft's contents. Use it to correct a " +
+        "draft rather than leave two of them side by side, when the person cannot tell which is the " +
+        "good one. Three refusals, all before anything is written: a draft created by someone else — " +
+        "only its own author may rewrite it; a draft that has already been launched — it produced a " +
+        "run, and rewriting it would falsify where that run came from, so submit a new one; and a " +
+        "document that would be refused anyway, with the reason. Note that a draft whose scenarios " +
+        "came from an uploaded CSV keeps the scenarios you send but loses the file itself.",
+      inputSchema: z.object({
+        draft_id: z.string().describe("The draft's UUID, from its address."),
+        yaml: z
+          .string()
+          .describe(
+            "The complete run, as a YAML document — every scenario written out, no CSV. See read_prompt.",
+          ),
+      }),
+    },
+    async ({ draft_id, yaml }, ctx) => {
+      const found = await draftOrError(draft_id);
+      if ("error" in found) return found.error;
+      const { draft } = found;
+
+      // L'auteur d'abord, avant même de regarder le document : refuser pour la
+      // bonne raison compte plus que refuser vite.
+      const caller = callerEmail(ctx);
+      if (draft.created_by !== caller) {
+        return toolError(
+          `This draft was created by ${draft.created_by}, and you are calling as ${caller}. ` +
+            "Only its author can rewrite it — submit a new draft instead.",
+        );
+      }
+      if (draft.launched_at) {
+        return toolError(
+          "This draft has already been launched, and the run it produced points back to it. " +
+            "Rewriting it now would falsify that. Submit a new draft instead.",
+        );
+      }
+
+      const verdict = verdictOf(yaml, costSentence);
+      if (verdict.status !== 200 || verdict.message.startsWith("INCOMPLETE")) {
+        return toolError(verdict.message);
+      }
+      const { config } = readConfigFile(yaml);
+      // `csv_text` part avec l'ancienne configuration : les scénarios reçus ici
+      // sont écrits en clair, plus rien ne renvoie au fichier téléversé, et le
+      // garder attaché ferait croire à une source qui n'en est plus une.
+      await updateDraft(draft_id, config, null, "mcp");
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      return {
+        content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draft_id}` }],
+      };
     },
   );
 

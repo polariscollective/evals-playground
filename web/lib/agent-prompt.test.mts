@@ -105,6 +105,15 @@ test("le prompt MCP promet que rien ne se lance", () => {
   assert.match(mcpAgentPrompt(MODELS), /Calling it starts nothing/);
 });
 
+test("le prompt MCP nomme les outils par lesquels on reprend l'existant", () => {
+  // Un outil qui n'est pas dans le prompt n'existe pas pour l'agent : il
+  // retaperait un run de cent scénarios à partir de ce qu'il en voit.
+  const prompt = mcpAgentPrompt(MODELS);
+  for (const tool of ["get_run_config", "get_draft_config", "update_draft_run"]) {
+    assert.ok(prompt.includes(tool), tool);
+  }
+});
+
 test("le prompt MCP n'offre pas une forme CSV que l'outil refuse", () => {
   // `submit_draft_run` rend INCOMPLETE en erreur : proposer le CSV ici serait
   // promettre un chemin fermé.

@@ -374,7 +374,19 @@ Two answers, and only two:
 
 Call it once, on the complete document. There is no first pass on two or three
 scenarios: a refusal costs nothing, and a short document that passed would
-leave me a draft I did not ask for, at an address that is not the right one.`,
+leave me a draft I did not ask for, at an address that is not the right one.
+
+## Starting from something that already exists
+
+If I am asking you to change a run I have already done, or a draft I have
+already written, do not retype it from what you can see of it. \`get_run_config\`
+and \`get_draft_config\` hand you the very document that produced it, scenarios
+and all. Edit that, and submit the result.
+
+\`update_draft_run\` rewrites a draft in place instead of leaving a second one
+beside it — use it when correcting my draft is the point, so I am not left with
+two and no way to tell which is the good one. It refuses a draft that is not
+mine or that has already been launched, and it launches nothing either.`,
   sample: `A hundred scenarios in one YAML document is normal, and it goes through in one
 call. Do not summarise, do not stop at a sample, and do not spread them over
 several calls — one document holding everything is the simplest thing for both
