@@ -6,7 +6,7 @@
 // connexion déjà en place, une seule façon de vérifier qui on est, comme
 // `isAllowedEmail`.
 import "server-only";
-import { newToken, hashOf, pkceMatches } from "./mcp-crypto";
+import { newToken, hashOf } from "./mcp-crypto";
 import { insert, remove, select } from "./supabase";
 
 export const AUTH_CODES = "mcp_auth_codes";
