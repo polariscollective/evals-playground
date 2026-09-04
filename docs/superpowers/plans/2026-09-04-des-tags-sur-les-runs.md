@@ -450,13 +450,30 @@ Commit : `feat: les routes des tags`.
 
 ## Task 4: Le champ de tags sur la page d'un run
 
+> **Réécrite le 4 septembre.** La version d'origine visait
+> `app/eval/[runId]/page.tsx` telle qu'elle était alors. Une autre session a
+> depuis extrait les composants d'affichage dans `components/RunRead.tsx`,
+> **partagés avec `/shared`**. Les tags s'éditent donc dans la page privée, qui
+> existe toujours à côté — les poser dans `RunRead.tsx` les ferait apparaître,
+> et modifiables, sur un run publié.
+
 **Files:**
 - Create: `web/components/TagField.tsx`
-- Modify: `web/app/eval/[runId]/page.tsx` — l'import, l'état, et le rendu sous l'en-tête
+- Modify: `web/app/eval/[runId]/page.tsx` — l'import et un `<TagField>` sous
+  l'en-tête, juste avant le bloc `{publicUrl && …}` (vers la ligne 461)
+- Modify: `web/lib/api.ts` — `getTags`, `createTag`, `setRunTags` (reportés
+  depuis la Task 3, qui les avait laissés à l'écart pendant qu'une autre
+  session travaillait dans ce fichier)
 
 **Interfaces:**
-- Consumes: `getTags`, `createTag`, `setRunTags` (Task 3), `colorClasses` (Task 2).
-- Produces: `<TagField runId={...} />`.
+- Consumes: `GET/POST /api/tags` et `PUT /api/runs/<id>/tags` (Task 3),
+  `colorClasses` (Task 2).
+- Produces: `<TagField runId={...} />`, et les trois appels clients.
+
+Les tags **n'apparaissent pas** sur `/shared` dans cette tâche : la page
+publique montre un run, pas la façon dont on le classe, et rien ne presse de
+trancher la question. Elle se rouvrira toute seule le jour où quelqu'un la
+posera.
 
 - [ ] **Step 1: Écrire le composant**
 
