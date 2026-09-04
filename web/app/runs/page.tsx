@@ -7,14 +7,16 @@ import {
   getDrafts,
   getMe,
   getRuns,
+  getTagAssignments,
   softDeleteRun,
 } from "@/lib/api";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
 import { publicRunPath } from "@/lib/run-id";
+import { colorClasses } from "@/lib/tag-colors";
 import { CopyButton, CopyId, PublicIcon } from "@/components/CopyButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import type { Draft, RunSummary } from "@/lib/types";
+import type { Draft, RunSummary, Tag } from "@/lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
   triggered: "starting",
@@ -63,6 +65,27 @@ function TrashIcon() {
   );
 }
 
+/** Les pastilles d'une ligne, en lecture seule.
+ *
+ * On tague depuis la page d'un run ou d'un brouillon, jamais depuis cette
+ * liste — ni croix, ni champ. Une ligne sans tag ne rend rien : pas de case
+ * vide, pas de séparateur qui traîne. */
+function TagChips({ tags }: { tags: Tag[] }) {
+  if (tags.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {tags.map((tag) => (
+        <span
+          key={tag.id}
+          className={`rounded-full px-2 py-0.5 text-xs ${colorClasses(tag.color)}`}
+        >
+          {tag.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Les brouillons en attente — ce qu'un agent a proposé, pas encore lancé.
  *
  * Ouvrir mène au formulaire d'évaluation prérempli, pas à un écran de
@@ -73,9 +96,11 @@ function TrashIcon() {
  * De qui que ce soit : un brouillon est une proposition faite à l'équipe. */
 function DraftList({
   drafts,
+  draftTags,
   onDiscard,
 }: {
   drafts: Draft[] | null;
+  draftTags: Record<string, Tag[]>;
   onDiscard: (draft: Draft) => void;
 }) {
   if (drafts === null) {
@@ -135,6 +160,7 @@ function DraftList({
                   {draft.created_by} · {formatDate(draft.created_at)}
                 </span>
               </div>
+              <TagChips tags={draftTags[draft.id] ?? []} />
             </div>
             {/* « Launch » ouvre le formulaire plutôt que de lancer sur-le-champ :
                 un brouillon vient d'un agent, et on veut pouvoir le corriger
@@ -172,6 +198,13 @@ export default function RunsPage() {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
   const [me, setMe] = useState<string | null>(null);
+  // Les pastilles des deux listes, en un seul appel — pas une requête par
+  // ligne. Un échec les laisse simplement absentes plutôt que de casser toute
+  // la page : ce ne sont que des labels à côté d'une ligne.
+  const [tagAssignments, setTagAssignments] = useState<{
+    runs: Record<string, Tag[]>;
+    drafts: Record<string, Tag[]>;
+  }>({ runs: {}, drafts: {} });
   // Les miens par défaut : la base est partagée, et la liste de tout le monde
   // enterre la sienne au bout de quelques semaines. Ce qu'on cherche en
   // ouvrant cette page est presque toujours un run qu'on a lancé soi-même.
@@ -204,6 +237,12 @@ export default function RunsPage() {
     getMe()
       .then(({ email }) => setMe(email))
       .catch(() => setMe(null));
+  }, []);
+
+  useEffect(() => {
+    getTagAssignments()
+      .then(setTagAssignments)
+      .catch(() => setTagAssignments({ runs: {}, drafts: {} }));
   }, []);
 
   const confirmDelete = async () => {
@@ -311,6 +350,7 @@ export default function RunsPage() {
       {showDrafts && (
         <DraftList
           drafts={draftsVus}
+          draftTags={tagAssignments.drafts}
           onDiscard={(draft) => setConfirming({ kind: "draft", draft })}
         />
       )}
@@ -394,6 +434,7 @@ export default function RunsPage() {
                         </CopyButton>
                       )}
                     </div>
+                    <TagChips tags={tagAssignments.runs[run.id] ?? []} />
                     {/* Qui l'a lancé. Tout le monde voit tous les runs : sans
                         l'auteur, une liste chargée ne dit plus à qui s'adresser
                         quand un run surprend. */}

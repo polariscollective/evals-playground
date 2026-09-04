@@ -171,6 +171,15 @@ export const publishRun = (runId: string, isPublic: boolean) =>
 
 export const getTags = () => request<Tag[]>("/api/tags");
 
+/** Les tags de tous les runs et de tous les brouillons, en un seul appel —
+ *  ce que la liste des runs affiche en pastilles sur chaque ligne. Une
+ *  requête par ligne serait absurde pour une liste qui en compte des
+ *  dizaines. */
+export const getTagAssignments = () =>
+  request<{ runs: Record<string, Tag[]>; drafts: Record<string, Tag[]> }>(
+    "/api/tags/assignments",
+  );
+
 /** Crée un tag, ou rend celui qui porte déjà ce libellé — la route ne
  *  distingue pas les deux cas, et l'appelant n'a pas besoin qu'elle le fasse. */
 export const createTag = (label: string) =>
