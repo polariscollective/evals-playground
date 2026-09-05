@@ -250,6 +250,12 @@ export interface EvalSample {
   repetition: number;
   status: SampleStatus;
   temperature: number | null;
+  /** Combien de tours cette case a réellement joués.
+   *
+   * `null` tant qu'elle n'a pas tourné. Une case plus courte que la profondeur
+   * du run n'est pas incomplète : elle s'est réglée là, et l'y pousser plus
+   * loin n'aurait rien appris. */
+  turns_done: number | null;
   score: number | null;
   justification: string;
   messages: Message[];

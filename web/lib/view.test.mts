@@ -36,6 +36,7 @@ function sample(score: number | null, target = "m", scenario = 0): EvalSample {
     repetition: 0,
     status: "done",
     temperature: null,
+    turns_done: null,
     score,
     justification: "",
     messages: [],
