@@ -115,8 +115,11 @@ nom que la route doit servir. Et comme il indexe son cache IndexedDB sur le
 run depuis Storage, `listing.json` compris, en transmettant `Range` et en
 rendant 206. La route n'interprète rien : elle vérifie qui regarde, puis relaie.
 
-**`scripts/build-inspect-view.sh`** — rejoue `inspect view bundle` et dépose les
-assets dans `web/public/inspect-view/`. Son résultat est commité : 9,9 Mo sur
+**`scripts/build-inspect-view.sh`** — copie `inspect_ai/_view/dist` dans
+`web/public/inspect-view/`. C'est la source de `inspect view bundle`, qui ne
+fait que la recopier en y injectant le dossier de journaux — injection que fait
+ici la route. Passer par la copie directe évite d'avoir un run sous la main :
+`bundle` refuse un dossier de journaux vide. Son résultat est commité : 9,9 Mo sur
 disque, ~3 Mo une fois compressés par git, à rejouer quand `inspect-ai` monte
 de version.
 
@@ -154,18 +157,33 @@ d'être plus pauvre que la privée.
 
 Les assets, eux, ne disent rien de personne et restent en CDN nu.
 
+`inspect-view` rejoint `OPEN_PREFIXES` (`web/lib/public-paths.ts`) et le
+littéral du proxy, que `public-paths.test.mts` tient égal. Ouvrir un préfixe
+n'autorise rien — ça enlève la porte, et ce qui est derrière doit s'autoriser
+lui-même. Ici c'est `canReadRun`, et c'est vérifié : en visiteur anonyme, le
+viewer d'un run publié rend 200, celui d'un run non publié 404, comme un run
+qui n'existe pas.
+
 ## Cas limites
 
 **Un run sans log.** Tous les runs déjà en base n'en ont aucun, et un job mort
-tôt n'en a pas non plus. Le bouton ne s'affiche que si `listRunLogs(runId)` rend
-quelque chose — un appel HTTP de plus au rendu de la page, à côté de ceux
-qu'elle fait déjà. Pas de colonne `has_logs`, donc pas de migration de plus, et
-rien à rétro-remplir : l'absence se lit à la source.
+tôt n'en a pas non plus. Le bouton se décide sur le manifeste : le client
+demande `/inspect-view/<runId>/logs/listing.json`, et le bouton n'apparaît que
+si elle répond. Deux raisons de poser la question là plutôt qu'à une route
+dédiée. Le manifeste monte en dernier, donc sa présence dit que les journaux
+l'ont précédé ; et le viewer refuse un dossier qui n'en a pas — le bouton ne
+paraît ainsi que quand il mène quelque part. Pas de colonne `has_logs`, rien à
+rétro-remplir : l'absence se lit à la source.
 
-**Pas de rétention, délibérément.** Rien ne supprime un run aujourd'hui — ni
-route `DELETE`, ni `deleteRun`. Donc pas de logs orphelins à ramasser, et
-inventer une politique d'expiration pour un bucket vide serait deviner. À revoir
-quand le bucket pèsera quelque chose.
+**Un run à la corbeille garde ses journaux, et ils deviennent illisibles.**
+La suppression d'un run est douce — `deleted_at`, la ligne reste — et
+`canReadRun` filtre dessus comme `loadRun`. Les objets restent donc dans le
+bucket sans que rien n'y mène. Ce ne sont pas des orphelins : la ligne qui les
+nomme existe toujours, et restaurer le run les rendrait. Rien à ramasser
+aujourd'hui.
+
+**Pas de rétention, délibérément.** Inventer une politique d'expiration pour un
+bucket vide serait deviner. À revoir quand il pèsera quelque chose.
 
 ## Tests
 

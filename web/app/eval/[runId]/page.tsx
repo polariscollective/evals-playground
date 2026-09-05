@@ -11,6 +11,8 @@ import {
   markDraftLaunched,
   getRun,
   getRunTags,
+  hasInspectLogs,
+  inspectViewUrl,
   getTags,
   matrixCsvText,
   publishRun,
@@ -287,6 +289,19 @@ export default function EvalRunPage({
     return () => clearInterval(timer);
   }, [running, load, transcripts]);
 
+  // Les journaux ne montent qu'à la toute fin du job — d'où la relecture quand
+  // le run cesse de tourner, et non au seul premier rendu.
+  const [inspectLogs, setInspectLogs] = useState(false);
+  useEffect(() => {
+    let vivant = true;
+    void hasInspectLogs(runId).then((présents) => {
+      if (vivant) setInspectLogs(présents);
+    });
+    return () => {
+      vivant = false;
+    };
+  }, [runId, running]);
+
   if (error) {
     return (
       <main className="mx-auto max-w-6xl p-8">
@@ -520,6 +535,19 @@ export default function EvalRunPage({
                   >
                     Source CSV
                   </MenuItem>
+                )}
+                {inspectLogs && (
+                  <>
+                    <MenuSeparator />
+                    <MenuItem
+                      href={inspectViewUrl(run.id)}
+                      onClick={close}
+                      newTab
+                      hint="Every model call, as it was sent — target, adversary, judge"
+                    >
+                      View Inspect AI logs
+                    </MenuItem>
+                  </>
                 )}
               </>
             )}

@@ -242,6 +242,34 @@ export function exportUrl(
   return `/api/runs/${runId}/export/${kind}${query}`;
 }
 
+/** Le viewer d'Inspect, ouvert sur les journaux d'un run. */
+export function inspectViewUrl(runId: string): string {
+  return `/inspect-view/${runId}`;
+}
+
+/** Ce run a-t-il des journaux à montrer ?
+ *
+ * La question se pose au manifeste, et non à une route dédiée. Deux raisons.
+ * Il monte en dernier, donc sa présence dit que les journaux l'ont précédé ; et
+ * le viewer refuse un dossier qui n'en a pas — le bouton n'apparaît ainsi que
+ * quand il mène quelque part. Il vit sous `/inspect-view`, déjà ouvert au
+ * public et déjà gardé par `canReadRun`, ce qui fait qu'un inconnu devant un
+ * run publié pose la même question que son propriétaire.
+ *
+ * Faux en cas de panne comme en cas d'absence : un bouton qui n'apparaît pas
+ * vaut mieux qu'un bouton qui mène à une page vide. */
+export async function hasInspectLogs(runId: string): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `${inspectViewUrl(runId)}/logs/listing.json`,
+      { cache: "no-store" },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function sourceCsvUrl(runId: string): string {
   return `/api/runs/${runId}/source`;
 }

@@ -29,7 +29,9 @@ export const NOW = "now()";
 
 export class SupabaseError extends Error {}
 
-function credentials(): { url: string; key: string } {
+/** L'URL et la clé de service, partagées avec `storage.ts` : Storage et
+ *  PostgREST sont deux services de la même base, derrière la même clé. */
+export function credentials(): { url: string; key: string } {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {

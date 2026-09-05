@@ -70,6 +70,7 @@ export function MenuItem({
   href,
   hint,
   disabled,
+  newTab,
   children,
 }: {
   onClick?: () => void;
@@ -77,6 +78,9 @@ export function MenuItem({
   /** La ligne grise en dessous : ce que l'entrée fait vraiment. */
   hint?: string;
   disabled?: boolean;
+  /** Ouvrir ailleurs, pour ce qui n'est pas une page de cette application et
+   *  dont on ne veut pas qu'il fasse perdre l'écran en cours. */
+  newTab?: boolean;
   children: ReactNode;
 }) {
   const body = (
@@ -87,7 +91,15 @@ export function MenuItem({
   );
   if (href) {
     return (
-      <a href={href} onClick={onClick} role="menuitem" className={ITEM}>
+      <a
+        href={href}
+        onClick={onClick}
+        role="menuitem"
+        className={ITEM}
+        {...(newTab
+          ? { target: "_blank", rel: "noopener noreferrer" }
+          : {})}
+      >
         {body}
       </a>
     );

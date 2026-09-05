@@ -24,6 +24,10 @@ export const OPEN_PREFIXES = [
   "validate",
   // Un run publié.
   "shared",
+  // Le viewer d'Inspect et les journaux qu'il lit. Même obligation que
+  // `shared`, et c'est `canReadRun` qui la tient : un run mis à la corbeille ou
+  // non publié se refuse à un inconnu, avec le 404 d'un run qui n'existe pas.
+  "inspect-view",
   // Le connecteur MCP et son serveur d'autorisation : une machine sans
   // session, comme prompt et validate.
   "mcp",

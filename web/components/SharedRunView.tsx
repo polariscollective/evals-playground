@@ -10,7 +10,8 @@
 //
 // Cette dernière est tenue par le type : `PublicRunDetail` n'a pas de
 // `user_email`, donc l'afficher ne compile pas.
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { hasInspectLogs, inspectViewUrl } from "@/lib/api";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { renderMarkdown } from "@/lib/markdown";
@@ -34,8 +35,22 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
   const { run } = detail;
   const [low, high] = repetitionRange(detail.samples);
 
+  // Le journal suit la publication du run : `canReadRun`, derrière cette
+  // requête, laisse passer un inconnu exactement quand `loadPublicRun` l'a
+  // laissé arriver jusqu'ici.
+  const [inspectLogs, setInspectLogs] = useState(false);
+  useEffect(() => {
+    let vivant = true;
+    void hasInspectLogs(run.id).then((présents) => {
+      if (vivant) setInspectLogs(présents);
+    });
+    return () => {
+      vivant = false;
+    };
+  }, [run.id]);
+
   return (
-    <main className="mx-auto max-w-5xl space-y-6 p-8">
+    <main className="mx-auto max-w-6xl space-y-6 p-8">
       <div>
         <p className="text-xs uppercase tracking-wide text-zinc-500">
           Shared run — read only
@@ -53,6 +68,18 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
           {high > 1 ? "s" : ""} · {run.config.turns} turn
           {run.config.turns > 1 ? "s" : ""}
         </p>
+        {inspectLogs && (
+          <p className="mt-2 text-sm">
+            <a
+              href={inspectViewUrl(run.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+            >
+              View Inspect AI logs
+            </a>
+          </p>
+        )}
       </div>
 
       <JudgeBlock detail={detail} />
