@@ -1,9 +1,13 @@
 // Ce qu'un run terminé sait dire de la longueur de ses réponses.
 //
-// Le point à protéger est le dénominateur : c'est `turns`, pas le nombre
-// d'appels réellement facturés. L'estimateur ne compte que `turns` appels du
-// modèle évalué par conversation ; diviser par autre chose lui ferait rendre un
-// total différent de celui qu'on a observé.
+// Le point à protéger est le dénominateur : c'est la profondeur, pas le nombre
+// d'appels réellement facturés. L'estimateur ne compte qu'un appel du modèle
+// évalué par tour de conversation ; diviser par autre chose lui ferait rendre
+// un total différent de celui qu'on a observé.
+//
+// Et c'est la profondeur *de la case*, `turns_done`, pas celle que le run
+// affiche : une extension relève `turns` pour tout le monde et n'approfondit
+// que les cases choisies.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measureRun, answerLengthsFor } from "./measured-length.ts";
@@ -30,15 +34,20 @@ const usage = (counts: Record<string, number>): Record<string, ModelUsage> =>
     ]),
   );
 
+/** Une case jouée. `turns_done` à `null` par défaut : c'est la ligne écrite
+ *  avant que la colonne n'existe, celle qui doit retomber sur la profondeur du
+ *  run. Les cases qui ont une profondeur à elles la nomment. */
 const cell = (
   scenario_index: number,
   target_model: string,
   output: number,
   extra: Record<string, number> = {},
+  turns_done: number | null = null,
 ) => ({
   scenario_index,
   target_model,
   status: "done" as const,
+  turns_done,
   usage: usage({ [target_model]: output, ...extra }),
 });
 
@@ -144,7 +153,15 @@ test("les cases non terminées ne comptent pas", () => {
 
 test("une case sans usage enregistré ne compte pas", () => {
   const mesure = measureRun(
-    [{ scenario_index: 0, target_model: "grok/grok-4.3", status: "done" as const, usage: {} }],
+    [
+      {
+        scenario_index: 0,
+        target_model: "grok/grok-4.3",
+        status: "done" as const,
+        turns_done: 1,
+        usage: {},
+      },
+    ],
     MODELS,
     1,
   );
@@ -161,6 +178,50 @@ test("l'adversaire se mesure sur turns − 1 appels par case", () => {
     cell(0, "grok/grok-4.3", 1200, { "anthropic/claude-haiku-4-5": 900 }),
   ];
   assert.equal(measureRun(cells, MODELS, 4).adversary, 300);
+});
+
+test("chaque case est divisée par sa propre profondeur, pas par celle du run", () => {
+  // Le run a joué dix cases à 3 tours, 1000 jetons par tour. Une extension a
+  // porté `turns` à 6 et approfondi deux d'entre elles, qui ont donc dépensé
+  // 6000 jetons. Diviser tout le monde par 6 rendrait 600 — 40 % sous la
+  // vérité, et en silence.
+  const cells = [
+    ...Array.from({ length: 8 }, () =>
+      cell(0, "grok/grok-4.3", 3000, {}, 3),
+    ),
+    ...Array.from({ length: 2 }, () =>
+      cell(0, "grok/grok-4.3", 6000, {}, 6),
+    ),
+  ];
+  assert.equal(measureRun(cells, MODELS, 6).run, 1000);
+});
+
+test("une case sans profondeur enregistrée retombe sur celle du run", () => {
+  // La colonne est plus récente que les premières cases : sans elle, la
+  // profondeur du run est la meilleure information disponible — même repli que
+  // `groupByModelAndDepth`.
+  const cells = [cell(0, "grok/grok-4.3", 3000, {}, null)];
+  assert.equal(measureRun(cells, MODELS, 3).run, 1000);
+});
+
+test("l'adversaire aussi se compte sur la profondeur de sa case", () => {
+  // Une case restée à 3 tours a fait parler l'adversaire 2 fois, celle poussée
+  // à 6 l'a fait parler 5 fois : 600 + 1500 jetons pour 7 relances → 300.
+  const cells = [
+    cell(0, "grok/grok-4.3", 3000, { "anthropic/claude-haiku-4-5": 600 }, 3),
+    cell(0, "grok/grok-4.3", 6000, { "anthropic/claude-haiku-4-5": 1500 }, 6),
+  ];
+  assert.equal(measureRun(cells, MODELS, 6).adversary, 300);
+});
+
+test("une case réglée au premier tour ne fait pas parler l'adversaire", () => {
+  // Zéro relance : la compter diviserait par zéro. Elle est muette sur
+  // l'adversaire, pas nulle.
+  const cells = [
+    cell(0, "grok/grok-4.3", 1000, { "anthropic/claude-haiku-4-5": 400 }, 1),
+    cell(0, "grok/grok-4.3", 3000, { "anthropic/claude-haiku-4-5": 600 }, 3),
+  ];
+  assert.equal(measureRun(cells, MODELS, 3).adversary, 300);
 });
 
 test("à un seul tour, l'adversaire n'est pas mesurable", () => {

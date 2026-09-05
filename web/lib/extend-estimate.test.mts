@@ -8,7 +8,7 @@
 // approfondissement, sous une phrase qui annonçait pourtant la mesure. Chaque
 // côté construit ici sa demande comme il la construit vraiment, avec ce qu'il
 // a sous la main : la page ses `EvalSample` complètes, `extendRun` la
-// projection à quatre colonnes qu'il lit en base et la demande d'API.
+// projection à cinq colonnes qu'il lit en base et la demande d'API.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { estimateExtension } from "./extend-estimate.ts";
@@ -169,11 +169,12 @@ function commeServeur(
     (a, b) => a - b,
   );
 
-  // La projection lue en base : quatre colonnes, jamais les transcripts.
+  // La projection lue en base : cinq colonnes, jamais les transcripts.
   const jouées: MeasurableCell[] = samples.map((sample) => ({
     scenario_index: sample.scenario_index,
     target_model: sample.target_model,
     status: sample.status,
+    turns_done: sample.turns_done,
     usage: sample.usage,
   }));
   const mesure = measureRun(jouées, config.models, config.turns);

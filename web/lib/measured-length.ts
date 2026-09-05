@@ -12,12 +12,18 @@ import type { EvalModels, ModelUsage, SampleStatus } from "./types";
 
 /** Ce qu'une case doit porter pour être mesurable. Sciemment plus étroit que
  *  `EvalSample` : ni transcript, ni note, ni date — la requête n'a donc que
- *  quatre colonnes à ramener, là où les transcripts pèsent des centaines de
+ *  cinq colonnes à ramener, là où les transcripts pèsent des centaines de
  *  kilo-octets. */
 export interface MeasurableCell {
   scenario_index: number;
   target_model: string;
   status: SampleStatus;
+  /** La profondeur à laquelle cette case-là a joué, et non celle du run : un
+   *  run approfondi porte des cases plus profondes que d'autres, et
+   *  `config.turns` ne nomme que la dernière profondeur demandée. `null` pour
+   *  les cases antérieures à la colonne, qui retombent alors sur celle du run
+   *  — même convention que `groupByModelAndDepth`. */
+  turns_done: number | null;
   usage: Record<string, ModelUsage>;
 }
 
@@ -54,7 +60,15 @@ const moyenne = (pool: Pool): number | null =>
 
 /** Mesure les longueurs de sortie d'un run terminé.
  *
- * Le dénominateur est `turns`, pas le nombre d'appels réellement facturés :
+ * Le dénominateur d'une case est *sa* profondeur — `turns_done` —, pas celle
+ * que le run affiche aujourd'hui : une extension peut relever `turns` sans
+ * approfondir une seule case, et l'approfondissement lui-même ne touche que
+ * les cases choisies. Un run en porte donc couramment à des profondeurs
+ * mêlées, et les diviser toutes par la plus récente rend une longueur d'autant
+ * plus basse que le run a été poussé loin. `turns` reste le repli des cases
+ * antérieures à la colonne.
+ *
+ * Le dénominateur est la profondeur, pas le nombre d'appels réellement facturés :
  * l'estimateur n'ajoute la réponse du modèle évalué que `turns` fois par
  * conversation, n'ayant aucun modèle des appels d'outils. Diviser par les
  * appels réels lui ferait rendre moins que le total observé, d'autant plus
@@ -79,6 +93,9 @@ export function measureRun(
     ),
   );
   const adversaire = turns > 1 ? models.adversary : null;
+  /** La profondeur de cette case, ou celle du run pour une ligne écrite avant
+   *  que la colonne n'existe. */
+  const profondeur = (cell: MeasurableCell): number => cell.turns_done ?? turns;
   // Un adversaire qui est aussi évalué ou juge est illisible pour la même
   // raison que les cibles qui cumulent.
   const adversaireLisible =
@@ -97,7 +114,12 @@ export function measureRun(
 
     if (adversaireLisible) {
       const jetons = cell.usage[adversaire]?.output_tokens;
-      if (jetons != null) ajouter(adversairePool, jetons, turns - 1);
+      // Une relance de moins que de tours, et zéro relance pour une case qui
+      // s'est réglée au premier : l'y compter diviserait par zéro.
+      const relances = profondeur(cell) - 1;
+      if (jetons != null && relances > 0) {
+        ajouter(adversairePool, jetons, relances);
+      }
     }
 
     if (autresRôles.has(cell.target_model)) {
@@ -109,10 +131,12 @@ export function measureRun(
     // et la compter tirerait la moyenne vers le bas sans rien mesurer.
     if (jetons == null) continue;
 
+    const tours = profondeur(cell);
+    if (tours <= 0) continue;
     const pool = parScénario.get(cell.scenario_index) ?? { tokens: 0, calls: 0 };
-    ajouter(pool, jetons, turns);
+    ajouter(pool, jetons, tours);
     parScénario.set(cell.scenario_index, pool);
-    ajouter(run, jetons, turns);
+    ajouter(run, jetons, tours);
     kept += 1;
   }
 

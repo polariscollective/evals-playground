@@ -257,6 +257,7 @@ test("l'extension estime sur ce que le run a mesuré, pas sur une constante", ()
         scenario_index: 0,
         target_model: "grok/grok-4.3",
         status: "done",
+        turns_done: 3,
         usage: {
           "grok/grok-4.3": {
             input_tokens: 0,

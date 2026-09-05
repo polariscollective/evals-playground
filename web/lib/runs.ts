@@ -42,7 +42,14 @@ const SAMPLE_COLUMNS =
   // modèle — et sans commune mesure avec les transcripts, qu'on continue de ne
   // ramener que sur demande. C'est ce qui permet au panneau d'annoncer sur quoi
   // son devis repose, et à `extendRun` de le calculer pareil.
-  "temperature,score,justification,error,started_at,finished_at,cost_usd,usage";
+  //
+  // `turns_done` dit à quelle profondeur cette case-là a joué, et rien d'autre
+  // ne le dit : `config.turns` ne nomme que la dernière demandée. Un run
+  // approfondi porte des cases à des profondeurs différentes — sans cette
+  // colonne, le panneau les regroupait toutes à la profondeur du run et la
+  // mesure divisait chacune par elle.
+  "turns_done,temperature,score,justification,error,started_at," +
+  "finished_at,cost_usd,usage";
 
 export class NotFound extends Error {}
 
@@ -458,12 +465,13 @@ export async function extendRun(
   const continuées = àContinuer.length;
   if (cases.length === 0 && continuées === 0) return 0;
 
-  // Ce que le run sait de lui-même. Quatre colonnes seulement : les
-  // transcripts pèsent des centaines de kilo-octets et la mesure n'en a pas
-  // besoin, `usage` portant les jetons réellement facturés.
+  // Ce que le run sait de lui-même. Cinq colonnes seulement : les transcripts
+  // pèsent des centaines de kilo-octets et la mesure n'en a pas besoin,
+  // `usage` portant les jetons réellement facturés et `turns_done` la
+  // profondeur à laquelle chaque case les a dépensés.
   const jouees = await select<MeasurableCell>(SAMPLES, {
     run_id: `eq.${runId}`,
-    select: "scenario_index,target_model,status,usage",
+    select: "scenario_index,target_model,status,turns_done,usage",
   });
   for (const cell of jouees) cell.usage ??= {};
   const mesure = measureRun(jouees, config.models, config.turns);
