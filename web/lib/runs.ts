@@ -16,6 +16,7 @@ import {
   update,
 } from "./supabase";
 import { addEstimates, estimateCost } from "./pricing";
+import { estimateDeepeningCost } from "./deepen-counts";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
@@ -410,7 +411,10 @@ export async function extendRun(
   const àContinuer =
     request.deepen === undefined
       ? []
-      : await select<{ id: string }>(SAMPLES, { select: "id", ...filtreDeepen });
+      : await select<{ target_model: string; turns_done: number | null }>(
+          SAMPLES,
+          { select: "target_model,turns_done", ...filtreDeepen },
+        );
   // Une extension qui n'approfondit que des essais existants n'ajoute aucune
   // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
   const continuées = àContinuer.length;
@@ -419,7 +423,7 @@ export async function extendRun(
   // Le devis de l'ajout seul, puis additionné à celui du run : sans ça,
   // « devis vs réel » opposerait un coût qui a grandi à une estimation restée
   // sur la première matrice, et ne mesurerait plus l'estimation mais l'ajout.
-  const ajout = estimateCost({
+  const ajoutNeuf = estimateCost({
     ...config,
     tools: outils,
     // La profondeur demandée, pas celle d'avant : ces cases-là sont neuves et
@@ -432,6 +436,20 @@ export async function extendRun(
     repetitions: request.repetitions,
     temperature,
   });
+
+  // Le devis d'approfondir les essais retenus, groupés par couple (modèle
+  // cible, profondeur de départ) — même calcul que le panneau avant
+  // confirmation, voir `estimateDeepeningCost` dans `deepen-counts.ts`. Sans
+  // lui, une extension qui n'approfondit que produisait un `ajout`
+  // intégralement nul et laissait `run.estimate` inchangé face à une dépense
+  // pourtant réelle, et souvent lourde.
+  const ajoutDeepen = estimateDeepeningCost(
+    config,
+    àContinuer,
+    request.turns ?? config.turns,
+    config.turns,
+  );
+  const ajout = ajoutDeepen ? addEstimates(ajoutNeuf, ajoutDeepen) : ajoutNeuf;
 
   // La configuration du run porte la nouvelle profondeur avant toute autre
   // écriture : une panne plus loin doit trouver un run qui déclare déjà

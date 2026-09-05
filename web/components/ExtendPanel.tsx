@@ -14,12 +14,18 @@
 import { useEffect, useState } from "react";
 import { getCatalog } from "@/lib/api";
 import { parseCsv } from "@/lib/csv";
-import { countAllGraded, countsByLevel, countsForSelection } from "@/lib/deepen-counts";
+import {
+  countAllGraded,
+  countsByLevel,
+  countsForSelection,
+  estimateDeepeningCost,
+  samplesForSelection,
+} from "@/lib/deepen-counts";
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
-import { addEstimates, estimateCost, estimateDeepening } from "@/lib/pricing";
+import { addEstimates, estimateCost } from "@/lib/pricing";
 import { MAX_TURNS } from "@/lib/validate";
 import type {
   CostEstimate,
@@ -255,24 +261,19 @@ export function ExtendPanel({
         })
       : null;
 
-  // Le devis de l'approfondissement : un appel par modèle porté par la
-  // sélection, avec son propre compte d'essais — `estimateDeepening` ne rend
-  // un prix juste que pour `targets[0]`, voir son commentaire dans
-  // `pricing.ts`. Rien tant que la profondeur demandée ne dépasse pas
-  // l'actuelle : personne n'a alors de tour de plus à jouer.
+  // Le devis de l'approfondissement : un appel par couple (modèle cible,
+  // profondeur de départ) — voir `estimateDeepeningCost` dans
+  // `deepen-counts.ts`, partagée avec `extendRun` pour ce même calcul. Un run
+  // déjà approfondi une fois porte des essais à des profondeurs différentes ;
+  // grouper sur le seul modèle sous-estimerait ceux restés en arrière. Rien
+  // tant que la profondeur demandée ne dépasse pas l'actuelle : personne n'a
+  // alors de tour de plus à jouer.
   const deepenEstimate: CostEstimate | null = deepensToMore
-    ? Object.entries(deepenCount.byModel).reduce<CostEstimate | null>(
-        (total, [model, cells]) =>
-          addEstimates(
-            total,
-            estimateDeepening(
-              { ...config, models: { ...config.models, targets: [model] } },
-              config.turns,
-              turns,
-              cells,
-            ),
-          ),
-        null,
+    ? estimateDeepeningCost(
+        config,
+        samplesForSelection(samples, deepen),
+        turns,
+        config.turns,
       )
     : null;
 
