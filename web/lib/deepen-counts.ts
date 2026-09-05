@@ -8,7 +8,13 @@
 // déjà. Un palier que personne ne porte doit ressortir à zéro — sans quoi le
 // cocher enverrait une demande qui n'approfondirait rien.
 import { addEstimates, estimateDeepening } from "./pricing.ts";
-import type { CostEstimate, EvalRunConfig, EvalSample, RubricLevel } from "./types";
+import type {
+  CostEstimate,
+  EvalRunConfig,
+  EvalSample,
+  LengthAssumption,
+  RubricLevel,
+} from "./types";
 
 /** Combien d'essais, au total et répartis par modèle cible.
  *
@@ -173,8 +179,9 @@ export function estimateDeepeningCost(
   cells: DeepenCell[],
   to: number,
   fallbackTurnsDone: number,
-  /** Longueur d'un tour de réponse, transmise telle quelle à `estimateDeepening`. */
-  answerTokens?: number | null,
+  /** Les longueurs supposées, transmises telles quelles à `estimateDeepening`
+   *  — réponses évaluées et adversaire, chacun la sienne. */
+  lengths?: LengthAssumption | number | null,
 ): CostEstimate | null {
   return groupByModelAndDepth(cells, fallbackTurnsDone).reduce<CostEstimate | null>(
     (total, groupe) =>
@@ -185,7 +192,7 @@ export function estimateDeepeningCost(
           groupe.turns_done,
           to,
           groupe.cells,
-          answerTokens,
+          lengths,
         ),
       ),
     null,

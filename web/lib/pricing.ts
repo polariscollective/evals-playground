@@ -375,15 +375,21 @@ export function estimateDeepening(
   from: number,
   to: number,
   cells: number,
-  /** Longueur d'un tour de réponse. Un seul nombre, jamais une liste : la
-   *  fonction épingle `scenarios` à un seul élément, si bien qu'une longueur
-   *  par scénario n'aurait rien à indexer. */
-  answerTokens?: number | null,
+  /** Les longueurs supposées de ces tours-là.
+   *
+   * `answer` est un seul nombre, jamais une liste : la fonction épingle
+   * `scenarios` à un seul élément, si bien qu'une longueur par scénario
+   * n'aurait rien à indexer. `adversary` est la sienne — un nombre nu vaut
+   * « la même pour tout le monde » et donnerait à l'adversaire la longueur des
+   * réponses évaluées, alors qu'il écrit des tours d'utilisateur, plus courts.
+   * Absente, elle retombe sur la longueur déclarée du run, comme partout
+   * ailleurs. */
+  lengths?: LengthAssumption | number | null,
 ): CostEstimate {
   if (to <= from || cells <= 0) {
     return estimateCost(
       { ...config, scenarios: [], repetitions: 0 },
-      answerTokens ?? null,
+      lengths ?? null,
     );
   }
   // Une case, poussée de `from` à `to`, répétée `cells` fois : la
@@ -396,7 +402,7 @@ export function estimateDeepening(
       scenarios: config.scenarios.slice(0, 1),
       models: { ...config.models, targets: config.models.targets.slice(0, 1) },
     },
-    answerTokens ?? null,
+    lengths ?? null,
     from,
   );
 }

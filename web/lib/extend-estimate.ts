@@ -95,20 +95,19 @@ export function estimateExtension(
       : null;
 
   // L'approfondissement, groupé par couple (modèle cible, profondeur de
-  // départ) — voir `estimateDeepeningCost`. Un nombre unique et non une
-  // longueur par scénario : les groupes ne sont pas des scénarios, et un
-  // groupe en recouvre plusieurs à la fois. Rien tant que la profondeur
-  // demandée ne dépasse pas celle du run : `extendProblem` refuse d'ailleurs
-  // d'approfondir sans elle.
+  // départ) — voir `estimateDeepeningCost`. Une longueur unique pour les
+  // réponses et non une par scénario : les groupes ne sont pas des scénarios,
+  // et un groupe en recouvre plusieurs à la fois. L'adversaire garde la
+  // sienne, comme pour les cases neuves ; les deux retombent sur la
+  // déclaration du run quand rien n'a pu être mesuré. Rien tant que la
+  // profondeur demandée ne dépasse pas celle du run : `extendProblem` refuse
+  // d'ailleurs d'approfondir sans elle.
   const approfondi =
     deepen.length > 0 && turns > config.turns
-      ? estimateDeepeningCost(
-          config,
-          deepen,
-          turns,
-          config.turns,
-          measured.run ?? config.average_output_tokens ?? null,
-        )
+      ? estimateDeepeningCost(config, deepen, turns, config.turns, {
+          answer: measured.run,
+          adversary: measured.adversary,
+        })
       : null;
 
   if (!ajout) return approfondi;

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { estimateCost, estimateDeepening } from "./pricing.ts";
-import type { EvalRunConfig } from "./types";
+import type { CostEstimate, EvalRunConfig } from "./types";
 
 const CONFIG = {
   scenarios: [
@@ -122,4 +122,53 @@ test("les appels facturés comptent les tours ajoutés, pas la profondeur totale
   // Un run neuf de huit tours facture toute la profondeur : 8 + 7 + 1. Sa
   // dernière relance n'a toujours pas lieu, contrairement à une continuation.
   assert.equal(àNeuf.model_calls, 16);
+});
+
+/** La même configuration, mais avec trois modèles distincts : sans quoi la
+ *  ligne de l'adversaire se confondrait avec celle du modèle évalué, et rien
+ *  ne dirait quelle longueur chacun s'est vu appliquer. */
+const TROIS_RÔLES = {
+  ...CONFIG,
+  models: {
+    targets: ["anthropic/claude-sonnet-5"],
+    adversary: "anthropic/claude-haiku-4-5",
+    judge: "anthropic/claude-opus-5",
+  },
+  average_output_tokens: 700,
+} as EvalRunConfig;
+
+const ligneDe = (estimate: CostEstimate, model: string) =>
+  estimate.per_model.find((entry) => entry.model === model);
+
+test("l'adversaire est chiffré à sa propre longueur, pas à celle du modèle évalué", () => {
+  // Un nombre nu vaut « la même pour tout le monde » : il donnait à
+  // l'adversaire la longueur des réponses évaluées, alors qu'il écrit des
+  // tours d'utilisateur — plus courts, et mesurés à part.
+  const propre = estimateDeepening(TROIS_RÔLES, 3, 6, 4, {
+    answer: 1500,
+    adversary: 300,
+  });
+  const emprunté = estimateDeepening(TROIS_RÔLES, 3, 6, 4, 1500);
+
+  assert.equal(ligneDe(propre, "anthropic/claude-haiku-4-5")?.response_tokens, 300);
+  assert.equal(ligneDe(emprunté, "anthropic/claude-haiku-4-5")?.response_tokens, 1500);
+  assert.ok(
+    propre.usd < emprunté.usd,
+    `${propre.usd} devrait rester sous ${emprunté.usd}`,
+  );
+  // Le modèle évalué, lui, est chiffré pareil dans les deux : seul
+  // l'adversaire changeait de longueur.
+  assert.equal(
+    ligneDe(propre, "anthropic/claude-sonnet-5")?.response_tokens,
+    ligneDe(emprunté, "anthropic/claude-sonnet-5")?.response_tokens,
+  );
+});
+
+test("faute de mesure, l'adversaire retombe sur la longueur déclarée du run", () => {
+  const devis = estimateDeepening(TROIS_RÔLES, 3, 6, 1, {
+    answer: 1500,
+    adversary: null,
+  });
+  assert.equal(ligneDe(devis, "anthropic/claude-haiku-4-5")?.response_tokens, 700);
+  assert.equal(ligneDe(devis, "anthropic/claude-sonnet-5")?.response_tokens, 1500);
 });
