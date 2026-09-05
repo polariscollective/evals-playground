@@ -93,10 +93,9 @@ export function ExtendPanel({
   /** Les essais déjà joués par ce run, pour compter combien chaque palier de
    *  l'échelle en porte et proposer de les approfondir.
    *
-   * Défaut à vide plutôt qu'obligatoire : au moment d'écrire ce panneau, son
-   * seul appelant ne les passe pas encore (voir le compte rendu de la tâche).
-   * Tant que ce prop n'est pas fourni, chaque palier s'affiche à zéro essai et
-   * ne se coche pas — jamais une case à cocher qui approfondirait au hasard. */
+   * Défaut à vide plutôt qu'obligatoire : sans essais, chaque palier s'affiche
+   * à zéro et ne se coche pas — jamais une case à cocher qui approfondirait au
+   * hasard. La page les passe, elle ; ce défaut n'est qu'un filet. */
   samples = [],
   /** Une extension déjà écrite — par un agent, en brouillon — que le panneau
    *  ouvre remplie plutôt que vide.
@@ -170,7 +169,12 @@ export function ExtendPanel({
   );
   // La profondeur voulue. Jamais sous celle du run — une conversation déjà
   // jouée ne se coupe pas — et jamais au-delà de `MAX_TURNS`.
-  const [turns, setTurns] = useState(proposal?.turns ?? config.turns);
+  // Borné dès l'ouverture, comme il l'est à chaque frappe : un brouillon écrit
+  // avant une extension porte une profondeur que le run a depuis dépassée, et
+  // le champ afficherait alors une valeur sous son propre plancher.
+  const [turns, setTurns] = useState(
+    Math.max(config.turns, proposal?.turns ?? config.turns),
+  );
   // Les essais à approfondir jusque-là, choisis par la note qu'ils portent.
   // `null` : aucun. `"all"` : tous les essais notés. Une liste : seulement
   // ceux qui portent l'une de ces notes.
