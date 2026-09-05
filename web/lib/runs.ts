@@ -5,6 +5,7 @@ import "server-only";
 // chose finiraient par ne plus dire pareil.
 import { overallMean, progressOf } from "./matrix";
 import {
+  MCP_LAUNCHES,
   NOW,
   RUNS,
   RUN_TAGS,
@@ -18,17 +19,21 @@ import {
 import { addEstimates, estimateCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
 import { measureRun, type MeasurableCell } from "./measured-length";
-import { spendOf } from "./mcp-budget";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
+import type { NewCell } from "./cells";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
 import type {
+  CostEstimate,
   EvalRun,
   EvalRunConfig,
   EvalSample,
+  EvalScenario,
   ExtendRequest,
   RunDetail,
   RunSummary,
+  TemperatureSpec,
+  ToolSpec,
 } from "./types";
 
 /** Les colonnes d'une case, sauf le transcript.
@@ -236,25 +241,47 @@ export async function createRun(
 }
 
 /** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler,
- *  additionné : le coût réel de chaque run fini, son devis pour les autres —
- *  voir `spendOf` dans `mcp-budget.ts`, qui porte la raison de ce choix.
+ *  additionné sur le devis de chaque lancement — jamais sur ce qu'un run a
+ *  fini par coûter réellement, qui n'existe qu'une fois celui-ci terminé et
+ *  qu'un agent ne peut donc jamais prévoir avant d'appeler.
  *
- * Filtré sur `user_email`, `launched_via = 'mcp'` et `created_at` : exactement
- * la lecture que couvre l'index partiel posé avec la colonne. Un run lancé
- * depuis l'écran ne compte jamais ici, quel qu'en soit l'auteur — c'est tout
- * le sens de la colonne. */
+ * Compté sur `mcp_launches`, pas sur `eval_runs` : une extension écrit sur un
+ * run existant, qui peut avoir été créé par un humain ou déjà porter les
+ * lancements de plusieurs agents différents — `eval_runs.launched_via` ne
+ * répond plus à « combien tel appelant a-t-il dépensé », seulement à « ce run
+ * a-t-il été démarré par un agent ». `mcp_launches` porte une ligne par
+ * lancement et non par run, ce qui rend une extension comptable exactement
+ * comme un run neuf. Filtré sur `user_email` et `created_at` : la lecture que
+ * couvre l'index posé avec la table. */
 export async function mcpSpendLastHour(userEmail: string): Promise<number> {
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const runs = await select<{ cost_usd: number | null; estimate: EvalRun["estimate"] }>(
-    RUNS,
-    {
-      select: "cost_usd,estimate",
-      user_email: `eq.${userEmail}`,
-      launched_via: "eq.mcp",
-      created_at: `gte.${since}`,
-    },
-  );
-  return runs.reduce((total, run) => total + spendOf(run), 0);
+  const launches = await select<{ quoted_usd: number }>(MCP_LAUNCHES, {
+    select: "quoted_usd",
+    user_email: `eq.${userEmail}`,
+    created_at: `gte.${since}`,
+  });
+  return launches.reduce((total, launch) => total + launch.quoted_usd, 0);
+}
+
+/** Enregistre un lancement réussi par MCP, `run` comme `extend`.
+ *
+ * À appeler après que le job a réellement démarré, jamais avant : une ligne
+ * pour un lancement qui n'a pas eu lieu consommerait un budget pour rien.
+ * `quotedUsd` est le devis qui a servi à décider du lancement — celui vérifié
+ * contre les deux plafonds — et non un coût recalculé après coup : c'est lui
+ * qui fait foi, voir `mcpSpendLastHour`. */
+export async function recordLaunch(
+  userEmail: string,
+  runId: string,
+  kind: "run" | "extend",
+  quotedUsd: number,
+): Promise<void> {
+  await insert(MCP_LAUNCHES, {
+    user_email: userEmail,
+    run_id: runId,
+    kind,
+    quoted_usd: quotedUsd,
+  });
 }
 
 /** Prépare un run pour une nouvelle passe de juge.
@@ -361,19 +388,52 @@ export async function retryFailed(runId: string): Promise<number> {
   return failed.length;
 }
 
-/** Ajoute une sous-matrice à un run existant.
+/** Ce qu'une extension ajoute et coûte, réduit à ce qu'`extendRun` et la route
+ *  MCP en font — voir `planExtension` juste en dessous. */
+export interface ExtensionPlan {
+  run: EvalRun;
+  /** Tous les scénarios du run après l'extension, anciens et nouveaux — pour
+   *  réécrire `config.scenarios`. */
+  scenarios: EvalScenario[];
+  /** Les modèles cibles du run après l'extension — pour réécrire
+   *  `config.models.targets`. */
+  targets: string[];
+  temperature: TemperatureSpec | null | undefined;
+  /** Les outils du run après l'extension — pour réécrire `config.tools`. */
+  tools: ToolSpec[];
+  /** Les cases neuves à écrire, déjà numérotées sur ce qui existe en base.
+   *  Vide quand l'extension n'ajoute rien — un approfondissement seul, ou
+   *  rien du tout. */
+  cases: NewCell[];
+  /** Combien d'essais déjà joués elle remet en jeu pour être approfondis. */
+  continuées: number;
+  /** `null` quand `cases` est vide et `continuées` vaut zéro : il n'y a alors
+   *  rien à chiffrer. */
+  estimate: CostEstimate | null;
+}
+
+/** Ce qu'une extension va ajouter et coûter, lu sans rien écrire.
  *
- * Les cases déjà notées ne sont pas touchées : seules les nouvelles naissent en
- * `pending`, et le job ne déroule que celles-là. Les répétitions ajoutées
- * continuent la numérotation de leur couple plutôt que de repartir de zéro, ce
- * qui est aussi ce qui empêche la contrainte d'unicité de refuser l'insertion.
+ * Sert deux appelants qui doivent tomber sur le même chiffre : `extendRun`,
+ * qui insère `cases` telles quelles et n'a plus à les reconstruire, et la
+ * route MCP, qui lit `estimate` pour décider si le devis passe sous les deux
+ * plafonds *avant* d'écrire quoi que ce soit. Un devis calculé chacun de son
+ * côté avait déjà divergé d'un facteur trois — la raison d'être de ce fichier
+ * tient dans `extend-estimate.ts` — et la même dérive guettait la forme même
+ * de l'extension, jusqu'aux cases elles-mêmes : les compter par un produit à
+ * côté de `cellsForExtension`, plutôt que de l'appeler, aurait rouvert
+ * exactement ce risque le jour où l'une des deux formes changerait sans
+ * l'autre. Il n'y a donc qu'un seul endroit qui les construit.
  *
- * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
- * être continuées. */
-export async function extendRun(
+ * Ne fait aucune écriture.
+ *
+ * Throws:
+ *   NotFound: si aucun run ne porte cet identifiant.
+ */
+export async function planExtension(
   runId: string,
   request: ExtendRequest,
-): Promise<number> {
+): Promise<ExtensionPlan> {
   const runs = await select<EvalRun>(RUNS, { select: "*", id: `eq.${runId}` });
   const run = runs[0];
   if (!run) throw new NotFound(runId);
@@ -442,28 +502,27 @@ export async function extendRun(
   // Les essais retenus pour l'approfondissement : notés, dans ce run, et —
   // quand une liste de notes est donnée — parmi celles-là. `score=in.(...)`
   // exclut déjà les essais sans note, une liste de nombres ne contenant
-  // jamais `null` ; `not.is.null` fait ce travail pour "all". Un `select`
-  // d'abord donne le compte ; le `update` plus bas porte le même filtre, en
-  // une seule écriture plutôt qu'en boucle — une panne au milieu d'une boucle
-  // n'y laisserait qu'un effet partiel.
-  const filtreDeepen = {
-    run_id: `eq.${runId}`,
-    status: "eq.done",
-    score: Array.isArray(request.deepen)
-      ? `in.(${request.deepen.join(",")})`
-      : "not.is.null",
-  };
+  // jamais `null` ; `not.is.null` fait ce travail pour "all".
   const àContinuer =
     request.deepen === undefined
       ? []
       : await select<{ target_model: string; turns_done: number | null }>(
           SAMPLES,
-          { select: "target_model,turns_done", ...filtreDeepen },
+          {
+            select: "target_model,turns_done",
+            run_id: `eq.${runId}`,
+            status: "eq.done",
+            score: Array.isArray(request.deepen)
+              ? `in.(${request.deepen.join(",")})`
+              : "not.is.null",
+          },
         );
   // Une extension qui n'approfondit que des essais existants n'ajoute aucune
   // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
   const continuées = àContinuer.length;
-  if (cases.length === 0 && continuées === 0) return 0;
+  if (cases.length === 0 && continuées === 0) {
+    return { run, scenarios, targets, temperature, tools: outils, cases, continuées: 0, estimate: null };
+  }
 
   // Ce que le run sait de lui-même. Cinq colonnes seulement : les transcripts
   // pèsent des centaines de kilo-octets et la mesure n'en a pas besoin,
@@ -483,14 +542,10 @@ export async function extendRun(
     .filter((index) => Boolean(scenarios[index]))
     .map((index) => ({ index, scenario: scenarios[index] }));
 
-  // Le devis de l'extension, puis additionné à celui du run : sans ça,
-  // « devis vs réel » opposerait un coût qui a grandi à une estimation restée
-  // sur la première matrice, et ne mesurerait plus l'estimation mais l'ajout.
-  //
   // Le calcul lui-même est celui du panneau, à la lettre : `estimateExtension`
-  // est appelée ici et là-bas, sur les mêmes longueurs mesurées. Deux calculs
-  // séparés avaient divergé d'un facteur trois sans que rien ne le dise.
-  const ajout = estimateExtension(
+  // est appelée ici, et par le panneau côté client. Deux calculs séparés
+  // avaient divergé d'un facteur trois sans que rien ne le dise.
+  const estimate = estimateExtension(
     config,
     {
       scenarios: retenus,
@@ -504,6 +559,33 @@ export async function extendRun(
     },
     mesure,
   );
+
+  return { run, scenarios, targets, temperature, tools: outils, cases, continuées, estimate };
+}
+
+/** Ajoute une sous-matrice à un run existant.
+ *
+ * Les cases déjà notées ne sont pas touchées : seules les nouvelles naissent en
+ * `pending`, et le job ne déroule que celles-là. Les répétitions ajoutées
+ * continuent la numérotation de leur couple plutôt que de repartir de zéro, ce
+ * qui est aussi ce qui empêche la contrainte d'unicité de refuser l'insertion.
+ *
+ * Ce que l'extension ajoute et coûte est décidé par `planExtension`, appelée
+ * ici comme depuis la route MCP qui vérifie un devis avant de lancer : voir
+ * sa documentation pour pourquoi les deux ne doivent pas le recalculer chacun
+ * à sa façon.
+ *
+ * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
+ * être continuées. */
+export async function extendRun(
+  runId: string,
+  request: ExtendRequest,
+): Promise<number> {
+  const { run, scenarios, targets, temperature, tools: outils, cases, continuées, estimate: ajout } =
+    await planExtension(runId, request);
+  if (cases.length === 0 && continuées === 0) return 0;
+
+  const config = run.config;
 
   // La configuration du run porte la nouvelle profondeur avant toute autre
   // écriture : une panne plus loin doit trouver un run qui déclare déjà
@@ -553,7 +635,13 @@ export async function extendRun(
         error: null,
         finished_at: null,
       },
-      filtreDeepen,
+      {
+        run_id: `eq.${runId}`,
+        status: "eq.done",
+        score: Array.isArray(request.deepen)
+          ? `in.(${request.deepen.join(",")})`
+          : "not.is.null",
+      },
     );
   }
 

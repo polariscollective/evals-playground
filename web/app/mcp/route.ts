@@ -30,11 +30,14 @@ import { costSentence, estimateCost } from "@/lib/pricing";
 import {
   NotFound,
   createRun,
+  extendRun,
   failToStart,
   loadRun,
   loadRuns,
   loadSampleTranscript,
   mcpSpendLastHour,
+  planExtension,
+  recordLaunch,
   recordStart,
   saveAnalysis,
   saveNotes,
@@ -531,18 +534,24 @@ const handler = createMcpHandler((server) => {
       title: "Launch a run draft",
       description:
         "Unlike every other tool in this server, calling this one spends real money: it launches the " +
-        "draft as a run, which calls three model providers. Two caps bound it, both set by this " +
-        "deployment and adjustable there without a code change: MCP_MAX_USD_PER_RUN (default $2) " +
-        "refuses a draft quoted above it on its own; MCP_MAX_USD_PER_HOUR (default $10) refuses one " +
-        "that would push what you have personally spent by MCP in the last rolling hour above it. " +
-        "Either refusal names the quote, the cap, and what you can do about it — wait, trim the draft, " +
-        "or ask a human to launch it from the web app, where neither cap applies.\n\n" +
+        "draft — as a new run, or as an extension of one that already exists — which calls three " +
+        "model providers. Two caps bound every launch, both set by this deployment and adjustable " +
+        "there without a code change: MCP_MAX_USD_PER_RUN (default $2) refuses a draft quoted above " +
+        "it on its own; MCP_MAX_USD_PER_HOUR (default $10) refuses one that would push what you have " +
+        "personally spent by MCP in the last rolling hour above it — a new run and an extension count " +
+        "the same way, against the same hour. Either refusal names the quote, the cap, and what you " +
+        "can do about it — wait, trim the draft, or ask a human to launch it from the web app, where " +
+        "neither cap applies.\n\n" +
         "What stays true here as everywhere else: this launches a draft that was already checked and " +
-        "saved earlier — by submit_draft_run, or from the web app — never a configuration composed in " +
-        "this same call. Nothing about the draft is read back and reassembled; the run it produces is " +
-        "exactly what the draft already described. Only run drafts can be launched this way for now — " +
-        "a draft that extends an existing run (kind \"extend\") is refused, not because it will always " +
-        "be, but because that half isn't built yet.",
+        "saved earlier — by submit_draft_run or extend_run, or from the web app — never a " +
+        "configuration composed in this same call. Nothing about the draft is read back and " +
+        "reassembled; what it produces is exactly what the draft already described.\n\n" +
+        "An extend draft (kind \"extend\") writes to a run that already exists, and only its own " +
+        "creator can launch it — a run draft (kind \"run\") creates a run instead of touching one, " +
+        "and this restriction never applies to it: launching a fresh run is never refused for who " +
+        "owns anything. Launching an extend draft is also refused if the run it targets is already " +
+        "going: it already read its pending cells at start, and cells added now would never be " +
+        "picked up — wait for it to finish, then try again.",
       inputSchema: z.object({
         draft_id: z.string().describe("The draft's UUID, from its address."),
       }),
@@ -551,17 +560,128 @@ const handler = createMcpHandler((server) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
       const { draft } = found;
+      const caller = callerEmail(ctx);
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
 
-      // Comme la route humaine : un brouillon d'extension n'a pas de run à
-      // créer, il en agrandit un, et son lancement veut une confirmation prise
-      // sur la page du run concerné. Limite du moment, pas une règle — la
-      // seconde moitié de ce chantier l'ouvrira.
-      if (draft.kind !== "run") {
-        return toolError(
-          "This tool only launches run drafts. This one extends run " +
-            `${draft.extends_run_id} instead, and that isn't supported here yet — open it from that ` +
-            "run's page and confirm it by hand.",
+      if (draft.kind === "extend") {
+        const target = await runOrError(draft.extends_run_id, {
+          withTranscripts: false,
+          withSourceCsvFlag: false,
+        });
+        if ("error" in target) return target.error;
+        const { run } = target.run;
+
+        // Décision explicite : en MCP, on ne peut étendre qu'un run qu'on a
+        // soi-même créé — une extension écrit sur un run qui existe déjà, ce
+        // que lancer un run neuf ne fait jamais. Même fonction que
+        // `extend_run`, pour la même raison ; le message précise la
+        // distinction pour qu'un refus ici ne soit pas lu comme s'il portait
+        // sur tout lancement.
+        const ownership = authorOnly(run.user_email, caller);
+        if (ownership) {
+          return toolError(
+            `${ownership} This check is specific to extending an existing run — launching a fresh ` +
+              "run draft (kind \"run\") creates a new run instead, and is never refused for who owns " +
+              "anything.",
+          );
+        }
+
+        // La même validation que la route humaine, revalidée ici : un
+        // brouillon déposé par `extend_run` était valide à l'écriture, mais
+        // rien n'empêche le run d'avoir bougé depuis — un modèle retiré du
+        // catalogue, par exemple.
+        const request = draft.config;
+        const problem = extendProblem(
+          request,
+          run.config.scenarios.length,
+          run.config.tools ?? [],
+          run.config.turns,
+          run.config.models.adversary ?? null,
+          run.config.rubric.map((level) => level.value),
         );
+        if (problem) return toolError(problem);
+
+        // Même refus que la route humaine, pour la même raison : le job a
+        // déjà lu la liste des cases en attente à son démarrage, et des cases
+        // ajoutées maintenant ne seraient jamais jouées.
+        if (run.status === "triggered" || run.status === "running") {
+          return toolError(
+            `Run ${run.id} is still going — it already read its pending cells at start, and cells ` +
+              "added now would never be picked up. Wait for it to finish, then try again.",
+          );
+        }
+
+        // Le devis de l'extension, avant de l'appliquer : c'est lui qui
+        // décide si le lancement passe sous les deux plafonds, exactement
+        // comme pour un run neuf. `estimateExtension`, appelée ici via
+        // `planExtension`, est la même fonction que celle que `extendRun`
+        // appelle pour écrire — voir sa documentation dans `runs.ts`.
+        const plan = await planExtension(run.id, request);
+        // Rien à ajouter ni à approfondir : pas de devis à opposer aux
+        // plafonds, et surtout pas celui, sans rapport, d'une heure déjà
+        // chargée par d'autres lancements — un devis à 0 $ ne doit jamais se
+        // voir refusé pour ce qu'on a dépensé ailleurs.
+        if (plan.cases.length === 0 && plan.continuées === 0) {
+          return toolError("Nothing to add: that combination is already covered.");
+        }
+        const quote = plan.estimate?.usd ?? 0;
+        const spentLastHour = await mcpSpendLastHour(caller);
+        const overBudget = budgetProblem(quote, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+        if (overBudget) return toolError(overBudget);
+
+        // `extendRun` recalcule son propre plan pour écrire sur l'état le
+        // plus frais possible — voir sa documentation dans `runs.ts` — si
+        // bien que ce zéro-ci ne serait revu que dans la course improbable où
+        // un autre appel aurait comblé exactement la même extension entre les
+        // deux lectures. Gardé quand même : le même filet que la route
+        // humaine, pour la même raison.
+        const added = await extendRun(run.id, request);
+        if (added === 0) {
+          return toolError("Nothing to add: that combination is already covered.");
+        }
+
+        try {
+          await recordStart(run.id, await startJob(run.id, "run"));
+        } catch (error) {
+          const reason = `Could not start the job: ${(error as Error).message}`;
+          await failToStart(run.id, reason);
+          return toolError(`${reason}\n\n${origin}/eval/${run.id}`);
+        }
+        // Écrite après que le job a réellement démarré, jamais avant : une
+        // ligne pour un lancement qui n'a pas eu lieu consommerait un budget
+        // pour rien. Un échec ici ne doit pas faire échouer la réponse — le
+        // run est déjà lancé, le signaler en erreur mentirait sur ce qui a
+        // réussi.
+        try {
+          await recordLaunch(caller, run.id, "extend", quote);
+        } catch (error) {
+          console.error(
+            `Could not record the mcp_launches row for run ${run.id}:`,
+            (error as Error).message,
+          );
+        }
+        // Marqué lancé, pas effacé, comme la route humaine — voir markDraftLaunched.
+        await markDraftLaunched(draft_id);
+
+        const parts: string[] = [];
+        if (plan.cases.length > 0) {
+          parts.push(`${plan.cases.length} cell${plan.cases.length > 1 ? "s" : ""} added`);
+        }
+        if (plan.continuées > 0) {
+          parts.push(`${plan.continuées} attempt${plan.continuées > 1 ? "s" : ""} pushed deeper`);
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Extended run ${run.id}${run.label ? ` ("${run.label}")` : ""}: ${parts.join(" and ")}, ` +
+                `quoted at ${formatUsd(quote)}. You have now spent about ` +
+                `${formatUsd(spentLastHour + quote)} launching runs by MCP in the last hour.` +
+                `\n\n${origin}/eval/${run.id}`,
+            },
+          ],
+        };
       }
 
       // La même vérification que la route humaine, sur la même fonction : un
@@ -574,19 +694,28 @@ const handler = createMcpHandler((server) => {
       // Le devis calculé ici, et nulle part repris : un brouillon ne porte
       // aucun devis à lire, seul un run en a un.
       const quote = estimateCost(draft.config);
-      const caller = callerEmail(ctx);
       const spentLastHour = await mcpSpendLastHour(caller);
       const overBudget = budgetProblem(quote.usd, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
       if (overBudget) return toolError(overBudget);
 
       const run = await createRun(draft.config, caller, draft.csv_text, draft_id, "mcp");
-      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       try {
         await recordStart(run.id, await startJob(run.id, "run"));
       } catch (error) {
         const reason = `Could not start the job: ${(error as Error).message}`;
         await failToStart(run.id, reason);
         return toolError(`${reason}\n\n${origin}/eval/${run.id}`);
+      }
+      // Écrite après que le job a réellement démarré, jamais avant : une ligne
+      // pour un lancement qui n'a pas eu lieu consommerait un budget pour
+      // rien.
+      try {
+        await recordLaunch(caller, run.id, "run", quote.usd);
+      } catch (error) {
+        console.error(
+          `Could not record the mcp_launches row for run ${run.id}:`,
+          (error as Error).message,
+        );
       }
       // Recopier les tags maintenant, comme la route humaine : le run existe et
       // tourne, et le brouillon est encore lisible. Un échec ici ne doit pas

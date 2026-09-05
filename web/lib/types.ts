@@ -272,12 +272,36 @@ export interface EvalRun {
    *  étrangère — la provenance survit à la disparition du brouillon, et
    *  l'identifiant peut donc ne plus rien désigner. */
   draft_id: string | null;
-  /** Qui a appuyé sur « lancer » : l'interface, ou un outil MCP. Sert à borner
-   *  la dépense d'un appelant MCP sur l'heure glissante — voir
-   *  `mcp-budget.ts` — sans quoi un run lancé depuis l'écran compterait contre
-   *  le même budget. Défaut `'ui'` en base : les runs d'avant cette colonne
-   *  n'ont jamais pu venir d'ailleurs. */
+  /** Qui a appuyé sur « lancer » : l'interface, ou un outil MCP.
+   *
+   * Ne borne plus le budget d'un appelant MCP — `mcp_launches` s'en charge
+   * désormais, une ligne par lancement plutôt qu'une colonne par run, ce
+   * qu'une extension exige : elle écrit sur un run existant, que le budget
+   * d'un agent qui l'agrandit ne doit pas confondre avec celui d'un autre
+   * agent, ou d'un humain, qui y aurait aussi touché. Cette colonne répond
+   * encore, et seulement, à « ce run a-t-il été démarré par un agent ? » —
+   * une question que `mcp_launches` ne pose pas pour une extension, qui ne
+   * crée aucun run. Défaut `'ui'` en base : les runs d'avant cette colonne
+   * n'ont jamais pu venir d'ailleurs. */
   launched_via: "ui" | "mcp";
+}
+
+/** Une ligne de `mcp_launches` : un lancement réussi par un outil MCP, `run`
+ *  comme `extend`.
+ *
+ * C'est elle, et seulement elle, que somme le budget de l'heure glissante —
+ * voir `mcp-budget.ts`. `run_id` désigne le run créé (`kind: "run"`) ou agrandi
+ * (`kind: "extend"`) ; plusieurs lignes peuvent donc désigner le même run,
+ * chacune par un lancement distinct. `quoted_usd` est le devis qui a décidé du
+ * lancement, jamais recalculé après coup : un coût réel n'existe qu'une fois
+ * le run fini, et ce n'est pas encore le cas au moment d'écrire cette ligne. */
+export interface McpLaunch {
+  id: string;
+  user_email: string;
+  run_id: string;
+  kind: "run" | "extend";
+  quoted_usd: number;
+  created_at: string;
 }
 
 /** Une ligne d'`eval_samples` : une case de la matrice. */

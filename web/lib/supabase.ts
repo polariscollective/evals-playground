@@ -17,6 +17,10 @@ export const DRAFTS = "eval_run_drafts";
 export const TAGS = "tags";
 export const RUN_TAGS = "eval_run_tags";
 export const DRAFT_TAGS = "eval_run_draft_tags";
+// Une ligne par lancement réussi par MCP, `run` comme `extend` — voir
+// `mcpSpendLastHour` et `recordLaunch` dans `runs.ts`. Migrée et poussée dans
+// `polaris-supabase`, jamais ici.
+export const MCP_LAUNCHES = "mcp_launches";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *
