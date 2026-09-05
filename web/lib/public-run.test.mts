@@ -55,3 +55,33 @@ test("l'original n'est pas touché", () => {
   withoutIdentity(DETAIL);
   assert.equal(DETAIL.run.user_email, "quelquun@polaris.example");
 });
+
+test("les adresses de qui a étendu ne sortent pas non plus", () => {
+  // `user_email` était retirée ; celle-ci se cachait dans un tableau et a
+  // failli passer. Le type l'interdit maintenant, ce test le vérifie à
+  // l'exécution : un futur champ nominatif ajouté à une entrée referait la
+  // même chose en silence.
+  const avecExtensions = {
+    ...DETAIL,
+    run: {
+      ...DETAIL.run,
+      extensions: [
+        { at: "2026-09-05T10:00:00Z", by: "quelquun@polaris.example", via: "ui" },
+        { at: "2026-09-05T11:00:00Z", by: "un.agent@polaris.example", via: "mcp" },
+      ],
+    },
+  } as unknown as RunDetail;
+
+  const publie = withoutIdentity(avecExtensions);
+  assert.equal(JSON.stringify(publie).includes("polaris.example"), false);
+  // Ce qui reste dit toujours d'où venait l'extension, sans désigner personne.
+  assert.deepEqual(
+    publie.run.extensions.map((e) => e.via),
+    ["ui", "mcp"],
+  );
+});
+
+test("un run lu sans la colonne des extensions ne fait pas tomber la page", () => {
+  const publie = withoutIdentity(DETAIL);
+  assert.deepEqual(publie.run.extensions, []);
+});
