@@ -49,27 +49,19 @@ test("une longueur plus grande coûte plus cher", () => {
   assert.ok(estimateCost(config(), 4000).usd > estimateCost(config(), 200).usd);
 });
 
-test(
-  "une longueur par scénario s'applique scénario par scénario",
-  {
-    skip:
-      "avec un seul modèle cible partagé par les deux scénarios et le même " +
-      "nombre de tours, le coût total est une fonction strictement additive " +
-      "et linéaire de la longueur de chaque scénario, avec le même " +
-      "coefficient pour les deux : il ne dépend donc que de la somme des " +
-      "longueurs, jamais de leur répartition. [200, 4000] et [2100, 2100] " +
-      "partagent la même somme (4200) et rendent rigoureusement le même " +
-      "prix — vérifié à l'exactitude flottante près côté Python, pas " +
-      "seulement après arrondi, et confirmé ici. Voir le même `skip` dans " +
-      "tests/test_pricing.py pour le détail et la marche à suivre.",
-  },
-  () => {
-    const deux = config({ scenarios: [scenario("A"), scenario("B")] });
-    const separe = estimateCost(deux, { answer: [200, 4000] });
-    const moyenne = estimateCost(deux, { answer: [2100, 2100] });
-    assert.notEqual(separe.usd, moyenne.usd);
-  },
-);
+test("une longueur par scénario s'applique scénario par scénario", () => {
+  // Deux inégalités plutôt qu'une : ensemble, elles prouvent que chaque
+  // position de la liste est lue. Changer la seconde valeur change le prix,
+  // donc l'indice 1 est lu ; changer la première aussi, donc l'indice 0 l'est.
+  //
+  // Comparer deux listes de même somme ne prouverait rien : le devis est
+  // strictement linéaire en la longueur, si bien que [200, 4000] et
+  // [2100, 2100] rendent des comptes de jetons identiques.
+  const deux = config({ scenarios: [scenario("A"), scenario("B")] });
+  const mixte = estimateCost(deux, { answer: [200, 4000] }).usd;
+  assert.notEqual(mixte, estimateCost(deux, { answer: [200, 200] }).usd);
+  assert.notEqual(mixte, estimateCost(deux, { answer: [4000, 4000] }).usd);
+});
 
 test("une longueur qui varie se déclare inconnue", () => {
   const deux = config({ scenarios: [scenario("A"), scenario("B")] });

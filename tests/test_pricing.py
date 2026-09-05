@@ -201,34 +201,19 @@ def test_le_devis_prend_la_longueur_declaree_par_la_config():
     assert estimate_cost(config).usd > estimate_cost(_config_reglable(), 200).usd
 
 
-@pytest.mark.skip(
-    reason=(
-        "Cette assertion ne peut pas tenir telle quelle : avec un seul modèle "
-        "cible partagé par les deux scénarios et le même nombre de tours, le "
-        "coût total est une fonction strictement additive et linéaire de la "
-        "longueur de chaque scénario, avec un coefficient identique pour les "
-        "deux. Résultat, il ne dépend que de la somme des longueurs, jamais de "
-        "leur répartition : [200, 4000] et [2100, 2100] partagent la même "
-        "somme (4200) et rendent donc rigoureusement le même prix, vérifié ici "
-        "à l'exactitude flottante près, pas seulement après arrondi. Ce n'est "
-        "pas un bug de _resolve/estimate_cost — c'est vrai quel que soit le "
-        "nombre de tours (vérifié à turns=1 et turns=3). Ce qui varie bien "
-        "entre les deux hypothèses, lui, c'est le `response_tokens` du détail "
-        "par modèle (voir test_une_longueur_qui_varie_se_declare_inconnue et "
-        "le champ `per_model` de CostEstimate) : la case retenue est celle du "
-        "premier scénario traité pour ce modèle. Laissé en `skip` plutôt que "
-        "réécrit ou supprimé : changer les valeurs ou l'assertion suppose de "
-        "deviner l'intention de la tâche 2, ce que la consigne du travail "
-        "demande de ne pas faire sans le signaler."
-    )
-)
 def test_une_longueur_par_scenario_s_applique_scenario_par_scenario():
-    """C'est ce dont l'extension a besoin : un run à deux scénarios de
-    longueurs différentes ne coûte pas le même run à leur moyenne."""
+    """Deux inégalités plutôt qu'une : ensemble, elles prouvent que chaque
+    position de la liste est lue. Changer la seconde valeur change le prix,
+    donc l'indice 1 est lu ; changer la première aussi, donc l'indice 0 l'est.
+
+    Comparer deux listes de même somme ne prouverait rien : le devis est
+    strictement linéaire en la longueur, si bien que [200, 4000] et
+    [2100, 2100] rendent des comptes de jetons identiques.
+    """
     config = _config_reglable(scenarios=[_scenario("A"), _scenario("B")])
-    separe = estimate_cost(config, LengthAssumption(answer=[200, 4000]))
-    moyenne = estimate_cost(config, LengthAssumption(answer=[2100, 2100]))
-    assert separe.usd != moyenne.usd
+    mixte = estimate_cost(config, LengthAssumption(answer=[200, 4000])).usd
+    assert mixte != estimate_cost(config, LengthAssumption(answer=[200, 200])).usd
+    assert mixte != estimate_cost(config, LengthAssumption(answer=[4000, 4000])).usd
 
 
 def test_une_longueur_qui_varie_se_declare_inconnue():
@@ -249,10 +234,20 @@ def test_l_adversaire_prend_sa_propre_longueur_quand_on_la_donne():
     assert bavard.usd > laconique.usd
 
 
-def test_sans_longueur_d_adversaire_il_prend_celle_des_reponses():
-    config = _config_reglable()
+def test_sans_longueur_d_adversaire_il_prend_la_longueur_declaree_du_run():
+    # `turns=2`, comme pour le test au-dessus : à un seul tour, `_config_reglable`
+    # ne pose pas d'adversaire, et le test ne prouverait rien.
+    #
+    # Pas de `adversary` dans `implicite` : le commentaire de `LengthAssumption`
+    # est net — sans longueur d'adversaire donnée, c'est la longueur déclarée du
+    # *run* (`config.average_output_tokens`, ici absente donc
+    # `DEFAULT_RESPONSE_TOKENS`) qui s'applique, pas celle passée pour les
+    # réponses de cet appel-ci (`answer=500`).
+    config = _config_reglable(turns=2)
     implicite = estimate_cost(config, LengthAssumption(answer=500))
-    explicite = estimate_cost(config, LengthAssumption(answer=500, adversary=500))
+    explicite = estimate_cost(
+        config, LengthAssumption(answer=500, adversary=DEFAULT_RESPONSE_TOKENS)
+    )
     assert implicite.usd == explicite.usd
 
 
