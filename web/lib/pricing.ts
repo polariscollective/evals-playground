@@ -9,8 +9,8 @@ import {
   SHARED_ADVERSARY_PROMPT as A,
   SHARED_JUDGE_PROMPT as J,
   SHARED_PRICING as S,
-} from "./shared";
-import { toolsFor } from "./tools";
+} from "./shared.ts";
+import { toolsFor } from "./tools.ts";
 import type { CostEstimate, EvalRunConfig, ModelCost } from "./types";
 
 // Un tarif unique par modèle, sans palier — et ce n'est vrai qu'à peu près.
@@ -107,6 +107,7 @@ interface ModelTokens {
 export function estimateTokens(
   config: EvalRunConfig,
   responseTokens?: number | null,
+  billFrom = 0,
 ): { conversations: number; modelCalls: number; perModel: Map<string, ModelTokens> } {
   const perModel = new Map<string, ModelTokens>();
 
@@ -164,15 +165,20 @@ export function estimateTokens(
       let history = seeded + opening;
 
       for (let turn = 0; turn < config.turns; turn += 1) {
-        targetInput += system + toolTokens + history;
-        targetOutput += targetResponse;
+        const facturé = turn >= billFrom;
+        if (facturé) {
+          targetInput += system + toolTokens + history;
+          targetOutput += targetResponse;
+        }
         history += targetResponse;
 
         if (turn < config.turns - 1) {
           // L'historique contient déjà le message d'ouverture : ne compter que
           // le prompt de l'adversaire en plus.
-          adversaryInput += adversaryPrompt + history + ADVERSARY_OVERHEAD_TOKENS;
-          adversaryOutput += adversaryResponse;
+          if (facturé) {
+            adversaryInput += adversaryPrompt + history + ADVERSARY_OVERHEAD_TOKENS;
+            adversaryOutput += adversaryResponse;
+          }
           history += adversaryResponse;
         }
       }
@@ -200,8 +206,14 @@ export function estimateTokens(
 
   const conversations =
     config.scenarios.length * config.models.targets.length * config.repetitions;
+  // Les tours d'avant `billFrom` sont déroulés pour l'historique mais pas
+  // facturés : seuls les tours facturés comptent dans les appels du modèle
+  // évalué et de l'adversaire. Le juge, lui, reste un appel unique dès qu'il y
+  // a au moins un tour facturé — il relit toute la conversation, jamais un
+  // fragment.
+  const facturés = Math.max(config.turns - billFrom, 0);
   const callsPerConversation =
-    config.turns + Math.max(config.turns - 1, 0) + 1;
+    facturés + Math.max(facturés - 1, 0) + (facturés > 0 ? 1 : 0);
 
   return {
     conversations,
@@ -213,8 +225,9 @@ export function estimateTokens(
 function costsFor(
   config: EvalRunConfig,
   responseTokens: number | null,
+  billFrom = 0,
 ): { costs: ModelCost[]; total: number; unpriced: string[] } {
-  const { perModel } = estimateTokens(config, responseTokens);
+  const { perModel } = estimateTokens(config, responseTokens, billFrom);
   const costs: ModelCost[] = [];
   const unpriced: string[] = [];
   let total = 0;
@@ -260,16 +273,17 @@ function round(value: number, digits: number): number {
 export function estimateCost(
   config: EvalRunConfig,
   responseTokens?: number | null,
+  billFrom = 0,
 ): CostEstimate {
   const assumed =
     responseTokens == null
       ? null
       : Math.max(1, Math.min(responseTokens, 100_000));
 
-  const { costs, total, unpriced } = costsFor(config, assumed);
-  const low = costsFor(config, S.short_response_tokens).total;
-  const high = costsFor(config, S.long_response_tokens).total;
-  const volume = estimateTokens(config, assumed);
+  const { costs, total, unpriced } = costsFor(config, assumed, billFrom);
+  const low = costsFor(config, S.short_response_tokens, billFrom).total;
+  const high = costsFor(config, S.long_response_tokens, billFrom).total;
+  const volume = estimateTokens(config, assumed, billFrom);
 
   let inputTokens = 0;
   let outputTokens = 0;
@@ -293,6 +307,34 @@ export function estimateCost(
     per_model: costs,
     unpriced_models: unpriced,
   };
+}
+
+/** Ce que coûte de pousser des cases de `from` tours à `to`.
+ *
+ * La même boucle que `estimateCost`, déroulée à l'identique — c'est la seule
+ * façon d'obtenir le bon historique accumulé — mais qui ne facture qu'à partir
+ * du tour où l'on reprend. L'historique des tours déjà joués reste compté dans
+ * l'entrée des tours suivants : c'est lui qui fait grimper le prix, chaque tour
+ * renvoyant tout ce qui précède.
+ *
+ * Le juge relit la conversation entière, pas les tours ajoutés : son coût est
+ * celui d'un jugement complet, quel que soit l'endroit de la reprise. */
+export function estimateDeepening(
+  config: EvalRunConfig,
+  from: number,
+  to: number,
+  cells: number,
+): CostEstimate {
+  if (to <= from || cells <= 0) {
+    return estimateCost({ ...config, scenarios: [], repetitions: 0 }, null);
+  }
+  // Une case, poussée de `from` à `to`, répétée `cells` fois : la
+  // configuration décrit une seule conversation et le poids porte le nombre.
+  return estimateCost(
+    { ...config, turns: to, repetitions: cells, scenarios: config.scenarios.slice(0, 1) },
+    null,
+    from,
+  );
 }
 
 /** Combien coûterait ce run, en une phrase — pour `/validate`, dont le lecteur
