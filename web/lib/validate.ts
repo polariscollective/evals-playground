@@ -349,10 +349,12 @@ export function extendProblem(
     return "deepening needs more turns to deepen to";
   }
 
-  if (indices.length === 0 && nouveaux.length === 0) {
-    // Sans scénario il n'y a pas de case à ajouter : la demande tournerait à
-    // vide et remettrait pourtant le run en route.
-    return "at least one scenario is required";
+  if (indices.length === 0 && nouveaux.length === 0 && àContinuer.length === 0) {
+    // Ni scénario à ajouter ni case à approfondir : la demande tournerait à
+    // vide et remettrait pourtant le run en route. Approfondir seul ne tombe
+    // plus ici — ça continue de vraies conversations et les rejuge, ce n'est
+    // pas à vide.
+    return "at least one scenario or a cell to deepen is required";
   }
 
   const temperature = r.temperature;

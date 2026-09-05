@@ -155,3 +155,32 @@ test("approfondir sans demander plus de tours ne veut rien dire", () => {
   );
   assert.match(problem ?? "", /turns to deepen/);
 });
+
+test("approfondir seul, sans aucun scénario à ajouter, est permis", () => {
+  // Une demande qui n'approfondit que des cases existantes ne tourne pas à
+  // vide : elle continue de vraies conversations et les rejuge.
+  const problem = extendProblem(
+    DEMANDE({
+      scenario_indices: [],
+      new_scenarios: [],
+      turns: 8,
+      deepen: [{ scenario_index: 0, target_model: "anthropic/claude-haiku-4-5" }],
+    }),
+    1,
+    [],
+    4,
+    "adv",
+  );
+  assert.equal(problem, null);
+});
+
+test("une demande sans scénario et sans case à approfondir tourne à vide", () => {
+  // Rien à ajouter, rien à continuer : la demande remettrait le run en route
+  // sans qu'il se passe quoi que ce soit.
+  const problem = extendProblem(
+    DEMANDE({ scenario_indices: [], new_scenarios: [] }),
+    1,
+    [],
+  );
+  assert.match(problem ?? "", /at least one scenario/);
+});
