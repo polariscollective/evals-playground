@@ -213,6 +213,32 @@ export interface ExtendRequest {
   deepen?: "all" | number[];
 }
 
+/** Une entrée d'`EvalRun.extensions` : ce qu'une extension a demandé, quand,
+ *  par qui, par quelle porte, et ce qu'elle a coûté — voir la migration
+ *  `evals/supabase/migrations/20260905203414_run_extensions_log.sql` pour le
+ *  raisonnement complet.
+ *
+ * `cost_before_usd` est le cœur du dessin : le coût total du run juste avant
+ * que cette extension ne s'applique, jamais recalculé après coup. C'est lui
+ * qui rend le coût réel de chaque extension déductible sans jamais revenir
+ * écrire — voir `extensionsOf` dans `run-extensions.ts`. */
+export interface RunExtensionLogEntry {
+  at: string;
+  by: string;
+  via: "ui" | "mcp";
+  /** La demande telle qu'elle a été faite. */
+  request: ExtendRequest;
+  /** Le devis calculé à ce moment-là. `null` seulement en théorie —
+   *  `extendRun` ne pose jamais d'entrée pour une extension qui n'ajoute et
+   *  n'approfondit rien, le seul cas où `planExtension` ne chiffre rien. */
+  estimate: CostEstimate | null;
+  /** Le coût total du run juste avant cette extension. `null` quand ce coût
+   *  n'est lui-même pas connu — run qui n'a encore rien coûté, ou dont un
+   *  modèle employé n'a pas de tarif — jamais remplacé par 0, qui affirmerait
+   *  à tort une gratuité ou un tarif complet. */
+  cost_before_usd: number | null;
+}
+
 export interface Message {
   role: "user" | "assistant" | "tool";
   content: string;
@@ -267,6 +293,10 @@ export interface EvalRun {
   /** Le devis calculé au lancement, à comparer à `cost_usd`. null sur les runs
    *  antérieurs à son enregistrement. */
   estimate: CostEstimate | null;
+  /** Ce que ce run a subi depuis sa création, dans l'ordre : une entrée par
+   *  extension, quelle que soit la porte — écran ou MCP. Vide sur un run
+   *  qui n'a jamais été étendu. Voir `RunExtensionLogEntry`. */
+  extensions: RunExtensionLogEntry[];
   /** Le brouillon dont ce run est sorti, s'il en vient d'un. Plusieurs runs
    *  peuvent désigner le même : relancer un brouillon est prévu. Sans clé
    *  étrangère — la provenance survit à la disparition du brouillon, et

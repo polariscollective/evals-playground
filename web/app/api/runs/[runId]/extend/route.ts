@@ -64,7 +64,7 @@ export async function POST(
     );
   }
 
-  const added = await extendRun(runId, body!);
+  const added = await extendRun(runId, body!, user.email, "ui");
   if (added === 0) {
     return NextResponse.json(
       { error: "Nothing to add: that combination is already covered." },

@@ -43,6 +43,7 @@ import {
   saveNotes,
 } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
+import { extensionsOf } from "@/lib/run-extensions";
 import { countMatches, searchRuns } from "@/lib/run-search";
 import {
   addRunTags,
@@ -161,7 +162,15 @@ const handler = createMcpHandler((server) => {
     {
       title: "Get run metadata",
       description:
-        "Label, status, cost, models, notes and analysis for one run — no results, no transcripts.",
+        "Label, status, cost, models, notes and analysis for one run — no results, no transcripts. " +
+        "Includes the run's extension history: every time it was extended — more scenarios, models, " +
+        "repetitions, or attempts pushed deeper — since it was created, whether from the web app or by " +
+        "MCP. Each entry carries when, who asked, through which door, the request itself, the quote " +
+        "computed for it, and its actual cost — derived from what the run cost right before it and " +
+        "before the extension that follows (or the run's current cost, for the last one); `null` when " +
+        "that isn't knowable yet, never 0. This is what lets a run's current cost be explained instead " +
+        "of just reported: a run costed three times its original quote reads very differently as one " +
+        "extension gone over budget versus five deliberate ones.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
@@ -185,6 +194,7 @@ const handler = createMcpHandler((server) => {
         rubric: run.config.rubric,
         models: run.config.models,
         scenario_count: run.config.scenarios.length,
+        extensions: extensionsOf(run),
       };
       return { content: [{ type: "text", text: JSON.stringify(metadata, null, 2) }] };
     },
@@ -635,7 +645,7 @@ const handler = createMcpHandler((server) => {
         // un autre appel aurait comblé exactement la même extension entre les
         // deux lectures. Gardé quand même : le même filet que la route
         // humaine, pour la même raison.
-        const added = await extendRun(run.id, request);
+        const added = await extendRun(run.id, request, caller, "mcp");
         if (added === 0) {
           return toolError("Nothing to add: that combination is already covered.");
         }

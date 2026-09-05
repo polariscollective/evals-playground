@@ -23,6 +23,7 @@ import {
   setRunTags,
   sourceCsvUrl,
 } from "@/lib/api";
+import { extensionsOf } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
@@ -42,11 +43,82 @@ import { NotesField } from "@/components/NotesField";
 import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
 import type {
+  EvalRun,
   ExtendRequest,
   RubricLevel,
   RunDetail,
   Tag,
 } from "@/lib/types";
+
+/** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
+ *  dollar — même repère que la ligne de coût du run, juste au-dessus. */
+function money(usd: number): string {
+  return `$${usd.toFixed(usd < 1 ? 4 : 2)}`;
+}
+
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+/** Ce qu'un run a subi depuis sa création : une ligne par extension, avec son
+ *  coût réel déduit — voir `extensionsOf`. N'apparaît que si le run a été
+ *  étendu au moins une fois ; sinon la page n'a rien à en dire.
+ *
+ * Une note de bas de page, pas un tableau de bord : cinq colonnes, pour
+ * répondre à « d'où vient ce chiffre » plutôt que pour l'analyser. */
+function ExtensionsHistory({ run }: { run: EvalRun }) {
+  const extensions = extensionsOf(run);
+  if (extensions.length === 0) return null;
+
+  return (
+    <section className="space-y-2 rounded border border-zinc-300 p-3">
+      <h2 className="text-sm font-medium">
+        Extensions ({extensions.length})
+      </h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-zinc-500">
+              <th className="pb-1 pr-3 font-normal">When</th>
+              <th className="pb-1 pr-3 font-normal">Who</th>
+              <th className="pb-1 pr-3 font-normal">Via</th>
+              <th className="pb-1 pr-3 text-right font-normal">Quoted</th>
+              <th className="pb-1 text-right font-normal">Actual</th>
+            </tr>
+          </thead>
+          <tbody>
+            {extensions.map((extension, index) => (
+              <tr key={index} className="border-t border-zinc-200">
+                <td className="py-1 pr-3 whitespace-nowrap text-zinc-700">
+                  {formatDate(extension.at)}
+                </td>
+                <td className="py-1 pr-3 text-zinc-700">{extension.by}</td>
+                <td className="py-1 pr-3 text-zinc-500">{extension.via}</td>
+                <td className="py-1 pr-3 text-right text-zinc-700">
+                  {extension.estimate ? money(extension.estimate.usd) : "—"}
+                </td>
+                <td className="py-1 text-right font-medium text-zinc-900">
+                  {extension.actual_cost_usd === null
+                    ? "—"
+                    : money(extension.actual_cost_usd)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
 
 /** Repasser le juge sur un run terminé, avec une autre question. */
 function RejudgePanel({
@@ -824,6 +896,9 @@ export default function EvalRunPage({
           await saveAnalysis(run.id, next);
         }}
       />
+
+      <ExtensionsHistory run={run} />
+
       {openScenario !== null && (
         <ScenarioModal
           run={run}

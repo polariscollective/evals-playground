@@ -575,11 +575,20 @@ export async function planExtension(
  * sa documentation pour pourquoi les deux ne doivent pas le recalculer chacun
  * à sa façon.
  *
+ * `by` et `via` ne se devinent pas ici : ce sont les deux appelants — la route
+ * web et l'outil MCP `launch_draft` — qui savent qui demande et par quelle
+ * porte. Une entrée est posée dans `eval_runs.extensions` pour toute extension
+ * qui ajoute ou approfondit réellement quelque chose, avec le coût du run tel
+ * qu'il était juste avant — voir `RunExtensionLogEntry` et, pour le coût réel
+ * qui s'en déduit, `run-extensions.ts`.
+ *
  * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
  * être continuées. */
 export async function extendRun(
   runId: string,
   request: ExtendRequest,
+  by: string,
+  via: "ui" | "mcp",
 ): Promise<number> {
   const { run, scenarios, targets, temperature, tools: outils, cases, continuées, estimate: ajout } =
     await planExtension(runId, request);
@@ -587,9 +596,12 @@ export async function extendRun(
 
   const config = run.config;
 
-  // La configuration du run porte la nouvelle profondeur avant toute autre
-  // écriture : une panne plus loin doit trouver un run qui déclare déjà
-  // `turns`, plutôt qu'une case remise en attente que rien n'explique encore.
+  // L'entrée d'historique rejoint l'écriture de la configuration plutôt que
+  // d'ouvrir une requête à part : les deux décrivent le run lui-même, et une
+  // panne qui laisserait l'une sans l'autre — `turns` déjà avancé sans que
+  // rien n'en dise la raison, ou l'inverse — serait la moitié d'un
+  // renseignement. `cost_before_usd` est celui lu par `planExtension` plus
+  // haut, donc rigoureusement celui d'avant cette écriture.
   await update(
     RUNS,
     {
@@ -603,6 +615,17 @@ export async function extendRun(
       },
       total_samples: run.total_samples + cases.length,
       estimate: ajout ? addEstimates(run.estimate, ajout) : run.estimate,
+      extensions: [
+        ...run.extensions,
+        {
+          at: new Date().toISOString(),
+          by,
+          via,
+          request,
+          estimate: ajout,
+          cost_before_usd: run.cost_usd,
+        },
+      ],
       status: "triggered",
       error: null,
       finished_at: null,
