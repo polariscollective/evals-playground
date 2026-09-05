@@ -255,6 +255,7 @@ export function extendProblem(
   runTools: ToolSpec[] = [],
   currentTurns = 1,
   adversary: string | null = null,
+  rubricValues: number[] = [],
 ): string | null {
   if (!request || typeof request !== "object") return "body must be an object";
   const r = request as ExtendRequest;
@@ -329,32 +330,35 @@ export function extendProblem(
     return "an adversary model is required once turns exceeds 1";
   }
 
-  const àContinuer = r.deepen ?? [];
-  if (!Array.isArray(àContinuer)) return "deepen must be a list of cells";
-  for (const cell of àContinuer) {
-    if (
-      !Number.isInteger(cell?.scenario_index) ||
-      cell.scenario_index < 0 ||
-      cell.scenario_index >= scenarioCount
-    ) {
-      return `scenario ${cell?.scenario_index} is not part of this run`;
+  const àContinuer = r.deepen;
+  if (àContinuer !== undefined && àContinuer !== "all") {
+    if (!Array.isArray(àContinuer) || àContinuer.length === 0) {
+      return "deepen must be \"all\" or a non-empty list of scores";
     }
-    if (!isFilled(cell?.target_model)) {
-      return "a cell to deepen has no model";
+    for (const score of àContinuer) {
+      if (typeof score !== "number" || !Number.isFinite(score)) {
+        return "a score to deepen must be a number";
+      }
+      if (!rubricValues.includes(score)) {
+        // Une note absente du barème ne correspondrait à aucun essai : la
+        // demande approfondirait silencieusement zéro essai, ce qui est pire
+        // qu'un refus.
+        return `score ${score} is not part of this run's rubric`;
+      }
     }
   }
-  if (àContinuer.length > 0 && (r.turns ?? currentTurns) <= currentTurns) {
+  if (àContinuer !== undefined && (r.turns ?? currentTurns) <= currentTurns) {
     // Sans profondeur nouvelle il n'y a rien à continuer : la demande serait
     // silencieusement sans effet, ce qui est pire qu'un refus.
     return "deepening needs more turns to deepen to";
   }
 
-  if (indices.length === 0 && nouveaux.length === 0 && àContinuer.length === 0) {
-    // Ni scénario à ajouter ni case à approfondir : la demande tournerait à
+  if (indices.length === 0 && nouveaux.length === 0 && àContinuer === undefined) {
+    // Ni scénario à ajouter ni essai à approfondir : la demande tournerait à
     // vide et remettrait pourtant le run en route. Approfondir seul ne tombe
     // plus ici — ça continue de vraies conversations et les rejuge, ce n'est
     // pas à vide.
-    return "at least one scenario or a cell to deepen is required";
+    return "at least one scenario or a score to deepen is required";
   }
 
   const temperature = r.temperature;

@@ -118,12 +118,11 @@ test("passer au-delà d'un tour exige un adversaire", () => {
   assert.match(problem ?? "", /adversary model is required/);
 });
 
-test("approfondir désigne des cases, pas un rectangle", () => {
+test("approfondir \"all\" est accepté", () => {
+  // "all" désigne tous les essais notés du run, quel que soit le barème :
+  // aucune note précise à valider contre lui.
   const problem = extendProblem(
-    DEMANDE({
-      turns: 8,
-      deepen: [{ scenario_index: 0, target_model: "anthropic/claude-haiku-4-5" }],
-    }),
+    DEMANDE({ turns: 8, deepen: "all" }),
     1,
     [],
     4,
@@ -132,22 +131,51 @@ test("approfondir désigne des cases, pas un rectangle", () => {
   assert.equal(problem, null);
 });
 
-test("approfondir une case qui n'existe pas est refusé", () => {
+test("une liste de notes valides est acceptée", () => {
   const problem = extendProblem(
-    DEMANDE({ turns: 8, deepen: [{ scenario_index: 9, target_model: "m" }] }),
+    DEMANDE({ turns: 8, deepen: [0, 2] }),
     1,
     [],
     4,
     "adv",
+    [0, 1, 2],
   );
-  assert.match(problem ?? "", /scenario 9 is not part of this run/);
+  assert.equal(problem, null);
+});
+
+test("une liste de notes vide est refusée", () => {
+  // Une liste vide n'approfondirait rien : mieux vaut un refus explicite
+  // qu'une demande silencieusement sans effet.
+  const problem = extendProblem(
+    DEMANDE({ turns: 8, deepen: [] }),
+    1,
+    [],
+    4,
+    "adv",
+    [0, 1, 2],
+  );
+  assert.match(problem ?? "", /"all" or a non-empty list/);
+});
+
+test("une note absente du barème est refusée", () => {
+  // Une note que le barème ne connaît pas ne correspondrait à aucun essai :
+  // la demande approfondirait silencieusement zéro essai.
+  const problem = extendProblem(
+    DEMANDE({ turns: 8, deepen: [9] }),
+    1,
+    [],
+    4,
+    "adv",
+    [0, 1, 2],
+  );
+  assert.match(problem ?? "", /score 9 is not part of this run's rubric/);
 });
 
 test("approfondir sans demander plus de tours ne veut rien dire", () => {
   // Sans profondeur nouvelle, il n'y a rien à continuer : la demande serait
   // silencieusement sans effet, ce qui est pire qu'un refus.
   const problem = extendProblem(
-    DEMANDE({ deepen: [{ scenario_index: 0, target_model: "m" }] }),
+    DEMANDE({ deepen: "all" }),
     1,
     [],
     4,
@@ -157,14 +185,14 @@ test("approfondir sans demander plus de tours ne veut rien dire", () => {
 });
 
 test("approfondir seul, sans aucun scénario à ajouter, est permis", () => {
-  // Une demande qui n'approfondit que des cases existantes ne tourne pas à
+  // Une demande qui n'approfondit que des essais existants ne tourne pas à
   // vide : elle continue de vraies conversations et les rejuge.
   const problem = extendProblem(
     DEMANDE({
       scenario_indices: [],
       new_scenarios: [],
       turns: 8,
-      deepen: [{ scenario_index: 0, target_model: "anthropic/claude-haiku-4-5" }],
+      deepen: "all",
     }),
     1,
     [],

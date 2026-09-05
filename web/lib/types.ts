@@ -191,12 +191,15 @@ export interface ExtendRequest {
    *  conversation déjà jouée ne se coupe pas. Absent laisse la profondeur
    *  telle quelle. */
   turns?: number;
-  /** Les cases à continuer jusqu'à `turns`, désignées une à une.
+  /** Les essais à continuer jusqu'à `turns`, choisis par la note que le juge
+   *  leur a donnée : le serveur retrouve lui-même lesquels, puisque c'est lui
+   *  qui a les notes.
    *
-   * Un ensemble quelconque et non un rectangle : on approfondit ce qui a tenu
-   * et on laisse ce qui a déjà cédé, or ces cases-là ne dessinent pas une
-   * ligne ni une colonne. */
-  deepen?: { scenario_index: number; target_model: string }[];
+   * Un ensemble quelconque et non un rectangle : les essais d'une même case
+   * n'ont pas tous la même note, et on approfondit ce qui a tenu en laissant
+   * ce qui a déjà cédé — `"all"` pour tous les essais notés du run, une liste
+   * de notes pour ne prendre que celles-là. Absent n'approfondit rien. */
+  deepen?: "all" | number[];
 }
 
 export interface Message {

@@ -392,9 +392,28 @@ export async function extendRun(
     temperature,
     dernier,
   );
-  // Une extension qui n'approfondit que des cases existantes n'ajoute aucune
+
+  // Les essais retenus pour l'approfondissement : notés, dans ce run, et —
+  // quand une liste de notes est donnée — parmi celles-là. `score=in.(...)`
+  // exclut déjà les essais sans note, une liste de nombres ne contenant
+  // jamais `null` ; `not.is.null` fait ce travail pour "all". Un `select`
+  // d'abord donne le compte ; le `update` plus bas porte le même filtre, en
+  // une seule écriture plutôt qu'en boucle — une panne au milieu d'une boucle
+  // n'y laisserait qu'un effet partiel.
+  const filtreDeepen = {
+    run_id: `eq.${runId}`,
+    status: "eq.done",
+    score: Array.isArray(request.deepen)
+      ? `in.(${request.deepen.join(",")})`
+      : "not.is.null",
+  };
+  const àContinuer =
+    request.deepen === undefined
+      ? []
+      : await select<{ id: string }>(SAMPLES, { select: "id", ...filtreDeepen });
+  // Une extension qui n'approfondit que des essais existants n'ajoute aucune
   // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
-  const continuées = (request.deepen ?? []).length;
+  const continuées = àContinuer.length;
   if (cases.length === 0 && continuées === 0) return 0;
 
   // Le devis de l'ajout seul, puis additionné à celui du run : sans ça,
@@ -439,17 +458,17 @@ export async function extendRun(
     cases.map((cell) => ({ run_id: runId, ...cell })),
   );
 
-  // Les cases à continuer repartent en attente en gardant leur conversation :
+  // Les essais à continuer repartent en attente en gardant leur conversation :
   // c'est ce couple — `pending` avec des `messages` — qui dit au moteur de
   // continuer plutôt que de rejouer. `turns_done` ne bouge pas : c'est lui,
-  // comparé à `config.turns` déjà écrit ci-dessus, qui distinguera une case à
-  // poursuivre d'une case déjà à sa profondeur.
+  // comparé à `config.turns` déjà écrit ci-dessus, qui distinguera un essai à
+  // poursuivre d'un essai déjà à sa profondeur.
   //
   // Leur note part maintenant, pas après. Elle portait sur une conversation
   // plus courte et ne dit rien de celle qui vient ; une panne en cours de
-  // route doit laisser une case sans note plutôt qu'une case portant un
+  // route doit laisser un essai sans note plutôt qu'un essai portant un
   // verdict qui ne correspond plus.
-  for (const cell of request.deepen ?? []) {
+  if (continuées > 0) {
     await update(
       SAMPLES,
       {
@@ -459,12 +478,7 @@ export async function extendRun(
         error: null,
         finished_at: null,
       },
-      {
-        run_id: `eq.${runId}`,
-        scenario_index: `eq.${cell.scenario_index}`,
-        target_model: `eq.${cell.target_model}`,
-        status: "eq.done",
-      },
+      filtreDeepen,
     );
   }
 
