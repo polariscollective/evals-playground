@@ -10,8 +10,8 @@ import type { ExtendRequest } from "@/lib/types";
  *
  * Aucune validation, comme pour un brouillon de run : c'est précisément
  * quand la proposition est incomplète qu'on veut la poser pour y revenir.
- * `extend_run` valide avant de déposer, lui, parce qu'un agent doit rendre
- * une proposition lançable — ce n'est pas le cas ici. */
+ * `submit_draft_extension` valide avant de déposer, lui, parce qu'un agent
+ * doit rendre une proposition lançable — ce n'est pas le cas ici. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },

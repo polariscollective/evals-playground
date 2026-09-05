@@ -125,8 +125,8 @@ function callerEmail(ctx: { http?: { authInfo?: AuthInfo } }): string {
 
 /** Le refus d'écrire sur un run qui n'est pas le sien, ou rien quand
  *  `callerEmail` désigne déjà `run.user_email` — une seule fonction pour les
- *  trois outils qui écrivent sur un run : `extend_run`, `set_run_tags`, et
- *  `update_run_text`. La lecture, elle, reste ouverte à tout appelant ;
+ *  trois outils qui écrivent sur un run : `submit_draft_extension`,
+ *  `set_run_tags`, et `update_run_text`. La lecture, elle, reste ouverte à tout appelant ;
  *  aucun de ces trois-là n'y touche.
  *
  *  Ne nomme jamais le propriétaire réel : `get_run_metadata` répond déjà à
@@ -501,8 +501,8 @@ const handler = createMcpHandler((server) => {
         "starts. It is the validator — it applies to a YAML run configuration exactly the checks that " +
         "would refuse it later. A document that fails comes back with the reason and is not saved, so " +
         "being wrong here costs only a round trip. One that passes is saved as a draft and comes back " +
-        "with the run's estimated cost and the draft's address, where a human reviews it and decides " +
-        "whether to launch it. Call it once, on the complete document.",
+        "with the run's estimated cost, the draft's address, and whether launch_draft would accept it " +
+        "from you right now, under your two caps. Call it once, on the complete document.",
       inputSchema: z.object({
         yaml: z
           .string()
@@ -527,16 +527,38 @@ const handler = createMcpHandler((server) => {
         return { content: [{ type: "text", text: verdict.message }], isError: true };
       }
       const { config } = readConfigFile(yaml);
-      const draftId = await createDraft(config, null, callerEmail(ctx), "mcp");
+      const caller = callerEmail(ctx);
+      const draftId = await createDraft(config, null, caller, "mcp");
       if (tags && tags.length > 0) {
         // Après la création, jamais avant : un document refusé n'écrit ni
         // brouillon ni tag.
         const created = await tagsForLabels(tags);
         await setDraftTags(draftId, created.map((tag) => tag.id));
       }
+
+      // Le devis que verrait `launch_draft` s'il lançait ce brouillon —
+      // `estimateCost` appelée exactement comme lui, sur la même
+      // configuration, pas une seconde façon de la chiffrer.
+      const quote = estimateCost(config);
+      const spentLastHour = await mcpSpendLastHour(caller);
+      const overBudget = budgetProblem(quote.usd, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+      // Ce que l'appelant a demandé : pas une promesse que ce brouillon SERA
+      // lançable, seulement s'il l'est par lui, maintenant — un autre
+      // lancement, par lui ou quelqu'un d'autre, peut changer la réponse
+      // d'ici à ce qu'il rappelle `launch_draft`.
+      const launchability = overBudget
+        ? `Not launchable by you today: ${overBudget}`
+        : "You can launch it yourself with launch_draft today, under your two caps — that can " +
+          "change if other runs launch meanwhile.";
+
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return {
-        content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draftId}` }],
+        content: [
+          {
+            type: "text",
+            text: `${verdict.message}\n\n${launchability}\n\n${origin}/runs/drafts/${draftId}`,
+          },
+        ],
       };
     },
   );
@@ -556,7 +578,7 @@ const handler = createMcpHandler((server) => {
         "can do about it — wait, trim the draft, or ask a human to launch it from the web app, where " +
         "neither cap applies.\n\n" +
         "What stays true here as everywhere else: this launches a draft that was already checked and " +
-        "saved earlier — by submit_draft_run or extend_run, or from the web app — never a " +
+        "saved earlier — by submit_draft_run or submit_draft_extension, or from the web app — never a " +
         "configuration composed in this same call. Nothing about the draft is read back and " +
         "reassembled; what it produces is exactly what the draft already described.\n\n" +
         "An extend draft (kind \"extend\") writes to a run that already exists, and only its own " +
@@ -587,9 +609,9 @@ const handler = createMcpHandler((server) => {
         // Décision explicite : en MCP, on ne peut étendre qu'un run qu'on a
         // soi-même créé — une extension écrit sur un run qui existe déjà, ce
         // que lancer un run neuf ne fait jamais. Même fonction que
-        // `extend_run`, pour la même raison ; le message précise la
-        // distinction pour qu'un refus ici ne soit pas lu comme s'il portait
-        // sur tout lancement.
+        // `submit_draft_extension`, pour la même raison ; le message précise
+        // la distinction pour qu'un refus ici ne soit pas lu comme s'il
+        // portait sur tout lancement.
         const ownership = authorOnly(run.user_email, caller);
         if (ownership) {
           return toolError(
@@ -600,9 +622,9 @@ const handler = createMcpHandler((server) => {
         }
 
         // La même validation que la route humaine, revalidée ici : un
-        // brouillon déposé par `extend_run` était valide à l'écriture, mais
-        // rien n'empêche le run d'avoir bougé depuis — un modèle retiré du
-        // catalogue, par exemple.
+        // brouillon déposé par `submit_draft_extension` était valide à
+        // l'écriture, mais rien n'empêche le run d'avoir bougé depuis — un
+        // modèle retiré du catalogue, par exemple.
         const request = draft.config;
         const problem = extendProblem(
           request,
@@ -763,7 +785,7 @@ const handler = createMcpHandler((server) => {
   );
 
   server.registerTool(
-    "extend_run",
+    "submit_draft_extension",
     {
       title: "Propose changes to an existing run",
       description:
@@ -791,9 +813,10 @@ const handler = createMcpHandler((server) => {
         "new depth is re-judged from scratch on the whole conversation, never on the increment alone " +
         "— a verdict given at four turns says nothing about the same conversation at eight, and turns " +
         "already played are neither replayed nor paid for again. Whatever this call proposes is saved " +
-        "as a draft, nothing more: a human opens it on the run's page, reviews it, and decides — the " +
-        "run stays as it is until they do. Restricted to the run's own creator — reading a run " +
-        "stays open to anyone, but only who created it may propose changes to it.",
+        "as a draft, nothing more, and the run stays exactly as it is until that draft is launched — " +
+        "by a human from the run's page, or by you, its creator, with launch_draft under your own two " +
+        "caps. The response says which is true for you right now. Restricted to the run's own creator " +
+        "— reading a run stays open to anyone, but only who created it may propose changes to it.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         scenario_indices: z
@@ -942,30 +965,68 @@ const handler = createMcpHandler((server) => {
         return { content: [{ type: "text", text: problem }], isError: true };
       }
 
+      // Le même devis que verrait `launch_draft` s'il lançait ce brouillon —
+      // `planExtension`, la seule fonction qui construise la forme d'une
+      // extension et son prix ; voir sa documentation dans `runs.ts` sur
+      // pourquoi ni `extendRun` ni la route MCP ne la recalculent à leur
+      // façon.
+      const plan = await planExtension(input.run_id, request);
       const draftId = await createExtendDraft(
         input.run_id,
         request,
         caller,
         "mcp",
       );
-      const cells =
-        (input.scenario_indices.length + input.new_scenarios.length) *
-        request.targets.length *
-        request.repetitions;
-      const parts: string[] = [];
-      if (cells > 0) parts.push(`${cells} cell${cells > 1 ? "s" : ""} to add`);
-      if (input.deepen !== undefined) parts.push("existing attempts to deepen");
-      const summary = parts.length > 0 ? parts.join(" and ") : "nothing to add";
+
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      const address = `${origin}/eval/${input.run_id}?extend=${draftId}`;
+
+      // Rien à ajouter ni à approfondir : `launch_draft` refuserait ce
+      // brouillon pour cette seule raison, avant même de regarder le budget
+      // — même refus, mot pour mot.
+      if (plan.cases.length === 0 && plan.continuées === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Saved as a draft extension of "${run.label ?? input.run_id}": nothing to add or ` +
+                "deepen. Not launchable today — Nothing to add: that combination is already covered." +
+                `\n\n${address}`,
+            },
+          ],
+        };
+      }
+
+      const parts: string[] = [];
+      if (plan.cases.length > 0) {
+        parts.push(`${plan.cases.length} cell${plan.cases.length > 1 ? "s" : ""} to add`);
+      }
+      if (plan.continuées > 0) {
+        parts.push(`${plan.continuées} attempt${plan.continuées > 1 ? "s" : ""} to deepen`);
+      }
+      const summary = parts.join(" and ");
+      const quote = plan.estimate?.usd ?? 0;
+
+      // Ce que l'utilisateur a demandé : pas une promesse que ce brouillon
+      // SERA lançable, seulement s'il l'est par cet appelant, maintenant —
+      // un autre lancement, par lui ou quelqu'un d'autre, peut faire bouger
+      // la réponse d'ici à ce qu'il rappelle `launch_draft`.
+      const spentLastHour = await mcpSpendLastHour(caller);
+      const overBudget = budgetProblem(quote, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+      const launchability = overBudget
+        ? `Not launchable by you today: ${overBudget}`
+        : "You can launch it yourself with launch_draft today, under your two caps — that can " +
+          "change if other runs launch meanwhile.";
+
       return {
         content: [
           {
             type: "text",
             text:
               `Saved as a draft extension of "${run.label ?? input.run_id}": ` +
-              `${summary}. Nothing has been ` +
-              `spent, and the run is unchanged until a human confirms it.\n\n` +
-              `${origin}/eval/${input.run_id}?extend=${draftId}`,
+              `${summary}, quoted at ${formatUsd(quote)}. Nothing has been spent yet. ${launchability}` +
+              `\n\n${address}`,
           },
         ],
       };
