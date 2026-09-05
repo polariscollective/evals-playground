@@ -396,6 +396,106 @@ def test_la_passe_de_juge_renote_chaque_case_enregistree(tmp_path: Path):
     assert all(len(v["messages"]) == 2 for v in notes)
 
 
+# --- l'éveil, de bout en bout -------------------------------------------------
+#
+# L'invariant le plus important de cette fonctionnalité n'était gardé que sur
+# ses briques isolées (`test_awareness.py`) : nulle part le câblage réel — le
+# calcul de `check_awareness` et le marqueur d'omission passé à `write_sample`
+# — n'était protégé. Une preuve de bout en bout avait bien été faite pendant
+# l'implémentation, mais dans un script jetable jamais commité.
+
+
+def _outputs_avec_eveil(note_eveil: int, appels_eveil: list | None = None):
+    """Distingue les trois appelés d'un run par l'outil demandé — seul moyen
+    de leur faire dire des choses différentes avec `mockllm` : le juge de
+    l'utilisateur appelle `submit_score`, le juge d'éveil `submit_awareness`,
+    et le modèle évalué n'appelle rien."""
+
+    def output(input, tools, tool_choice, config):
+        if tools and tools[0].name == "submit_awareness":
+            if appels_eveil is not None:
+                appels_eveil.append(1)
+            return ModelOutput.for_tool_call(
+                model="mockllm",
+                tool_name="submit_awareness",
+                tool_arguments={
+                    "score": note_eveil,
+                    "justification": "Le tour 2 le dit.",
+                },
+            )
+        if tools:
+            return ModelOutput.for_tool_call(
+                model="mockllm",
+                tool_name="submit_score",
+                tool_arguments={"score": 0, "justification": "au tour 2."},
+            )
+        return ModelOutput.from_content(model="mockllm", content="réponse simulée")
+
+    return output
+
+
+def test_le_rejugement_ne_rappelle_pas_le_juge_d_eveil_et_garde_sa_note(
+    tmp_path: Path,
+):
+    """Le rejugement ne doit ni rappeler le juge d'éveil, ni écraser la note
+    qu'il a rendue au premier passage — l'invariant central de l'éveil,
+    vérifié ici sur le câblage réel plutôt que sur ses briques isolées."""
+    appels_eveil: list = []
+
+    # Premier passage : un run complet, où le juge d'éveil est interrogé une
+    # fois par case (`check_eval_awareness` vaut `True` par défaut).
+    supabase = FakeSupabase()
+    _lancer(supabase, tmp_path, outputs=_outputs_avec_eveil(9, appels_eveil))
+
+    premiere_passe = [
+        (v, f) for nom, v, f in supabase.ecritures if nom == SAMPLES and "score" in v
+    ]
+    assert premiere_passe, "aucune case notée au premier passage"
+    assert all(v["awareness_score"] == 9 for v, _ in premiere_passe)
+    assert len(appels_eveil) == len(premiere_passe), (
+        "le juge d'éveil doit être appelé une fois par case notée"
+    )
+
+    # Second passage : un rejugement sur ces mêmes cases, désormais
+    # enregistrées telles que le premier passage vient de les écrire.
+    def decode(valeur: str) -> str:
+        return valeur.removeprefix("eq.")
+
+    cases_enregistrees = [
+        {
+            "scenario_index": int(decode(f["scenario_index"])),
+            "target_model": decode(f["target_model"]),
+            "repetition": int(decode(f["repetition"])),
+            "temperature": v.get("temperature"),
+            "messages": v["messages"],
+            "usage": v.get("usage") or {},
+            "turns_done": v.get("turns_done"),
+        }
+        for v, f in premiere_passe
+    ]
+    supabase_rejugement = FakeSupabase(samples=cases_enregistrees)
+    appels_eveil.clear()
+
+    _lancer(
+        supabase_rejugement,
+        tmp_path,
+        mode="rejudge",
+        outputs=_outputs_avec_eveil(9, appels_eveil),
+    )
+
+    notes_rejugees = [
+        v for v in supabase_rejugement.ecrites(SAMPLES) if "score" in v
+    ]
+    assert notes_rejugees, "aucune case rejugée"
+    # `write_sample` doit recevoir `awareness=None` en rejugement : les trois
+    # colonnes sont alors omises de l'écriture, jamais mises à `null` — ce qui
+    # les écraserait tout autant que d'y remettre une nouvelle note.
+    assert all("awareness_score" not in v for v in notes_rejugees), (
+        "le rejugement ne doit pas toucher la note d'éveil déjà obtenue"
+    )
+    assert appels_eveil == [], "le juge d'éveil ne doit pas être rappelé en rejugement"
+
+
 # --- la consommation ---------------------------------------------------------
 
 
