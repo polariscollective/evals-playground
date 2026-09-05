@@ -1,7 +1,7 @@
 // La décision de budget, sans Supabase : voir mcp-budget.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetProblem, maxUsdPerHour, maxUsdPerRun, spendOf } from "./mcp-budget.ts";
+import { budgetProblem, maxUsdPerHour, maxUsdPerRun } from "./mcp-budget.ts";
 
 test("un devis sous les deux plafonds passe", () => {
   assert.equal(budgetProblem(1, 3, 2, 10), null);
@@ -35,17 +35,8 @@ test("un devis minuscule ne s'affiche pas 0,00 $", () => {
   assert.match(problem!, /\$0\.0010/);
 });
 
-test("spendOf retombe sur le coût réel une fois le run fini", () => {
-  assert.equal(spendOf({ cost_usd: 1.5, estimate: { usd: 3 } }), 1.5);
-});
 
-test("spendOf retombe sur le devis tant qu'il n'y a pas de coût réel", () => {
-  assert.equal(spendOf({ cost_usd: null, estimate: { usd: 3 } }), 3);
-});
 
-test("spendOf vaut 0 sans coût réel ni devis — rien de mieux à faire", () => {
-  assert.equal(spendOf({ cost_usd: null, estimate: null }), 0);
-});
 
 test("les plafonds prennent leur défaut sans variable d'environnement", () => {
   const savedRun = process.env.MCP_MAX_USD_PER_RUN;

@@ -19,22 +19,6 @@ export function maxUsdPerHour(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 10;
 }
 
-/** Ce qu'un run compte dans la dépense d'une heure : son coût réel une fois
- *  fini, son devis sinon.
- *
- * Ne retenir que les devis laisserait passer les sous-estimations — on en a
- * mesuré à +112 % du réel une fois le run terminé. Un run fini sans
- * `cost_usd` — un modèle qu'il emploie n'a pas de tarif connu — retombe aussi
- * sur son devis, faute de mieux : c'est la meilleure lecture qui reste, pas
- * une lecture exacte. */
-export function spendOf(run: {
-  cost_usd: number | null;
-  estimate: { usd: number } | null;
-}): number {
-  if (run.cost_usd != null) return run.cost_usd;
-  return run.estimate?.usd ?? 0;
-}
-
 /** Formaté pour un message lu par un agent : deux décimales, quatre en
  *  dessous du centime pour qu'un devis minuscule ne s'affiche pas « $0.00 ».
  *  Exporté : c'est aussi ce que `launch_draft` écrit dans sa réponse de
