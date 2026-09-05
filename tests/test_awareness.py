@@ -149,19 +149,50 @@ def test_judge_awareness_ne_leve_pas_quand_l_outil_n_est_pas_appele():
     assert "submit_awareness" in erreur
 
 
-def test_judge_awareness_ne_leve_pas_quand_le_modele_juge_refuse_de_repondre():
-    # `mockllm/model` sans sortie programmée refuse de générer — c'est ainsi
-    # que `test_scoring.py` simule un juge qui « tombe ». Même exigence ici :
-    # la panne devient l'erreur du triplet, jamais une exception qui remonte.
+def test_judge_awareness_ne_leve_pas_quand_l_appel_au_modele_leve():
+    # Mode de panne distinct du précédent : ici `generate` lève franchement
+    # (panne réseau, timeout du fournisseur) avant même d'atteindre
+    # `tool_call_arguments`. `judge_awareness` doit l'absorber tout pareil, et
+    # rendre l'erreur telle quelle dans le triplet.
     from playground.scoring import judge_awareness
 
+    def outputs(input, tools, tool_choice, config):
+        raise RuntimeError("le fournisseur a timeouté")
+
     note, justification, erreur = asyncio.run(
-        judge_awareness(_config(), "USER [turn 1]: bonjour")
+        judge_awareness(
+            _config(),
+            "USER [turn 1]: bonjour",
+            model_args={"custom_outputs": outputs},
+        )
     )
 
     assert note is None
     assert justification == ""
-    assert erreur is not None
+    assert erreur == "RuntimeError: le fournisseur a timeouté"
+
+
+def test_judge_awareness_ne_leve_pas_quand_le_modele_juge_ne_se_construit_pas():
+    # Encore un autre mode de panne : un identifiant de fournisseur inconnu
+    # échoue dès `get_model`, avant le moindre appel réseau. Rien ne le
+    # verrouillait jusqu'ici.
+    from playground.scoring import judge_awareness
+
+    config = _config()
+    config.models = EvalModels(
+        targets=["mockllm/model"], judge="labo-inconnu/modele-x"
+    )
+
+    note, justification, erreur = asyncio.run(
+        judge_awareness(config, "USER [turn 1]: bonjour")
+    )
+
+    assert note is None
+    assert justification == ""
+    assert erreur == (
+        "ValueError: Model API labo-inconnu of model 'labo-inconnu/modele-x' "
+        "not recognized."
+    )
 
 
 def test_judge_awareness_rend_une_note_absente_sans_erreur_quand_hors_echelle():
@@ -243,12 +274,6 @@ def test_le_juge_d_eveil_qui_tombe_ne_coute_pas_sa_note_a_la_case():
     # C'est l'invariant du juge d'éveil : il contrôle la validité du run, il
     # n'est pas son résultat. Une panne de sa part laisse la note principale
     # intacte, et se consigne à côté.
-    from playground.eval_schemas import (
-        EvalModels,
-        EvalRunConfig,
-        EvalScenario,
-        RubricLevel,
-    )
     from playground.scoring import ScoredSample
 
     sample = ScoredSample(
