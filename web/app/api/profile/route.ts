@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { capProblem } from "@/lib/profile-caps";
+import { capProblem, profilePatchProblem } from "@/lib/profile-caps";
 import { ensureProfile, updateProfileCaps, updateScenarioAdvice } from "@/lib/profiles";
 import { mcpActivityLastHour } from "@/lib/runs";
 
@@ -39,18 +39,12 @@ export async function PATCH(request: Request) {
     scenario_advice?: unknown;
   };
 
-  // Refuser une requête qui porte à la fois le conseil et un des plafonds
-  if (
-    body.scenario_advice !== undefined &&
-    (body.max_usd_per_run !== undefined || body.max_usd_per_hour !== undefined)
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "Send the spending caps and the scenario advice in separate requests — this route applies one or the other, and silently dropping half of what you sent would be worse than refusing it.",
-      },
-      { status: 422 },
-    );
+  // Refuser une requête qui porte à la fois le conseil et un des plafonds —
+  // règle testée séparément dans profile-caps.test.mts, sur le même patron
+  // que capProblem.
+  const patchProblem = profilePatchProblem(body);
+  if (patchProblem) {
+    return NextResponse.json({ error: patchProblem }, { status: 422 });
   }
 
   if (body.scenario_advice !== undefined) {

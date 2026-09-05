@@ -34,3 +34,25 @@ export function capProblem(value: unknown): string | null {
   }
   return null;
 }
+
+/** `null` si le corps d'un PATCH `/api/profile` peut être traité, sinon ce
+ *  qui cloche.
+ *
+ * La route applique soit les plafonds, soit le conseil d'écriture de
+ * scénario, jamais les deux — sans quoi il faudrait choisir lequel des deux
+ * un corps portant les deux à la fois écrase, et ce choix serait arbitraire
+ * pour qui l'a envoyé. Ne valide que cette exclusion mutuelle : la forme de
+ * chaque champ (un plafond via `capProblem`, une chaîne ou `null` pour le
+ * conseil) reste à la charge de la route, qui seule sait quoi faire du corps
+ * une fois admis. */
+export function profilePatchProblem(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const b = body as { scenario_advice?: unknown; max_usd_per_run?: unknown; max_usd_per_hour?: unknown };
+  if (
+    b.scenario_advice !== undefined &&
+    (b.max_usd_per_run !== undefined || b.max_usd_per_hour !== undefined)
+  ) {
+    return "Send the spending caps and the scenario advice in separate requests — this route applies one or the other, and silently dropping half of what you sent would be worse than refusing it.";
+  }
+  return null;
+}
