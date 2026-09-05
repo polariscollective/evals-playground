@@ -374,14 +374,23 @@ test("continuer coûte plus cher que les mêmes tours joués à froid", () => {
   );
 });
 
-test("le re-jugement porte sur la conversation entière", () => {
-  // Le juge relit tout, pas seulement les tours ajoutés : son coût ne dépend
-  // pas de l'endroit où l'on a repris.
-  const court = estimateDeepening(CONFIG, 4, 5, 1);
-  const long = estimateDeepening(CONFIG, 4, 8, 1);
-  const jugeCourt = court.per_model.find((m) => m.model.includes("haiku"));
-  assert.ok(jugeCourt);
-  assert.ok(long.usd > court.usd);
+test("le juge est payé pour la conversation entière, pas pour les tours ajoutés", () => {
+  // Il relit tout : son coût ne dépend pas de l'endroit où l'on a repris.
+  // Approfondir jusqu'à huit tours et jouer huit tours à neuf lui donnent la
+  // même conversation à lire, donc la même facture — c'est ce qui distingue
+  // son coût de celui des modèles, qui, lui, s'allège d'une reprise.
+  const àNeuf = estimateCost({ ...CONFIG, turns: 8 }, null);
+  const continué = estimateDeepening(CONFIG, 4, 8, 1);
+  const juge = (e: typeof àNeuf) =>
+    e.per_model.filter((m) => m.model === CONFIG.models.judge);
+
+  // Le juge apparaît une fois par conversation dans les deux devis.
+  assert.equal(juge(continué).length, juge(àNeuf).length);
+  assert.equal(
+    juge(continué)[0].input_tokens,
+    juge(àNeuf)[0].input_tokens,
+    "le juge relit la même conversation dans les deux cas",
+  );
 });
 
 test("le devis suit le nombre de cases", () => {
