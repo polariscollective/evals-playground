@@ -13,7 +13,7 @@ from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
-from playground.conversation import Turn, run_conversation
+from playground.conversation import ToolCallRecord, Turn, run_conversation
 from playground.eval_schemas import EvalRunConfig, tools_for
 
 
@@ -53,6 +53,40 @@ def pending_dataset(
             )
         )
     return MemoryDataset(samples, name="matrice")
+
+
+def _completer_tool_call_id(joués: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Comble le `tool_call_id` des tours `tool` qui ne le portent pas.
+
+    Cette fonction existe parce que `tool_call_id` n'est persisté que depuis
+    peu : les conversations enregistrées avant n'en portent aucun sur leurs
+    tours `tool`. Sans lui, `target_view` (`conversation.py`) ne peut pas
+    rattacher un résultat à son appel — les fournisseurs le refusent — et le
+    tour d'assistant qui le précède se ferait amputer de son appel dès le
+    prochain enregistrement. Elle cessera d'être utile, et pourra être
+    supprimée, une fois qu'aucune conversation en base n'aura été enregistrée
+    avant l'ajout de cette persistance.
+
+    La reconstruction n'est pas approximative : `run_conversation` produit les
+    tours `tool` juste après le tour `assistant` qui a décidé leurs appels, et
+    dans le même ordre (voir `conversation.py`, `tool_call_id=call.id`). Le
+    n-ième tour `tool` consécutif reprend donc l'id du n-ième appel de ce tour
+    assistant.
+    """
+    complétés: list[dict[str, Any]] = []
+    appels: list[dict[str, Any]] = []
+    rang = 0
+    for turn in joués:
+        role = turn.get("role")
+        if role == "assistant":
+            appels = turn.get("tool_calls") or []
+            rang = 0
+        elif role == "tool":
+            if not turn.get("tool_call_id") and rang < len(appels):
+                turn = {**turn, "tool_call_id": appels[rang].get("id")}
+            rang += 1
+        complétés.append(turn)
+    return complétés
 
 
 @solver
@@ -119,8 +153,24 @@ def conversation_solver(
                         role=turn["role"],
                         content=turn["content"],
                         seeded=turn.get("seeded", False),
+                        # Sans quoi le juge, appelé sur le transcript entier,
+                        # perdrait la trace d'un blocage survenu avant la
+                        # reprise (voir `blocking_reason` dans `scoring.py`) —
+                        # et le prochain enregistrement l'effacerait pour de
+                        # bon.
+                        stop_reason=turn.get("stop_reason"),
+                        tool_name=turn.get("tool_name"),
+                        tool_call_id=turn.get("tool_call_id"),
+                        tool_calls=[
+                            ToolCallRecord(
+                                id=call["id"],
+                                name=call["name"],
+                                arguments=call["arguments"],
+                            )
+                            for call in (turn.get("tool_calls") or [])
+                        ],
                     )
-                    for turn in joués
+                    for turn in _completer_tool_call_id(joués)
                 ]
                 if joués
                 else None
@@ -143,6 +193,10 @@ def conversation_solver(
                     for call in turn.tool_calls
                 ],
                 "tool_name": turn.tool_name,
+                # Sur un tour `tool`, l'appel auquel ce résultat répond.
+                # Persisté depuis peu : les conversations enregistrées avant
+                # ne le portent pas, d'où `_completer_tool_call_id` ci-dessus.
+                "tool_call_id": turn.tool_call_id,
                 "stop_reason": turn.stop_reason,
             }
             for turn in transcript
