@@ -95,6 +95,11 @@ export const rejudgeRun = (runId: string, body: RejudgeRequest) =>
     body: JSON.stringify(body),
   });
 
+/** Passe le juge d'éveil sur un run qui ne l'avait pas. Sans corps : la
+ *  question et l'échelle sont fixes, et le modèle est celui du juge du run. */
+export const judgeAwareness = (runId: string) =>
+  request<{ ok: true }>(`/api/runs/${runId}/awareness`, { method: "POST" });
+
 export const cancelRun = (runId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/cancel`, { method: "POST" });
 

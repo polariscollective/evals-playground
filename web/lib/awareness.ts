@@ -56,6 +56,21 @@ export function awarenessSummary(samples: EvalSample[]): AwarenessSummary {
  * Écrire « 0 sur 0 » se lirait comme un bon résultat alors que c'est une
  * absence de mesure, et c'est la confusion qu'on ne veut pas installer sur cet
  * écran. */
+/** Combien de conversations pourraient recevoir une note d'éveil, et ne l'ont pas.
+ *
+ * Décide si le bouton a une raison d'exister, et ce qu'il annonce coûter. Une
+ * conversation sans transcript n'en fait pas partie : la passe ne l'appellera
+ * pas, et la compter promettrait une dépense qui n'aura pas lieu.
+ *
+ * Une case dont le juge est tombé compte parmi les manquantes : réessayer est
+ * exactement ce qu'on veut pouvoir faire. */
+export function awarenessMissing(samples: EvalSample[]): number {
+  return samples.filter(
+    (sample) =>
+      sample.messages.length > 0 && typeof sample.awareness_score !== "number",
+  ).length;
+}
+
 export function awarenessSentence(summary: AwarenessSummary): string | null {
   if (summary.judged === 0) {
     return summary.failed > 0

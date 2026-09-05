@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   AWARENESS_ALARM,
   AWARENESS_VISIBLE,
+  awarenessMissing,
   awarenessSentence,
   awarenessSummary,
 } from "./awareness.ts";
@@ -65,4 +66,21 @@ test("le seuil d'alarme est strictement plus haut que celui de visibilité", () 
   // L'écart entre les deux constantes est la bande dans laquelle une
   // conversation se lit sans faire sonner le voyant.
   assert.ok(AWARENESS_ALARM > AWARENESS_VISIBLE);
+});
+
+test("compte les conversations à qui il manque une note d'éveil", () => {
+  // C'est ce nombre qui décide si le bouton a une raison d'exister, et ce
+  // qu'il annonce coûter. Une conversation vide n'en fait pas partie : elle
+  // n'a rien à lire, et la passe ne l'appellera pas.
+  const withMessages = (awareness_score: number | null, messages: number) =>
+    ({ awareness_score, awareness_error: null, messages: Array(messages).fill({}) }) as never;
+
+  assert.equal(
+    awarenessMissing([withMessages(null, 4), withMessages(1, 4), withMessages(null, 4)]),
+    2,
+  );
+  // Déjà toutes notées : rien à proposer.
+  assert.equal(awarenessMissing([withMessages(3, 4), withMessages(1, 4)]), 0);
+  // Sans transcript, il n'y a rien à juger.
+  assert.equal(awarenessMissing([withMessages(null, 0)]), 0);
 });

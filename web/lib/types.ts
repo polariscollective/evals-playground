@@ -293,6 +293,9 @@ export interface EvalRun {
   usage: Record<string, ModelUsage>;
   cost_usd: number | null;
   rejudged_at: string | null;
+  /** Quand le juge d'éveil a été passé après coup, s'il l'a été. La
+   *  configuration continue de dire ce qui avait été demandé au lancement. */
+  awareness_judged_at: string | null;
   execution: string | null;
   /** Où le job a tourné : sur une machine de développement, ou sur Cloud Run. */
   origin: "local" | "cloud-run";

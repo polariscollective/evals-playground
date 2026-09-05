@@ -22,7 +22,7 @@ const JOB_NAME = process.env.EVAL_JOB_NAME || "evals-playground-runner";
  * `.env.example` donne la valeur habituelle. */
 const LOCAL_PYTHON = "EVAL_PYTHON";
 
-export type JobMode = "run" | "rejudge";
+export type JobMode = "run" | "rejudge" | "awareness";
 
 /** Où le job a tourné. Enregistré sur le run : le local et le déployé écrivent
  * dans la même base, et sans marqueur un essai jetable ressemble à un vrai

@@ -328,6 +328,20 @@ export async function resetForRejudge(
   );
 }
 
+/** Ouvre une passe d'éveil sur un run terminé.
+ *
+ * Ne remet **rien** en attente, à la différence de `resetForRejudge` : les
+ * notes, les transcripts et les statuts des cases sont ce que cette passe vient
+ * compléter, pas ce qu'elle refait. Seul le run repasse en `running`, pour que
+ * l'écran montre qu'il se passe quelque chose. */
+export async function startAwarenessPass(runId: string): Promise<void> {
+  await update(
+    RUNS,
+    { status: "running", error: null, started_at: NOW, finished_at: null },
+    { id: `eq.${runId}` },
+  );
+}
+
 /** Demande l'arrêt : le job le lit avant chaque case et se termine lui-même.
  *
  * Seul le run est marqué. Les cases restantes sont passées en `cancelled` par

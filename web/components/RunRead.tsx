@@ -333,6 +333,7 @@ export function JudgeBlock({ detail }: { detail: PublicRunDetail }) {
           <span className="font-mono text-xs text-zinc-500">
             judged by {shortModel(config.models.judge)}
             {detail.run.rejudged_at && " · re-judged since the run"}
+            {detail.run.awareness_judged_at && " · eval-awareness added after the run"}
           </span>
         </div>
 

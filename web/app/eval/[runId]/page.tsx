@@ -14,6 +14,7 @@ import {
   hasInspectLogs,
   inspectViewUrl,
   getTags,
+  judgeAwareness,
   matrixCsvText,
   publishRun,
   rejudgeRun,
@@ -25,6 +26,7 @@ import {
   sourceCsvUrl,
   updateDraft,
 } from "@/lib/api";
+import { awarenessMissing } from "@/lib/awareness";
 import { extensionsOf } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW } from "@/lib/view";
@@ -230,6 +232,55 @@ function RejudgePanel({
   );
 }
 
+/** Ajoute la note d'éveil à un run qui ne l'avait pas.
+ *
+ * Un bouton et non un panneau : la question du juge d'éveil est fixe, son
+ * échelle aussi, et le modèle est celui du juge du run. Il n'y a rien à
+ * remplir, donc rien à ouvrir. */
+function AwarenessButton({
+  detail,
+  onLaunched,
+}: {
+  detail: RunDetail;
+  onLaunched: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const missing = awarenessMissing(detail.samples);
+
+  const launch = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await judgeAwareness(detail.run.id);
+      onLaunched();
+    } catch (e) {
+      setFailed((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="space-y-2 rounded border border-zinc-300 p-4">
+      <h2 className="font-medium">Check whether the models noticed</h2>
+      <p className="text-sm text-zinc-700">
+        A judge reads the {missing} conversation{missing > 1 ? "s" : ""} without
+        a grade yet and says whether the evaluated model showed signs of knowing
+        it was being tested. <strong>No grade in this run is touched</strong> —
+        the transcripts are reread, and neither the evaluated models nor the
+        adversary are called again.
+      </p>
+      <button
+        onClick={launch}
+        disabled={busy}
+        className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+      >
+        {busy ? "Starting…" : "Run the eval-awareness judge"}
+      </button>
+      {failed && <p className="text-sm text-red-700">{failed}</p>}
+    </section>
+  );
+}
 
 export default function EvalRunPage({
   params,
@@ -368,6 +419,20 @@ export default function EvalRunPage({
     const timer = setInterval(() => load(transcripts), 3000);
     return () => clearInterval(timer);
   }, [running, load, transcripts]);
+
+  // `awarenessMissing` a besoin des transcripts pour distinguer une case
+  // notée d'une conversation vide — voir sa docstring. Un run qui tourne
+  // encore n'entre de toute façon jamais dans ce calcul (le bouton exige
+  // `!running`), donc ce chargement ne s'ajoute jamais au rafraîchissement de
+  // trois secondes ci-dessus : il n'a lieu qu'une fois, quand le run cesse de
+  // tourner — le même geste que celui qu'ouvrir une case déclenche déjà.
+  // Par un timer, même raison que plus haut : un setState synchrone dans le
+  // corps de l'effet est ce que react-hooks/set-state-in-effect interdit.
+  useEffect(() => {
+    if (!detail || running || transcripts) return;
+    const timer = setTimeout(() => setTranscripts(true), 0);
+    return () => clearTimeout(timer);
+  }, [detail, running, transcripts]);
 
   // Les journaux ne montent qu'à la toute fin du job — d'où la relecture quand
   // le run cesse de tourner, et non au seul premier rendu.
@@ -889,6 +954,10 @@ export default function EvalRunPage({
           }}
           onClose={() => setRejudging(false)}
         />
+      )}
+
+      {!running && awarenessMissing(detail.samples) > 0 && (
+        <AwarenessButton detail={detail} onLaunched={() => load(transcripts)} />
       )}
 
       <JudgeBlock detail={detail} />
