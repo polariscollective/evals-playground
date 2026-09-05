@@ -175,6 +175,28 @@ function authorOnly(ownerEmail: string, caller: string): string | null {
   );
 }
 
+/** Le refus d'un document, dit pour ce canal-ci.
+ *
+ * `verdictOf` écrit pour `/validate`, où INCOMPLETE n'est pas un refus : le
+ * document est valide, seul le CSV manque, et « upload the CSV before
+ * launching » dit quoi faire — dans un formulaire qui sait en recevoir un.
+ *
+ * Ici INCOMPLETE *est* un refus : rien n'est déposé, et aucun outil de ce
+ * serveur ne porte de fichier. Une clause propre au canal précède donc le
+ * message, faute de quoi un agent croirait avoir réussi un dépôt qui attend un
+ * envoi que rien ici ne permet.
+ *
+ * Une seule fonction pour les deux outils qui valident un document : la même
+ * phrase recopiée aux deux endroits a déjà divergé une fois. */
+function documentRefusal(message: string) {
+  const prefix = message.startsWith("INCOMPLETE")
+    ? "Nothing has been saved: unlike the web app, this channel has no way to carry a CSV " +
+      "upload. Write the scenarios out in full instead — see read_prompt — and call this again " +
+      "with the complete document.\n\n"
+    : "";
+  return { content: [{ type: "text" as const, text: `${prefix}${message}` }], isError: true as const };
+}
+
 const handler = createMcpHandler((server) => {
   server.registerTool(
     "read_prompt",
@@ -530,7 +552,7 @@ const handler = createMcpHandler((server) => {
 
       const verdict = verdictOf(yaml, costSentence);
       if (verdict.status !== 200 || verdict.message.startsWith("INCOMPLETE")) {
-        return toolError(verdict.message);
+        return documentRefusal(verdict.message);
       }
       const { config } = readConfigFile(yaml);
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
@@ -594,20 +616,7 @@ const handler = createMcpHandler((server) => {
     async ({ yaml, tags }, ctx) => {
       const verdict = verdictOf(yaml, costSentence);
       if (verdict.status !== 200 || verdict.message.startsWith("INCOMPLETE")) {
-        // `verdict.message` est écrit pour /validate, où INCOMPLETE n'est pas
-        // un refus : le document est valide, seul le CSV manque encore, et
-        // « It will load; upload the CSV before launching » dit quoi faire —
-        // dans un formulaire qui sait recevoir ce CSV. Ici, INCOMPLETE EST un
-        // refus : rien n'est déposé, et aucun outil de ce serveur ne porte de
-        // fichier. Une clause propre à ce canal précède donc le message
-        // plutôt que de le renvoyer tel quel, pour ne pas laisser croire à un
-        // dépôt réussi qui attendrait un envoi que rien ici ne permet.
-        const prefix = verdict.message.startsWith("INCOMPLETE")
-          ? "Nothing has been saved: unlike the web app, this channel has no way to carry a CSV " +
-            "upload. Write the scenarios out in full instead — see read_prompt — and call this again " +
-            "with the complete document.\n\n"
-          : "";
-        return { content: [{ type: "text", text: `${prefix}${verdict.message}` }], isError: true };
+        return documentRefusal(verdict.message);
       }
       const { config } = readConfigFile(yaml);
       const caller = await callerEmail(ctx);
