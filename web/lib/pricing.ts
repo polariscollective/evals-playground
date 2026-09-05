@@ -318,7 +318,15 @@ export function estimateCost(
  * renvoyant tout ce qui précède.
  *
  * Le juge relit la conversation entière, pas les tours ajoutés : son coût est
- * celui d'un jugement complet, quel que soit l'endroit de la reprise. */
+ * celui d'un jugement complet, quel que soit l'endroit de la reprise.
+ *
+ * Le prix retenu est celui de `targets[0]` : scénarios et cibles sont tous
+ * deux épinglés à un seul, pour que `conversations` (scénarios × cibles ×
+ * répétitions, dans `estimateTokens`) ne compte qu'une conversation et laisse
+ * `cells` porter tout le poids. Quand les cases à approfondir se répartissent
+ * sur plusieurs modèles cibles à des tarifs différents, l'appelant doit
+ * appeler cette fonction une fois par modèle cible — avec le nombre de cases
+ * de ce modèle — puis sommer les devis obtenus. */
 export function estimateDeepening(
   config: EvalRunConfig,
   from: number,
@@ -331,7 +339,13 @@ export function estimateDeepening(
   // Une case, poussée de `from` à `to`, répétée `cells` fois : la
   // configuration décrit une seule conversation et le poids porte le nombre.
   return estimateCost(
-    { ...config, turns: to, repetitions: cells, scenarios: config.scenarios.slice(0, 1) },
+    {
+      ...config,
+      turns: to,
+      repetitions: cells,
+      scenarios: config.scenarios.slice(0, 1),
+      models: { ...config.models, targets: config.models.targets.slice(0, 1) },
+    },
     null,
     from,
   );

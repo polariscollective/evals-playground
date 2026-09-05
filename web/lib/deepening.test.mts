@@ -87,3 +87,36 @@ test("approfondir de zéro tour ne coûte rien", () => {
   assert.equal(rien.usd, 0);
   assert.equal(rien.model_calls, 0);
 });
+
+test("le devis ne compte qu'une cible même si la configuration en propose plusieurs", () => {
+  // `conversations = scenarios × targets × repetitions` dans `estimateTokens`.
+  // Approfondir épingle déjà les scénarios à un seul ; il doit épingler les
+  // cibles pareil, sinon un run à plusieurs modèles cibles multiplie le devis
+  // par leur nombre au lieu de compter une conversation par case.
+  const config = {
+    ...CONFIG,
+    models: {
+      ...CONFIG.models,
+      targets: ["anthropic/claude-sonnet-5", "anthropic/claude-opus-5"],
+    },
+  };
+  const estimate = estimateDeepening(config, 4, 8, 5);
+  assert.equal(estimate.conversations, 5);
+});
+
+test("les appels facturés comptent les tours ajoutés, pas la profondeur totale", () => {
+  // Chemin non trivial : à repetitions = 1 et une seule cible, `conversations`
+  // vaut 1, donc `model_calls` porte directement `callsPerConversation`. Une
+  // formule qui facturerait `config.turns` (la profondeur totale, 8) au lieu
+  // des tours réellement facturés (4, de 4 à 8) donnerait la même valeur ici
+  // que pour un run neuf de huit tours — c'est cette confusion que le test
+  // écarte en affirmant les deux nombres, distincts, dans le même test.
+  const continué = estimateDeepening(CONFIG, 4, 8, 1);
+  const àNeuf = estimateCost({ ...CONFIG, turns: 8 }, null);
+
+  // 4 tours facturés : 4 appels à la cible, 3 à l'adversaire (un de moins,
+  // il ne répond pas après le dernier tour du modèle évalué), 1 au juge.
+  assert.equal(continué.model_calls, 8);
+  // Un run neuf de huit tours facture toute la profondeur : 8 + 7 + 1.
+  assert.equal(àNeuf.model_calls, 16);
+});
