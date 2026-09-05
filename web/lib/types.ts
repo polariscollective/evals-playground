@@ -334,6 +334,18 @@ export interface McpLaunch {
   created_at: string;
 }
 
+/** Une ligne de `profiles` : les deux plafonds d'un agent lancé par cette
+ *  personne, propres à elle plutôt qu'à tout le monde — voir `profiles.ts`.
+ *  Créée dès qu'une identité authentifiée se présente, par l'écran ou par
+ *  MCP ; jamais supprimée, pour qu'un plafond baissé ne remonte pas tout
+ *  seul. */
+export interface Profile {
+  user_email: string;
+  max_usd_per_run: number;
+  max_usd_per_hour: number;
+  created_at: string;
+}
+
 /** Une ligne d'`eval_samples` : une case de la matrice. */
 export interface EvalSample {
   id: string;

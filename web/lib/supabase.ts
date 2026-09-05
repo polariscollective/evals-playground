@@ -21,6 +21,10 @@ export const DRAFT_TAGS = "eval_run_draft_tags";
 // `mcpSpendLastHour` et `recordLaunch` dans `runs.ts`. Migrée et poussée dans
 // `polaris-supabase`, jamais ici.
 export const MCP_LAUNCHES = "mcp_launches";
+// Une ligne par personne, ses deux plafonds de dépense par agent — voir
+// `ensureProfile` dans `profiles.ts`. Migrée et poussée dans
+// `polaris-supabase`, jamais ici.
+export const PROFILES = "profiles";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *

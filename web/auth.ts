@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { isAllowedEmail } from "./lib/allowed-email";
+import { ensureProfile } from "./lib/profiles";
 
 /** Ce sans quoi la connexion ne peut pas fonctionner en déploiement.
  *
@@ -61,6 +62,18 @@ export async function requireUser(): Promise<
       response: Response.json({ error: "not signed in" }, { status: 401 }),
     };
   }
+
+  // Au mieux : la porte pose le profil dès qu'une identité se présente, comme
+  // `callerEmail` le fait côté MCP, pour qu'il existe déjà quand un lancement
+  // en aura besoin. Un raté ici ne doit pas faire échouer une lecture qui n'a
+  // rien à voir avec la dépense — seul un lancement se refuse pour ça, voir
+  // `mcp-budget.ts` et son appel dans `app/mcp/route.ts`.
+  try {
+    await ensureProfile(email);
+  } catch (error) {
+    console.error(`Could not ensure a profile for ${email}:`, (error as Error).message);
+  }
+
   return { email };
 }
 

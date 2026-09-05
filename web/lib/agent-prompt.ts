@@ -12,8 +12,12 @@
 //
 // La liste des modèles est passée en argument plutôt qu'écrite en dur : elle
 // vient du catalogue, et un agent qui invente un identifiant produit un run qui
-// meurt au premier appel.
+// meurt au premier appel. Le canal MCP reçoit en plus les deux plafonds de
+// l'appelant — son profil, jamais une variable d'environnement, voir
+// `mcp-budget.ts` — pour lui dire sous quel budget `launch_draft` le laisse
+// lancer aujourd'hui.
 import { catalog } from "./catalog.ts";
+import { formatUsd } from "./mcp-budget.ts";
 
 const TEMPLATE = `I need you to write the configuration for an evaluation I am about to run.
 
@@ -389,6 +393,20 @@ Call it once, on the complete document. There is no first pass on two or three
 scenarios: a refusal costs nothing, and a short document that passed would
 leave me a draft I did not ask for, at an address that is not the right one.
 
+## Launching it yourself
+
+Depositing a draft is not the end of it. \`launch_draft\` launches one — as a
+new run, or as an extension of one that already exists — which is the one
+moment in this whole channel that actually spends money. Two caps of your own
+bound it, a per-run one and a per-hour one on what you personally spend by
+MCP; right now they are {{CAPS}}. They live in your profile, not in this
+prompt or in this deployment's code — they are editable, and can change
+between one call and the next, so treat what \`submit_draft_run\` and
+\`submit_draft_extension\` report about the specific draft they just saved,
+right after quoting it, as the number to trust, not this one. Either cap
+refuses with the quote, the cap, and what you can do about it — trim the
+draft, wait, or ask me to launch it from the web app, where neither applies.
+
 ## Starting from something that already exists
 
 If I am asking you to change a run I have already done, or a draft I have
@@ -398,8 +416,12 @@ and all. Edit that, and submit the result.
 
 \`update_draft_run\` rewrites a draft in place instead of leaving a second one
 beside it — use it when correcting my draft is the point, so I am not left with
-two and no way to tell which is the good one. It refuses a draft that is not
-mine or that has already been launched, and it launches nothing either.`,
+two and no way to tell which is the good one. That only happens for its own
+author, though: rewriting someone else's draft instead forks it, leaving the
+original untouched and giving you a new one of your own, at an address the
+response names. A launched draft refuses a rewrite from its own author — the
+run it produced already points back to it — but forking one for someone else
+still works even then. Either way, nothing is launched.`,
   sample: `A hundred scenarios in one YAML document is normal, and it goes through in one
 call. Do not summarise, do not stop at a sample, and do not spread them over
 several calls — one document holding everything is the simplest thing for both
@@ -435,16 +457,37 @@ export function agentModels(): { id: string; label: string }[] {
   );
 }
 
-/** Le gabarit rempli pour un canal donné. */
-function fill(models: { id: string; label: string }[], channel: Channel): string {
+/** Les deux plafonds d'un profil, tels que `mcpAgentPrompt` les reçoit —
+ *  jamais lus ici, seulement mis en forme. */
+export interface AgentCaps {
+  maxUsdPerRun: number;
+  maxUsdPerHour: number;
+}
+
+/** Le gabarit rempli pour un canal donné.
+ *
+ * `caps` ne sert qu'au canal MCP — `{{CAPS}}` n'apparaît dans aucun texte du
+ * canal HTTP, donc le remplacement y est sans effet. `null` dit que le profil
+ * n'a pas pu être lu à cet instant, pas que l'appelant n'a pas de plafond :
+ * personne n'a de plafond illimité, une valeur ici serait devinée. */
+function fill(
+  models: { id: string; label: string }[],
+  channel: Channel,
+  caps: AgentCaps | null = null,
+): string {
   const list = models.length
     ? models.map((model) => `- \`${model.id}\` — ${model.label}`).join("\n")
     : "- (the catalogue could not be read; ask me for the model identifiers)";
+  const capsText = caps
+    ? `${formatUsd(caps.maxUsdPerRun)} per run and ${formatUsd(caps.maxUsdPerHour)} per rolling hour`
+    : "not available right now — submit_draft_run or submit_draft_extension will report them " +
+      "when you submit a draft, and launch_draft enforces them either way";
   return TEMPLATE.replace("{{MODELS}}", list)
     .replace("{{CHECK}}", channel.check)
     .replace("{{SAMPLE}}", channel.sample)
     .replace("{{CSV}}", channel.csv)
-    .replace("{{CLOSING}}", channel.closing);
+    .replace("{{CLOSING}}", channel.closing)
+    .replace("{{CAPS}}", capsText);
 }
 
 /** Le prompt tel que le sert `/prompt`, avec l'adresse du vérificateur.
@@ -467,7 +510,15 @@ export function agentPrompt(
  * Aucune origine à passer : il n'y a plus d'URL à joindre. Ce qui remplaçait
  * `{{VALIDATE}}` est ici `submit_draft_run`, qui valide, chiffre et dépose sans
  * rien lancer — donner en plus l'adresse du vérificateur enverrait l'agent
- * frapper à une porte HTTP qu'il n'a aucune raison d'ouvrir. */
-export function mcpAgentPrompt(models: { id: string; label: string }[]): string {
-  return fill(models, MCP);
+ * frapper à une porte HTTP qu'il n'a aucune raison d'ouvrir.
+ *
+ * `caps` porte les deux plafonds du profil de l'appelant — celui que
+ * `read_prompt` a résolu via `callerEmail` avant d'appeler cette fonction, pas
+ * un défaut de ce fichier. `null` quand le profil n'a pas pu être lu à cet
+ * instant : le gabarit le dit plutôt que d'inventer un chiffre. */
+export function mcpAgentPrompt(
+  models: { id: string; label: string }[],
+  caps: AgentCaps | null,
+): string {
+  return fill(models, MCP, caps);
 }

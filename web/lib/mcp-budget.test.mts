@@ -1,7 +1,7 @@
 // La décision de budget, sans Supabase : voir mcp-budget.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetProblem, maxUsdPerHour, maxUsdPerRun } from "./mcp-budget.ts";
+import { budgetProblem } from "./mcp-budget.ts";
 
 test("un devis sous les deux plafonds passe", () => {
   assert.equal(budgetProblem(1, 3, 2, 10), null);
@@ -11,8 +11,9 @@ test("un devis qui dépasse le plafond par run est refusé, sans regarder l'heur
   const problem = budgetProblem(5, 0, 2, 10);
   assert.match(problem!, /\$5\.00/);
   assert.match(problem!, /\$2\.00/);
-  assert.match(problem!, /MCP_MAX_USD_PER_RUN/);
-  assert.doesNotMatch(problem!, /MCP_MAX_USD_PER_HOUR/);
+  // Les plafonds sont ceux du profil de l'appelant, plus une variable
+  // d'environnement partagée par tout le monde — voir profiles.ts.
+  assert.doesNotMatch(problem!, /MCP_MAX_USD/);
 });
 
 test("un devis qui passerait seul mais ferait dépasser l'heure est refusé", () => {
@@ -20,7 +21,7 @@ test("un devis qui passerait seul mais ferait dépasser l'heure est refusé", ()
   assert.match(problem!, /\$9\.00/, "le déjà-dépensé doit être lisible");
   assert.match(problem!, /\$11\.00/, "le projeté doit être lisible");
   assert.match(problem!, /\$10\.00/, "le plafond doit être lisible");
-  assert.match(problem!, /MCP_MAX_USD_PER_HOUR/);
+  assert.doesNotMatch(problem!, /MCP_MAX_USD/);
 });
 
 test("pile au plafond passe, un cent au-dessus refuse", () => {
@@ -33,57 +34,4 @@ test("pile au plafond passe, un cent au-dessus refuse", () => {
 test("un devis minuscule ne s'affiche pas 0,00 $", () => {
   const problem = budgetProblem(0.001, 0, 0.0001, 10);
   assert.match(problem!, /\$0\.0010/);
-});
-
-
-
-
-test("les plafonds prennent leur défaut sans variable d'environnement", () => {
-  const savedRun = process.env.MCP_MAX_USD_PER_RUN;
-  const savedHour = process.env.MCP_MAX_USD_PER_HOUR;
-  delete process.env.MCP_MAX_USD_PER_RUN;
-  delete process.env.MCP_MAX_USD_PER_HOUR;
-  try {
-    assert.equal(maxUsdPerRun(), 2);
-    assert.equal(maxUsdPerHour(), 10);
-  } finally {
-    if (savedRun === undefined) delete process.env.MCP_MAX_USD_PER_RUN;
-    else process.env.MCP_MAX_USD_PER_RUN = savedRun;
-    if (savedHour === undefined) delete process.env.MCP_MAX_USD_PER_HOUR;
-    else process.env.MCP_MAX_USD_PER_HOUR = savedHour;
-  }
-});
-
-test("les plafonds lisent la variable d'environnement quand elle est valide", () => {
-  const savedRun = process.env.MCP_MAX_USD_PER_RUN;
-  const savedHour = process.env.MCP_MAX_USD_PER_HOUR;
-  process.env.MCP_MAX_USD_PER_RUN = "7.5";
-  process.env.MCP_MAX_USD_PER_HOUR = "42";
-  try {
-    assert.equal(maxUsdPerRun(), 7.5);
-    assert.equal(maxUsdPerHour(), 42);
-  } finally {
-    if (savedRun === undefined) delete process.env.MCP_MAX_USD_PER_RUN;
-    else process.env.MCP_MAX_USD_PER_RUN = savedRun;
-    if (savedHour === undefined) delete process.env.MCP_MAX_USD_PER_HOUR;
-    else process.env.MCP_MAX_USD_PER_HOUR = savedHour;
-  }
-});
-
-test("une variable invalide ou négative retombe sur le défaut", () => {
-  const savedRun = process.env.MCP_MAX_USD_PER_RUN;
-  process.env.MCP_MAX_USD_PER_RUN = "not a number";
-  try {
-    assert.equal(maxUsdPerRun(), 2);
-  } finally {
-    if (savedRun === undefined) delete process.env.MCP_MAX_USD_PER_RUN;
-    else process.env.MCP_MAX_USD_PER_RUN = savedRun;
-  }
-  process.env.MCP_MAX_USD_PER_RUN = "-1";
-  try {
-    assert.equal(maxUsdPerRun(), 2);
-  } finally {
-    if (savedRun === undefined) delete process.env.MCP_MAX_USD_PER_RUN;
-    else process.env.MCP_MAX_USD_PER_RUN = savedRun;
-  }
 });

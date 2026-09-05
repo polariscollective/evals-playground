@@ -24,8 +24,9 @@ import {
   updateDraftOwned,
 } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
-import { budgetProblem, formatUsd, maxUsdPerHour, maxUsdPerRun } from "@/lib/mcp-budget";
+import { budgetProblem, formatUsd } from "@/lib/mcp-budget";
 import { cellsOf, overallMean } from "@/lib/matrix";
+import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import {
   NotFound,
@@ -58,7 +59,7 @@ import {
 import { startJob } from "@/lib/trigger";
 import { MAX_TURNS, configProblem, extendProblem } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
-import type { Draft, RunDetail } from "@/lib/types";
+import type { Draft, Profile, RunDetail } from "@/lib/types";
 
 /** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
  *  rendre telle quelle — un id malformé ou un run inconnu se traitent pareil
@@ -117,10 +118,45 @@ function toolError(message: string) {
 }
 
 /** L'email posé par `verifyToken` dans `extra`. `unknown` s'il manque, ce qui
- *  ne devrait arriver que si `withMcpAuth` change de forme. */
-function callerEmail(ctx: { http?: { authInfo?: AuthInfo } }): string {
+ *  ne devrait arriver que si `withMcpAuth` change de forme.
+ *
+ * C'est la porte MCP au sens du profil : dès qu'une identité authentifiée se
+ * présente ici, son profil est posé s'il n'existait pas encore — exactement
+ * ce que fait `requireUser` côté web, une seule fonction (`ensureProfile`)
+ * pour les deux. Au mieux, et en tâche de fond : la plupart des outils qui
+ * appellent `callerEmail` ne dépensent rien, et un raté ici ne doit pas les
+ * faire échouer. Les outils qui, eux, dépensent — `launch_draft` en tête —
+ * relisent le profil eux-mêmes via `profileOf` et refusent explicitement
+ * s'il manque encore ; voir plus bas. */
+async function callerEmail(ctx: { http?: { authInfo?: AuthInfo } }): Promise<string> {
   const email = ctx.http?.authInfo?.extra?.email;
-  return typeof email === "string" ? email : "unknown";
+  const caller = typeof email === "string" ? email : "unknown";
+  if (caller !== "unknown") {
+    try {
+      await ensureProfile(caller);
+    } catch (error) {
+      console.error(`Could not ensure a profile for ${caller}:`, (error as Error).message);
+    }
+  }
+  return caller;
+}
+
+/** Le profil de l'appelant, ou `null` s'il ne peut ni être lu ni être créé.
+ *
+ * Un échec est journalisé, jamais remonté tel quel : cette fonction sert
+ * aussi les aperçus de lançabilité de `submit_draft_run` et
+ * `submit_draft_extension`, où rater la lecture du profil ne doit pas faire
+ * échouer tout l'outil — seul un lancement réel se refuse pour ça.
+ * `launch_draft` appelle la même fonction mais transforme lui-même un `null`
+ * en refus, puisque chez lui, contrairement aux deux autres, un profil
+ * manquant veut dire de l'argent dépensé sans plafond connu. */
+async function profileOf(caller: string): Promise<Profile | null> {
+  try {
+    return await ensureProfile(caller);
+  } catch (error) {
+    console.error(`Could not read or create a profile for ${caller}:`, (error as Error).message);
+    return null;
+  }
 }
 
 /** Le refus d'écrire sur un run qui n'est pas le sien, ou rien quand
@@ -149,11 +185,16 @@ const handler = createMcpHandler((server) => {
         "document, the models available, and how to hand the finished one over. Read it before writing a run.",
       inputSchema: z.object({}),
     },
-    async () => {
+    async (_input, ctx) => {
       // La variante MCP, pas celle de /prompt : elle renvoie vers
       // submit_draft_run plutôt que vers le vérificateur HTTP, qui n'est pas
       // une porte que cet agent-là a de raison d'ouvrir.
-      return { content: [{ type: "text", text: mcpAgentPrompt(agentModels()) }] };
+      const caller = await callerEmail(ctx);
+      const profile = await profileOf(caller);
+      const caps = profile
+        ? { maxUsdPerRun: profile.max_usd_per_run, maxUsdPerHour: profile.max_usd_per_hour }
+        : null;
+      return { content: [{ type: "text", text: mcpAgentPrompt(agentModels(), caps) }] };
     },
   );
 
@@ -443,7 +484,7 @@ const handler = createMcpHandler((server) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
       const { draft } = found;
-      const caller = callerEmail(ctx);
+      const caller = await callerEmail(ctx);
       const isOwner = draft.created_by === caller;
 
       // Ce refus-ci ne vaut que pour l'auteur : lancer un run a marqué CE
@@ -527,7 +568,7 @@ const handler = createMcpHandler((server) => {
         return { content: [{ type: "text", text: verdict.message }], isError: true };
       }
       const { config } = readConfigFile(yaml);
-      const caller = callerEmail(ctx);
+      const caller = await callerEmail(ctx);
       const draftId = await createDraft(config, null, caller, "mcp");
       if (tags && tags.length > 0) {
         // Après la création, jamais avant : un document refusé n'écrit ni
@@ -541,7 +582,17 @@ const handler = createMcpHandler((server) => {
       // configuration, pas une seconde façon de la chiffrer.
       const quote = estimateCost(config);
       const spentLastHour = await mcpSpendLastHour(caller);
-      const overBudget = budgetProblem(quote.usd, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+      // Les plafonds viennent du profil, pas d'un défaut codé en dur : si le
+      // profil ne peut pas être lu à cet instant, on ne le sait pas plutôt
+      // que de deviner — l'aperçu le dit, mais rien n'est refusé pour ça, le
+      // brouillon est déjà déposé au-dessus. `launch_draft`, lui, refusera
+      // vraiment le lancement s'il ne peut toujours pas lire de profil.
+      const profile = await profileOf(caller);
+      const overBudget = profile
+        ? budgetProblem(quote.usd, spentLastHour, profile.max_usd_per_run, profile.max_usd_per_hour)
+        : "your spending profile could not be read just now, so whether you can launch this could " +
+          "not be checked — try again in a moment, or call launch_draft directly, which will tell " +
+          "you for sure.";
       // Ce que l'appelant a demandé : pas une promesse que ce brouillon SERA
       // lançable, seulement s'il l'est par lui, maintenant — un autre
       // lancement, par lui ou quelqu'un d'autre, peut changer la réponse
@@ -570,13 +621,16 @@ const handler = createMcpHandler((server) => {
       description:
         "Unlike every other tool in this server, calling this one spends real money: it launches the " +
         "draft — as a new run, or as an extension of one that already exists — which calls three " +
-        "model providers. Two caps bound every launch, both set by this deployment and adjustable " +
-        "there without a code change: MCP_MAX_USD_PER_RUN (default $2) refuses a draft quoted above " +
-        "it on its own; MCP_MAX_USD_PER_HOUR (default $10) refuses one that would push what you have " +
-        "personally spent by MCP in the last rolling hour above it — a new run and an extension count " +
-        "the same way, against the same hour. Either refusal names the quote, the cap, and what you " +
-        "can do about it — wait, trim the draft, or ask a human to launch it from the web app, where " +
-        "neither cap applies.\n\n" +
+        "model providers. Two caps of your own bound every launch, read from your profile rather " +
+        "than from this code: a per-run cap refuses a draft quoted above it on its own; a per-hour " +
+        "cap refuses one that would push what you have personally spent by MCP in the last rolling " +
+        "hour above it — a new run and an extension count the same way, against the same hour. " +
+        "submit_draft_run and submit_draft_extension both report the numbers that apply to you today " +
+        "right after quoting a draft — they are editable and can change, so trust those over an " +
+        "older answer. Either refusal here names the quote, the cap, and what you can do about it — " +
+        "wait, trim the draft, or ask a human to launch it from the web app, where neither cap " +
+        "applies. If your profile itself cannot be found or created, the launch is refused for that " +
+        "reason instead: a cap that cannot be read is never assumed to allow anything.\n\n" +
         "What stays true here as everywhere else: this launches a draft that was already checked and " +
         "saved earlier — by submit_draft_run or submit_draft_extension, or from the web app — never a " +
         "configuration composed in this same call. Nothing about the draft is read back and " +
@@ -595,7 +649,7 @@ const handler = createMcpHandler((server) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
       const { draft } = found;
-      const caller = callerEmail(ctx);
+      const caller = await callerEmail(ctx);
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
 
       if (draft.kind === "extend") {
@@ -661,7 +715,23 @@ const handler = createMcpHandler((server) => {
         }
         const quote = plan.estimate?.usd ?? 0;
         const spentLastHour = await mcpSpendLastHour(caller);
-        const overBudget = budgetProblem(quote, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+        // Pas de profil, pas de dépense : un plafond qu'on ne trouve pas ne
+        // se devine jamais vers le haut, donc ce lancement se refuse plutôt
+        // que de retomber sur une valeur codée en dur.
+        const profile = await profileOf(caller);
+        if (!profile) {
+          return toolError(
+            "Your spending profile could not be found or created right now, so this launch is " +
+              "refused: a cap that cannot be read is never assumed to allow anything. Try again in " +
+              "a moment, or ask a human to launch it from the web app, where no cap applies.",
+          );
+        }
+        const overBudget = budgetProblem(
+          quote,
+          spentLastHour,
+          profile.max_usd_per_run,
+          profile.max_usd_per_hour,
+        );
         if (overBudget) return toolError(overBudget);
 
         // `extendRun` recalcule son propre plan pour écrire sur l'état le
@@ -730,7 +800,22 @@ const handler = createMcpHandler((server) => {
       // aucun devis à lire, seul un run en a un.
       const quote = estimateCost(draft.config);
       const spentLastHour = await mcpSpendLastHour(caller);
-      const overBudget = budgetProblem(quote.usd, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+      // Pas de profil, pas de dépense : voir le même refus dans la branche
+      // d'extension ci-dessus.
+      const profile = await profileOf(caller);
+      if (!profile) {
+        return toolError(
+          "Your spending profile could not be found or created right now, so this launch is " +
+            "refused: a cap that cannot be read is never assumed to allow anything. Try again in a " +
+            "moment, or ask a human to launch it from the web app, where no cap applies.",
+        );
+      }
+      const overBudget = budgetProblem(
+        quote.usd,
+        spentLastHour,
+        profile.max_usd_per_run,
+        profile.max_usd_per_hour,
+      );
       if (overBudget) return toolError(overBudget);
 
       const run = await createRun(draft.config, caller, draft.csv_text, draft_id, "mcp");
@@ -928,7 +1013,7 @@ const handler = createMcpHandler((server) => {
       if ("error" in found) return found.error;
       const { run } = found.run;
 
-      const caller = callerEmail(ctx);
+      const caller = await callerEmail(ctx);
       const ownership = authorOnly(run.user_email, caller);
       if (ownership) return toolError(ownership);
 
@@ -1013,7 +1098,16 @@ const handler = createMcpHandler((server) => {
       // un autre lancement, par lui ou quelqu'un d'autre, peut faire bouger
       // la réponse d'ici à ce qu'il rappelle `launch_draft`.
       const spentLastHour = await mcpSpendLastHour(caller);
-      const overBudget = budgetProblem(quote, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+      // Comme dans submit_draft_run : les plafonds viennent du profil, et un
+      // profil illisible ne fait pas échouer le dépôt du brouillon, seulement
+      // cet aperçu-ci — `launch_draft` refusera vraiment s'il ne peut
+      // toujours pas en lire un.
+      const profile = await profileOf(caller);
+      const overBudget = profile
+        ? budgetProblem(quote, spentLastHour, profile.max_usd_per_run, profile.max_usd_per_hour)
+        : "your spending profile could not be read just now, so whether you can launch this could " +
+          "not be checked — try again in a moment, or call launch_draft directly, which will tell " +
+          "you for sure.";
       const launchability = overBudget
         ? `Not launchable by you today: ${overBudget}`
         : "You can launch it yourself with launch_draft today, under your two caps — that can " +
@@ -1054,7 +1148,7 @@ const handler = createMcpHandler((server) => {
       if ("error" in result) return result.error;
       const runId = result.run.run.id;
 
-      const ownership = authorOnly(result.run.run.user_email, callerEmail(ctx));
+      const ownership = authorOnly(result.run.run.user_email, await callerEmail(ctx));
       if (ownership) return toolError(ownership);
 
       const created = await tagsForLabels(tags);
@@ -1112,7 +1206,7 @@ const handler = createMcpHandler((server) => {
       if ("error" in result) return result.error;
       const { run } = result.run;
 
-      const ownership = authorOnly(run.user_email, callerEmail(ctx));
+      const ownership = authorOnly(run.user_email, await callerEmail(ctx));
       if (ownership) return toolError(ownership);
 
       const current = field === "notes" ? run.notes : run.analysis;
