@@ -8,6 +8,31 @@
 
 **Tech Stack:** Next.js 15 / TypeScript (`web/`), Python 3 + Pydantic + inspect_ai (`backend/`), JSON partagé (`shared/pricing.json`), tests `node --test` et `pytest`.
 
+## ⏸ Ce plan est en attente — à rebaser avant de l'exécuter
+
+Écrit le 4 septembre contre un code qui a changé depuis. Une session Claude
+Code concurrente mène le plan `2026-09-05-approfondir-un-run.md` dans le même
+dossier, et sa tâche 3 (commit `8d05845`) a réécrit `web/lib/pricing.ts` pour
+chiffrer une continuation sans refacturer les tours déjà joués.
+
+**Avant tout dispatch, relire et réaligner :**
+
+- **Tâche 2** — `estimateTokens` n'est plus celle que le plan cite. Le
+  paramètre par scénario doit se poser *par-dessus* la logique de continuation,
+  pas à sa place. Lire `web/lib/pricing.ts` et `web/lib/deepening.test.mts`
+  avant d'écrire quoi que ce soit.
+- **Tâche 4** — `ExtendRequest` porte désormais `turns` et `deepen`. Une
+  extension qui approfondit facture des tours neufs : la liste de longueurs
+  passée à `estimateCost` reste juste, l'unité étant le tour, mais le câblage
+  doit passer par leur chemin de continuation.
+- **Tâche 5** — leurs tâches 6 et 7 réécrivent `ExtendPanel.tsx` et la page du
+  run. Attendre qu'elles aient atterri.
+
+Les tâches **1** (le champ déclaré) et **3** (`measured-length.ts`, fichier
+neuf) sont indépendantes de tout cela et restent exactes telles qu'écrites.
+
+---
+
 ## Global Constraints
 
 - **Les deux estimateurs sont jumeaux.** Toute règle de calcul ajoutée à `web/lib/pricing.ts` l'est aussi à `backend/playground/pricing.py`, et réciproquement. Un cas testé d'un côté est testé de l'autre.

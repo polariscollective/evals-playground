@@ -186,11 +186,17 @@ ressemblera aux précédents. C'est faux dans le détail et c'est la meilleure
 information disponible — la seule autre option étant de redemander un nombre à
 quelqu'un qui vient précisément d'étendre pour ne pas avoir à en redonner.
 
-Rien à remettre à l'échelle au passage : `ExtendRequest`
-(`web/lib/types.ts:159`) ne porte pas de champ `turns`, et la route le dit
-(« ni critère, ni échelle, ni juge, ni nombre de tours »). Une extension joue
-forcément le même nombre de tours que le run, donc une moyenne par appel reste
-valable telle quelle.
+**Et une extension peut approfondir.** `ExtendRequest` porte `turns` et
+`deepen` : on peut demander plus de tours, et désigner les cases à continuer.
+La phrase « ni critère, ni échelle, ni juge, ni nombre de tours » ne vaut plus
+que pour les trois premiers.
+
+C'est précisément ce que l'unité choisie encaisse. La mesure est un budget de
+sortie **par tour**, pas par conversation : une case qui passe de trois à six
+tours se chiffre en trois tours de plus à la même longueur, sans rien
+recalculer. Une moyenne par conversation, elle, aurait fallu être remise à
+l'échelle — et par quel facteur, l'historique renvoyé à chaque tour faisant
+croître le coût plus vite que les tours.
 
 **L'adversaire.** Sa longueur n'est pas celle des réponses évaluées : il écrit
 des tours d'utilisateur. On lui applique la même règle qu'au reste — mesuré
