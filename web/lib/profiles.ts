@@ -9,6 +9,7 @@
 // besoin : un agent qui n'a jamais ouvert l'écran ne doit pas découvrir
 // l'absence de profil au moment où il tente de dépenser.
 import "server-only";
+import { DEFAULT_SCENARIO_ADVICE } from "./scenario-advice";
 import { PROFILES, SupabaseError, insert, select, update } from "./supabase";
 import type { Profile } from "./types";
 
@@ -72,9 +73,16 @@ export async function updateProfileCaps(
 
 /** Écrit — ou efface — la surcharge du conseil d'écriture de scénario.
  *
- * `null` remet le défaut. Une chaîne blanche est ramenée à `null` avant
- * d'écrire : stocker du blanc ferait une surcharge qui existe sans rien dire,
- * indistinguable à la lecture d'un vrai texte pour `scenarioAdvice`.
+ * `null` remet le défaut. Une chaîne blanche, ou détourée égale au défaut,
+ * est ramenée à `null` avant d'écrire : stocker du blanc, ou une copie du
+ * défaut, ferait une surcharge qui existe sans rien dire — indistinguable à
+ * la lecture d'un vrai texte pour `scenarioAdvice`, mais qui prive
+ * silencieusement cette personne des améliorations futures du défaut. Le
+ * détourage ne sert qu'à cette comparaison : un texte réellement différent
+ * garde ses blancs internes, écrit tel quel.
+ *
+ * Ce filet existe en plus de celui de la page `/scenarios` : la route peut
+ * être appelée sans passer par elle.
  *
  * Relit après coup pour la même raison qu'`updateProfileCaps` : `ensureProfile`
  * est la seule fonction qui sache refaire exister la ligne. */
@@ -82,7 +90,8 @@ export async function updateScenarioAdvice(
   email: string,
   advice: string | null,
 ): Promise<Profile> {
-  const value = advice && advice.trim() !== "" ? advice : null;
+  const trimmed = advice?.trim() ?? "";
+  const value = trimmed !== "" && trimmed !== DEFAULT_SCENARIO_ADVICE.trim() ? advice : null;
   await update(PROFILES, { scenario_advice: value }, { user_email: `eq.${email}` });
   return ensureProfile(email);
 }

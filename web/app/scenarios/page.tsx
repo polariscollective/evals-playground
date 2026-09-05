@@ -18,6 +18,12 @@ import { DEFAULT_SCENARIO_ADVICE, scenarioAdvice } from "@/lib/scenario-advice";
 
 export default function ScenariosPage() {
   const [saved, setSaved] = useState<string | null>(null);
+  // `saved === null` est ambigu tant que le profil n'est pas revenu : ça peut
+  // vouloir dire « sans surcharge » comme « pas encore su ». Un drapeau à part
+  // lève l'ambiguïté, plutôt que de laisser la page se croire sans surcharge
+  // — et copier ou écraser le défaut — avant d'avoir lu ce que porte vraiment
+  // le profil.
+  const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -29,6 +35,7 @@ export default function ScenariosPage() {
       .then(({ profile }) => {
         setSaved(profile.scenario_advice);
         setDraft(scenarioAdvice(profile.scenario_advice));
+        setLoaded(true);
       })
       .catch((e) => setLoadError((e as Error).message));
   }, []);
@@ -37,12 +44,20 @@ export default function ScenariosPage() {
   const custom = saved !== null && saved.trim() !== "";
 
   /** Ce que « Save » doit envoyer : `null` — le geste « remets le défaut » —
-   *  dès que la saisie est vide, ou identique au défaut telle quelle. Les deux
-   *  cas veulent dire la même chose ; les distinguer laisserait une copie
+   *  dès que la saisie est vide, ou détourée égale au défaut. Les deux cas
+   *  veulent dire la même chose ; les distinguer laisserait une copie
    *  s'écrire à la place du `null` qui laisse le défaut s'améliorer sous ce
-   *  profil sans que personne ne l'ait voulu. */
+   *  profil sans que personne ne l'ait voulu.
+   *
+   *  La comparaison détoure les deux côtés — un copier-coller qui ajoute un
+   *  espace ou un saut de ligne final ne doit pas fabriquer une surcharge —
+   *  mais ne touche pas aux blancs internes : quelqu'un qui a vraiment édité
+   *  le texte garde sa version telle quelle, même si elle ne diffère que par
+   *  une indentation. */
   function normalizedDraft(): string | null {
-    if (draft.trim() === "" || draft === DEFAULT_SCENARIO_ADVICE) return null;
+    if (draft.trim() === "" || draft.trim() === DEFAULT_SCENARIO_ADVICE.trim()) {
+      return null;
+    }
     return draft;
   }
 
@@ -62,14 +77,6 @@ export default function ScenariosPage() {
       .finally(() => setBusy(false));
   }
 
-  if (loadError) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <p className="text-sm text-red-700">{loadError}</p>
-      </main>
-    );
-  }
-
   return (
     <main className="mx-auto max-w-3xl space-y-4 p-6">
       <header className="space-y-1">
@@ -80,79 +87,87 @@ export default function ScenariosPage() {
         </p>
       </header>
 
-      <p className="text-sm text-zinc-600">
-        This is the exact text the <code>read_scenario_advice</code> MCP tool
-        serves. Paste it into an agent that only has HTTP, or let one that holds
-        the tools fetch it itself. Edit it and the tool serves your version.
-      </p>
+      {loadError && <p className="text-sm text-red-700">{loadError}</p>}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <CopyButton
-          value={shown}
-          title="Copy the scenario-writing advice"
-          className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
-        >
-          {(copied) => (copied ? "Copied" : "Copy")}
-        </CopyButton>
-        {!editing && (
-          <button
-            onClick={() => {
-              setDraft(shown);
-              setEditing(true);
-            }}
-            className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
-          >
-            Edit
-          </button>
-        )}
-        {custom && !editing && (
-          <button
-            onClick={() => write(null)}
-            disabled={busy}
-            className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
-          >
-            Back to default
-          </button>
-        )}
-        {custom && (
-          <span className="text-xs text-zinc-500">Edited — the default is no longer shown.</span>
-        )}
-      </div>
+      {loaded && (
+        <>
+          <p className="text-sm text-zinc-600">
+            This is the exact text the <code>read_scenario_advice</code> MCP tool
+            serves. Paste it into an agent that only has HTTP, or let one that holds
+            the tools fetch it itself. Edit it and the tool serves your version.
+          </p>
 
-      {saveError && <p className="text-sm text-red-700">{saveError}</p>}
-
-      {editing ? (
-        <div className="space-y-2">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={30}
-            className="w-full rounded border border-zinc-300 p-3 font-mono text-xs"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => write(normalizedDraft())}
-              disabled={busy}
-              className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
-            >
-              {busy ? "Saving…" : "Save"}
-            </button>
-            <button
-              onClick={() => {
-                setDraft(shown);
-                setEditing(false);
-                setSaveError(null);
-              }}
+          <div className="flex flex-wrap items-center gap-2">
+            <CopyButton
+              value={shown}
+              title="Copy the scenario-writing advice"
               className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
             >
-              Cancel
-            </button>
+              {(copied) => (copied ? "Copied" : "Copy")}
+            </CopyButton>
+            {!editing && (
+              <button
+                onClick={() => {
+                  setDraft(shown);
+                  setEditing(true);
+                }}
+                disabled={busy}
+                className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Edit
+              </button>
+            )}
+            {custom && !editing && (
+              <button
+                onClick={() => write(null)}
+                disabled={busy}
+                className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Back to default
+              </button>
+            )}
+            {custom && (
+              <span className="text-xs text-zinc-500">Edited — the default is no longer shown.</span>
+            )}
           </div>
-        </div>
-      ) : (
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-          {shown}
-        </pre>
+
+          {saveError && <p className="text-sm text-red-700">{saveError}</p>}
+
+          {editing ? (
+            <div className="space-y-2">
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                rows={30}
+                className="w-full rounded border border-zinc-300 p-3 font-mono text-xs"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => write(normalizedDraft())}
+                  disabled={busy}
+                  className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  {busy ? "Saving…" : "Save"}
+                </button>
+                <button
+                  onClick={() => {
+                    setDraft(shown);
+                    setEditing(false);
+                    setSaveError(null);
+                  }}
+                  disabled={busy}
+                  className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+              {shown}
+            </pre>
+          )}
+        </>
       )}
     </main>
   );
