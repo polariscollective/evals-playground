@@ -105,6 +105,30 @@ test("une case dont le modèle évalué est aussi l'adversaire est écartée", (
   assert.equal(mesure.skipped, 1);
 });
 
+test("un adversaire mesurable rend une longueur non nulle (témoin positif)", () => {
+  // Aucun rôle ne se recoupe ici : sert de témoin aux deux tests suivants, qui
+  // rendent `null` faute d'un adversaire distinct des autres rôles — sans lui,
+  // un `measureRun` qui rendrait toujours `null` passerait quand même.
+  const cells = [
+    cell(0, "grok/grok-4.3", 500, { "anthropic/claude-haiku-4-5": 1200 }),
+  ];
+  assert.equal(measureRun(cells, MODELS, 3).adversary, 600);
+});
+
+test("un adversaire qui est aussi une cible n'est pas mesurable", () => {
+  const models: EvalModels = { ...MODELS, adversary: "grok/grok-4.3" };
+  const cells = [cell(0, "grok/grok-4.3", 1200)];
+  assert.equal(measureRun(cells, models, 3).adversary, null);
+});
+
+test("un adversaire qui est aussi le juge n'est pas mesurable", () => {
+  const models: EvalModels = { ...MODELS, judge: "anthropic/claude-haiku-4-5" };
+  const cells = [
+    cell(0, "grok/grok-4.3", 500, { "anthropic/claude-haiku-4-5": 1200 }),
+  ];
+  assert.equal(measureRun(cells, models, 3).adversary, null);
+});
+
 test("les cases non terminées ne comptent pas", () => {
   const cells = [
     { ...cell(0, "grok/grok-4.3", 500), status: "error" as const },
@@ -125,6 +149,10 @@ test("une case sans usage enregistré ne compte pas", () => {
     1,
   );
   assert.equal(mesure.run, null);
+  // Muette, pas écartée : elle ne doit alourdir ni le compteur de cumul de
+  // rôles, ni celui des cases qui ont porté la mesure.
+  assert.equal(mesure.kept, 0);
+  assert.equal(mesure.skipped, 0);
 });
 
 test("l'adversaire se mesure sur turns − 1 appels par case", () => {
