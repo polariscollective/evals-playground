@@ -1,26 +1,40 @@
 "use client";
 
-// Compléter un run : lui ajouter des scénarios, des modèles, des essais.
+// Compléter un run : lui ajouter des scénarios, des modèles, des essais — et
+// approfondir des essais déjà joués, en poussant leur conversation à plus de
+// tours.
 //
-// Le panneau ne propose que ces trois axes, et la température. Le juge,
-// l'échelle, l'adversaire et le nombre de tours sont montrés mais non
-// modifiables : deux lots jugés autrement ne seraient plus comparables, et une
-// matrice n'existe que pour permettre cette comparaison. La route d'API refuse
-// d'ailleurs ces champs — ce n'est pas l'interface qui tient la règle.
+// Le panneau ne propose que ces axes-là, et la température. Le juge, l'échelle
+// et l'adversaire sont montrés mais non modifiables : deux lots jugés
+// autrement ne seraient plus comparables, et une matrice n'existe que pour
+// permettre cette comparaison. La route d'API refuse d'ailleurs ces champs —
+// ce n'est pas l'interface qui tient la règle. Le nombre de tours échappe à
+// cette règle-là : on ne raccourcit jamais une conversation déjà jouée, on ne
+// peut que l'allonger, et l'approfondir la fait rejuger entière.
 import { useEffect, useState } from "react";
 import { getCatalog } from "@/lib/api";
 import { parseCsv } from "@/lib/csv";
+import { countAllGraded, countsByLevel, countsForSelection } from "@/lib/deepen-counts";
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
+import { addEstimates, estimateCost, estimateDeepening } from "@/lib/pricing";
 import type {
+  CostEstimate,
   EvalRun,
+  EvalSample,
   EvalScenario,
   ExtendRequest,
   ProviderInfo,
   ToolSpec,
 } from "@/lib/types";
+
+// Dupliquée ici faute d'être exportée par `web/lib/validate.ts` (qui porte la
+// même constante, non exportée non plus) ou par `web/app/page.tsx` : rien à
+// importer, donc rien d'autre à faire que de la recopier et de le dire — voir
+// le compte rendu de la tâche.
+const MAX_TURNS = 100;
 
 /** Un CSV reversé, avant qu'on ait dit quelles colonnes lire. */
 interface LoadedCsv {
@@ -81,6 +95,14 @@ export function ExtendPanel({
   run,
   /** Combien d'essais chaque couple porte déjà, du plus petit au plus grand. */
   repetitionRange,
+  /** Les essais déjà joués par ce run, pour compter combien chaque palier de
+   *  l'échelle en porte et proposer de les approfondir.
+   *
+   * Défaut à vide plutôt qu'obligatoire : au moment d'écrire ce panneau, son
+   * seul appelant ne les passe pas encore (voir le compte rendu de la tâche).
+   * Tant que ce prop n'est pas fourni, chaque palier s'affiche à zéro essai et
+   * ne se coche pas — jamais une case à cocher qui approfondirait au hasard. */
+  samples = [],
   /** Une extension déjà écrite — par un agent, en brouillon — que le panneau
    *  ouvre remplie plutôt que vide.
    *
@@ -94,6 +116,7 @@ export function ExtendPanel({
 }: {
   run: EvalRun;
   repetitionRange: [number, number];
+  samples?: EvalSample[];
   proposal?: ExtendRequest | null;
   onCancel: () => void;
   onSubmit: (request: ExtendRequest) => Promise<void>;
@@ -150,6 +173,15 @@ export function ExtendPanel({
   const [forExisting, setForExisting] = useState<boolean | null>(
     proposal?.new_tools_for_existing ?? null,
   );
+  // La profondeur voulue. Jamais sous celle du run — une conversation déjà
+  // jouée ne se coupe pas — et jamais au-delà de `MAX_TURNS`.
+  const [turns, setTurns] = useState(proposal?.turns ?? config.turns);
+  // Les essais à approfondir jusque-là, choisis par la note qu'ils portent.
+  // `null` : aucun. `"all"` : tous les essais notés. Une liste : seulement
+  // ceux qui portent l'une de ces notes.
+  const [deepen, setDeepen] = useState<"all" | number[] | null>(
+    proposal?.deepen ?? null,
+  );
 
   useEffect(() => {
     getCatalog()
@@ -165,6 +197,18 @@ export function ExtendPanel({
     list.includes(value)
       ? list.filter((entry) => entry !== value)
       : [...list, value];
+
+  // "Tous les essais notés" et une liste de notes sont deux formes qui
+  // s'excluent : cocher l'une efface l'autre plutôt que de les cumuler, ce qui
+  // n'ajouterait rien à "all" et rendrait une liste illisible.
+  const toggleDeepenAll = () =>
+    setDeepen((current) => (current === "all" ? null : "all"));
+  const toggleDeepenLevel = (value: number) =>
+    setDeepen((current) => {
+      const list = Array.isArray(current) ? current : [];
+      const next = toggle(list, value);
+      return next.length === 0 ? null : next;
+    });
 
   // Les scénarios du CSV sont *dérivés* du fichier et des trois colonnes, jamais
   // recopiés dans un état à part : changer une colonne les refait aussitôt, et
@@ -183,6 +227,63 @@ export function ExtendPanel({
   const newScenarios = [...byHand, ...fromCsv];
   const added =
     (indices.length + newScenarios.length) * targets.length * repetitions;
+
+  // L'échelle, dans l'ordre où elle se lit, et combien d'essais du run
+  // portent chacun de ses paliers — le compte que le panneau affiche à côté
+  // de chacun, sans rien demander au serveur : `samples` est tout ce qu'on a,
+  // et tout ce qu'il faut.
+  const rubricLevels = sortedRubric(config.rubric);
+  const levelCounts = countsByLevel(samples, rubricLevels);
+  const gradedCount = countAllGraded(samples);
+  const deepenCount = countsForSelection(samples, deepen);
+  const deepensToMore = turns > config.turns;
+
+  // Le devis des cases neuves : les scénarios retenus, existants et nouveaux,
+  // couverts par les modèles cochés — à la profondeur demandée, puisque c'est
+  // à celle-là qu'elles tourneront une fois créées.
+  const addEstimate: CostEstimate | null =
+    indices.length + newScenarios.length > 0 && targets.length > 0
+      ? estimateCost({
+          ...config,
+          turns,
+          tools: [...(config.tools ?? []), ...newTools],
+          scenarios: [
+            ...indices.map((index) => config.scenarios[index]),
+            ...newScenarios,
+          ],
+          models: { ...config.models, targets },
+          repetitions,
+        })
+      : null;
+
+  // Le devis de l'approfondissement : un appel par modèle porté par la
+  // sélection, avec son propre compte d'essais — `estimateDeepening` ne rend
+  // un prix juste que pour `targets[0]`, voir son commentaire dans
+  // `pricing.ts`. Rien tant que la profondeur demandée ne dépasse pas
+  // l'actuelle : personne n'a alors de tour de plus à jouer.
+  const deepenEstimate: CostEstimate | null = deepensToMore
+    ? Object.entries(deepenCount.byModel).reduce<CostEstimate | null>(
+        (total, [model, cells]) =>
+          addEstimates(
+            total,
+            estimateDeepening(
+              { ...config, models: { ...config.models, targets: [model] } },
+              config.turns,
+              turns,
+              cells,
+            ),
+          ),
+        null,
+      )
+    : null;
+
+  // Les deux devis mis bout à bout : ce que coûtent les cases neuves, plus ce
+  // que coûte l'approfondissement des anciennes. Ni l'un ni l'autre seul ne
+  // dit ce que cette extension va coûter quand elle fait les deux à la fois.
+  const totalEstimate: CostEstimate | null =
+    addEstimate && deepenEstimate
+      ? addEstimates(addEstimate, deepenEstimate)
+      : (addEstimate ?? deepenEstimate);
 
   const onFile = async (file: File) => {
     const parsed = parseCsv(await file.text());
@@ -214,6 +315,11 @@ export function ExtendPanel({
               new_tools_for_existing: forExisting ?? true,
             }
           : {}),
+        // Absent laisse la profondeur telle quelle : envoyer la valeur de
+        // départ quand rien n'a changé n'apprendrait rien au serveur qu'il ne
+        // sache déjà.
+        ...(turns !== config.turns ? { turns } : {}),
+        ...(deepen !== null ? { deepen } : {}),
       });
     } catch (e) {
       setError((e as Error).message);
@@ -594,10 +700,6 @@ export function ExtendPanel({
                 .join(" · ")}
             </dd>
           </div>
-          <div className="flex gap-2">
-            <dt className="w-32 shrink-0 text-zinc-500">Turns</dt>
-            <dd>{config.turns}</dd>
-          </div>
           {/* À un seul tour l'adversaire n'est jamais appelé : l'afficher alors
               ferait croire à un réglage qui ne sert pas. */}
           {config.turns > 1 && (
@@ -619,6 +721,88 @@ export function ExtendPanel({
         </p>
       </div>
 
+      <div className="space-y-3 rounded border border-zinc-300 p-3">
+        <div>
+          <h3 className="text-sm font-medium">Depth</h3>
+          <p className="mt-1 text-xs text-zinc-500">
+            Currently {config.turns} turn{config.turns > 1 ? "s" : ""}. Never
+            lower — a conversation already played is never cut, only pushed
+            further, up to {MAX_TURNS}.
+          </p>
+        </div>
+        <label className="block text-sm">
+          <span className="text-zinc-600">Turns</span>
+          <input
+            type="number"
+            min={config.turns}
+            max={MAX_TURNS}
+            className={`${FIELD} w-24`}
+            value={turns}
+            onChange={(e) =>
+              setTurns(
+                Math.min(
+                  MAX_TURNS,
+                  Math.max(config.turns, Number(e.target.value) || config.turns),
+                ),
+              )
+            }
+          />
+        </label>
+
+        <div className="space-y-1">
+          <span className="text-xs text-zinc-500">
+            Deepen existing attempts — push them to the depth above instead of
+            playing them again from scratch. Counted from the attempts this
+            page already has.
+          </span>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="cursor-pointer"
+              checked={deepen === "all"}
+              disabled={gradedCount.total === 0}
+              onChange={toggleDeepenAll}
+            />
+            <span className="grow">All graded attempts</span>
+            <span className="text-xs text-zinc-500">{gradedCount.total}</span>
+          </label>
+          {rubricLevels.map((level, index) => {
+            const count = levelCounts[index];
+            return (
+              <label
+                key={level.value}
+                className="flex cursor-pointer items-center gap-2 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  className="cursor-pointer"
+                  checked={
+                    deepen === "all" ||
+                    (Array.isArray(deepen) && deepen.includes(level.value))
+                  }
+                  disabled={deepen === "all" || count.total === 0}
+                  onChange={() => toggleDeepenLevel(level.value)}
+                />
+                <span className="grow">
+                  {formatValue(level.value)} = {level.meaning}
+                </span>
+                <span className="text-xs text-zinc-500">{count.total}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        {deepensToMore && deepenCount.total > 0 && (
+          <p className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            Chosen attempts resume their conversation where it stopped —
+            turns already played are not paid for again. Their grade is
+            erased and given again on the whole conversation once it reaches
+            the new depth: a verdict on {config.turns} turns says nothing
+            about the same conversation at {turns}.
+          </p>
+        )}
+      </div>
+
       {error && (
         <p
           role="alert"
@@ -629,19 +813,59 @@ export function ExtendPanel({
       )}
 
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-zinc-600">
-          {added === 0 ? (
-            "Nothing selected."
-          ) : (
-            <>
-              <strong>{added}</strong> cell{added > 1 ? "s" : ""} to add
-              {low !== high
-                ? ` — cells currently have between ${low} and ${high} runs`
-                : ` — every cell currently has ${low} run${low > 1 ? "s" : ""}`}
-              .
-            </>
+        <div className="space-y-1 text-sm text-zinc-600">
+          <p>
+            {added === 0 && deepen === null ? (
+              "Nothing selected."
+            ) : (
+              <>
+                {added > 0 && (
+                  <>
+                    <strong>{added}</strong> cell{added > 1 ? "s" : ""} to add
+                    {low !== high
+                      ? ` — cells currently have between ${low} and ${high} runs`
+                      : ` — every cell currently has ${low} run${low > 1 ? "s" : ""}`}
+                    .{" "}
+                  </>
+                )}
+                {deepen !== null && deepenCount.total > 0 && (
+                  <>
+                    <strong>{deepenCount.total}</strong> attempt
+                    {deepenCount.total > 1 ? "s" : ""}{" "}
+                    {deepensToMore ? (
+                      <>
+                        to push from {config.turns} to {turns} turns.
+                      </>
+                    ) : (
+                      <>
+                        selected — raise Turns above {config.turns} to
+                        actually deepen them.
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </p>
+          {totalEstimate && (
+            <p>
+              Estimated cost{" "}
+              <strong>${totalEstimate.usd.toFixed(2)}</strong> (€
+              {totalEstimate.eur.toFixed(2)}) — between $
+              {totalEstimate.min_usd.toFixed(2)} and $
+              {totalEstimate.max_usd.toFixed(2)} depending on how long the
+              answers run.
+              {totalEstimate.unpriced_models.length > 0 && (
+                <>
+                  {" "}
+                  No price on file for{" "}
+                  {totalEstimate.unpriced_models.join(", ")}: the real cost is
+                  higher.
+                </>
+              )}
+            </p>
           )}
-        </p>
+        </div>
         {/* Ajouter un outil au décor du run. Permis parce qu'un scénario
             choisissait déjà les siens : deux lignes d'une même matrice n'ont
             jamais eu le même décor. Ce qui reste interdit, et que la
@@ -712,7 +936,10 @@ export function ExtendPanel({
             onClick={submit}
             disabled={
               busy ||
-              added === 0 ||
+              // Rien à ajouter et rien à approfondir : la demande tournerait
+              // à vide. Approfondir seul reste permis — `extendProblem` ne le
+              // refuse pas, ce n'est pas au champ de le faire à sa place.
+              (added === 0 && deepen === null) ||
               targets.length === 0 ||
               // Tant que la question est posée, elle doit être répondue : un
               // défaut silencieux déciderait à la place de l'utilisateur ce
@@ -723,7 +950,13 @@ export function ExtendPanel({
             }
             className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700 disabled:cursor-default disabled:opacity-40"
           >
-            {busy ? "Adding…" : `Add ${added} cell${added > 1 ? "s" : ""}`}
+            {busy
+              ? "Adding…"
+              : added > 0 && deepenCount.total > 0
+                ? `Add ${added} cell${added > 1 ? "s" : ""} and deepen ${deepenCount.total}`
+                : added > 0
+                  ? `Add ${added} cell${added > 1 ? "s" : ""}`
+                  : `Deepen ${deepenCount.total} attempt${deepenCount.total > 1 ? "s" : ""}`}
           </button>
         </div>
       </div>
