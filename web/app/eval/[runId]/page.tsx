@@ -728,6 +728,7 @@ export default function EvalRunPage({
         <ExtendPanel
           run={run}
           repetitionRange={repetitionRange(detail.samples)}
+          samples={detail.samples}
           proposal={proposal}
           onCancel={() => setExtending(false)}
           onSubmit={async (request) => {
