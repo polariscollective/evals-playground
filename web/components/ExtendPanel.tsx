@@ -939,7 +939,13 @@ export function ExtendPanel({
               // à vide. Approfondir seul reste permis — `extendProblem` ne le
               // refuse pas, ce n'est pas au champ de le faire à sa place.
               (added === 0 && deepen === null) ||
-              targets.length === 0 ||
+              // Un modèle n'est exigé que si la demande ajoute quelque chose :
+              // sans scénario à couvrir il ne désignerait rien, et un
+              // approfondissement seul n'en a pas besoin. C'est exactement la
+              // règle de `extendProblem` ; l'écrire autrement ici rendrait
+              // inconfirmable le brouillon qu'un agent vient de déposer.
+              ((indices.length > 0 || newScenarios.length > 0) &&
+                targets.length === 0) ||
               // Tant que la question est posée, elle doit être répondue : un
               // défaut silencieux déciderait à la place de l'utilisateur ce
               // que ses anciens scénarios reverront.
