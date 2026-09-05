@@ -117,11 +117,11 @@ test("les appels facturés comptent les tours ajoutés, pas la profondeur totale
   // 4 tours facturés : 4 appels à la cible, et autant à l'adversaire — la
   // relance d'ouverture de la reprise s'ajoute aux 3 relances ordinaires,
   // puisque la cible ne répond pas après son propre dernier tour — plus 1 au
-  // juge.
-  assert.equal(continué.model_calls, 9);
-  // Un run neuf de huit tours facture toute la profondeur : 8 + 7 + 1. Sa
+  // juge, plus 1 au juge d'éveil, actif par défaut.
+  assert.equal(continué.model_calls, 10);
+  // Un run neuf de huit tours facture toute la profondeur : 8 + 7 + 1 + 1. Sa
   // dernière relance n'a toujours pas lieu, contrairement à une continuation.
-  assert.equal(àNeuf.model_calls, 16);
+  assert.equal(àNeuf.model_calls, 17);
 });
 
 /** La même configuration, mais avec trois modèles distincts : sans quoi la

@@ -341,16 +341,10 @@ def run_batch_job(
                     on_scored=enregistre,
                     model_args=model_args,
                     stopped=arret.stopped,
-                    # `getattr` plutôt que `config.check_eval_awareness` : ce
-                    # champ n'existe pas encore sur `EvalRunConfig` (il arrive
-                    # avec l'interrupteur, tâche à part). Actif par défaut en
-                    # son absence, comme le sera le champ lui-même une fois
-                    # posé — voir le rapport de cette tâche. Jamais en
-                    # rejugement, qui repasse la question de l'utilisateur,
-                    # pas la nôtre.
+                    # Jamais en rejugement, qui repasse la question de
+                    # l'utilisateur, pas la nôtre.
                     check_awareness=(
-                        getattr(config, "check_eval_awareness", True)
-                        and mode != "rejudge"
+                        config.check_eval_awareness and mode != "rejudge"
                     ),
                 ),
                 # Une répétition ratée ne doit pas avorter le run : les autres

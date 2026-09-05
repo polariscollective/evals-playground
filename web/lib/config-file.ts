@@ -247,6 +247,9 @@ export function readConfigFile(text: string): ImportedConfig {
     adversary_prompt: asString(file.adversary_prompt),
     tools: readTools(file.tools),
     max_tool_calls_per_turn: asNumber(file.max_tool_calls_per_turn, 5),
+    // `!== false` et non `=== true` : un fichier écrit avant ce champ n'en
+    // porte pas, et son absence doit se lire comme l'interrupteur allumé.
+    check_eval_awareness: file.check_eval_awareness !== false,
     average_output_tokens:
       typeof file.average_output_tokens === "number"
         ? file.average_output_tokens
@@ -318,6 +321,10 @@ export function writeConfigFile(config: EvalRunConfig): string {
     temperature: config.temperature ?? null,
     models: config.models,
     adversary_prompt: config.adversary_prompt,
+    // Toujours écrit, jamais omis : contrairement à `average_output_tokens`,
+    // ce champ n'a pas d'état « absent » à préserver — un run qui ne l'a pas
+    // encore écrit tourne quand même comme s'il valait vrai.
+    check_eval_awareness: config.check_eval_awareness !== false,
     ...(config.tools && config.tools.length > 0
       ? {
           tools: config.tools,

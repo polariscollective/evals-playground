@@ -279,6 +279,24 @@ class EvalRunConfig(BaseModel):
     tâche à trois étapes ne se juge pas avec un plafond de un.
     """
 
+    check_eval_awareness: bool = True
+    """Un second juge relit-il chaque conversation pour dire si le modèle
+    évalué s'est su testé ?
+
+    Actif par défaut, parce que son intérêt est précisément de tourner sur les
+    runs où personne n'a pensé à le demander : une matrice dont tous les modèles
+    ont flairé le décor ne mesure plus le comportement des modèles, et rien
+    d'autre ne le signale.
+
+    On l'éteint quand la question n'a pas de sens — un scénario qui annonce lui
+    -même qu'il teste quelque chose, par exemple. Il coûte un appel de juge par
+    conversation.
+
+    Vrai par défaut y compris pour les runs enregistrés avant ce champ : ils
+    n'ont pas de note d'éveil, et c'est leur absence en base qui le dit, pas
+    cette valeur.
+    """
+
     tools: list[ToolSpec] = Field(default_factory=list)
     """Les outils du run, définis une fois et offerts aux scénarios.
 

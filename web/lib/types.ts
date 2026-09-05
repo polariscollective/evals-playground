@@ -127,6 +127,12 @@ export interface EvalRunConfig {
    *  main. Le bon nombre dépend de ce qu'on mesure : une tâche à trois étapes ne
    *  se juge pas avec un plafond de un. */
   max_tool_calls_per_turn?: number;
+  /** Un second juge dit-il si le modèle évalué s'est su testé ?
+   *
+   * Optionnel dans le type, vrai par défaut à l'usage : les runs enregistrés
+   * avant ce champ n'en portent pas et doivent rester lisibles. Lire
+   * `config.check_eval_awareness !== false`, jamais `=== true`. */
+  check_eval_awareness?: boolean;
   /** Combien de jetons de sortie une réponse du modèle évalué consomme, en gros.
    *
    * Sert au devis et à rien d'autre : ce nombre ne change pas ce que le run

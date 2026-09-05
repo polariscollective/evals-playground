@@ -408,6 +408,25 @@ test("une échelle présente mais mal formée ne se dit pas « absente »", () =
   );
 });
 
+// --- le juge d'éveil -------------------------------------------------------
+
+test("un fichier sans check_eval_awareness le lit actif", () => {
+  // Absent vaut allumé : un fichier écrit avant ce champ, ou par un agent qui
+  // ne le connaît pas, doit tourner comme si l'interrupteur était sur vrai.
+  const { config } = readConfigFile(COMPLET);
+  assert.equal(config.check_eval_awareness, true);
+});
+
+test("check_eval_awareness traverse l'aller-retour, y compris éteint", () => {
+  const eteint = { ...CONFIG_MINIMAL, check_eval_awareness: false };
+  const { config: relu } = readConfigFile(writeConfigFile(eteint));
+  assert.equal(relu.check_eval_awareness, false);
+
+  const allume = { ...CONFIG_MINIMAL, check_eval_awareness: true };
+  const { config: reluAllume } = readConfigFile(writeConfigFile(allume));
+  assert.equal(reluAllume.check_eval_awareness, true);
+});
+
 // --- la longueur de sortie déclarée --------------------------------------
 
 test("average_output_tokens traverse l'aller-retour YAML", () => {

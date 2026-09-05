@@ -7,6 +7,7 @@
 // avant que le moindre Python ne tourne.
 import {
   SHARED_ADVERSARY_PROMPT as A,
+  SHARED_AWARENESS_PROMPT as W,
   SHARED_JUDGE_PROMPT as J,
   SHARED_PRICING as S,
 } from "./shared.ts";
@@ -122,6 +123,13 @@ const ADVERSARY_OVERHEAD_TOKENS =
   ) +
   2 * tokens(A.confidentiality_notice);
 
+/** Ce que le juge d'éveil reçoit en plus du transcript : son système et son
+ *  gabarit, échelle comprise. Dérivé du fichier partagé comme celui du juge
+ *  principal — une valeur écrite en dur ici cesserait de décrire ce qui part
+ *  au premier mot changé dans le prompt. */
+const AWARENESS_OVERHEAD_TOKENS =
+  fixedTokens(W.system) + fixedTokens(W.user_template, "{transcript}");
+
 interface ModelTokens {
   input: number;
   output: number;
@@ -236,6 +244,16 @@ export function estimateTokens(
         S.judge_response_tokens * weight,
         S.judge_response_tokens,
       );
+      // Le juge d'éveil relit la même conversation, avec son propre gabarit à
+      // la place de la question et de l'échelle de l'utilisateur.
+      if (config.check_eval_awareness !== false) {
+        add(
+          judge,
+          (system + history + AWARENESS_OVERHEAD_TOKENS) * weight,
+          S.judge_response_tokens * weight,
+          S.judge_response_tokens,
+        );
+      }
     }
   });
 
@@ -253,8 +271,12 @@ export function estimateTokens(
   // relance n'a toujours pas lieu.
   const relancesAdversaire =
     facturés === 0 ? 0 : billFrom > 0 ? facturés : facturés - 1;
+  // Le juge d'éveil est un second appel de juge, compté de la même façon que
+  // le premier : une fois par conversation, dès qu'il y a au moins un tour
+  // facturé, jamais sinon.
+  const appelDEveil = facturés > 0 && config.check_eval_awareness !== false ? 1 : 0;
   const callsPerConversation =
-    facturés + relancesAdversaire + (facturés > 0 ? 1 : 0);
+    facturés + relancesAdversaire + (facturés > 0 ? 1 : 0) + appelDEveil;
 
   return {
     conversations,
