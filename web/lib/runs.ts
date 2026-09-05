@@ -322,7 +322,8 @@ export async function retryFailed(runId: string): Promise<number> {
  * continuent la numérotation de leur couple plutôt que de repartir de zéro, ce
  * qui est aussi ce qui empêche la contrainte d'unicité de refuser l'insertion.
  *
- * Renvoie le nombre de cases ajoutées. */
+ * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
+ * être continuées. */
 export async function extendRun(
   runId: string,
   request: ExtendRequest,
@@ -391,11 +392,10 @@ export async function extendRun(
     temperature,
     dernier,
   );
-  if (cases.length === 0) return 0;
-  await insert(
-    SAMPLES,
-    cases.map((cell) => ({ run_id: runId, ...cell })),
-  );
+  // Une extension qui n'approfondit que des cases existantes n'ajoute aucune
+  // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
+  const continuées = (request.deepen ?? []).length;
+  if (cases.length === 0 && continuées === 0) return 0;
 
   // Le devis de l'ajout seul, puis additionné à celui du run : sans ça,
   // « devis vs réel » opposerait un coût qui a grandi à une estimation restée
@@ -411,12 +411,16 @@ export async function extendRun(
     temperature,
   });
 
+  // La configuration du run porte la nouvelle profondeur avant toute autre
+  // écriture : une panne plus loin doit trouver un run qui déclare déjà
+  // `turns`, plutôt qu'une case remise en attente que rien n'explique encore.
   await update(
     RUNS,
     {
       config: {
         ...config,
         tools: outils,
+        turns: request.turns ?? config.turns,
         scenarios,
         models: { ...config.models, targets },
         temperature,
@@ -429,7 +433,42 @@ export async function extendRun(
     },
     { id: `eq.${runId}` },
   );
-  return cases.length;
+
+  await insert(
+    SAMPLES,
+    cases.map((cell) => ({ run_id: runId, ...cell })),
+  );
+
+  // Les cases à continuer repartent en attente en gardant leur conversation :
+  // c'est ce couple — `pending` avec des `messages` — qui dit au moteur de
+  // continuer plutôt que de rejouer. `turns_done` ne bouge pas : c'est lui,
+  // comparé à `config.turns` déjà écrit ci-dessus, qui distinguera une case à
+  // poursuivre d'une case déjà à sa profondeur.
+  //
+  // Leur note part maintenant, pas après. Elle portait sur une conversation
+  // plus courte et ne dit rien de celle qui vient ; une panne en cours de
+  // route doit laisser une case sans note plutôt qu'une case portant un
+  // verdict qui ne correspond plus.
+  for (const cell of request.deepen ?? []) {
+    await update(
+      SAMPLES,
+      {
+        status: "pending",
+        score: null,
+        justification: "",
+        error: null,
+        finished_at: null,
+      },
+      {
+        run_id: `eq.${runId}`,
+        scenario_index: `eq.${cell.scenario_index}`,
+        target_model: `eq.${cell.target_model}`,
+        status: "eq.done",
+      },
+    );
+  }
+
+  return cases.length + continuées;
 }
 
 /** Un run publié, tel qu'un inconnu peut le lire.
