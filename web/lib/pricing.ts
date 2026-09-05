@@ -449,8 +449,12 @@ export function costSentence(config: EvalRunConfig): string | null {
 /** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
  *  centime — un prix par scénario tombe souvent là, et « $0.00 » n'apprend
  *  rien. */
+export function amountDigits(value: number): string {
+  return value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
+}
+
 function money(usd: number): string {
-  return `$${usd >= 0.01 ? usd.toFixed(2) : usd.toFixed(4)}`;
+  return `$${amountDigits(usd)}`;
 }
 
 /** Deux devis mis bout à bout, pour un run qu'on a complété en plusieurs fois.

@@ -26,6 +26,7 @@ import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import { estimateExtension } from "@/lib/extend-estimate";
 import { measureRun } from "@/lib/measured-length";
+import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
 import { MAX_TURNS } from "@/lib/validate";
 import type {
@@ -861,11 +862,11 @@ export function ExtendPanel({
                   contenir le devis — la mesure d'un run bavard la dépasse. */}
               <p>
                 Estimated cost{" "}
-                <strong>${totalEstimate.usd.toFixed(2)}</strong> (€
-                {totalEstimate.eur.toFixed(2)}). For reference, the same work
-                costs ${totalEstimate.min_usd.toFixed(2)} at{" "}
+                <strong>${amountDigits(totalEstimate.usd)}</strong> (€
+                {amountDigits(totalEstimate.eur)}). For reference, the same work
+                costs ${amountDigits(totalEstimate.min_usd)} at{" "}
                 {SHARED_PRICING.short_response_tokens.toLocaleString()} output
-                tokens per turn and ${totalEstimate.max_usd.toFixed(2)} at{" "}
+                tokens per turn and ${amountDigits(totalEstimate.max_usd)} at{" "}
                 {SHARED_PRICING.long_response_tokens.toLocaleString()}.
                 {totalEstimate.unpriced_models.length > 0 && (
                   <>
