@@ -947,6 +947,10 @@ export function ExtendPanel({
               // inconfirmable le brouillon qu'un agent vient de déposer.
               ((indices.length > 0 || newScenarios.length > 0) &&
                 targets.length === 0) ||
+              // Des essais choisis sans profondeur nouvelle : il n'y a rien à
+              // continuer, et `extendProblem` refuserait. Le laisser cliquable
+              // ne mènerait qu'à un refus sûr, une seconde plus tard.
+              (deepen !== null && turns <= config.turns) ||
               // Tant que la question est posée, elle doit être répondue : un
               // défaut silencieux déciderait à la place de l'utilisateur ce
               // que ses anciens scénarios reverront.
