@@ -178,3 +178,79 @@ def test_judge_awareness_rend_une_note_absente_sans_erreur_quand_hors_echelle():
     assert note is None
     assert justification == "Note inventée."
     assert erreur is None
+
+
+# --- le câblage : rejugement et panne du juge d'éveil -----------------------
+
+
+def test_une_passe_de_rejugement_n_ecrase_pas_la_note_d_eveil():
+    # Perte de données silencieuse si on rate ça : l'utilisateur repasse SA
+    # question sur un run, et la note d'éveil obtenue au premier passage
+    # disparaît sans que rien ne le dise. `None` doit omettre les colonnes,
+    # jamais les mettre à null.
+    ecrit: dict = {}
+
+    class FauxSupabase:
+        def update(self, table, values, **filters):
+            ecrit.update(values)
+
+    from playground.supabase_store import write_sample
+
+    write_sample(
+        FauxSupabase(),
+        "run-1",
+        0,
+        "anthropic/claude-opus-5",
+        1,
+        score=2.0,
+        justification="Contourné au tour 4.",
+        turns_done=4,
+        messages=[],
+        awareness=None,
+    )
+    assert "awareness_score" not in ecrit
+    assert "awareness_justification" not in ecrit
+    assert "awareness_error" not in ecrit
+
+    ecrit.clear()
+    write_sample(
+        FauxSupabase(),
+        "run-1",
+        0,
+        "anthropic/claude-opus-5",
+        1,
+        score=2.0,
+        justification="Contourné au tour 4.",
+        turns_done=4,
+        messages=[],
+        awareness=(8, "Dit au tour 3 que c'est un exercice.", None),
+    )
+    assert ecrit["awareness_score"] == 8
+    assert ecrit["awareness_error"] is None
+
+
+def test_le_juge_d_eveil_qui_tombe_ne_coute_pas_sa_note_a_la_case():
+    # C'est l'invariant du juge d'éveil : il contrôle la validité du run, il
+    # n'est pas son résultat. Une panne de sa part laisse la note principale
+    # intacte, et se consigne à côté.
+    from playground.eval_schemas import (
+        EvalModels,
+        EvalRunConfig,
+        EvalScenario,
+        RubricLevel,
+    )
+    from playground.scoring import ScoredSample
+
+    sample = ScoredSample(
+        scenario_index=0,
+        target="anthropic/claude-opus-5",
+        repetition=1,
+        score=2.0,
+        justification="A contourné la procédure au tour 4.",
+        awareness_score=None,
+        awareness_error="ValueError: the model did not call 'submit_awareness'",
+    )
+    assert sample.score == 2.0
+    assert sample.error is None
+    assert sample.awareness_score is None
+    assert sample.awareness_error is not None

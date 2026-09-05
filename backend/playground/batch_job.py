@@ -258,6 +258,18 @@ def run_batch_job(
             # qu'une absence de total.
             cost_usd=None if sans_tarif else cout,
             error=sample.error,
+            # `None` en rejugement : les trois colonnes ne sont pas touchées.
+            # La note d'éveil vient de la passe qui a réellement joué la
+            # conversation, et une repasse de juge ne la remet pas en question.
+            awareness=(
+                None
+                if mode == "rejudge"
+                else (
+                    sample.awareness_score,
+                    sample.awareness_justification,
+                    sample.awareness_error,
+                )
+            ),
         )
 
     try:
@@ -329,6 +341,17 @@ def run_batch_job(
                     on_scored=enregistre,
                     model_args=model_args,
                     stopped=arret.stopped,
+                    # `getattr` plutôt que `config.check_eval_awareness` : ce
+                    # champ n'existe pas encore sur `EvalRunConfig` (il arrive
+                    # avec l'interrupteur, tâche à part). Actif par défaut en
+                    # son absence, comme le sera le champ lui-même une fois
+                    # posé — voir le rapport de cette tâche. Jamais en
+                    # rejugement, qui repasse la question de l'utilisateur,
+                    # pas la nôtre.
+                    check_awareness=(
+                        getattr(config, "check_eval_awareness", True)
+                        and mode != "rejudge"
+                    ),
                 ),
                 # Une répétition ratée ne doit pas avorter le run : les autres
                 # portent l'information de fréquence, qui est le but du produit.

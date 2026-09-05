@@ -83,6 +83,24 @@ class ScoredSample:
     pouvoir les compter séparément.
     """
 
+    awareness_score: int | None = None
+    """Le modèle évalué s'est-il su testé ? De 1 à 10, ou rien.
+
+    `None` couvre trois cas que la base sépare : le juge d'éveil n'a pas été
+    demandé, il n'a rien pu noter, ou il est tombé — le dernier se lit dans
+    `awareness_error`.
+    """
+
+    awareness_justification: str = ""
+
+    awareness_error: str | None = None
+    """Ce qui a cassé chez le juge d'éveil, si quelque chose a cassé.
+
+    Volontairement distinct d'`error`, qui marque la case en échec. Une panne
+    du juge d'éveil ne doit jamais faire perdre la note que l'utilisateur est
+    venu chercher : la case reste bonne, et seule cette colonne le dit.
+    """
+
 JUDGE_SYSTEM = _SHARED["system"]
 
 
@@ -352,6 +370,7 @@ def rubric_judge(
     on_scored: Callable[["ScoredSample"], None] | None = None,
     model_args: dict[str, Any] | None = None,
     stopped: Callable[[], bool] | None = None,
+    check_awareness: bool = False,
 ) -> Scorer:
     """Fait noter le transcript d'une répétition sur l'échelle du run.
 
@@ -367,6 +386,11 @@ def rubric_judge(
             docstring de `scenario_solver.model_args` (`generation.py`) pour la
             raison de ce fil explicite : `get_model(nom)` seul ne les reçoit
             pas, puisque `mockllm` est exclu de la mémoïsation par inspect.
+        check_awareness: Faut-il aussi demander au juge d'éveil si le modèle
+            évalué s'est su testé. Passé par l'appelant plutôt que lu dans
+            `config` : une passe de juge rejouée repasse la question de
+            l'utilisateur, pas la nôtre, et ne doit ni la payer une seconde
+            fois ni écraser la note déjà obtenue.
     """
 
     def _sample(
@@ -374,6 +398,7 @@ def rubric_judge(
         grade: float | None,
         justification: str,
         error: str | None = None,
+        awareness: tuple[int | None, str, str | None] = (None, "", None),
     ) -> ScoredSample:
         """La case que ce `TaskState` désigne, telle qu'elle vient d'être notée."""
         metadata = state.metadata or {}
@@ -396,6 +421,9 @@ def rubric_judge(
                 for nom, u in (sample_model_usage() or {}).items()
             },
             error=error,
+            awareness_score=awareness[0],
+            awareness_justification=awareness[1],
+            awareness_error=awareness[2],
         )
 
     async def score(state: TaskState, target: Target) -> Score:
@@ -460,8 +488,23 @@ def rubric_judge(
                 )
             raise
 
+        # Le juge d'éveil passe après, sur le même transcript, et jamais sur une
+        # conversation vide — celles-là sont sorties plus haut, où il n'y aurait
+        # rien à lire. Il est appelé ici plutôt que dans un second scorer :
+        # inspect n'ordonne pas ses scorers, et deux scorers écriraient la case
+        # deux fois. Ici, un seul `on_scored`, un seul `write_sample`.
+        #
+        # Sa consommation entre dans `sample_model_usage()` comme celle du juge
+        # principal, puisqu'il est appelé dans le même échantillon : le coût
+        # d'une case reste tout ce qu'il a fallu dépenser pour l'obtenir.
+        awareness: tuple[int | None, str, str | None] = (None, "", None)
+        if check_awareness:
+            awareness = await judge_awareness(
+                config, render_transcript(transcript), model_args
+            )
+
         if on_scored is not None:
-            on_scored(_sample(state, grade, justification))
+            on_scored(_sample(state, grade, justification, awareness=awareness))
 
         return Score(
             value=UNJUDGED if grade is None else grade,

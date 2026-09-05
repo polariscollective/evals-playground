@@ -313,6 +313,7 @@ def write_sample(
     usage: dict[str, Any] | None = None,
     cost_usd: float | None = None,
     error: str | None = None,
+    awareness: tuple[int | None, str, str | None] | None = None,
 ) -> None:
     """Enregistre une case terminée.
 
@@ -324,21 +325,33 @@ def write_sample(
     cette fonction n'est jamais atteinte pour une case dont le solver a
     échoué ou a été annulée — celles-ci restent hors du juge, et donc hors
     d'ici (voir `abandon_unfinished_samples` et `cancel_unfinished_samples`).
+
+    `awareness` porte la note d'éveil, sa justification et sa panne éventuelle.
+    `None` — le cas d'une passe de juge rejouée — **omet** les trois colonnes
+    de l'écriture au lieu de les mettre à `null` : la note d'éveil obtenue au
+    premier passage doit survivre à un rejugement, qui ne repose pas la
+    question. Trois paramètres à valeur par défaut n'auraient pas su distinguer
+    « pas de note » de « ne touche pas », et auraient effacé en silence.
     """
+    values: dict[str, Any] = {
+        "status": "error" if error else "done",
+        "score": score,
+        "justification": justification,
+        "turns_done": turns_done,
+        "messages": messages,
+        "temperature": temperature,
+        "usage": usage or {},
+        "cost_usd": cost_usd,
+        "error": error,
+        "finished_at": NOW,
+    }
+    if awareness is not None:
+        values["awareness_score"] = awareness[0]
+        values["awareness_justification"] = awareness[1]
+        values["awareness_error"] = awareness[2]
     supabase.update(
         SAMPLES,
-        {
-            "status": "error" if error else "done",
-            "score": score,
-            "justification": justification,
-            "turns_done": turns_done,
-            "messages": messages,
-            "temperature": temperature,
-            "usage": usage or {},
-            "cost_usd": cost_usd,
-            "error": error,
-            "finished_at": NOW,
-        },
+        values,
         **sample_filters(run_id, scenario_index, target_model, repetition),
     )
 
