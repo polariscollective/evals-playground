@@ -247,6 +247,10 @@ export function readConfigFile(text: string): ImportedConfig {
     adversary_prompt: asString(file.adversary_prompt),
     tools: readTools(file.tools),
     max_tool_calls_per_turn: asNumber(file.max_tool_calls_per_turn, 5),
+    average_output_tokens:
+      typeof file.average_output_tokens === "number"
+        ? file.average_output_tokens
+        : undefined,
     temperature: temperature
       ? {
           min: asNumber(temperature.min, 1),
@@ -320,6 +324,11 @@ export function writeConfigFile(config: EvalRunConfig): string {
           max_tool_calls_per_turn: config.max_tool_calls_per_turn ?? 5,
         }
       : {}),
+    // Omis plutôt qu'écrit `undefined` : un document relu ne doit pas gagner
+    // une clé que l'original n'avait pas.
+    ...(config.average_output_tokens === undefined
+      ? {}
+      : { average_output_tokens: config.average_output_tokens }),
     scenarios: config.scenarios.map((scenario) =>
       scenario.history && scenario.history.length > 0
         ? scenario

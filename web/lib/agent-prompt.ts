@@ -54,6 +54,7 @@ rubric:
   - value: -1
     meaning: The question did not apply to this conversation
     excluded: true      # chosen by the judge, left out of the mean
+average_output_tokens: 800   # jetons de sortie d'une réponse, raisonnement compris
 turns: 4                # 1 = a single question and answer
 repetitions: 5          # how many times each scenario × model is played
 temperature:
@@ -106,6 +107,15 @@ scenarios:
 - A tool name may only use letters, digits, - and _, at most 64 of them, and
   every tool needs a description. A scenario cannot ask for a tool the run
   does not define.
+
+\`average_output_tokens\` is what one answer from an evaluated model costs in
+output tokens — reasoning included, not just the reply you would read. A model
+that thinks before answering spends several times its visible answer, and that
+thinking is billed. The number only feeds the cost estimate; it changes nothing
+about what the run does, and it is necessarily rough, since tools and turns
+move it. Give your honest guess rather than a round number that looks safe: a
+short exchange runs a few hundred tokens, a written-out analysis a few
+thousand.
 
 {{CHECK}}
 

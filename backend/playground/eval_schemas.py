@@ -286,6 +286,19 @@ class EvalRunConfig(BaseModel):
     scénarios d'une même matrice partagent le décor et se distinguent par ce
     qu'on y demande. Chacun choisit ensuite lesquels il offre.
     """
+
+    average_output_tokens: int | None = Field(default=None, ge=1, le=100_000)
+    """Jetons de sortie que consomme une réponse du modèle évalué, en gros.
+
+    Ne sert qu'au devis : ce nombre ne change rien à ce que le run fait. Il
+    compte tout ce que le modèle produit à chaque appel, raisonnement compris —
+    c'est l'unité facturée, et `actual_cost` ne facture que `output_tokens`
+    précisément parce que le raisonnement y est déjà.
+
+    `None` pour les runs enregistrés avant ce champ : le devis retombe alors
+    sur `DEFAULT_RESPONSE_TOKENS`.
+    """
+
     repetitions: int = Field(ge=1)
     models: EvalModels
     adversary_prompt: str = ""

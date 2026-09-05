@@ -127,6 +127,17 @@ export interface EvalRunConfig {
    *  main. Le bon nombre dépend de ce qu'on mesure : une tâche à trois étapes ne
    *  se juge pas avec un plafond de un. */
   max_tool_calls_per_turn?: number;
+  /** Combien de jetons de sortie une réponse du modèle évalué consomme, en gros.
+   *
+   * Sert au devis et à rien d'autre : ce nombre ne change pas ce que le run
+   * fait. Il compte **tout** ce que le modèle produit à chaque appel —
+   * raisonnement compris, pas seulement la réponse qu'on lit. C'est l'unité
+   * que les fournisseurs facturent, et un modèle qui réfléchit avant de
+   * répondre dépense plusieurs fois sa réponse visible.
+   *
+   * Optionnel dans le type et obligatoire dans `configProblem` : les runs
+   * enregistrés avant ce champ n'en ont pas et doivent rester lisibles. */
+  average_output_tokens?: number;
   temperature?: TemperatureSpec | null;
   label?: string | null;
   source?: ScenarioSource | null;

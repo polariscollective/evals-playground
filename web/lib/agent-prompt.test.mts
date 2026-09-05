@@ -71,6 +71,7 @@ test("la forme CSV décrite plus bas est acceptée elle aussi", () => {
   const scenarios = blocks[1][1];
   const { config, csv } = readConfigFile(
     `criterion: x\nrubric: [{value: 0, meaning: non}, {value: 1, meaning: oui}]\n` +
+      `average_output_tokens: 800\n` +
       `turns: 1\nrepetitions: 2\n` +
       `models: {targets: [anthropic/claude-sonnet-5], judge: anthropic/claude-sonnet-5}\n` +
       scenarios,

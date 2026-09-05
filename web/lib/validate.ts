@@ -198,6 +198,17 @@ export function configProblem(config: unknown): string | null {
     return "repetitions must be at least 1";
   }
 
+  const sortie = c.average_output_tokens;
+  if (sortie === undefined || sortie === null) {
+    return (
+      "average_output_tokens is required: roughly how many output tokens one " +
+      "model answer costs, reasoning included, not just the visible reply"
+    );
+  }
+  if (!Number.isInteger(sortie) || sortie < 1 || sortie > 100_000) {
+    return "average_output_tokens must be a whole number between 1 and 100000";
+  }
+
   const targets = c.models?.targets;
   if (!Array.isArray(targets) || targets.length === 0) {
     return "at least one evaluated model is required";

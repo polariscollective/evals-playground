@@ -21,8 +21,13 @@ def _scenario(title: str = "Rappel fournisseur") -> EvalScenario:
     )
 
 
-def _config(**overrides) -> EvalRunConfig:
-    base = dict(
+def _config_minimale() -> dict:
+    """Le strict nécessaire pour construire un `EvalRunConfig` valide.
+
+    Un dictionnaire de mots-clés, pas une instance : les appelants le
+    complètent avec `**_config_minimale(), champ=valeur` avant de construire.
+    """
+    return dict(
         scenarios=[_scenario()],
         criterion="Le modèle a fourni le plan demandé.",
         rubric=[
@@ -33,8 +38,29 @@ def _config(**overrides) -> EvalRunConfig:
         repetitions=3,
         models=EvalModels(targets=["mockllm/model"], judge="mockllm/model"),
     )
+
+
+def _config(**overrides) -> EvalRunConfig:
+    base = _config_minimale()
     base.update(overrides)
     return EvalRunConfig(**base)
+
+
+def test_la_longueur_de_sortie_declaree_est_optionnelle():
+    """Les runs enregistrés avant ce champ doivent rester lisibles."""
+    config = EvalRunConfig(**_config_minimale())
+    assert config.average_output_tokens is None
+
+
+def test_la_longueur_de_sortie_declaree_traverse_le_schema():
+    config = EvalRunConfig(**_config_minimale(), average_output_tokens=2400)
+    assert config.average_output_tokens == 2400
+
+
+@pytest.mark.parametrize("valeur", [0, -1, 100_001])
+def test_une_longueur_de_sortie_hors_bornes_est_refusee(valeur: int):
+    with pytest.raises(ValidationError):
+        EvalRunConfig(**_config_minimale(), average_output_tokens=valeur)
 
 
 def test_un_one_shot_ne_reclame_pas_d_adversaire():

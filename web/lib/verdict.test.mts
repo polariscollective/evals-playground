@@ -20,6 +20,7 @@ rubric:
   - value: -1
     meaning: Sans objet.
     excluded: true
+average_output_tokens: 800
 turns: 4
 repetitions: 3
 models:
