@@ -99,3 +99,59 @@ test("un scénario qui pioche parmi les outils du run passe", () => {
 test("une extension sans outil du tout reste valide", () => {
   assert.equal(extendProblem(DEMANDE(), 1, []), null);
 });
+
+test("on ne raccourcit jamais un run", () => {
+  // Une conversation déjà jouée ne se coupe pas, et un run dont la profondeur
+  // diminuerait ne voudrait plus rien dire.
+  const problem = extendProblem(DEMANDE({ turns: 2 }), 1, [], 4, "adv");
+  assert.match(problem ?? "", /cannot go below the 4 turns/);
+});
+
+test("demander la même profondeur est permis, c'est le cas courant", () => {
+  assert.equal(extendProblem(DEMANDE({ turns: 4 }), 1, [], 4, "adv"), null);
+});
+
+test("passer au-delà d'un tour exige un adversaire", () => {
+  // Le moteur refuse de dérouler plus d'un tour sans quelqu'un pour pousser.
+  // Le dire ici plutôt qu'au premier appel facturé.
+  const problem = extendProblem(DEMANDE({ turns: 4 }), 1, [], 1, null);
+  assert.match(problem ?? "", /adversary model is required/);
+});
+
+test("approfondir désigne des cases, pas un rectangle", () => {
+  const problem = extendProblem(
+    DEMANDE({
+      turns: 8,
+      deepen: [{ scenario_index: 0, target_model: "anthropic/claude-haiku-4-5" }],
+    }),
+    1,
+    [],
+    4,
+    "adv",
+  );
+  assert.equal(problem, null);
+});
+
+test("approfondir une case qui n'existe pas est refusé", () => {
+  const problem = extendProblem(
+    DEMANDE({ turns: 8, deepen: [{ scenario_index: 9, target_model: "m" }] }),
+    1,
+    [],
+    4,
+    "adv",
+  );
+  assert.match(problem ?? "", /scenario 9 is not part of this run/);
+});
+
+test("approfondir sans demander plus de tours ne veut rien dire", () => {
+  // Sans profondeur nouvelle, il n'y a rien à continuer : la demande serait
+  // silencieusement sans effet, ce qui est pire qu'un refus.
+  const problem = extendProblem(
+    DEMANDE({ deepen: [{ scenario_index: 0, target_model: "m" }] }),
+    1,
+    [],
+    4,
+    "adv",
+  );
+  assert.match(problem ?? "", /turns to deepen/);
+});

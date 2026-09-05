@@ -253,6 +253,8 @@ export function extendProblem(
   request: unknown,
   scenarioCount: number,
   runTools: ToolSpec[] = [],
+  currentTurns = 1,
+  adversary: string | null = null,
 ): string | null {
   if (!request || typeof request !== "object") return "body must be an object";
   const r = request as ExtendRequest;
@@ -312,6 +314,39 @@ export function extendProblem(
       `scenario "${scenario.title}"`,
     );
     if (asked) return asked;
+  }
+
+  const profondeur = r.turns ?? currentTurns;
+  if (!Number.isInteger(profondeur) || profondeur < MIN_TURNS || profondeur > MAX_TURNS) {
+    return `turns must be between ${MIN_TURNS} and ${MAX_TURNS}`;
+  }
+  if (profondeur < currentTurns) {
+    // Une conversation déjà jouée ne se coupe pas.
+    return `turns cannot go below the ${currentTurns} turns already played`;
+  }
+  if (profondeur > 1 && !isFilled(adversary)) {
+    // Le moteur refuse de dérouler plus d'un tour sans quelqu'un pour pousser.
+    return "an adversary model is required once turns exceeds 1";
+  }
+
+  const àContinuer = r.deepen ?? [];
+  if (!Array.isArray(àContinuer)) return "deepen must be a list of cells";
+  for (const cell of àContinuer) {
+    if (
+      !Number.isInteger(cell?.scenario_index) ||
+      cell.scenario_index < 0 ||
+      cell.scenario_index >= scenarioCount
+    ) {
+      return `scenario ${cell?.scenario_index} is not part of this run`;
+    }
+    if (!isFilled(cell?.target_model)) {
+      return "a cell to deepen has no model";
+    }
+  }
+  if (àContinuer.length > 0 && (r.turns ?? currentTurns) <= currentTurns) {
+    // Sans profondeur nouvelle il n'y a rien à continuer : la demande serait
+    // silencieusement sans effet, ce qui est pire qu'un refus.
+    return "deepening needs more turns to deepen to";
   }
 
   if (indices.length === 0 && nouveaux.length === 0) {

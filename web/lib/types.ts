@@ -179,6 +179,16 @@ export interface ExtendRequest {
    * modèles ou d'autres essais. `false` fige leur liste sur les outils qui
    * existaient, pour qu'ils revoient exactement ce qu'ils ont toujours vu. */
   new_tools_for_existing?: boolean;
+  /** La profondeur voulue pour le run. Jamais inférieure à l'actuelle : une
+   *  conversation déjà jouée ne se coupe pas. Absent laisse la profondeur
+   *  telle quelle. */
+  turns?: number;
+  /** Les cases à continuer jusqu'à `turns`, désignées une à une.
+   *
+   * Un ensemble quelconque et non un rectangle : on approfondit ce qui a tenu
+   * et on laisse ce qui a déjà cédé, or ces cases-là ne dessinent pas une
+   * ligne ni une colonne. */
+  deepen?: { scenario_index: number; target_model: string }[];
 }
 
 export interface Message {

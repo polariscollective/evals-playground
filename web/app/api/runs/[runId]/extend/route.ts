@@ -45,6 +45,8 @@ export async function POST(
     body,
     detail.run.config.scenarios.length,
     detail.run.config.tools ?? [],
+    detail.run.config.turns,
+    detail.run.config.models.adversary ?? null,
   );
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
