@@ -304,7 +304,11 @@ const handler = createMcpHandler((server) => {
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         scenario_index: z.number().int().min(0).describe("0-based, in scenario order."),
-        target_model: z.string(),
+        target_model: z
+          .string()
+          .describe(
+            "One of the run's evaluated models, exactly as get_run_metadata lists it under models.targets.",
+          ),
         repetition: z.number().int().min(0).describe("0-based."),
       }),
     },
@@ -425,9 +429,14 @@ const handler = createMcpHandler((server) => {
     {
       title: "Get a draft's configuration",
       description:
-        "The same thing for a draft that has not been launched yet: its configuration as a YAML " +
-        "document you can edit. Any draft can be read — a draft is a proposal made to the whole " +
-        "team — but only its own author can rewrite it with update_draft_run.",
+        "The same thing for a draft that has not been launched yet, but not always in the same shape. " +
+        "A run draft (kind \"run\") comes back as a YAML document you can edit and hand to " +
+        "update_draft_run, just like get_run_config. An extend draft (kind \"extend\") comes back as " +
+        "JSON instead, prefixed with a sentence naming the run it extends — it holds a request to add " +
+        "scenarios, tools or depth, not a full run, and update_draft_run refuses to touch it; propose " +
+        "a corrected one with submit_draft_extension instead. Any draft can be read — a draft is a " +
+        "proposal made to the whole team — but only its own author can rewrite a run draft with " +
+        "update_draft_run.",
       inputSchema: z
         .object({ draft_id: z.string().describe("The draft's UUID, from its address.") }),
     },
@@ -458,6 +467,11 @@ const handler = createMcpHandler((server) => {
     {
       title: "Rewrite a draft, or fork it",
       description:
+        "Only for a run draft (kind \"run\"): yaml is checked and written as its EvalRunConfig. An " +
+        "extend draft (kind \"extend\") is refused outright, before anything is written — it holds a " +
+        "request to add scenarios, tools or depth, not a full run, and writing an EvalRunConfig over " +
+        "it would leave the draft in a kind launch_draft cannot use. Replace one by calling " +
+        "submit_draft_extension again with the corrected request.\n\n" +
         "Nothing is launched and nothing is spent by calling this, exactly like submit_draft_run: it " +
         "checks the document first. What happens next depends on who is calling. Its own author gets " +
         "the draft rewritten in place — use this to correct a draft rather than leave two of them " +
@@ -484,6 +498,23 @@ const handler = createMcpHandler((server) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
       const { draft } = found;
+
+      // Un brouillon d'extension ne porte pas une `EvalRunConfig` : le champ
+      // `yaml` la valide et l'écrirait quand même, laissant le brouillon avec
+      // un `kind` qui ne correspond plus à ce qu'il contient. `launch_draft`
+      // ne le découvrirait que plus tard, sous la forme d'un refus qui ne
+      // parle pas de ce que l'appelant a soumis (« scenario_indices must be a
+      // list »). Refuser ici, clairement, avant d'écrire quoi que ce soit.
+      if (draft.kind !== "run") {
+        return toolError(
+          `Draft ${draft_id} is an extend draft (kind "extend"), not a run draft — update_draft_run ` +
+            "only rewrites a run's configuration. Writing the YAML you sent over it would leave the " +
+            "draft's kind pointing at an extend request that is no longer there. An extend draft is " +
+            "replaced by submitting a new one: call submit_draft_extension again with the corrected " +
+            "request.",
+        );
+      }
+
       const caller = await callerEmail(ctx);
       const isOwner = draft.created_by === caller;
 
@@ -563,9 +594,20 @@ const handler = createMcpHandler((server) => {
     async ({ yaml, tags }, ctx) => {
       const verdict = verdictOf(yaml, costSentence);
       if (verdict.status !== 200 || verdict.message.startsWith("INCOMPLETE")) {
-        // INCOMPLETE annonce un CSV que ce canal ne sait pas porter — un
-        // agent écrit les scénarios en clair, comme le prompt le demande.
-        return { content: [{ type: "text", text: verdict.message }], isError: true };
+        // `verdict.message` est écrit pour /validate, où INCOMPLETE n'est pas
+        // un refus : le document est valide, seul le CSV manque encore, et
+        // « It will load; upload the CSV before launching » dit quoi faire —
+        // dans un formulaire qui sait recevoir ce CSV. Ici, INCOMPLETE EST un
+        // refus : rien n'est déposé, et aucun outil de ce serveur ne porte de
+        // fichier. Une clause propre à ce canal précède donc le message
+        // plutôt que de le renvoyer tel quel, pour ne pas laisser croire à un
+        // dépôt réussi qui attendrait un envoi que rien ici ne permet.
+        const prefix = verdict.message.startsWith("INCOMPLETE")
+          ? "Nothing has been saved: unlike the web app, this channel has no way to carry a CSV " +
+            "upload. Write the scenarios out in full instead — see read_prompt — and call this again " +
+            "with the complete document.\n\n"
+          : "";
+        return { content: [{ type: "text", text: `${prefix}${verdict.message}` }], isError: true };
       }
       const { config } = readConfigFile(yaml);
       const caller = await callerEmail(ctx);
@@ -635,8 +677,10 @@ const handler = createMcpHandler((server) => {
         "saved earlier — by submit_draft_run or submit_draft_extension, or from the web app — never a " +
         "configuration composed in this same call. Nothing about the draft is read back and " +
         "reassembled; what it produces is exactly what the draft already described.\n\n" +
-        "An extend draft (kind \"extend\") writes to a run that already exists, and only its own " +
-        "creator can launch it — a run draft (kind \"run\") creates a run instead of touching one, " +
+        "An extend draft (kind \"extend\") writes to a run that already exists, and only that run's " +
+        "own creator can launch it — not necessarily the draft's: anyone can save an extend draft " +
+        "proposing a change to someone else's run, so its creator and the run's can differ, and it is " +
+        "the run's that decides here. A run draft (kind \"run\") creates a run instead of touching one, " +
         "and this restriction never applies to it: launching a fresh run is never refused for who " +
         "owns anything. Launching an extend draft is also refused if the run it targets is already " +
         "going: it already read its pending cells at start, and cells added now would never be " +
@@ -881,14 +925,17 @@ const handler = createMcpHandler((server) => {
         "scenario_indices, together with targets and repetitions. Add brand-new scenarios: " +
         "new_scenarios, together with the same targets and repetitions — a scenario, existing or new, " +
         "is always covered by some models some number of times. Add tools to the run's set: new_tools, " +
-        "and optionally new_tools_for_existing — independent of everything else, needing no scenario, " +
-        "model or depth. Raise the run's depth on its own: turns — it only takes effect on scenarios " +
-        "or cells this same call adds, and leaves already-played attempts at the depth they were " +
-        "judged at unless they are also named in deepen. Deepen attempts already played, chosen by the " +
-        "grade the judge gave them: deepen, together with turns, since there would otherwise be no new " +
-        "depth to push them to — needing no model and no repetitions, since deepening resumes real " +
-        "conversations rather than adding cells. Call get_run_results first: it already returns this " +
-        "run's rubric, with each grade's meaning and how many attempts carry it, which is what " +
+        "and optionally new_tools_for_existing — needing no model or depth of its own, but never the " +
+        "only thing a call does: a call naming no scenario (scenario_indices or new_scenarios) and no " +
+        "deepen is refused even when new_tools is filled in, since adding tools to a batch that adds " +
+        "nothing else is not enough on its own. Raise the run's depth on its own: turns — it only " +
+        "takes effect on scenarios or cells this same call adds, and leaves already-played attempts " +
+        "at the depth they were judged at unless they are also named in deepen. Deepen attempts " +
+        "already played, chosen by the grade the judge gave them: deepen, together with turns, since " +
+        "there would otherwise be no new depth to push them to — needing no model and no " +
+        "repetitions, since deepening resumes real conversations rather than adding cells. Call " +
+        "get_run_results first: it already returns this run's rubric, with each grade's meaning and " +
+        "how many attempts carry it, which is what " +
         "choosing deepen requires.\n\n" +
         "Any of these can be combined in one call, each still asking only for its own parameters. What " +
         "none of them ever touches, deepening included: the judge, the rubric and the criterion — a " +
@@ -978,8 +1025,8 @@ const handler = createMcpHandler((server) => {
             "Only meaningful alongside new_tools, and only for scenarios that never named their tools — " +
               "those take whatever the run defines. true: they get the new tools if they are run again. " +
               "false: their current tools are written out, so re-running them shows what they always saw. " +
-              "Cells already run are unaffected either way. The human confirms this before anything is " +
-              "applied.",
+              "Cells already run are unaffected either way. Nothing is applied until the draft is " +
+              "launched — by a human from the run's page, or by you, its creator, with launch_draft.",
           ),
         turns: z
           .number()
