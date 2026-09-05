@@ -47,6 +47,8 @@ def pending_dataset(
                     # PostgREST peut rendre un `numeric` en chaîne pour ne pas
                     # perdre de précision ; le solver, lui, attend un flottant.
                     "temperature": None if temperature is None else float(temperature),
+                    "turns_done": row.get("turns_done") or 0,
+                    "played": row.get("messages") or [],
                 },
             )
         )
@@ -93,10 +95,16 @@ def conversation_solver(
             if config.turns > 1 and config.models.adversary
             else None
         )
+        # Une case qui porte déjà une conversation se continue : on ne lui
+        # redemande que les tours manquants, et son transcript repart d'où il
+        # s'était arrêté. Sans messages, elle se joue à neuf.
+        joués = state.metadata.get("played") or []
+        faits = int(state.metadata.get("turns_done") or 0)
+        reste = max(config.turns - faits, 0) if joués else config.turns
         transcript = await run_conversation(
             system_prompt=scenario.system_prompt,
             opening_message=scenario.opening_message,
-            turns=config.turns,
+            turns=reste,
             target=get_model(target_name, **(model_args or {})),
             adversary=adversary,
             adversary_prompt=config.adversary_prompt,
@@ -105,6 +113,18 @@ def conversation_solver(
                 Turn(role=turn.role, content=turn.content)
                 for turn in scenario.history
             ],
+            resume=(
+                [
+                    Turn(
+                        role=turn["role"],
+                        content=turn["content"],
+                        seeded=turn.get("seeded", False),
+                    )
+                    for turn in joués
+                ]
+                if joués
+                else None
+            ),
             tools=tools_for(config, scenario),
             max_tool_calls=config.max_tool_calls_per_turn,
             stopped=stopped,

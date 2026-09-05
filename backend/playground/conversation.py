@@ -227,6 +227,7 @@ async def run_conversation(
     adversary_prompt: str = "",
     temperature: float | None = None,
     history: "Sequence[Turn] | None" = None,
+    resume: "Sequence[Turn] | None" = None,
     tools: "Sequence[ToolSpec] | None" = None,
     max_tool_calls: int = MAX_TOOL_CALLS_PER_TURN,
     stopped: "Callable[[], bool] | None" = None,
@@ -249,6 +250,10 @@ async def run_conversation(
             départ identique pour toutes les répétitions — dérouler le
             préambule en vrais tours n'aboutit pas au même endroit à chaque
             fois, et coûte des appels.
+        resume: Une conversation déjà jouée, à prolonger. Contrairement à
+            `history`, ses tours ne sont pas marqués comme posés — ils ont été
+            produits — et le message d'ouverture n'est pas réinséré, puisqu'il
+            s'y trouve déjà. `turns` compte alors les tours à *ajouter*.
         tools: Les outils offerts au modèle évalué pour ce scénario. Rien n'est
             exécuté : chaque appel reçoit le `result` écrit dans sa définition,
             le même à chaque répétition. Faire improviser la réponse
@@ -277,14 +282,21 @@ async def run_conversation(
             "An adversary model is required to go beyond one turn."
         )
 
-    # L'historique posé ouvre le transcript. Le modèle le reçoit comme s'il
-    # l'avait vécu — c'est le but — mais chaque tour reste marqué, et le juge
-    # sait ne pas le noter.
-    transcript: list[Turn] = [
-        Turn(role=turn.role, content=turn.content, seeded=True)
-        for turn in (history or [])
-    ]
-    transcript.append(Turn(role="user", content=opening_message))
+    if resume is not None:
+        # Une conversation qu'on prolonge. Ses tours ont été produits, pas
+        # donnés : les marquer `seeded` les ferait sauter par le juge, qui ne
+        # noterait plus que les tours ajoutés. Et le message d'ouverture y est
+        # déjà — le réinsérer le placerait au milieu de la conversation.
+        transcript: list[Turn] = list(resume)
+    else:
+        # L'historique posé ouvre le transcript. Le modèle le reçoit comme s'il
+        # l'avait vécu — c'est le but — mais chaque tour reste marqué, et le
+        # juge sait ne pas le noter.
+        transcript = [
+            Turn(role=turn.role, content=turn.content, seeded=True)
+            for turn in (history or [])
+        ]
+        transcript.append(Turn(role="user", content=opening_message))
     target_config = (
         GenerateConfig(temperature=temperature)
         if temperature is not None

@@ -149,6 +149,7 @@ def test_une_case_jugee_est_ecrite_avec_sa_note_et_son_transcript():
         supabase, "r1", 0, "m", 1,
         score=2.0,
         justification="au tour 4.",
+        turns_done=4,
         messages=[{"role": "user", "content": "bonjour"}],
         temperature=0.5,
     )
@@ -159,6 +160,7 @@ def test_une_case_jugee_est_ecrite_avec_sa_note_et_son_transcript():
     corps = _body(requete)
     assert corps["status"] == "done"
     assert corps["score"] == 2.0
+    assert corps["turns_done"] == 4
     assert corps["messages"] == [{"role": "user", "content": "bonjour"}]
     assert corps["error"] is None
 
@@ -168,7 +170,7 @@ def test_une_case_en_erreur_garde_le_statut_error_meme_avec_une_note():
     # juge a échoué après avoir répondu n'est pas une case réussie.
     supabase, envoyees = _supabase(_ok())
     write_sample(supabase, "r1", 0, "m", 0, score=1.0, justification="",
-                 messages=[], error="le juge n'a pas répondu")
+                 turns_done=1, messages=[], error="le juge n'a pas répondu")
     assert _body(envoyees[0])["status"] == "error"
 
 

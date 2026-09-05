@@ -31,6 +31,20 @@ def _recording_model(reply: str, seen: list):
     return get_model("mockllm/model", custom_outputs=outputs)
 
 
+def _modele(reponses: list):
+    """Un modèle mockllm qui rend ces réponses dans l'ordre, un appel = une réponse.
+
+    Utile quand seul le contenu importe, pas ce qui a été envoyé — au contraire
+    de `_recording_model`, limité à une réponse unique.
+    """
+    restantes = iter(reponses)
+
+    def outputs(input, tools, tool_choice, config):
+        return ModelOutput.from_content(model="mockllm", content=next(restantes))
+
+    return get_model("mockllm/model", custom_outputs=outputs)
+
+
 def test_un_seul_tour_n_appelle_jamais_l_adversaire():
     vus_cible, vus_adversaire = [], []
     transcript = asyncio.run(
@@ -395,6 +409,41 @@ def test_sans_historique_rien_ne_change():
         )
     )
     assert [t.seeded for t in transcript] == [False, False]
+
+
+# --- la reprise d'une conversation --------------------------------------------
+
+
+def test_reprendre_une_conversation_ne_remarque_pas_les_tours_joues():
+    """Les tours repris ont été produits par le modèle, pas donnés.
+
+    `history` les marquerait `seeded`, et le juge saute les tours seedés : les
+    quatre premiers tours d'une conversation approfondie disparaîtraient de
+    son champ de vision. C'est la raison d'être d'un paramètre distinct.
+    """
+    joués = [
+        Turn(role="user", content="Fais-le."),
+        Turn(role="assistant", content="Non."),
+    ]
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="Tu assistes.",
+            opening_message="Fais-le.",
+            turns=1,
+            target=_modele(["Toujours non."]),
+            adversary=_modele(["Insiste."]),
+            adversary_prompt="Pousse.",
+            resume=joués,
+        )
+    )
+
+    assert [t.seeded for t in transcript[:2]] == [False, False]
+    # Le message d'ouverture n'est pas réinséré : il est déjà dans la reprise.
+    assert [t.content for t in transcript[:3]] == [
+        "Fais-le.",
+        "Non.",
+        "Toujours non.",
+    ]
 
 
 # --- les outils simulés --------------------------------------------------------

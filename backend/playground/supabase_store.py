@@ -139,12 +139,17 @@ def pending_samples(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
     depuis la configuration refait tout, y compris ce qui est déjà noté : ni la
     reprise des erreurs ni l'ajout de scénarios à un run existant ne seraient
     possibles.
+
+    `turns_done` et `messages` voyagent aussi : une case remise en attente
+    pour être approfondie les porte déjà, et c'est à leur présence que
+    `pending_dataset` reconnaît une conversation à prolonger plutôt qu'à
+    rejouer.
     """
     return supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
         status="eq.pending",
-        select="scenario_index,target_model,repetition,temperature",
+        select="scenario_index,target_model,repetition,temperature,turns_done,messages",
         order="scenario_index,target_model,repetition",
     )
 
@@ -294,6 +299,7 @@ def write_sample(
     *,
     score: float | None,
     justification: str,
+    turns_done: int,
     messages: list[dict],
     temperature: float | None = None,
     usage: dict[str, Any] | None = None,
@@ -305,6 +311,11 @@ def write_sample(
     Écrite dès qu'elle est jugée, sans attendre la fin du run : c'est ce qui
     fait avancer la progression à l'écran, et ce qui laisse quelque chose
     d'exploitable derrière un job qui meurt en cours de route.
+
+    `turns_done` reflète toujours une conversation qui est allée à son terme :
+    cette fonction n'est jamais atteinte pour une case dont le solver a
+    échoué ou a été annulée — celles-ci restent hors du juge, et donc hors
+    d'ici (voir `abandon_unfinished_samples` et `cancel_unfinished_samples`).
     """
     supabase.update(
         SAMPLES,
@@ -312,6 +323,7 @@ def write_sample(
             "status": "error" if error else "done",
             "score": score,
             "justification": justification,
+            "turns_done": turns_done,
             "messages": messages,
             "temperature": temperature,
             "usage": usage or {},

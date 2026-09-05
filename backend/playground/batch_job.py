@@ -195,6 +195,12 @@ def run_batch_job(
             sample.repetition,
             score=sample.score,
             justification=sample.justification,
+            # La case vient d'être poussée jusque-là : `on_scored` n'est
+            # appelé qu'une fois la conversation entièrement déroulée (voir
+            # `rubric_judge` dans `scoring.py`), donc `config.turns` est
+            # toujours ce qu'elle porte réellement une fois finie — y compris
+            # quand seul le juge, plus loin, a échoué.
+            turns_done=config.turns,
             messages=sample.messages,
             temperature=sample.temperature,
             usage=sample.usage,
