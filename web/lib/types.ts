@@ -211,6 +211,8 @@ export interface Message {
   tool_calls?: { id: string; name: string; arguments: Record<string, unknown> }[];
   /** Sur un tour `tool` : l'outil qui a « répondu ». */
   tool_name?: string | null;
+  /** Sur un tour `tool` : l'appel auquel ce résultat répond. */
+  tool_call_id?: string | null;
   /** `content_filter` quand le fournisseur a bloqué la génération. */
   stop_reason?: string | null;
 }

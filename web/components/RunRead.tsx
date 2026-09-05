@@ -488,6 +488,7 @@ export function DetailModal({
             key={attempt.id}
             attempt={attempt}
             rubric={detail.run.config.rubric}
+            runTurns={detail.run.config.turns}
           />
         ))}
       </div>
@@ -498,9 +499,13 @@ export function DetailModal({
 export function AttemptView({
   attempt,
   rubric,
+  runTurns,
 }: {
   attempt: EvalSample;
   rubric: RubricLevel[];
+  /** La profondeur demandée par le run, pour ne signaler que les tentatives
+   *  qui s'en écartent — voir le commentaire sur `turns_done` plus bas. */
+  runTurns: number;
 }) {
   // Repliée par défaut : dix répétitions de dix tours feraient un mur de texte
   // où l'on ne retrouve plus la tentative qu'on cherchait.
@@ -527,6 +532,17 @@ export function AttemptView({
         {attempt.temperature !== null && (
           <span className="text-xs text-zinc-500">
             temperature {attempt.temperature.toFixed(2)}
+          </span>
+        )}
+        {attempt.turns_done !== null && attempt.turns_done !== runTurns && (
+          // Un renseignement, pas une réserve : cette tentative s'est réglée
+          // avant la profondeur du run, et l'y pousser plus loin n'aurait
+          // rien appris — c'est même la question qu'on pose à un run de ce
+          // genre. Silencieux quand la tentative est allée aussi loin que le
+          // run : l'en-tête du run le dit déjà, le répéter n'apprend rien.
+          <span className="text-xs text-zinc-500">
+            settled at {attempt.turns_done} turn
+            {attempt.turns_done > 1 ? "s" : ""}
           </span>
         )}
         <span className="ml-auto text-xs text-zinc-500">
