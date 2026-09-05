@@ -240,8 +240,8 @@ export async function createRun(
   return run;
 }
 
-/** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler,
- *  additionné sur le devis de chaque lancement — jamais sur ce qu'un run a
+/** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler : le
+ *  nombre de lancements, et leur devis additionné — jamais ce qu'un run a
  *  fini par coûter réellement, qui n'existe qu'une fois celui-ci terminé et
  *  qu'un agent ne peut donc jamais prévoir avant d'appeler.
  *
@@ -252,15 +252,31 @@ export async function createRun(
  * a-t-il été démarré par un agent ». `mcp_launches` porte une ligne par
  * lancement et non par run, ce qui rend une extension comptable exactement
  * comme un run neuf. Filtré sur `user_email` et `created_at` : la lecture que
- * couvre l'index posé avec la table. */
-export async function mcpSpendLastHour(userEmail: string): Promise<number> {
+ * couvre l'index posé avec la table.
+ *
+ * Le compte sert la page de profil, le montant sert aussi la décision de
+ * budget de `app/mcp/route.ts` — voir `mcpSpendLastHour`, qui n'en garde que
+ * le second pour ne pas changer la forme attendue là où le compte ne sert à
+ * rien. */
+export async function mcpActivityLastHour(
+  userEmail: string,
+): Promise<{ count: number; usd: number }> {
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const launches = await select<{ quoted_usd: number }>(MCP_LAUNCHES, {
     select: "quoted_usd",
     user_email: `eq.${userEmail}`,
     created_at: `gte.${since}`,
   });
-  return launches.reduce((total, launch) => total + launch.quoted_usd, 0);
+  return {
+    count: launches.length,
+    usd: launches.reduce((total, launch) => total + launch.quoted_usd, 0),
+  };
+}
+
+/** Le seul chiffre dont la décision de budget a besoin — voir
+ *  `mcpActivityLastHour` pour ce qui est compté et pourquoi. */
+export async function mcpSpendLastHour(userEmail: string): Promise<number> {
+  return (await mcpActivityLastHour(userEmail)).usd;
 }
 
 /** Enregistre un lancement réussi par MCP, `run` comme `extend`.

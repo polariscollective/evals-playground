@@ -74,7 +74,9 @@ export function AppNav() {
       {email && (
         <div className="flex items-center gap-3">
           <span className="text-zinc-500">Logged in as</span>
-          <span className="font-medium">{email}</span>
+          <Link href="/profile" className="font-medium hover:underline">
+            {email}
+          </Link>
           <form action={logout}>
             <button
               type="submit"

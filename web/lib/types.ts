@@ -346,6 +346,15 @@ export interface Profile {
   created_at: string;
 }
 
+/** Ce que `mcp_launches` dit de la dernière heure, pour une personne : combien
+ *  de lancements, et pour quel devis additionné — voir `mcpActivityLastHour`
+ *  dans `runs.ts`. Sert la page de profil, jamais une décision de budget, qui
+ *  ne garde que le montant. */
+export interface ProfileActivity {
+  count: number;
+  usd: number;
+}
+
 /** Une ligne d'`eval_samples` : une case de la matrice. */
 export interface EvalSample {
   id: string;

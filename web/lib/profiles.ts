@@ -9,7 +9,7 @@
 // besoin : un agent qui n'a jamais ouvert l'écran ne doit pas découvrir
 // l'absence de profil au moment où il tente de dépenser.
 import "server-only";
-import { PROFILES, SupabaseError, insert, select } from "./supabase";
+import { PROFILES, SupabaseError, insert, select, update } from "./supabase";
 import type { Profile } from "./types";
 
 /** Le profil de `email`, créé aux défauts de la table s'il n'existait pas
@@ -52,4 +52,20 @@ export async function ensureProfile(email: string): Promise<Profile> {
   });
   if (after[0]) return after[0];
   throw new SupabaseError(`Could not create or read a profile for ${email}.`);
+}
+
+/** Change les deux plafonds de `email`, depuis l'écran de profil — la
+ *  seule écriture sur cette table hors de sa création.
+ *
+ * Ne valide rien : `capProblem`, dans `profile-caps.ts`, l'a déjà fait avant
+ * d'arriver ici, côté route comme côté formulaire. Relit après coup plutôt
+ * que de renvoyer ce qu'on vient d'écrire : `ensureProfile` est la seule
+ * fonction qui sache encore faire exister la ligne si, par une course
+ * improbable, elle avait disparu entre-temps. */
+export async function updateProfileCaps(
+  email: string,
+  caps: { max_usd_per_run: number; max_usd_per_hour: number },
+): Promise<Profile> {
+  await update(PROFILES, caps, { user_email: `eq.${email}` });
+  return ensureProfile(email);
 }

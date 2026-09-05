@@ -9,6 +9,8 @@ import type {
   ExpectedCsv,
   JudgePromptPreview,
   ExtendRequest,
+  Profile,
+  ProfileActivity,
   ProviderInfo,
   RejudgeRequest,
   RubricLevel,
@@ -337,4 +339,20 @@ export const revokeAllMcpConnections = () =>
   request<{ ok: true; revoked: number }>("/api/mcp/connections", {
     method: "DELETE",
     body: JSON.stringify({ all: true }),
+  });
+
+/** Le profil de qui regarde : ses deux plafonds, et ce qu'un agent a lancé
+ *  pour son compte sur l'heure qui vient de s'écouler. */
+export const getProfile = () =>
+  request<{ profile: Profile; activity: ProfileActivity }>("/api/profile");
+
+/** Change les deux plafonds. Bornés à l'email de la session côté route,
+ *  jamais ici — comme les connexions MCP. */
+export const updateProfileCaps = (caps: {
+  max_usd_per_run: number;
+  max_usd_per_hour: number;
+}) =>
+  request<{ profile: Profile }>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify(caps),
   });
