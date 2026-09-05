@@ -26,6 +26,7 @@ from inspect_ai.log import EvalLog
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from playground.eval_schemas import EvalRunConfig
+from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
 from playground.scoring import ScoredSample, rubric_judge
@@ -97,12 +98,19 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     ici qui permet à `enregistre`, plus bas, d'ajouter la passe du juge à cette
     dépense plutôt que de l'effacer. `cost_usd` n'y voyage pas : il est
     toujours recalculé depuis les jetons fusionnés.
+
+    `turns_done` voyage pour la même raison, mais pour la profondeur plutôt que
+    pour le coût : depuis l'approfondissement, les essais d'un run n'ont plus
+    tous la même profondeur, et une passe de juge ne rejoue aucun tour. La
+    profondeur réelle d'une case rejugée est donc celle qu'elle portait déjà,
+    jamais `config.turns` — voir `enregistre`, qui distingue les deux branches.
     """
     rows = supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
         select=(
-            "scenario_index,target_model,repetition,temperature,messages,usage"
+            "scenario_index,target_model,repetition,temperature,messages,usage,"
+            "turns_done"
         ),
         order="scenario_index,target_model,repetition",
     )
@@ -118,6 +126,7 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
                     "temperature": row.get("temperature"),
                     "transcript": row.get("messages") or [],
                     "usage": row.get("usage") or {},
+                    "turns_done": row.get("turns_done") or 0,
                 },
             )
             for index, row in enumerate(rows)
@@ -148,6 +157,7 @@ def run_batch_job(
     logs_dir: Path = LOGS_DIR,
     model_args: dict[str, Any] | None = None,
     cancellation: Cancellation | None = None,
+    storage: Storage | None = None,
 ) -> None:
     """Exécute un run, ou rejoue son juge, et écrit chaque case au fil de l'eau.
 
@@ -161,8 +171,11 @@ def run_batch_job(
         cancellation: Injectable pour les tests, qui doivent pouvoir annuler
             son cache. Celui-ci vaut une seconde en production — court devant
             la durée d'un appel de modèle, long devant celle d'un test.
-        logs_dir: Où inspect écrit ses `.eval`. Éphémère dans un conteneur : ce
-            qui compte est en base, pas ici.
+        logs_dir: Où inspect écrit ses `.eval`. Le disque est éphémère dans un
+            conteneur : le `finally` les monte dans Storage avant qu'il
+            disparaisse.
+        storage: Injectable pour les tests, qui n'ont ainsi ni réseau ni
+            bucket.
         model_args: Arguments passés aux modèles. Sert aux tests, avec
             `mockllm` — voir la docstring de `scenario_solver.model_args`.
 
@@ -198,6 +211,14 @@ def run_batch_job(
     # jusqu'au solveur, lue ici pour la fusion plutôt que pour la conversation.
     deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
 
+    # La profondeur qu'une case rejugée portait déjà, alimentée juste avant
+    # `inspect_eval` dans la branche `rejudge` (voir plus bas) : c'est la même
+    # métadonnée que `rejudge_dataset` vient de faire remonter, lue ici pour
+    # que `enregistre` sache, sans rejouer un seul tour, ce que CETTE case a
+    # réellement atteint. Vide pour un run ou un approfondissement, où
+    # `config.turns` reste la valeur démontrable.
+    turns_deja_faits: dict[tuple[int, str, int], int] = {}
+
     def enregistre(sample: ScoredSample) -> None:
         # `sample.usage` ne couvre que cette passe (`sample_model_usage()` ne
         # répond que pour l'échantillon en cours, voir `ScoredSample` dans
@@ -221,12 +242,15 @@ def run_batch_job(
             sample.repetition,
             score=sample.score,
             justification=sample.justification,
-            # La case vient d'être poussée jusque-là : `on_scored` n'est
-            # appelé qu'une fois la conversation entièrement déroulée (voir
-            # `rubric_judge` dans `scoring.py`), donc `config.turns` est
-            # toujours ce qu'elle porte réellement une fois finie — y compris
-            # quand seul le juge, plus loin, a échoué.
-            turns_done=config.turns,
+            # Pour un run ou un approfondissement, la case vient d'être
+            # poussée jusque-là : `on_scored` n'est appelé qu'une fois la
+            # conversation entièrement déroulée (voir `rubric_judge` dans
+            # `scoring.py`), donc `config.turns` est toujours ce qu'elle porte
+            # réellement une fois finie — y compris quand seul le juge, plus
+            # loin, a échoué. Pour un rejugement, en revanche, aucun tour n'a
+            # été rejoué : la profondeur est celle déjà atteinte, lue dans
+            # `turns_deja_faits` (voir `rejudge_dataset`), jamais celle du run.
+            turns_done=turns_deja_faits.get(cle, config.turns),
             messages=sample.messages,
             temperature=sample.temperature,
             usage=usage,
@@ -248,6 +272,15 @@ def run_batch_job(
             deja_facture = {
                 (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
                     metadata.get("usage") or {}
+                )
+                for metadata in (echantillon.metadata for echantillon in dataset.samples)
+            }
+            # Même lecture, pour la profondeur plutôt que pour le coût : sans
+            # elle, `enregistre` retomberait sur `config.turns` et écrirait la
+            # profondeur du run sur des cases qui ne l'ont jamais atteinte.
+            turns_deja_faits = {
+                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): int(
+                    metadata.get("turns_done") or 0
                 )
                 for metadata in (echantillon.metadata for echantillon in dataset.samples)
             }
@@ -364,6 +397,14 @@ def run_batch_job(
         finish_run(supabase, run_id, error=f"{type(error).__name__}: {error}")
         traceback.print_exc()
         raise
+
+    finally:
+        # Inspect écrit son `.eval` au fil de l'eau : un job qui meurt en laisse
+        # un partiel, précisément le cas où on veut le lire. D'où le `finally`
+        # plutôt que la fin du chemin heureux — il attrape aussi le retour
+        # anticipé de l'annulation et le `raise` ci-dessus. `upload_logs` ne
+        # lève jamais : un run noté est un run réussi, même sans son journal.
+        upload_logs(run_id, logs_dir, storage)
 
 
 def actual_cost_from_dicts(usage: dict[str, Any]) -> tuple[float, list[str]]:

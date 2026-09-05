@@ -62,8 +62,17 @@ les trois sorties.
 ## Les composants
 
 **`backend/playground/log_store.py`** — module neuf, une fonction publique :
-`upload_logs(storage, run_id, logs_dir)`, qui pousse chaque `.eval` du dossier
-vers `POST /storage/v1/object/inspect-logs/<run_id>/<nom>.eval`. Même forme que
+`upload_logs(run_id, logs_dir, storage)`, qui pousse chaque `.eval` du dossier
+vers `POST /storage/v1/object/inspect-logs/<run_id>/<nom>.eval`, précédé du
+manifeste que le viewer exige.
+
+**Le manifeste est écrit par inspect, pas par nous.**
+`inspect_ai.log._file.write_log_listing(log_dir)` compose le `listing.json` que
+`fetchManifest` va chercher — dans la version même qui a écrit les journaux.
+Le fabriquer dans la route reviendrait à deviner une forme qui n'est pas la
+nôtre, et à la voir dériver au prochain `inspect-ai`. L'import est privé, comme
+`sample_model_usage` dans `scoring.py`. Il monte en dernier : il nomme des
+fichiers, et ne doit jamais en nommer un qui n'est pas encore là. Même forme que
 `supabase_store.Supabase` — httpx, clé de service, client injectable pour que
 les tests n'aient ni réseau ni base. Module séparé plutôt qu'ajout à
 `supabase_store.py` : Storage n'est ni le même service ni la même forme d'URL
@@ -102,9 +111,9 @@ Le viewer va chercher `log_dir + "/listing.json"` (`fetchManifest`) — c'est ce
 nom que la route doit servir. Et comme il indexe son cache IndexedDB sur le
 `log_dir` canonique, deux runs ne se marchent pas dessus.
 
-**`web/app/inspect-view/[runId]/logs/[...path]/route.ts`** — `listing.json`
-fabriqué depuis la liste Storage, et le `.eval` proxifié en transmettant `Range`
-et en rendant 206.
+**`web/app/inspect-view/[runId]/logs/[...path]/route.ts`** — sert les objets du
+run depuis Storage, `listing.json` compris, en transmettant `Range` et en
+rendant 206. La route n'interprète rien : elle vérifie qui regarde, puis relaie.
 
 **`scripts/build-inspect-view.sh`** — rejoue `inspect view bundle` et dépose les
 assets dans `web/public/inspect-view/`. Son résultat est commité : 9,9 Mo sur

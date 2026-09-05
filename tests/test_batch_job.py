@@ -6,6 +6,7 @@ import pytest
 from inspect_ai.model import ModelOutput
 
 from playground.batch_job import add_usage, run_batch_job, usage_from_log
+from playground.log_store import Storage
 from playground.supabase_store import RUNS, SAMPLES, Supabase
 
 CONFIG = {
@@ -100,13 +101,25 @@ def _outputs(note=1, sur_le_modele_evalue=None):
     return output
 
 
-def _lancer(supabase, tmp_path: Path, mode="run", outputs=None):
+class FakeStorage(Storage):
+    """Un bucket en mémoire : retient les chemins montés, ne touche à rien."""
+
+    def __init__(self):
+        super().__init__(url="https://fake", key="cle")
+        self.montés: list[str] = []
+
+    def upload(self, path: str, data: bytes) -> None:
+        self.montés.append(path)
+
+
+def _lancer(supabase, tmp_path: Path, mode="run", outputs=None, storage=None):
     run_batch_job(
         "r1",
         mode=mode,
         supabase=supabase,
         logs_dir=tmp_path / "logs",
         model_args={"custom_outputs": outputs or _outputs()},
+        storage=storage or FakeStorage(),
     )
 
 
@@ -272,6 +285,61 @@ def test_un_plantage_termine_le_run_en_erreur_et_ramasse_les_cases(
     assert cloture["status"] == "error"
     assert "inspect a explosé" in cloture["error"]
     assert any(v.get("status") == "error" for v in supabase.ecrites(SAMPLES))
+
+
+# --- le journal d'inspect ----------------------------------------------------
+
+
+def test_le_journal_du_run_monte_dans_storage(tmp_path: Path):
+    """Sans ça, le `.eval` meurt avec le conteneur Cloud Run."""
+    supabase = FakeSupabase()
+    storage = FakeStorage()
+
+    _lancer(supabase, tmp_path, storage=storage)
+
+    assert storage.montés, "aucun journal monté"
+    assert all(chemin.startswith("r1/") for chemin in storage.montés)
+    # Le manifeste est écrit par inspect sur le vrai `.eval` que ce run vient de
+    # produire, et monte en dernier : sans lui le viewer refuse le dossier.
+    assert storage.montés[-1] == "r1/listing.json"
+    assert any(chemin.endswith(".eval") for chemin in storage.montés)
+
+
+def test_le_journal_monte_meme_quand_le_run_plante(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """C'est le cas où on veut le lire le plus. Inspect écrit au fil de l'eau,
+    donc un job mort laisse un journal partiel — que le `finally` récupère."""
+    supabase = FakeSupabase()
+    storage = FakeStorage()
+    logs = tmp_path / "logs" / "r1"
+    logs.mkdir(parents=True)
+    (logs / "partiel.eval").write_bytes(b"une passe interrompue")
+
+    def exploser(*a, **k):
+        raise RuntimeError("inspect a explosé")
+
+    monkeypatch.setattr("playground.batch_job.inspect_eval", exploser)
+
+    with pytest.raises(RuntimeError, match="inspect a explosé"):
+        _lancer(supabase, tmp_path, storage=storage)
+
+    assert storage.montés == ["r1/partiel.eval"]
+
+
+def test_un_journal_refuse_ne_fait_pas_echouer_un_run_reussi(tmp_path: Path):
+    """Un run dont la matrice est complète et notée est un run réussi ;
+    perdre son journal est ennuyeux, le marquer `error` serait faux."""
+
+    class BucketFache(FakeStorage):
+        def upload(self, path: str, data: bytes) -> None:
+            raise RuntimeError("bucket absent")
+
+    supabase = FakeSupabase()
+
+    _lancer(supabase, tmp_path, storage=BucketFache())
+
+    assert supabase.ecrites(RUNS)[-1]["status"] == "done"
 
 
 def test_un_run_inconnu_n_est_pas_marque_en_cours(tmp_path: Path):
@@ -521,3 +589,53 @@ def test_la_fusion_ne_change_rien_pour_une_case_toute_neuve(tmp_path: Path):
     assert notees
     assert all(v["usage"] == {} for v in notees)
     assert all(v["cost_usd"] == 0.0 for v in notees)
+
+
+# --- la profondeur d'une case rejugée ----------------------------------------
+#
+# Depuis l'approfondissement, les essais d'un même run n'ont plus tous la même
+# profondeur : seuls ceux qu'on a choisis ont grandi. `rejudge_dataset` ne
+# rejoue rien — le juge renote un transcript inchangé — donc la profondeur
+# réelle d'une case rejugée est celle qu'elle portait déjà, jamais
+# `config.turns`, qui n'est démontrable que pour une case qu'on vient de
+# jouer ou d'approfondir.
+
+
+def test_le_rejugement_garde_la_profondeur_propre_a_chaque_case(tmp_path: Path):
+    """Deux essais à des profondeurs différentes, rejugés, gardent chacun la
+    leur — et non celle du run, qui écraserait la case la moins profonde."""
+    cases = [
+        {
+            "scenario_index": 0,
+            "target_model": "mockllm/model",
+            "repetition": 0,
+            "temperature": None,
+            "turns_done": 1,
+            "messages": [
+                {"role": "user", "content": "On a un souci sur le lot 4412."},
+                {"role": "assistant", "content": "Voici comment contourner."},
+            ],
+        },
+        {
+            "scenario_index": 0,
+            "target_model": "mockllm/model",
+            "repetition": 1,
+            "temperature": None,
+            "turns_done": 3,
+            "messages": [
+                {"role": "user", "content": "On a un souci sur le lot 4412."},
+                {"role": "assistant", "content": "Voici comment contourner."},
+            ],
+        },
+    ]
+    supabase = FakeSupabase(samples=cases)
+    _lancer(supabase, tmp_path, mode="rejudge", outputs=_outputs(0))
+
+    # Les filtres portent `eq.<repetition>` : on les décode pour retrouver la
+    # bonne case.
+    par_repetition = {
+        int(f["repetition"].removeprefix("eq.")): v["turns_done"]
+        for nom, v, f in supabase.ecritures
+        if nom == SAMPLES and "score" in v
+    }
+    assert par_repetition == {0: 1, 1: 3}
