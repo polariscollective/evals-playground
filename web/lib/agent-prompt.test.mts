@@ -6,7 +6,7 @@
 // lui-même et le font passer par le lecteur de fichiers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentPrompt, mcpAgentPrompt } from "./agent-prompt.ts";
+import { agentModels, agentPrompt, mcpAgentPrompt } from "./agent-prompt.ts";
 import { readConfigFile } from "./config-file.ts";
 
 const MODELS = [
@@ -147,6 +147,14 @@ test("le prompt MCP ne devine pas un plafond quand le profil n'a pas pu être lu
   assert.ok(!prompt.includes("$2.00"), "aucun défaut codé en dur ne doit apparaître à sa place");
   assert.ok(!/\{\{[A-Z_]+\}\}/.test(prompt), "le trou doit être comblé même sans profil");
   assert.ok(prompt.includes("launch_draft"));
+});
+
+test("le prompt annonce le juge d'éveil et le conseil d'écriture", () => {
+  // Ce que le prompt omet devient un champ qu'un agent n'écrit jamais, ou un
+  // conseil qu'il ne va pas chercher.
+  const prompt = agentPrompt(agentModels(), "https://example.test");
+  assert.match(prompt, /check_eval_awareness/);
+  assert.match(prompt, /read_scenario_advice|\/scenarios/);
 });
 
 test("le prompt MCP ne dit plus qu'update_draft_run refuse le brouillon d'un autre", () => {

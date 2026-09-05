@@ -226,7 +226,7 @@ const handler = createMcpHandler((server) => {
     {
       title: "Read the scenario-writing advice",
       description:
-        "Reads nothing and spends nothing. Returns what makes a scenario smell " +
+        "Starts nothing and spends nothing. Returns what makes a scenario smell " +
         "like a test to the model being evaluated, so you can avoid it: the tells, " +
         "the naming patterns that give an AI-written scenario away, how tool " +
         "results and planted information have to look. Read this before writing " +
