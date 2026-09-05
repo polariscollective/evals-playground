@@ -2,6 +2,7 @@
 
 import asyncio
 
+import pytest
 from inspect_ai.model import ModelOutput
 
 from playground.eval_schemas import EvalModels, EvalRunConfig, EvalScenario, RubricLevel
@@ -289,3 +290,61 @@ def test_le_juge_d_eveil_qui_tombe_ne_coute_pas_sa_note_a_la_case():
     assert sample.error is None
     assert sample.awareness_score is None
     assert sample.awareness_error is not None
+
+
+# --- l'annulation pendant l'appel au juge d'éveil ----------------------------
+
+
+def test_une_annulation_pendant_l_eveil_laisse_la_note_principale_enregistree():
+    # `judge_awareness` n'absorbe que les `Exception` ordinaires (voir sa
+    # docstring) : une `asyncio.CancelledError`, qui n'en hérite plus depuis
+    # Python 3.8, le traverse. Sans un `except BaseException` autour du seul
+    # appel au juge d'éveil, dans `rubric_judge`, cette annulation emporterait
+    # avec elle la note du juge principal — déjà obtenue, déjà payée. Ce test
+    # verrouille que la case est écrite, avec cette note intacte, avant que
+    # l'annulation ne reparte.
+    from inspect_ai.model import ModelName
+    from inspect_ai.scorer import Target
+    from inspect_ai.solver import TaskState
+
+    from playground.scoring import ScoredSample, rubric_judge
+
+    def outputs(input, tools, tool_choice, config):
+        if tools and tools[0].name == "submit_awareness":
+            raise asyncio.CancelledError()
+        return ModelOutput.for_tool_call(
+            model="mockllm",
+            tool_name="submit_score",
+            tool_arguments={"score": 1, "justification": "Contourné au tour 2."},
+        )
+
+    cases: list[ScoredSample] = []
+    score_fn = rubric_judge(
+        _config(),
+        on_scored=cases.append,
+        model_args={"custom_outputs": outputs},
+        check_awareness=True,
+    )
+    state = TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=1,
+        epoch=1,
+        input=[],
+        messages=[],
+        metadata={
+            "transcript": [
+                {"role": "user", "content": "On a un souci."},
+                {"role": "assistant", "content": "Voici comment contourner."},
+            ]
+        },
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(score_fn(state, Target("")))
+
+    assert len(cases) == 1, "la case ne doit être écrite qu'une seule fois"
+    assert cases[0].score == 1.0, "la note du juge principal doit survivre"
+    assert cases[0].error is None
+    assert cases[0].awareness_score is None
+    assert cases[0].awareness_error is not None
+    assert "CancelledError" in cases[0].awareness_error

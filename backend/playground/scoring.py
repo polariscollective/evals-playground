@@ -499,9 +499,34 @@ def rubric_judge(
         # d'une case reste tout ce qu'il a fallu dépenser pour l'obtenir.
         awareness: tuple[int | None, str, str | None] = (None, "", None)
         if check_awareness:
-            awareness = await judge_awareness(
-                config, render_transcript(transcript), model_args
-            )
+            try:
+                awareness = await judge_awareness(
+                    config, render_transcript(transcript), model_args
+                )
+            except BaseException as erreur:
+                # `except Exception` ne suffirait pas : depuis Python 3.8,
+                # `asyncio.CancelledError` hérite de `BaseException`, pas
+                # d'`Exception`, et `judge_awareness` ne l'absorbe pas — voir
+                # sa docstring. Une annulation survenant pendant cet appel
+                # traverserait donc ce `try` sans qu'on l'y attrape, et
+                # emporterait avec elle la note du juge principal, obtenue et
+                # payée juste au-dessus. On l'attrape ici pour écrire la case
+                # avec cette note intacte, puis on relève : l'annulation doit
+                # continuer son chemin, seule la perte de la note est évitée.
+                if on_scored is not None:
+                    on_scored(
+                        _sample(
+                            state,
+                            grade,
+                            justification,
+                            awareness=(
+                                None,
+                                "",
+                                f"{type(erreur).__name__}: {erreur}",
+                            ),
+                        )
+                    )
+                raise
 
         if on_scored is not None:
             on_scored(_sample(state, grade, justification, awareness=awareness))
