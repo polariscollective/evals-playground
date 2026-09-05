@@ -356,3 +356,10 @@ export const updateProfileCaps = (caps: {
     method: "PATCH",
     body: JSON.stringify(caps),
   });
+
+/** Écrit la surcharge du conseil, ou `null` pour remettre le défaut. */
+export const updateScenarioAdvice = (advice: string | null) =>
+  request<{ profile: Profile }>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ scenario_advice: advice }),
+  });

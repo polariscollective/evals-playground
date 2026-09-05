@@ -344,6 +344,13 @@ export interface Profile {
   max_usd_per_run: number;
   max_usd_per_hour: number;
   created_at: string;
+  /** Le conseil d'écriture de scénario, tel que cette personne l'a réécrit.
+   *
+   * `null` — le cas courant — veut dire « utilise le défaut du code ». Le
+   * défaut n'est jamais recopié ici : sinon l'améliorer n'atteindrait plus
+   * personne, chacun traînant la version du jour de son inscription. Revenir
+   * au défaut, c'est remettre `null`. */
+  scenario_advice: string | null;
 }
 
 /** Ce que `mcp_launches` dit de la dernière heure, pour une personne : combien

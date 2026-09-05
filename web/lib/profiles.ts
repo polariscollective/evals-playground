@@ -69,3 +69,20 @@ export async function updateProfileCaps(
   await update(PROFILES, caps, { user_email: `eq.${email}` });
   return ensureProfile(email);
 }
+
+/** Écrit — ou efface — la surcharge du conseil d'écriture de scénario.
+ *
+ * `null` remet le défaut. Une chaîne blanche est ramenée à `null` avant
+ * d'écrire : stocker du blanc ferait une surcharge qui existe sans rien dire,
+ * indistinguable à la lecture d'un vrai texte pour `scenarioAdvice`.
+ *
+ * Relit après coup pour la même raison qu'`updateProfileCaps` : `ensureProfile`
+ * est la seule fonction qui sache refaire exister la ligne. */
+export async function updateScenarioAdvice(
+  email: string,
+  advice: string | null,
+): Promise<Profile> {
+  const value = advice && advice.trim() !== "" ? advice : null;
+  await update(PROFILES, { scenario_advice: value }, { user_email: `eq.${email}` });
+  return ensureProfile(email);
+}
