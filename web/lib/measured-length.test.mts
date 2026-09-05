@@ -345,6 +345,23 @@ test("un adversaire entièrement muet n'est pas mesuré à zéro non plus", () =
   assert.equal(measureRun(cells, MODELS, 3).adversary, null);
 });
 
+test("une moyenne qui arrondit à zéro n'est pas une mesure non plus", () => {
+  // 10 cases à 3 tours (30 appels au total) pour 14 jetons de sortie en tout :
+  // le total n'est pas nul, mais 14 / 30 arrondit à 0. Le garder chiffrerait
+  // l'extension à un jeton par tour — `clamp` remontant le zéro à un — sous la
+  // même phrase « 0 output tokens per turn » que le total nul, par un autre
+  // chemin.
+  const cells = [
+    cell(0, "grok/grok-4.3", 14, {}, 3),
+    ...Array.from({ length: 9 }, () => cell(0, "grok/grok-4.3", 0, {}, 3)),
+  ];
+  const mesure = measureRun(cells, MODELS, 3);
+  assert.equal(mesure.run, null);
+  assert.equal(mesure.byScenario.get(0), undefined);
+  assert.equal(mesure.kept, 10);
+  assert.deepEqual(answerLengthsFor([0], mesure, 800), [800]);
+});
+
 test("une seule case à zéro ne fait pas taire les autres", () => {
   // Le zéro entre bien dans le bassin : c'est le bassin entièrement nul qui ne
   // dit rien, pas la case isolée qui tire la moyenne vers le bas.

@@ -3,7 +3,7 @@
 // celui qu'on enregistre ne parleraient plus de la même chose.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { estimateCost } from "./pricing.ts";
+import { costSentence, estimateCost } from "./pricing.ts";
 import { SHARED_PRICING } from "./shared.ts";
 import type { EvalRunConfig, EvalScenario } from "./types.ts";
 
@@ -94,4 +94,25 @@ test("les bornes ne bougent pas avec l'hypothèse retenue", () => {
   const haut = estimateCost(config(), 8000);
   assert.equal(bas.min_usd, haut.min_usd);
   assert.equal(bas.max_usd, haut.max_usd);
+});
+
+test("costSentence ne prétend plus enfermer le devis dans son repère", () => {
+  // `average_output_tokens` se déclare jusqu'à 100 000, bien au-delà de
+  // `long_response_tokens` : une déclaration à ce plafond pousse le total
+  // réel au-dessus du repère haut que la phrase cite. On vérifie la
+  // propriété — le total dépasse ce repère sans que la phrase se contredise
+  // — plutôt que la prose exacte, qui a le droit de changer.
+  const gourmand = config({ average_output_tokens: 100_000 });
+  const estimate = estimateCost(gourmand, null);
+  const phrase = costSentence(gourmand);
+
+  assert.ok(estimate.usd > estimate.max_usd);
+  assert.ok(phrase);
+  // Les deux chiffres — le total et le repère haut qu'il dépasse — figurent
+  // bien tous les deux dans la phrase.
+  assert.ok(phrase!.includes(estimate.usd.toFixed(2)));
+  assert.ok(phrase!.includes(estimate.max_usd.toFixed(2)));
+  // L'ancienne promesse d'encadrement ne doit pas être revenue : elle
+  // annonçait le devis « between » un bas et un haut censés le contenir.
+  assert.ok(!/between .*and .*depending/i.test(phrase!));
 });

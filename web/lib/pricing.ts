@@ -416,9 +416,16 @@ export function estimateDeepening(
  * Ne rendre que le total inviterait à prendre une sonde de trois lignes pour le
  * devis d'un lot de quarante.
  *
- * La fourchette n'est pas une précaution de langage : entre une réponse courte
- * et une longue, le même run va du simple au décuple, et c'est la longueur des
- * réponses qu'on ne saura jamais d'avance. */
+ * Les deux longueurs de référence ne sont pas une précaution de langage :
+ * entre une réponse courte et une longue, le même run va du simple au
+ * décuple, et c'est la longueur des réponses qu'on ne saura jamais d'avance.
+ * C'était pourtant la troisième phrase à promettre que le devis y resterait
+ * enfermé, alors que `average_output_tokens` se déclare jusqu'à 100 000 —
+ * bien au-delà de `long_response_tokens`. Un repère fixe — le même document à
+ * `short_response_tokens` puis à `long_response_tokens`, lus dans le JSON
+ * partagé — ne ment plus quand la déclaration les dépasse ; une fourchette
+ * censée contenir le devis, si. Même reformulation que `page.tsx` et
+ * `ExtendPanel.tsx`, adaptée au style télégraphique de cette phrase. */
 export function costSentence(config: EvalRunConfig): string | null {
   if (config.scenarios.length === 0) return null;
 
@@ -428,8 +435,10 @@ export function costSentence(config: EvalRunConfig): string | null {
   return (
     `About ${estimate.model_calls} model calls, roughly ${money(estimate.usd)}` +
     ` for the document as sent — ${money(each)} per scenario, so multiply by the` +
-    ` size of the real batch. Between ${money(estimate.min_usd)} and` +
-    ` ${money(estimate.max_usd)} depending on how long the answers run.` +
+    ` size of the real batch. For reference, the same document costs` +
+    ` ${money(estimate.min_usd)} at ${S.short_response_tokens.toLocaleString()}` +
+    ` output tokens per turn and ${money(estimate.max_usd)} at` +
+    ` ${S.long_response_tokens.toLocaleString()}.` +
     (estimate.unpriced_models.length
       ? ` No price on file for ${estimate.unpriced_models.join(", ")}:` +
         " the real cost is higher."

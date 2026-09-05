@@ -62,11 +62,18 @@ const ajouter = (pool: Pool, tokens: number, calls: number): void => {
  * sont gratuites, il n'a rien appris du tout. Le laisser passer chiffrait
  * l'extension à un jeton par tour — `clamp` remontant le zéro à un — sous une
  * phrase annonçant « 0 output tokens per turn ». C'est le même traitement
- * qu'une case sans compteur, muette plutôt que nulle. */
-const moyenne = (pool: Pool): number | null =>
-  pool.calls > 0 && pool.tokens > 0
-    ? Math.round(pool.tokens / pool.calls)
-    : null;
+ * qu'une case sans compteur, muette plutôt que nulle.
+ *
+ * Le garde-fou porte sur le résultat arrondi, pas sur le total brut : un
+ * bassin non vide peut arrondir à zéro (quelques jetons sur des dizaines
+ * d'appels) sans que le total soit nul lui-même, et cette moyenne-là est
+ * tout aussi peu une mesure — elle rendrait le même « 0 output tokens per
+ * turn » par un autre chemin. */
+const moyenne = (pool: Pool): number | null => {
+  if (pool.calls === 0) return null;
+  const valeur = Math.round(pool.tokens / pool.calls);
+  return valeur > 0 ? valeur : null;
+};
 
 /** Mesure les longueurs de sortie d'un run terminé.
  *

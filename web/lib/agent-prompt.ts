@@ -289,8 +289,9 @@ It answers in plain text, and the first word is the verdict. Three answers:
 
     OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5
     repetitions. About 480 model calls, roughly $12.34 for the document as sent
-    — $1.03 per scenario, so multiply by the size of the real batch. Between
-    $2.10 and $48.00 depending on how long the answers run.
+    — $1.03 per scenario, so multiply by the size of the real batch. For
+    reference, the same document costs $2.10 at 200 output tokens per turn and
+    $48.00 at 6,000.
 
     INCOMPLETE — the document names a CSV of scenarios but does not carry it
     (columns title / system_prompt / opening_message). It will load; upload the
@@ -375,8 +376,9 @@ Two answers, and only two:
 
       OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5
       repetitions. About 480 model calls, roughly $12.34 for the document as
-      sent — $1.03 per scenario, so multiply by the size of the real batch.
-      Between $2.10 and $48.00 depending on how long the answers run.
+      sent — $1.03 per scenario, so multiply by the size of the real batch. For
+      reference, the same document costs $2.10 at 200 output tokens per turn
+      and $48.00 at 6,000.
 
   Report the price and the address back to me: the price is what I decide on
   before pressing anything. That sentence offers to multiply by the size of the
