@@ -1349,12 +1349,21 @@ function EvaluateForm() {
               </tbody>
             </table>
 
+            {/* La fourchette est un repère fixe, pas une promesse qui
+                contiendrait le devis : elle chiffre le même run à deux
+                longueurs de référence, et une déclaration au-delà de la
+                longue le porte légitimement au-dessus. Le dire évite la
+                phrase qui annonçait « the run sits between » un plancher et
+                un plafond que le devis dépassait. Les deux longueurs viennent
+                du JSON partagé : une borne qui bougerait se lirait ici. */}
             <p className="text-xs text-zinc-500">
               Cost grows faster than the turn count, since every turn resends
-              the whole history. Across the range this estimate can assume,
-              the run sits between ${estimate.min_usd.toFixed(2)} and $
-              {estimate.max_usd.toFixed(2)}. Anthropic cache writes, billed at
-              1.25×, are not counted here.
+              the whole history. For reference, the same run costs $
+              {estimate.min_usd.toFixed(2)} at{" "}
+              {SHARED_PRICING.short_response_tokens.toLocaleString()} output
+              tokens per turn and ${estimate.max_usd.toFixed(2)} at{" "}
+              {SHARED_PRICING.long_response_tokens.toLocaleString()}. Anthropic
+              cache writes, billed at 1.25×, are not counted here.
             </p>
             {estimate.unpriced_models.length > 0 && (
               <p className="text-sm text-amber-800">

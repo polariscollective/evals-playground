@@ -856,13 +856,17 @@ export function ExtendPanel({
           </p>
           {totalEstimate && (
             <>
+              {/* Même repère fixe que sur l'écran de composition : deux
+                  longueurs de référence, pas une fourchette qui prétendrait
+                  contenir le devis — la mesure d'un run bavard la dépasse. */}
               <p>
                 Estimated cost{" "}
                 <strong>${totalEstimate.usd.toFixed(2)}</strong> (€
-                {totalEstimate.eur.toFixed(2)}) — between $
-                {totalEstimate.min_usd.toFixed(2)} and $
-                {totalEstimate.max_usd.toFixed(2)} depending on how long the
-                answers run.
+                {totalEstimate.eur.toFixed(2)}). For reference, the same work
+                costs ${totalEstimate.min_usd.toFixed(2)} at{" "}
+                {SHARED_PRICING.short_response_tokens.toLocaleString()} output
+                tokens per turn and ${totalEstimate.max_usd.toFixed(2)} at{" "}
+                {SHARED_PRICING.long_response_tokens.toLocaleString()}.
                 {totalEstimate.unpriced_models.length > 0 && (
                   <>
                     {" "}
