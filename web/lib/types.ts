@@ -272,6 +272,12 @@ export interface EvalRun {
    *  étrangère — la provenance survit à la disparition du brouillon, et
    *  l'identifiant peut donc ne plus rien désigner. */
   draft_id: string | null;
+  /** Qui a appuyé sur « lancer » : l'interface, ou un outil MCP. Sert à borner
+   *  la dépense d'un appelant MCP sur l'heure glissante — voir
+   *  `mcp-budget.ts` — sans quoi un run lancé depuis l'écran compterait contre
+   *  le même budget. Défaut `'ui'` en base : les runs d'avant cette colonne
+   *  n'ont jamais pu venir d'ailleurs. */
+  launched_via: "ui" | "mcp";
 }
 
 /** Une ligne d'`eval_samples` : une case de la matrice. */
@@ -437,8 +443,19 @@ export interface ModelCost {
   usd: number | null;
 }
 
+/** Sur quelle longueur de sortie un devis repose. Jumeau de `LengthAssumption`
+ *  côté Python — les deux doivent accepter exactement les mêmes formes. */
+export interface LengthAssumption {
+  /** Les réponses du modèle évalué : un nombre pour tous les scénarios, ou un
+   *  par scénario dans l'ordre de `config.scenarios`. */
+  answer?: number | number[] | null;
+  /** Les tours d'adversaire, qui dépendent de sa consigne et non du scénario.
+   *  Absent, il prend la longueur déclarée du run. */
+  adversary?: number | null;
+}
+
 export interface CostEstimate {
-  /** La longueur imposée à tous les modèles, ou null si chacun prend la sienne. */
+  /** La longueur supposée, ou null si elle varie d'un scénario à l'autre. */
   response_tokens: number | null;
   usd: number;
   eur: number;

@@ -1,11 +1,14 @@
-// Le serveur MCP : lire les runs, en reprendre la configuration, et en
-// déposer un sans le lancer.
+// Le serveur MCP : lire les runs, en reprendre la configuration, en déposer un
+// sans le lancer — et, seule exception, lancer un brouillon déjà écrit, sous
+// budget.
 //
-// Aucun outil ne démarre quoi que ce soit — submit_draft_run valide, chiffre et
-// pose un brouillon, le lancement reste un clic humain. Les descriptions le
-// disent en premier plutôt qu'en dernier : un agent qui croit risquer de
-// dépenser l'argent de quelqu'un n'appelle pas l'outil, et se rabat sur ce
-// qu'il imagine plus doux.
+// Pour tous les outils sauf un, aucun ne démarre quoi que ce soit —
+// submit_draft_run valide, chiffre et pose un brouillon, le lancement reste un
+// clic humain. Les descriptions le disent en premier plutôt qu'en dernier : un
+// agent qui croit risquer de dépenser l'argent de quelqu'un n'appelle pas
+// l'outil, et se rabat sur ce qu'il imagine plus doux. launch_draft dit la
+// même chose en premier, mais pour la raison inverse : cette fois, c'est vrai,
+// et le taire serait ce qui trompe.
 import { createMcpHandler, getPublicOrigin, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
@@ -17,16 +20,38 @@ import {
   createDraft,
   createExtendDraft,
   loadDraft,
+  markDraftLaunched,
   updateDraft,
 } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
+import { budgetProblem, formatUsd, maxUsdPerHour, maxUsdPerRun } from "@/lib/mcp-budget";
 import { cellsOf, overallMean } from "@/lib/matrix";
-import { costSentence } from "@/lib/pricing";
-import { NotFound, loadRun, loadRuns, loadSampleTranscript, saveAnalysis } from "@/lib/runs";
+import { costSentence, estimateCost } from "@/lib/pricing";
+import {
+  NotFound,
+  createRun,
+  failToStart,
+  loadRun,
+  loadRuns,
+  loadSampleTranscript,
+  mcpSpendLastHour,
+  recordStart,
+  saveAnalysis,
+} from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
-import { addRunTags, loadTags, setDraftTags, tagsByRun, tagsForLabels, tagsOf } from "@/lib/tags";
-import { MAX_TURNS, extendProblem } from "@/lib/validate";
+import {
+  addRunTags,
+  loadTags,
+  setDraftTags,
+  setRunTags,
+  tagsByRun,
+  tagsForLabels,
+  tagsOf,
+  tagsOfDraft,
+} from "@/lib/tags";
+import { startJob } from "@/lib/trigger";
+import { MAX_TURNS, configProblem, extendProblem } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
 import type { Draft, RunDetail } from "@/lib/types";
 
@@ -461,6 +486,101 @@ const handler = createMcpHandler((server) => {
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return {
         content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draftId}` }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "launch_draft",
+    {
+      title: "Launch a run draft",
+      description:
+        "Unlike every other tool in this server, calling this one spends real money: it launches the " +
+        "draft as a run, which calls three model providers. Two caps bound it, both set by this " +
+        "deployment and adjustable there without a code change: MCP_MAX_USD_PER_RUN (default $2) " +
+        "refuses a draft quoted above it on its own; MCP_MAX_USD_PER_HOUR (default $10) refuses one " +
+        "that would push what you have personally spent by MCP in the last rolling hour above it. " +
+        "Either refusal names the quote, the cap, and what you can do about it — wait, trim the draft, " +
+        "or ask a human to launch it from the web app, where neither cap applies.\n\n" +
+        "What stays true here as everywhere else: this launches a draft that was already checked and " +
+        "saved earlier — by submit_draft_run, or from the web app — never a configuration composed in " +
+        "this same call. Nothing about the draft is read back and reassembled; the run it produces is " +
+        "exactly what the draft already described. Only run drafts can be launched this way for now — " +
+        "a draft that extends an existing run (kind \"extend\") is refused, not because it will always " +
+        "be, but because that half isn't built yet.",
+      inputSchema: z.object({
+        draft_id: z.string().describe("The draft's UUID, from its address."),
+      }),
+    },
+    async ({ draft_id }, ctx) => {
+      const found = await draftOrError(draft_id);
+      if ("error" in found) return found.error;
+      const { draft } = found;
+
+      // Comme la route humaine : un brouillon d'extension n'a pas de run à
+      // créer, il en agrandit un, et son lancement veut une confirmation prise
+      // sur la page du run concerné. Limite du moment, pas une règle — la
+      // seconde moitié de ce chantier l'ouvrira.
+      if (draft.kind !== "run") {
+        return toolError(
+          "This tool only launches run drafts. This one extends run " +
+            `${draft.extends_run_id} instead, and that isn't supported here yet — open it from that ` +
+            "run's page and confirm it by hand.",
+        );
+      }
+
+      // La même vérification que la route humaine, sur la même fonction : un
+      // brouillon déposé par submit_draft_run est déjà valide, mais rien ne
+      // l'empêche d'avoir vieilli depuis — un modèle retiré du catalogue, par
+      // exemple.
+      const problem = configProblem(draft.config);
+      if (problem) return toolError(problem);
+
+      // Le devis calculé ici, et nulle part repris : un brouillon ne porte
+      // aucun devis à lire, seul un run en a un.
+      const quote = estimateCost(draft.config);
+      const caller = callerEmail(ctx);
+      const spentLastHour = await mcpSpendLastHour(caller);
+      const overBudget = budgetProblem(quote.usd, spentLastHour, maxUsdPerRun(), maxUsdPerHour());
+      if (overBudget) return toolError(overBudget);
+
+      const run = await createRun(draft.config, caller, draft.csv_text, draft_id, "mcp");
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      try {
+        await recordStart(run.id, await startJob(run.id, "run"));
+      } catch (error) {
+        const reason = `Could not start the job: ${(error as Error).message}`;
+        await failToStart(run.id, reason);
+        return toolError(`${reason}\n\n${origin}/eval/${run.id}`);
+      }
+      // Recopier les tags maintenant, comme la route humaine : le run existe et
+      // tourne, et le brouillon est encore lisible. Un échec ici ne doit pas
+      // faire échouer la réponse — le run est déjà lancé, le signaler en
+      // erreur mentirait sur ce qui a réussi.
+      try {
+        const tags = await tagsOfDraft(draft_id);
+        if (tags.length > 0) {
+          await setRunTags(run.id, tags.map((tag) => tag.id));
+        }
+      } catch (error) {
+        console.error(
+          `Could not copy tags from draft ${draft_id} to run ${run.id}:`,
+          (error as Error).message,
+        );
+      }
+      // Marqué lancé, pas effacé, comme la route humaine — voir markDraftLaunched.
+      await markDraftLaunched(draft_id);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Launched as run ${run.id}, quoted at ${formatUsd(quote.usd)}. You have now spent about ` +
+              `${formatUsd(spentLastHour + quote.usd)} launching runs by MCP in the last hour.` +
+              `\n\n${origin}/eval/${run.id}`,
+          },
+        ],
       };
     },
   );

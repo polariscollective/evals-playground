@@ -35,6 +35,8 @@ AUTH_SECRET                    openssl rand -base64 32
 ALLOWED_EMAILS                 adresses autorisées, séparées par des virgules
 ALLOWED_DOMAINS                domaines autorisés, idem
 MCP_CLIENT_ID                  openssl rand -hex 16 — voir « Le connecteur MCP »
+MCP_MAX_USD_PER_RUN            borne le devis d'un run lancé par launch_draft — défaut 2
+MCP_MAX_USD_PER_HOUR           borne ce qu'un même appelant MCP a lancé sur l'heure glissante — défaut 10
 ```
 
 **Aucune clé de fournisseur.** Aucune route n'appelle un modèle : le devis est

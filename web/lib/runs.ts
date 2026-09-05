@@ -17,6 +17,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost } from "./pricing";
 import { estimateDeepeningCost } from "./deepen-counts";
+import { spendOf } from "./mcp-budget";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
@@ -168,12 +169,19 @@ export async function sourceCsv(runId: string): Promise<string | null> {
  *
  * Les cases sont écrites au lancement, pas par le job : c'est ce qui rend la
  * progression exacte avant même que le job démarre, et ce qui permet d'afficher
- * la matrice grisée dès la première seconde. */
+ * la matrice grisée dès la première seconde.
+ *
+ * `launchedVia` vaut `'ui'` par défaut : les appelants d'avant cette colonne
+ * — le formulaire, la route de lancement d'un brouillon — n'ont rien à changer
+ * pour continuer à écrire ce qu'ils écrivaient déjà. Seul l'outil MCP
+ * `launch_draft` passe `'mcp'`, la seule valeur que compte le budget de
+ * `mcp-budget.ts`. */
 export async function createRun(
   config: EvalRunConfig,
   userEmail: string,
   csvText: string | null,
   draftId: string | null = null,
+  launchedVia: "ui" | "mcp" = "ui",
 ): Promise<EvalRun> {
   const total =
     config.scenarios.length * config.models.targets.length * config.repetitions;
@@ -195,6 +203,7 @@ export async function createRun(
       // par le brouillon : relancer le même brouillon est prévu, et une case
       // unique de l'autre côté écraserait le run précédent.
       draft_id: draftId,
+      launched_via: launchedVia,
     },
     { returning: true },
   );
@@ -210,6 +219,28 @@ export async function createRun(
   );
 
   return run;
+}
+
+/** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler,
+ *  additionné : le coût réel de chaque run fini, son devis pour les autres —
+ *  voir `spendOf` dans `mcp-budget.ts`, qui porte la raison de ce choix.
+ *
+ * Filtré sur `user_email`, `launched_via = 'mcp'` et `created_at` : exactement
+ * la lecture que couvre l'index partiel posé avec la colonne. Un run lancé
+ * depuis l'écran ne compte jamais ici, quel qu'en soit l'auteur — c'est tout
+ * le sens de la colonne. */
+export async function mcpSpendLastHour(userEmail: string): Promise<number> {
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const runs = await select<{ cost_usd: number | null; estimate: EvalRun["estimate"] }>(
+    RUNS,
+    {
+      select: "cost_usd,estimate",
+      user_email: `eq.${userEmail}`,
+      launched_via: "eq.mcp",
+      created_at: `gte.${since}`,
+    },
+  );
+  return runs.reduce((total, run) => total + spendOf(run), 0);
 }
 
 /** Prépare un run pour une nouvelle passe de juge.
