@@ -422,6 +422,9 @@ export async function extendRun(
   const ajout = estimateCost({
     ...config,
     tools: outils,
+    // La profondeur demandée, pas celle d'avant : ces cases-là sont neuves et
+    // tourneront à la nouvelle, puisque la configuration l'aura déjà reçue.
+    turns: request.turns ?? config.turns,
     scenarios: indices
       .map((index) => scenarios[index])
       .filter((scenario) => Boolean(scenario)),
