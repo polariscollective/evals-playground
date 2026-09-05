@@ -18,7 +18,7 @@ export async function GET() {
   return NextResponse.json({ profile, activity });
 }
 
-/** Change les plafonds, ou le conseil d'écriture de scénario, ou les deux.
+/** Change les plafonds, ou le conseil d'écriture de scénario, mais jamais les deux.
  *
  * L'email vient de la session, jamais du corps — comme pour une révocation de
  * connexion MCP : sans quoi n'importe quel compte connecté pourrait modifier
@@ -26,8 +26,9 @@ export async function GET() {
  *
  * Les deux champs sont indépendants : la page de profil envoie les plafonds,
  * la page des scénarios envoie le conseil, et aucune n'a à connaître l'autre.
- * `undefined` veut donc dire « ne touche pas », là où `null` veut dire
- * « remets le défaut ». */
+ * Si une requête porte les deux, elle est refusée plutôt que de dédouaner
+ * l'un ou l'autre en silence. `undefined` veut dire « ne touche pas », et
+ * `null` veut dire « remets le défaut ». */
 export async function PATCH(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -37,6 +38,20 @@ export async function PATCH(request: Request) {
     max_usd_per_hour?: unknown;
     scenario_advice?: unknown;
   };
+
+  // Refuser une requête qui porte à la fois le conseil et un des plafonds
+  if (
+    body.scenario_advice !== undefined &&
+    (body.max_usd_per_run !== undefined || body.max_usd_per_hour !== undefined)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Send the spending caps and the scenario advice in separate requests — this route applies one or the other, and silently dropping half of what you sent would be worse than refusing it.",
+      },
+      { status: 422 },
+    );
+  }
 
   if (body.scenario_advice !== undefined) {
     if (body.scenario_advice !== null && typeof body.scenario_advice !== "string") {
