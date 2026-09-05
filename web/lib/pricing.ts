@@ -11,7 +11,7 @@ import {
   SHARED_PRICING as S,
 } from "./shared.ts";
 import { toolsFor } from "./tools.ts";
-import type { CostEstimate, EvalRunConfig, ModelCost } from "./types";
+import type { CostEstimate, EvalRunConfig, LengthAssumption, ModelCost } from "./types";
 
 // Un tarif unique par modèle, sans palier — et ce n'est vrai qu'à peu près.
 //
@@ -20,8 +20,9 @@ import type { CostEstimate, EvalRunConfig, ModelCost } from "./types";
 // multi-modèles l'écarte en une phrase : « un run de ce produit n'en approche
 // pas — dix tours d'une conversation font quelques milliers de jetons ». Le
 // plafond est passé à cent, et l'argument est tombé avec : chaque tour renvoie
-// tout l'historique, donc avec les réponses les plus longues du catalogue
-// (5 954 jetons mesurés) une requête des derniers tours passe le seuil.
+// tout l'historique, donc avec les réponses les plus longues que le devis sait
+// supposer (`long_response_tokens`) une requête des derniers tours passe le
+// seuil.
 //
 // Ce qu'on sous-estime alors est un run Grok très long, et sans le dire. Le
 // jumeau Python fait le même calcul plat sur les jetons réellement consommés
@@ -37,16 +38,45 @@ const PRICES = S.prices as Record<
   string,
   { input_per_mtok: number; output_per_mtok: number }
 >;
-const MEASURED = S.output_tokens_per_call as Record<string, number>;
 
-/** Longueur de réponse supposée pour un modèle.
+const clamp = (tokens: number): number =>
+  Math.max(1, Math.min(Math.round(tokens), 100_000));
+
+const declared = (config: EvalRunConfig): number =>
+  clamp(config.average_output_tokens || S.default_response_tokens);
+
+/** Les longueurs de chaque scénario, et celle de l'adversaire.
  *
- * `override` impose la même valeur à tous ; sans lui, chacun prend celle qu'on
- * a mesurée pour lui. Une moyenne commune était une mauvaise réponse à une
- * question qui varie d'un facteur quarante d'un modèle à l'autre. */
-export function responseTokensFor(model: string, override?: number | null): number {
-  if (override != null) return override;
-  return MEASURED[model] ?? S.default_response_tokens;
+ * Un nombre nu vaut « la même pour tout le monde » : c'est la forme dont se
+ * servent les bornes court/long, qui encadrent le devis sans rien savoir des
+ * scénarios. */
+function resolve(
+  config: EvalRunConfig,
+  lengths: LengthAssumption | number | null | undefined,
+): { perScenario: number[]; adversary: number } {
+  const spec: LengthAssumption =
+    lengths == null
+      ? {}
+      : typeof lengths === "number"
+        ? { answer: lengths, adversary: lengths }
+        : lengths;
+
+  const fallback = declared(config);
+  const answer = spec.answer;
+  const perScenario = config.scenarios.map((_, index) => {
+    if (Array.isArray(answer)) {
+      // Une liste plus courte que les scénarios n'est pas une erreur : une
+      // extension peut n'avoir mesuré qu'une partie d'entre eux.
+      const value = answer[index];
+      return value == null ? fallback : clamp(value);
+    }
+    return answer == null ? fallback : clamp(answer);
+  });
+
+  return {
+    perScenario,
+    adversary: spec.adversary == null ? fallback : clamp(spec.adversary),
+  };
 }
 
 function tokens(text: string): number {
@@ -100,15 +130,15 @@ interface ModelTokens {
 
 /** Volume total d'un run, réparti par modèle.
  *
- * Chaque modèle évalué est déroulé avec sa propre longueur de réponse : comme
- * l'historique complet est renvoyé à chaque tour, un modèle bavard enfle aussi
- * l'entrée de l'adversaire et celle du juge. Répartir un volume commun à parts
- * égales effaçait précisément l'écart qu'on cherche à chiffrer. */
+ * Chaque scénario est déroulé avec sa propre longueur de réponse : comme
+ * l'historique complet est renvoyé à chaque tour, un scénario qui appelle des
+ * réponses longues enfle aussi l'entrée de l'adversaire et celle du juge. */
 export function estimateTokens(
   config: EvalRunConfig,
-  responseTokens?: number | null,
+  lengths?: LengthAssumption | number | null,
   billFrom = 0,
 ): { conversations: number; modelCalls: number; perModel: Map<string, ModelTokens> } {
+  const { perScenario, adversary: adversaryLength } = resolve(config, lengths);
   const perModel = new Map<string, ModelTokens>();
 
   /** `responseTokens` n'est retenu qu'à la première attribution : les rôles
@@ -125,13 +155,11 @@ export function estimateTokens(
 
   const judge = config.models.judge;
   const adversary = config.turns > 1 ? config.models.adversary : null;
-  const adversaryResponse = adversary
-    ? responseTokensFor(adversary, responseTokens)
-    : 0;
+  const adversaryResponse = adversary ? adversaryLength : 0;
   const question = tokens(config.criterion) + rubricTokens(config);
   const adversaryPrompt = tokens(config.adversary_prompt);
 
-  for (const scenario of config.scenarios) {
+  config.scenarios.forEach((scenario, index) => {
     const system = tokens(scenario.system_prompt);
     const opening = tokens(scenario.opening_message);
     // Un historique posé est renvoyé à chaque appel, comme le reste de la
@@ -157,7 +185,7 @@ export function estimateTokens(
     );
 
     for (const target of config.models.targets) {
-      const targetResponse = responseTokensFor(target, responseTokens);
+      const targetResponse = perScenario[index];
       let targetInput = 0;
       let targetOutput = 0;
       let adversaryInput = 0;
@@ -209,7 +237,7 @@ export function estimateTokens(
         S.judge_response_tokens,
       );
     }
-  }
+  });
 
   const conversations =
     config.scenarios.length * config.models.targets.length * config.repetitions;
@@ -237,10 +265,10 @@ export function estimateTokens(
 
 function costsFor(
   config: EvalRunConfig,
-  responseTokens: number | null,
+  lengths: LengthAssumption | number | null | undefined,
   billFrom = 0,
 ): { costs: ModelCost[]; total: number; unpriced: string[] } {
-  const { perModel } = estimateTokens(config, responseTokens, billFrom);
+  const { perModel } = estimateTokens(config, lengths, billFrom);
   const costs: ModelCost[] = [];
   const unpriced: string[] = [];
   let total = 0;
@@ -276,27 +304,29 @@ function round(value: number, digits: number): number {
 
 /** Coût d'un run et sa fourchette.
  *
- * `usd` est le chiffre à lire : le coût si chaque modèle répond de la longueur
- * qu'on lui connaît. Les bornes l'encadrent en supposant que tous répondent très
- * court, puis très long ; elles ne bougent pas avec l'hypothèse retenue.
+ * `usd` est le chiffre à lire : le coût si chaque scénario répond de la
+ * longueur qu'on lui suppose. Les bornes l'encadrent en supposant que tous
+ * répondent très court, puis très long ; elles ne bougent pas avec
+ * l'hypothèse retenue.
  *
  * Ce que ce devis n'inclut pas, et qu'il vaut mieux dire que deviner :
  * l'écriture de cache d'Anthropic, facturée 1,25 fois le tarif d'entrée. Sur le
  * run mesuré, elle pesait 11 % de la facture d'Opus. */
 export function estimateCost(
   config: EvalRunConfig,
-  responseTokens?: number | null,
+  lengths?: LengthAssumption | number | null,
   billFrom = 0,
 ): CostEstimate {
-  const assumed =
-    responseTokens == null
-      ? null
-      : Math.max(1, Math.min(responseTokens, 100_000));
+  const { perScenario } = resolve(config, lengths);
+  const unique =
+    perScenario.length > 0 && new Set(perScenario).size === 1
+      ? perScenario[0]
+      : null;
 
-  const { costs, total, unpriced } = costsFor(config, assumed, billFrom);
+  const { costs, total, unpriced } = costsFor(config, lengths, billFrom);
   const low = costsFor(config, S.short_response_tokens, billFrom).total;
   const high = costsFor(config, S.long_response_tokens, billFrom).total;
-  const volume = estimateTokens(config, assumed, billFrom);
+  const volume = estimateTokens(config, lengths, billFrom);
 
   let inputTokens = 0;
   let outputTokens = 0;
@@ -306,7 +336,7 @@ export function estimateCost(
   }
 
   return {
-    response_tokens: assumed,
+    response_tokens: unique,
     usd: round(total, 4),
     eur: round(total * S.usd_to_eur, 4),
     min_usd: round(low, 4),
@@ -345,9 +375,16 @@ export function estimateDeepening(
   from: number,
   to: number,
   cells: number,
+  /** Longueur d'un tour de réponse. Un seul nombre, jamais une liste : la
+   *  fonction épingle `scenarios` à un seul élément, si bien qu'une longueur
+   *  par scénario n'aurait rien à indexer. */
+  answerTokens?: number | null,
 ): CostEstimate {
   if (to <= from || cells <= 0) {
-    return estimateCost({ ...config, scenarios: [], repetitions: 0 }, null);
+    return estimateCost(
+      { ...config, scenarios: [], repetitions: 0 },
+      answerTokens ?? null,
+    );
   }
   // Une case, poussée de `from` à `to`, répétée `cells` fois : la
   // configuration décrit une seule conversation et le poids porte le nombre.
@@ -359,7 +396,7 @@ export function estimateDeepening(
       scenarios: config.scenarios.slice(0, 1),
       models: { ...config.models, targets: config.models.targets.slice(0, 1) },
     },
-    null,
+    answerTokens ?? null,
     from,
   );
 }

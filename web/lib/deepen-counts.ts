@@ -173,6 +173,8 @@ export function estimateDeepeningCost(
   cells: DeepenCell[],
   to: number,
   fallbackTurnsDone: number,
+  /** Longueur d'un tour de réponse, transmise telle quelle à `estimateDeepening`. */
+  answerTokens?: number | null,
 ): CostEstimate | null {
   return groupByModelAndDepth(cells, fallbackTurnsDone).reduce<CostEstimate | null>(
     (total, groupe) =>
@@ -183,6 +185,7 @@ export function estimateDeepeningCost(
           groupe.turns_done,
           to,
           groupe.cells,
+          answerTokens,
         ),
       ),
     null,

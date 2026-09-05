@@ -10,6 +10,7 @@ Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des trois
 fournisseurs. Ils changent : ce fichier est le seul endroit à mettre à jour.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from playground.eval_schemas import EvalRunConfig, tools_for, ModelUsage
@@ -33,37 +34,27 @@ donc les jetons d'entrée de près de moitié, dans le sens de l'erreur qu'on ne
 veut pas : une facture plus élevée qu'annoncée.
 
 Ne sert qu'à l'entrée : les prompts, le message d'ouverture, la question posée
-au juge. Les sorties, elles, ne sont plus déduites d'une longueur de texte mais
-de `OUTPUT_TOKENS_PER_CALL`.
+au juge. Les sorties, elles, ne sont pas déduites d'une longueur de texte mais
+d'une hypothèse déclarée — voir `LengthAssumption`.
 """
 
 SHORT_RESPONSE_TOKENS = _SHARED["short_response_tokens"]
 LONG_RESPONSE_TOKENS = _SHARED["long_response_tokens"]
-"""Bornes d'hypothèse sur la longueur d'une réponse de modèle.
+"""Bornes d'hypothèse sur la longueur d'une réponse, tous scénarios confondus.
 
-Elles encadrent le devis en supposant que *tous* les modèles répondent très
-court, puis très long. Le haut est calé sur le modèle le plus bavard mesuré,
-`gpt-5.6-sol` et ses 5 954 jetons par appel : une borne haute que le réel
-dépasse est pire qu'une fourchette large, parce que c'est sur elle que se prend
-la décision de lancer.
+Elles encadrent le devis en supposant que *toutes* les réponses sont très
+courtes, puis très longues — sans lien avec la longueur déclarée par la
+configuration ni avec le scénario. Une borne haute que le réel dépasse est pire
+qu'une fourchette large, parce que c'est sur elle que se prend la décision de
+lancer.
 """
 
 DEFAULT_RESPONSE_TOKENS = _SHARED["default_response_tokens"]
-"""Longueur supposée d'une réponse pour un modèle jamais mesuré.
+"""Longueur supposée quand rien n'est déclaré ni mesuré.
 
 C'est la moyenne tous modèles confondus relevée le 19 août 2026. Elle ne sert
-plus qu'aux modèles absents de `OUTPUT_TOKENS_PER_CALL` : pour les autres, une
-moyenne globale est une mauvaise réponse à une question qui varie d'un facteur
-quarante d'un modèle à l'autre.
-"""
-
-OUTPUT_TOKENS_PER_CALL: dict[str, int] = _SHARED["output_tokens_per_call"]
-"""Longueur de réponse mesurée, par modèle.
-
-Un modèle absent d'ici prend `DEFAULT_RESPONSE_TOKENS` : mieux vaut une valeur
-moyenne assumée qu'une mesure inventée. `claude-opus-5` en fait partie — ses
-réponses ont toutes été bloquées par le filtre du fournisseur dans le seul run
-où il a été évalué, ce qui ne mesure rien.
+plus qu'aux runs enregistrés avant `average_output_tokens` : un run neuf déclare
+sa longueur, une extension la mesure.
 """
 
 JUDGE_RESPONSE_TOKENS = _SHARED["judge_response_tokens"]
@@ -87,17 +78,64 @@ PRICES: dict[str, ModelPrice] = {
 }
 
 
-def response_tokens_for(model: str, override: int | None = None) -> int:
-    """Longueur de réponse supposée pour un modèle.
+@dataclass(frozen=True)
+class LengthAssumption:
+    """Sur quelle longueur de sortie le devis repose.
 
-    Args:
-        model: L'identifiant complet du modèle.
-        override: Une longueur imposée depuis le formulaire, qui s'applique
-            alors à tous les modèles. `None` laisse chacun prendre la sienne.
+    `answer` porte les réponses du modèle évalué : un nombre pour tous les
+    scénarios, ou un par scénario dans l'ordre de `config.scenarios` — ce dont
+    l'extension a besoin, chaque scénario ayant sa propre mesure. `None` renvoie
+    à `config.average_output_tokens`.
+
+    `adversary` porte les tours d'utilisateur, qui ne sont pas des réponses
+    évaluées et ne dépendent pas du scénario mais de la consigne d'adversaire,
+    commune au run. `None` lui donne la longueur déclarée du run, ce qui
+    surestime — les tours d'utilisateur étant plus courts — et c'est le bon sens
+    de l'erreur pour un devis.
     """
-    if override is not None:
-        return override
-    return OUTPUT_TOKENS_PER_CALL.get(model, DEFAULT_RESPONSE_TOKENS)
+
+    answer: int | Sequence[int] | None = None
+    adversary: int | None = None
+
+
+def _clamp(tokens: int) -> int:
+    return max(1, min(int(tokens), 100_000))
+
+
+def _declared(config: EvalRunConfig) -> int:
+    return _clamp(config.average_output_tokens or DEFAULT_RESPONSE_TOKENS)
+
+
+def _resolve(
+    config: EvalRunConfig, lengths: "LengthAssumption | int | None"
+) -> tuple[list[int], int]:
+    """Les longueurs de chaque scénario, et celle de l'adversaire.
+
+    Un nombre nu vaut « la même pour tout le monde » : c'est la forme dont se
+    servent les bornes court/long, qui encadrent le devis sans rien savoir des
+    scénarios.
+    """
+    if lengths is None:
+        lengths = LengthAssumption()
+    elif isinstance(lengths, int):
+        lengths = LengthAssumption(answer=lengths, adversary=lengths)
+
+    declared = _declared(config)
+    answer = lengths.answer
+    if answer is None:
+        par_scenario = [declared] * len(config.scenarios)
+    elif isinstance(answer, int):
+        par_scenario = [_clamp(answer)] * len(config.scenarios)
+    else:
+        # Une liste plus courte que les scénarios n'est pas une erreur : une
+        # extension peut n'avoir mesuré qu'une partie d'entre eux.
+        par_scenario = [
+            _clamp(answer[index]) if index < len(answer) else declared
+            for index in range(len(config.scenarios))
+        ]
+
+    adversary = _clamp(lengths.adversary) if lengths.adversary is not None else declared
+    return par_scenario, adversary
 
 
 @dataclass
@@ -145,7 +183,7 @@ class CostEstimate:
     """Coût attendu d'un run et son encadrement."""
 
     response_tokens: int | None
-    """La longueur imposée à tous les modèles, ou `None` si chacun prend la sienne."""
+    """La longueur supposée, ou `None` si elle varie d'un scénario à l'autre."""
 
     usd: float
     eur: float
@@ -239,31 +277,33 @@ def _add(
 
 
 def estimate_tokens(
-    config: EvalRunConfig, response_tokens: int | None = None
+    config: EvalRunConfig, lengths: "LengthAssumption | int | None" = None
 ) -> TokenEstimate:
     """Volume total d'un run, réparti par modèle.
 
-    Chaque modèle évalué est déroulé avec sa propre longueur de réponse, et non
-    avec une moyenne commune : comme l'historique complet est renvoyé à chaque
-    tour, un modèle bavard enfle aussi l'entrée de l'adversaire et celle du
-    juge. Répartir un volume commun à parts égales, ce que faisait la version
-    précédente, effaçait précisément l'écart qu'on cherche à chiffrer.
+    Chaque scénario est déroulé avec sa propre longueur de réponse : comme
+    l'historique complet est renvoyé à chaque tour, un scénario qui appelle des
+    réponses longues enfle aussi l'entrée de l'adversaire et celle du juge.
+
+    La longueur est celle d'un *tour*, pas d'un appel HTTP : la boucle
+    ci-dessous compte exactement `config.turns` appels du modèle évalué, sans
+    modèle des appels d'outils. Une mesure divisée par les tours reproduit donc
+    le total observé, quand une mesure divisée par les appels réels le
+    sous-estimerait.
 
     Args:
         config: Le run à estimer.
-        response_tokens: Longueur imposée à tous les modèles, ou `None` pour
-            laisser chacun prendre la sienne.
+        lengths: Sur quelle longueur reposer. Voir `LengthAssumption`.
     """
+    per_scenario, adversary_response_all = _resolve(config, lengths)
     per_model: dict[str, ModelTokens] = {}
     judge = config.models.judge
     adversary = config.models.adversary if config.turns > 1 else None
-    adversary_response = (
-        response_tokens_for(adversary, response_tokens) if adversary else 0
-    )
+    adversary_response = adversary_response_all if adversary else 0
     question = _tokens(config.criterion) + _rubric_tokens(config)
     adversary_prompt = _tokens(config.adversary_prompt)
 
-    for scenario in config.scenarios:
+    for index, scenario in enumerate(config.scenarios):
         system = _tokens(scenario.system_prompt)
         opening = _tokens(scenario.opening_message)
         # Un historique posé est renvoyé à chaque appel, comme le reste de
@@ -284,7 +324,7 @@ def estimate_tokens(
         )
 
         for target in config.models.targets:
-            target_response = response_tokens_for(target, response_tokens)
+            target_response = per_scenario[index]
             target_input = target_output = 0
             adversary_input = adversary_output = 0
             history = seeded + opening
@@ -342,10 +382,10 @@ def estimate_tokens(
 
 
 def _costs_for(
-    config: EvalRunConfig, response_tokens: int | None
+    config: EvalRunConfig, lengths: "LengthAssumption | int | None"
 ) -> tuple[list[ModelCost], float, list[str]]:
     """Coût par modèle, total, et modèles sans tarif connu."""
-    estimate = estimate_tokens(config, response_tokens)
+    estimate = estimate_tokens(config, lengths)
     costs: list[ModelCost] = []
     total = 0.0
     unpriced: list[str] = []
@@ -376,13 +416,14 @@ def _costs_for(
 
 
 def estimate_cost(
-    config: EvalRunConfig, response_tokens: int | None = None
+    config: EvalRunConfig, lengths: "LengthAssumption | int | None" = None
 ) -> CostEstimate:
     """Coût d'un run et sa fourchette.
 
-    `usd` est le chiffre à lire : le coût si chaque modèle répond de la longueur
-    qu'on lui connaît. Les bornes l'encadrent en supposant que tous répondent
-    très court, puis très long ; elles ne bougent pas avec l'hypothèse retenue.
+    `usd` est le chiffre à lire : le coût si chaque scénario répond de la
+    longueur qu'on lui suppose. Les bornes l'encadrent en supposant que tous
+    répondent très court, puis très long ; elles ne bougent pas avec
+    l'hypothèse retenue.
 
     Ce que ce devis n'inclut pas, et qu'il vaut mieux dire que deviner :
     l'écriture de cache d'Anthropic, facturée 1,25 fois le tarif d'entrée. Sur
@@ -394,21 +435,20 @@ def estimate_cost(
 
     Args:
         config: Le run à estimer.
-        response_tokens: Longueur de réponse imposée à tous les modèles. `None`
-            — le cas normal — laisse chacun prendre la longueur mesurée pour
-            lui.
+        lengths: Sur quelle longueur reposer. `None` — le cas normal — prend
+            `config.average_output_tokens`, ou la moyenne générale à défaut.
+            Voir `LengthAssumption`.
     """
-    assumed = (
-        None if response_tokens is None else max(1, min(response_tokens, 100_000))
-    )
+    per_scenario, _ = _resolve(config, lengths)
+    unique = per_scenario[0] if per_scenario and len(set(per_scenario)) == 1 else None
 
-    costs, expected, unpriced = _costs_for(config, assumed)
+    costs, expected, unpriced = _costs_for(config, lengths)
     _, low, _ = _costs_for(config, SHORT_RESPONSE_TOKENS)
     _, high, _ = _costs_for(config, LONG_RESPONSE_TOKENS)
-    volume = estimate_tokens(config, assumed)
+    volume = estimate_tokens(config, lengths)
 
     return CostEstimate(
-        response_tokens=assumed,
+        response_tokens=unique,
         usd=round(expected, 4),
         eur=round(expected * USD_TO_EUR, 4),
         min_usd=round(low, 4),

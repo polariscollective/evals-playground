@@ -8,11 +8,10 @@ from playground.eval_schemas import (
 )
 from playground.pricing import (
     DEFAULT_RESPONSE_TOKENS,
-    OUTPUT_TOKENS_PER_CALL,
+    LengthAssumption,
     PRICES,
     estimate_cost,
     estimate_tokens,
-    response_tokens_for,
 )
 
 RUBRIC = [
@@ -155,9 +154,9 @@ def test_les_euros_suivent_les_dollars():
     assert cost.max_eur < cost.max_usd
 
 
-def _config_reglable(turns: int = 1) -> EvalRunConfig:
+def _config_reglable(turns: int = 1, **kwargs) -> EvalRunConfig:
     """Un run d'un seul scénario, pour isoler l'effet d'un paramètre."""
-    return EvalRunConfig(
+    base = dict(
         scenarios=[
             EvalScenario(
                 title="Rappel de lot",
@@ -176,54 +175,85 @@ def _config_reglable(turns: int = 1) -> EvalRunConfig:
         ),
         adversary_prompt="z" * 400 if turns > 1 else "",
     )
+    base.update(kwargs)
+    return EvalRunConfig(**base)
 
 
-# --- la longueur de réponse, par modèle --------------------------------------
+# --- la longueur de réponse, déclarée ou mesurée par scénario ---------------
 
 
-def test_chaque_modele_mesure_prend_sa_propre_longueur_de_reponse():
-    # C'est tout l'objet de la calibration : une moyenne commune effacerait
-    # l'écart de quarante fois entre le plus bavard et le plus laconique.
-    assert response_tokens_for("openai/gpt-5.6-sol") == OUTPUT_TOKENS_PER_CALL[
-        "openai/gpt-5.6-sol"
-    ]
-    assert response_tokens_for("grok/grok-4.3") != response_tokens_for(
-        "openai/gpt-5.6-sol"
-    )
-
-
-def test_un_modele_jamais_mesure_prend_la_moyenne_generale():
-    assert response_tokens_for("labo/modele-interne") == DEFAULT_RESPONSE_TOKENS
-
-
-def test_une_longueur_imposee_ecrase_la_calibration_de_chaque_modele():
-    assert response_tokens_for("openai/gpt-5.6-sol", 500) == 500
-    assert response_tokens_for("grok/grok-4.3", 500) == 500
-
-
-def test_un_modele_bavard_coute_plus_qu_un_modele_laconique_a_tarif_egal():
-    """Le devis doit voir la différence que la moyenne commune effaçait.
-
-    Les deux modèles comparés ici sont facturés au même tarif : tout écart de
-    coût ne peut venir que de la longueur de réponse mesurée pour chacun.
-    """
-    bavard = estimate_cost(
-        _config(
-            models=EvalModels(
-                targets=["anthropic/claude-sonnet-5"],
-                judge="anthropic/claude-haiku-4-5",
-            )
-        )
-    )
-    laconique = estimate_cost(
-        _config(
-            models=EvalModels(
-                targets=["anthropic/claude-haiku-4-5"],
-                judge="anthropic/claude-haiku-4-5",
-            )
-        )
-    )
+def test_une_longueur_declaree_plus_grande_coute_plus_cher():
+    """Le devis doit voir ce que la longueur déclarée change, et rien d'autre."""
+    bavard = estimate_cost(_config_reglable(), 4000)
+    laconique = estimate_cost(_config_reglable(), 200)
     assert bavard.usd > laconique.usd
+
+
+def test_sans_rien_de_declare_le_devis_prend_la_moyenne_generale():
+    config = _config_reglable()
+    assert config.average_output_tokens is None
+    assert estimate_cost(config).response_tokens == DEFAULT_RESPONSE_TOKENS
+
+
+def test_le_devis_prend_la_longueur_declaree_par_la_config():
+    config = _config_reglable(average_output_tokens=2400)
+    assert estimate_cost(config).response_tokens == 2400
+    assert estimate_cost(config).usd > estimate_cost(_config_reglable(), 200).usd
+
+
+@pytest.mark.skip(
+    reason=(
+        "Cette assertion ne peut pas tenir telle quelle : avec un seul modèle "
+        "cible partagé par les deux scénarios et le même nombre de tours, le "
+        "coût total est une fonction strictement additive et linéaire de la "
+        "longueur de chaque scénario, avec un coefficient identique pour les "
+        "deux. Résultat, il ne dépend que de la somme des longueurs, jamais de "
+        "leur répartition : [200, 4000] et [2100, 2100] partagent la même "
+        "somme (4200) et rendent donc rigoureusement le même prix, vérifié ici "
+        "à l'exactitude flottante près, pas seulement après arrondi. Ce n'est "
+        "pas un bug de _resolve/estimate_cost — c'est vrai quel que soit le "
+        "nombre de tours (vérifié à turns=1 et turns=3). Ce qui varie bien "
+        "entre les deux hypothèses, lui, c'est le `response_tokens` du détail "
+        "par modèle (voir test_une_longueur_qui_varie_se_declare_inconnue et "
+        "le champ `per_model` de CostEstimate) : la case retenue est celle du "
+        "premier scénario traité pour ce modèle. Laissé en `skip` plutôt que "
+        "réécrit ou supprimé : changer les valeurs ou l'assertion suppose de "
+        "deviner l'intention de la tâche 2, ce que la consigne du travail "
+        "demande de ne pas faire sans le signaler."
+    )
+)
+def test_une_longueur_par_scenario_s_applique_scenario_par_scenario():
+    """C'est ce dont l'extension a besoin : un run à deux scénarios de
+    longueurs différentes ne coûte pas le même run à leur moyenne."""
+    config = _config_reglable(scenarios=[_scenario("A"), _scenario("B")])
+    separe = estimate_cost(config, LengthAssumption(answer=[200, 4000]))
+    moyenne = estimate_cost(config, LengthAssumption(answer=[2100, 2100]))
+    assert separe.usd != moyenne.usd
+
+
+def test_une_longueur_qui_varie_se_declare_inconnue():
+    """`response_tokens` dit l'hypothèse retenue. Il n'y en a plus une seule
+    quand chaque scénario a la sienne : `None` le dit honnêtement."""
+    config = _config_reglable(scenarios=[_scenario("A"), _scenario("B")])
+    assert estimate_cost(config, LengthAssumption(answer=[200, 4000])).response_tokens is None
+    assert estimate_cost(config, LengthAssumption(answer=[300, 300])).response_tokens == 300
+
+
+def test_l_adversaire_prend_sa_propre_longueur_quand_on_la_donne():
+    # `turns=2` : à un seul tour, `_config_reglable` ne pose pas d'adversaire
+    # (voir sa définition) — le faire varier ne changerait alors rien, et le
+    # test ne prouverait rien.
+    config = _config_reglable(turns=2)
+    bavard = estimate_cost(config, LengthAssumption(answer=500, adversary=4000))
+    laconique = estimate_cost(config, LengthAssumption(answer=500, adversary=50))
+    assert bavard.usd > laconique.usd
+
+
+def test_sans_longueur_d_adversaire_il_prend_celle_des_reponses():
+    config = _config_reglable()
+    implicite = estimate_cost(config, LengthAssumption(answer=500))
+    explicite = estimate_cost(config, LengthAssumption(answer=500, adversary=500))
+    assert implicite.usd == explicite.usd
 
 
 def test_le_detail_par_modele_totalise_le_prix_annonce():
@@ -263,8 +293,8 @@ def test_un_modele_a_la_fois_evalue_et_juge_n_est_compte_qu_une_fois():
 
 
 def test_allonger_la_reponse_supposee_augmente_le_prix_annonce():
-    """L'hypothèse est réglable parce qu'elle domine le devis : la sortie
-    mesurée va de 137 jetons par appel à 5 954 selon le modèle."""
+    """L'hypothèse est réglable parce qu'elle domine le devis : accepter une
+    fourchette large de longueurs déclarées est le prix de ne pas mesurer."""
     config = _config_reglable()
 
     court = estimate_cost(config, 300)
@@ -303,11 +333,6 @@ def test_le_prix_croit_plus_vite_que_le_nombre_de_tours():
     facteur = cinq_tours / un_tour
     assert facteur > 5, "sinon la croissance serait au plus linéaire"
     assert facteur < 25, "et elle reste sous la croissance purement quadratique"
-
-
-def test_sans_hypothese_imposee_le_devis_le_dit():
-    # `None` n'est pas « zéro jeton » : c'est « chaque modèle prend la sienne ».
-    assert estimate_cost(_config_reglable()).response_tokens is None
 
 
 def test_les_bornes_ne_bougent_pas_avec_l_hypothese():

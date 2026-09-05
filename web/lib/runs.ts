@@ -197,7 +197,9 @@ export async function createRun(
       total_samples: total,
       // Recalculé ici et non repris du navigateur : le devis enregistré doit
       // être celui que ce code produit, pas celui qu'un client affirme avoir
-      // vu. Sans ça, la comparaison d'après ne mesurerait plus rien.
+      // vu. Sans ça, la comparaison d'après ne mesurerait plus rien. La
+      // longueur supposée, elle, vient bien du client — mais par la config,
+      // qui est validée, et non par un paramètre à côté.
       estimate: estimateCost(config),
       // D'où il sort, quand il sort d'un brouillon. Porté par le run et non
       // par le brouillon : relancer le même brouillon est prévu, et une case
