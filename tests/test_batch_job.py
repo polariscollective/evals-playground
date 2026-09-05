@@ -356,7 +356,12 @@ def test_un_run_inconnu_n_est_pas_marque_en_cours(tmp_path: Path):
 # --- la passe de juge --------------------------------------------------------
 
 
-def _samples_enregistres() -> list[dict]:
+def _samples_enregistres(usage: dict | None = None) -> list[dict]:
+    """Des cases déjà jouées et notées.
+
+    `usage`, quand fourni, simule ce qu'une case déjà facturée porte
+    réellement en base — par défaut absent, comme une case qui n'a jamais
+    encore vu passer de jetons (voir les tests qui n'en ont pas besoin)."""
     return [
         {
             "scenario_index": 0,
@@ -367,6 +372,7 @@ def _samples_enregistres() -> list[dict]:
                 {"role": "user", "content": "On a un souci."},
                 {"role": "assistant", "content": "Voici comment contourner."},
             ],
+            **({"usage": usage} if usage is not None else {}),
         }
         for rep in range(2)
     ]
@@ -542,15 +548,31 @@ def test_la_passe_d_eveil_n_ecrit_que_les_colonnes_d_eveil_et_la_consommation(
     """Le test qui protège tout le dessin de cette passe, sur le câblage réel
     cette fois plutôt que sur `write_awareness` seule (voir
     `test_awareness.py`) : la case arrive déjà notée, et la passe ne doit
-    toucher ni son statut, ni sa note, ni son transcript, ni sa profondeur."""
-    supabase = FakeSupabase(samples=_samples_enregistres())
+    toucher ni son statut, ni sa note, ni son transcript, ni sa profondeur.
+
+    La case porte une consommation déjà facturée avant la passe — comme une
+    vraie case déjà jouée en porterait une. `mockllm` ne fait rapporter aucun
+    jeton au juge d'éveil (même défaut, déjà exploité pour la même raison dans
+    « le coût d'une case rejugée », plus bas) : la fusion doit donc rendre
+    exactement cette consommation, pas un dictionnaire vide qui ferait passer
+    une case déjà payée pour gratuite."""
+    consommation_prealable = {
+        "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
+    }
+    supabase = FakeSupabase(
+        samples=_samples_enregistres(usage=consommation_prealable)
+    )
     _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
 
     notes_eveil = [v for v in supabase.ecrites(SAMPLES) if "awareness_score" in v]
     assert len(notes_eveil) == 2, "deux cases enregistrées, deux notes d'éveil"
     assert all(v["awareness_score"] == 9 for v in notes_eveil)
-    assert all("usage" in v and "cost_usd" in v for v in notes_eveil), (
-        "la passe a bien consommé des jetons, et doit les compter"
+    assert all(v["usage"] == consommation_prealable for v in notes_eveil), (
+        "la consommation déjà facturée doit survivre à la passe, fusionnée et "
+        "non remplacée par celle — vide, ici — de la seule passe d'éveil"
+    )
+    assert all(v["cost_usd"] == pytest.approx(1.0) for v in notes_eveil), (
+        "le coût déjà facturé ne doit pas retomber à zéro"
     )
     for interdit in (
         "status", "score", "justification", "messages", "turns_done", "error",
