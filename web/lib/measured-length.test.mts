@@ -271,3 +271,30 @@ test("une mesure sur des cases à outils reproduit le total observé", () => {
   const mesure = measureRun([cell(0, "grok/grok-4.3", 6000)], MODELS, 3);
   assert.equal(mesure.byScenario.get(0)! * 3, 6000);
 });
+
+test("un total de zéro jeton n'est pas une mesure", () => {
+  // La sortie a été bloquée de bout en bout : le run n'a pas appris que les
+  // réponses sont gratuites, il n'a rien appris. Retenir zéro chiffrerait
+  // l'extension à un jeton par tour, `clamp` remontant le zéro à un.
+  const mesure = measureRun([cell(0, "grok/grok-4.3", 0, {}, 3)], MODELS, 3);
+  assert.equal(mesure.run, null);
+  assert.equal(mesure.byScenario.get(0), undefined);
+  assert.deepEqual(answerLengthsFor([0], mesure, 800), [800]);
+});
+
+test("un adversaire entièrement muet n'est pas mesuré à zéro non plus", () => {
+  const cells = [
+    cell(0, "grok/grok-4.3", 3000, { "anthropic/claude-haiku-4-5": 0 }, 3),
+  ];
+  assert.equal(measureRun(cells, MODELS, 3).adversary, null);
+});
+
+test("une seule case à zéro ne fait pas taire les autres", () => {
+  // Le zéro entre bien dans le bassin : c'est le bassin entièrement nul qui ne
+  // dit rien, pas la case isolée qui tire la moyenne vers le bas.
+  const cells = [
+    cell(0, "grok/grok-4.3", 0, {}, 3),
+    cell(0, "grok/grok-4.3", 6000, {}, 3),
+  ];
+  assert.equal(measureRun(cells, MODELS, 3).run, 1000);
+});

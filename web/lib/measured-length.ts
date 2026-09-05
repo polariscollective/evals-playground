@@ -55,8 +55,18 @@ const ajouter = (pool: Pool, tokens: number, calls: number): void => {
   pool.calls += calls;
 };
 
+/** La moyenne d'un bassin, ou `null` quand il n'y a rien à en tirer.
+ *
+ * Un total nul n'est pas une mesure à zéro : un run dont la sortie a été
+ * intégralement bloquée par le fournisseur n'a pas appris que les réponses
+ * sont gratuites, il n'a rien appris du tout. Le laisser passer chiffrait
+ * l'extension à un jeton par tour — `clamp` remontant le zéro à un — sous une
+ * phrase annonçant « 0 output tokens per turn ». C'est le même traitement
+ * qu'une case sans compteur, muette plutôt que nulle. */
 const moyenne = (pool: Pool): number | null =>
-  pool.calls > 0 ? Math.round(pool.tokens / pool.calls) : null;
+  pool.calls > 0 && pool.tokens > 0
+    ? Math.round(pool.tokens / pool.calls)
+    : null;
 
 /** Mesure les longueurs de sortie d'un run terminé.
  *
