@@ -18,15 +18,14 @@ import {
   countAllGraded,
   countsByLevel,
   countsForSelection,
-  estimateDeepeningCost,
   samplesForSelection,
 } from "@/lib/deepen-counts";
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
+import { estimateExtension } from "@/lib/extend-estimate";
 import { measureRun } from "@/lib/measured-length";
-import { addEstimates, estimateCost } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
 import { MAX_TURNS } from "@/lib/validate";
 import type {
@@ -245,52 +244,53 @@ export function ExtendPanel({
   const deepenCount = countsForSelection(samples, deepen);
   const deepensToMore = turns > config.turns;
 
-  // Sur quoi le devis de l'ajout va reposer. Recalculé ici pour l'annoncer :
-  // le serveur fera la même mesure au moment d'étendre, sur les mêmes cases.
+  // Sur quoi le devis de l'ajout repose. Recalculé ici pour l'annoncer *et*
+  // pour le chiffrer : le serveur fera la même mesure au moment d'étendre, sur
+  // les mêmes cases.
   const measured = measureRun(samples, config.models, config.turns);
   const { kept } = measured;
 
-  // Le devis des cases neuves : les scénarios retenus, existants et nouveaux,
-  // couverts par les modèles cochés — à la profondeur demandée, puisque c'est
-  // à celle-là qu'elles tourneront une fois créées.
-  const addEstimate: CostEstimate | null =
-    indices.length + newScenarios.length > 0 && targets.length > 0
-      ? estimateCost({
-          ...config,
-          turns,
-          tools: [...(config.tools ?? []), ...newTools],
-          scenarios: [
-            ...indices.map((index) => config.scenarios[index]),
-            ...newScenarios,
-          ],
-          models: { ...config.models, targets },
-          repetitions,
-        })
-      : null;
+  // Les scénarios existants que l'extension rejoue, gelés comme `extendRun` les
+  // gèlera : quand on refuse les nouveaux outils aux anciens scénarios, ceux
+  // qui n'avaient jamais nommé les leurs reçoivent la liste d'avant, écrite
+  // noir sur blanc. Le devis compte alors les mêmes définitions d'outils des
+  // deux côtés.
+  const gèle = newTools.length > 0 && forExisting === false;
+  const anciensOutils = (config.tools ?? []).map((tool) => tool.name);
+  const rejoués = indices.map((index) => {
+    const scenario = config.scenarios[index];
+    return {
+      index,
+      scenario:
+        gèle && scenario.tools == null
+          ? { ...scenario, tools: anciensOutils }
+          : scenario,
+    };
+  });
 
-  // Le devis de l'approfondissement : un appel par couple (modèle cible,
-  // profondeur de départ) — voir `estimateDeepeningCost` dans
-  // `deepen-counts.ts`, partagée avec `extendRun` pour ce même calcul. Un run
-  // déjà approfondi une fois porte des essais à des profondeurs différentes ;
-  // grouper sur le seul modèle sous-estimerait ceux restés en arrière. Rien
-  // tant que la profondeur demandée ne dépasse pas l'actuelle : personne n'a
-  // alors de tour de plus à jouer.
-  const deepenEstimate: CostEstimate | null = deepensToMore
-    ? estimateDeepeningCost(
-        config,
-        samplesForSelection(samples, deepen),
-        turns,
-        config.turns,
-      )
-    : null;
-
-  // Les deux devis mis bout à bout : ce que coûtent les cases neuves, plus ce
-  // que coûte l'approfondissement des anciennes. Ni l'un ni l'autre seul ne
-  // dit ce que cette extension va coûter quand elle fait les deux à la fois.
-  const totalEstimate: CostEstimate | null =
-    addEstimate && deepenEstimate
-      ? addEstimates(addEstimate, deepenEstimate)
-      : (addEstimate ?? deepenEstimate);
+  // Le devis de l'extension entière — cases neuves et approfondissement —, par
+  // la fonction que `extendRun` appelle sur la même demande. Une seule, parce
+  // que deux calculs de la même chose avaient fini par ne plus dire pareil :
+  // le panneau ne passait aucune longueur et chiffrait sur le nombre déclaré,
+  // sous une phrase qui annonçait pourtant la mesure.
+  const totalEstimate: CostEstimate | null = estimateExtension(
+    config,
+    {
+      scenarios: [
+        ...rejoués,
+        ...newScenarios.map((scenario, offset) => ({
+          index: config.scenarios.length + offset,
+          scenario,
+        })),
+      ],
+      targets,
+      repetitions,
+      turns,
+      tools: [...(config.tools ?? []), ...newTools],
+      deepen: samplesForSelection(samples, deepen),
+    },
+    measured,
+  );
 
   const onFile = async (file: File) => {
     const parsed = parseCsv(await file.text());

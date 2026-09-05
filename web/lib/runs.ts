@@ -16,12 +16,8 @@ import {
   update,
 } from "./supabase";
 import { addEstimates, estimateCost } from "./pricing";
-import { estimateDeepeningCost } from "./deepen-counts";
-import {
-  answerLengthsFor,
-  measureRun,
-  type MeasurableCell,
-} from "./measured-length";
+import { estimateExtension } from "./extend-estimate";
+import { measureRun, type MeasurableCell } from "./measured-length";
 import { spendOf } from "./mcp-budget";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import { withoutIdentity } from "./public-run";
@@ -472,55 +468,34 @@ export async function extendRun(
   for (const cell of jouees) cell.usage ??= {};
   const mesure = measureRun(jouees, config.models, config.turns);
 
-  // Les scénarios réellement ajoutés, et leurs longueurs, dans le même ordre :
-  // un décalage donnerait à un scénario la longueur d'un autre, en silence.
-  const retenus = indices.filter((index) => Boolean(scenarios[index]));
+  // Les scénarios réellement ajoutés, chacun avec son index dans le run : un
+  // décalage donnerait à un scénario la longueur mesurée d'un autre, en
+  // silence.
+  const retenus = indices
+    .filter((index) => Boolean(scenarios[index]))
+    .map((index) => ({ index, scenario: scenarios[index] }));
 
-  // Le devis de l'ajout seul, puis additionné à celui du run : sans ça,
+  // Le devis de l'extension, puis additionné à celui du run : sans ça,
   // « devis vs réel » opposerait un coût qui a grandi à une estimation restée
   // sur la première matrice, et ne mesurerait plus l'estimation mais l'ajout.
   //
-  // Il repose sur ce que le run a mesuré et non sur ce qu'il avait déclaré :
-  // un scénario rejoué prend sa propre longueur, un scénario neuf celle du run
-  // — on suppose alors qu'il ressemblera aux précédents, ce qui est faux dans
-  // le détail et reste la meilleure information disponible.
-  const ajoutNeuf = estimateCost(
+  // Le calcul lui-même est celui du panneau, à la lettre : `estimateExtension`
+  // est appelée ici et là-bas, sur les mêmes longueurs mesurées. Deux calculs
+  // séparés avaient divergé d'un facteur trois sans que rien ne le dise.
+  const ajout = estimateExtension(
+    config,
     {
-      ...config,
-      tools: outils,
-      // La profondeur demandée, pas celle d'avant : ces cases-là sont neuves et
+      scenarios: retenus,
+      targets: request.targets,
+      repetitions: request.repetitions,
+      // La profondeur demandée, pas celle d'avant : les cases neuves
       // tourneront à la nouvelle, puisque la configuration l'aura déjà reçue.
       turns: request.turns ?? config.turns,
-      scenarios: retenus.map((index) => scenarios[index]),
-      models: { ...config.models, targets: request.targets },
-      repetitions: request.repetitions,
-      temperature,
+      tools: outils,
+      deepen: àContinuer,
     },
-    {
-      answer: answerLengthsFor(retenus, mesure, config.average_output_tokens),
-      adversary: mesure.adversary,
-    },
+    mesure,
   );
-
-  // Le devis d'approfondir les essais retenus, groupés par couple (modèle
-  // cible, profondeur de départ) — même calcul que le panneau avant
-  // confirmation, voir `estimateDeepeningCost` dans `deepen-counts.ts`. Sans
-  // lui, une extension qui n'approfondit que produisait un `ajout`
-  // intégralement nul et laissait `run.estimate` inchangé face à une dépense
-  // pourtant réelle, et souvent lourde.
-  //
-  // Un nombre unique, pas une longueur par scénario : `estimateDeepeningCost`
-  // groupe par couple (modèle, profondeur de départ) et jamais par scénario,
-  // si bien qu'un groupe recouvre plusieurs scénarios à la fois. La mesure du
-  // run entier est la seule qui s'applique à tous ses groupes.
-  const ajoutDeepen = estimateDeepeningCost(
-    config,
-    àContinuer,
-    request.turns ?? config.turns,
-    config.turns,
-    mesure.run ?? config.average_output_tokens ?? null,
-  );
-  const ajout = ajoutDeepen ? addEstimates(ajoutNeuf, ajoutDeepen) : ajoutNeuf;
 
   // La configuration du run porte la nouvelle profondeur avant toute autre
   // écriture : une panne plus loin doit trouver un run qui déclare déjà
@@ -537,7 +512,7 @@ export async function extendRun(
         temperature,
       },
       total_samples: run.total_samples + cases.length,
-      estimate: addEstimates(run.estimate, ajout),
+      estimate: ajout ? addEstimates(run.estimate, ajout) : run.estimate,
       status: "triggered",
       error: null,
       finished_at: null,
