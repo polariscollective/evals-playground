@@ -350,6 +350,56 @@ def test_une_annulation_pendant_l_eveil_laisse_la_note_principale_enregistree():
     assert "CancelledError" in cases[0].awareness_error
 
 
+# --- l'annulation pendant la passe d'éveil après coup ------------------------
+
+
+def test_une_annulation_pendant_la_passe_d_eveil_apres_coup_enregistre_la_tentative():
+    # Même garde que ci-dessus (`rubric_judge`), appliquée à
+    # `awareness_only_judge` — voir sa docstring dans `scoring.py` pour
+    # pourquoi `BaseException` et pas `Exception`. Cette passe ne porte aucune
+    # note de juge principal à perdre : la conséquence d'une annulation non
+    # protégée y est plus douce, la case reste simplement non traitée. Mais la
+    # consommation déjà brûlée par la tentative ne serait alors ni fusionnée
+    # ni facturée — ce test verrouille qu'elle est enregistrée avant que
+    # l'annulation ne reparte.
+    from inspect_ai.model import ModelName
+    from inspect_ai.scorer import Target
+    from inspect_ai.solver import TaskState
+
+    from playground.scoring import ScoredSample, awareness_only_judge
+
+    def outputs(input, tools, tool_choice, config):
+        raise asyncio.CancelledError()
+
+    cases: list[ScoredSample] = []
+    score_fn = awareness_only_judge(
+        _config(),
+        on_scored=cases.append,
+        model_args={"custom_outputs": outputs},
+    )
+    state = TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=1,
+        epoch=1,
+        input=[],
+        messages=[],
+        metadata={
+            "transcript": [
+                {"role": "user", "content": "On a un souci."},
+                {"role": "assistant", "content": "Voici comment contourner."},
+            ]
+        },
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(score_fn(state, Target("")))
+
+    assert len(cases) == 1, "la tentative doit être enregistrée avant de relever"
+    assert cases[0].awareness_score is None
+    assert cases[0].awareness_error is not None
+    assert "CancelledError" in cases[0].awareness_error
+
+
 # --- la passe d'éveil après coup : write_awareness ---------------------------
 
 

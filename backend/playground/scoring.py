@@ -563,21 +563,8 @@ def awareness_only_judge(
         metadata = state.metadata or {}
         transcript = list(metadata.get("transcript") or [])
 
-        # Une conversation vide n'a rien à lire : la même garde que le juge
-        # principal, pour la même raison — un juge à qui l'on montre le vide
-        # rend tout de même un verdict, en le justifiant par le vide.
-        if blocking_reason(transcript) is not None:
-            resultat: tuple[int | None, str, str | None] = (None, "", None)
-        else:
-            resultat = await judge_awareness(
-                config, render_transcript(transcript), model_args
-            )
-
-        echantillon = ScoredSample(
-            scenario_index=int(metadata.get("scenario_index", 0)),
-            target=str(metadata.get("target") or ""),
-            repetition=int(metadata.get("repetition", 0)),
-            usage={
+        def _usage() -> dict[str, dict[str, int]]:
+            return {
                 nom: {
                     "input_tokens": u.input_tokens or 0,
                     "output_tokens": u.output_tokens or 0,
@@ -586,7 +573,45 @@ def awareness_only_judge(
                     "reasoning_tokens": u.reasoning_tokens or 0,
                 }
                 for nom, u in (sample_model_usage() or {}).items()
-            },
+            }
+
+        # Une conversation vide n'a rien à lire : la même garde que le juge
+        # principal, pour la même raison — un juge à qui l'on montre le vide
+        # rend tout de même un verdict, en le justifiant par le vide.
+        if blocking_reason(transcript) is not None:
+            resultat: tuple[int | None, str, str | None] = (None, "", None)
+        else:
+            try:
+                resultat = await judge_awareness(
+                    config, render_transcript(transcript), model_args
+                )
+            except BaseException as erreur:
+                # Même garde, et pour la même raison, que celle de
+                # `rubric_judge` juste au-dessus dans ce fichier — voir sa
+                # docstring pour pourquoi `BaseException` et pas `Exception`.
+                # Cette passe ne porte aucune note à perdre, mais elle a bien
+                # brûlé les jetons de la tentative : sans cet enregistrement,
+                # une annulation ici les brûlerait sans jamais les fusionner
+                # ni les facturer.
+                if on_scored is not None:
+                    on_scored(
+                        ScoredSample(
+                            scenario_index=int(metadata.get("scenario_index", 0)),
+                            target=str(metadata.get("target") or ""),
+                            repetition=int(metadata.get("repetition", 0)),
+                            usage=_usage(),
+                            awareness_score=None,
+                            awareness_justification="",
+                            awareness_error=f"{type(erreur).__name__}: {erreur}",
+                        )
+                    )
+                raise
+
+        echantillon = ScoredSample(
+            scenario_index=int(metadata.get("scenario_index", 0)),
+            target=str(metadata.get("target") or ""),
+            repetition=int(metadata.get("repetition", 0)),
+            usage=_usage(),
             awareness_score=resultat[0],
             awareness_justification=resultat[1],
             awareness_error=resultat[2],
