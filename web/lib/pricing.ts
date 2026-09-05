@@ -173,9 +173,16 @@ export function estimateTokens(
         history += targetResponse;
 
         if (turn < config.turns - 1) {
+          // Le tour juste avant la reprise (`turn === billFrom - 1`) porte la
+          // relance d'ouverture de la continuation : côté moteur, c'est
+          // l'appel que l'adversaire fait avant que la cible ne reprenne la
+          // main, avec la conversation reprise entière sous les yeux — et il
+          // est facturé comme les autres. Un run neuf n'a pas de tour
+          // `billFrom - 1` négatif : la condition ne s'y déclenche jamais.
+          const relanceDOuverture = turn === billFrom - 1;
           // L'historique contient déjà le message d'ouverture : ne compter que
           // le prompt de l'adversaire en plus.
-          if (facturé) {
+          if (facturé || relanceDOuverture) {
             adversaryInput += adversaryPrompt + history + ADVERSARY_OVERHEAD_TOKENS;
             adversaryOutput += adversaryResponse;
           }
@@ -212,8 +219,14 @@ export function estimateTokens(
   // a au moins un tour facturé — il relit toute la conversation, jamais un
   // fragment.
   const facturés = Math.max(config.turns - billFrom, 0);
+  // Une continuation (`billFrom > 0`) fait parler l'adversaire autant de fois
+  // que la cible : la relance d'ouverture s'ajoute aux relances ordinaires.
+  // Un run neuf (`billFrom === 0`) garde son compte habituel — sa dernière
+  // relance n'a toujours pas lieu.
+  const relancesAdversaire =
+    facturés === 0 ? 0 : billFrom > 0 ? facturés : facturés - 1;
   const callsPerConversation =
-    facturés + Math.max(facturés - 1, 0) + (facturés > 0 ? 1 : 0);
+    facturés + relancesAdversaire + (facturés > 0 ? 1 : 0);
 
   return {
     conversations,

@@ -253,7 +253,10 @@ async def run_conversation(
         resume: Une conversation déjà jouée, à prolonger. Contrairement à
             `history`, ses tours ne sont pas marqués comme posés — ils ont été
             produits — et le message d'ouverture n'est pas réinséré, puisqu'il
-            s'y trouve déjà. `turns` compte alors les tours à *ajouter*.
+            s'y trouve déjà. `turns` compte alors les tours à *ajouter*. Si la
+            conversation reprise se termine sur la cible et que `turns` n'est
+            pas nul, l'adversaire relance une première fois avant la boucle :
+            sans quoi la cible enchaînerait sur sa propre dernière réplique.
         tools: Les outils offerts au modèle évalué pour ce scénario. Rien n'est
             exécuté : chaque appel reçoit le `result` écrit dans sa définition,
             le même à chaque répétition. Faire improviser la réponse
@@ -288,6 +291,34 @@ async def run_conversation(
         # noterait plus que les tours ajoutés. Et le message d'ouverture y est
         # déjà — le réinsérer le placerait au milieu de la conversation.
         transcript: list[Turn] = list(resume)
+
+        # La conversation reprise se termine déjà sur la cible : c'est
+        # l'invariant du produit, un tour étant la cible qui parle puis
+        # l'adversaire qui relance. Sans ce tour d'adversaire, la boucle
+        # ferait parler la cible tout de suite, et elle enchaînerait sur sa
+        # propre dernière réplique au lieu de répondre à une relance — la
+        # case porterait alors une relance de moins que sa profondeur ne le
+        # laisse croire. Même vue, même façon de construire l'entrée que
+        # l'appel adverse de fin de boucle : cette relance-là ne doit se
+        # distinguer en rien des autres.
+        #
+        # Deux cas où il n'y a rien à relancer : `turns` à zéro, une case déjà
+        # à la bonne profondeur qu'on ne fait que rejuger ; et un transcript
+        # qui ne se termine pas sur la cible, une réponse étant déjà attendue.
+        if (
+            turns > 0
+            and adversary is not None
+            and transcript
+            and transcript[-1].role == "assistant"
+        ):
+            if stopped is not None and stopped():
+                raise Cancelled("stopped before the adversary's opening turn")
+            adversary_output = await adversary.generate(
+                input=adversary_view(adversary_prompt, opening_message, transcript),
+            )
+            transcript.append(
+                Turn(role="user", content=adversary_output.completion)
+            )
     else:
         # L'historique posé ouvre le transcript. Le modèle le reçoit comme s'il
         # l'avait vécu — c'est le but — mais chaque tour reste marqué, et le

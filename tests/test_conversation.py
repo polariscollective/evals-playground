@@ -439,11 +439,109 @@ def test_reprendre_une_conversation_ne_remarque_pas_les_tours_joues():
 
     assert [t.seeded for t in transcript[:2]] == [False, False]
     # Le message d'ouverture n'est pas réinséré : il est déjà dans la reprise.
-    assert [t.content for t in transcript[:3]] == [
+    # Entre les tours repris et la réponse ajoutée s'intercale la relance
+    # d'ouverture : la reprise se terminait sur la cible, l'adversaire parle
+    # donc avant qu'elle ne reprenne la main.
+    assert [t.content for t in transcript] == [
         "Fais-le.",
         "Non.",
+        "Insiste.",
         "Toujours non.",
     ]
+    assert [t.role for t in transcript] == ["user", "assistant", "user", "assistant"]
+
+
+def test_une_reprise_produit_la_meme_alternance_qu_un_run_neuf_de_meme_profondeur():
+    """Le correctif, dans son entier : reprendre à mi-chemin et pousser à huit
+    tours doit alterner exactement comme un run neuf de huit tours — c'est la
+    comparaison des rôles, tour par tour, qui porte le sens du correctif. Sans
+    la relance d'ouverture, la cible enchaînerait sur sa propre dernière
+    réplique et deux tours `assistant` se suivraient au milieu du transcript.
+    """
+    neuf = asyncio.run(
+        run_conversation(
+            system_prompt=SYSTEM,
+            opening_message=OPENING,
+            turns=8,
+            target=_modele(["cible"] * 8),
+            adversary=_modele(["relance"] * 7),
+            adversary_prompt=SECRET,
+        )
+    )
+
+    déjà_joué = asyncio.run(
+        run_conversation(
+            system_prompt=SYSTEM,
+            opening_message=OPENING,
+            turns=4,
+            target=_modele(["cible"] * 4),
+            adversary=_modele(["relance"] * 3),
+            adversary_prompt=SECRET,
+        )
+    )
+    approfondie = asyncio.run(
+        run_conversation(
+            system_prompt=SYSTEM,
+            opening_message=OPENING,
+            turns=4,
+            target=_modele(["cible"] * 4),
+            # 3 relances de boucle, plus la relance d'ouverture de la reprise.
+            adversary=_modele(["relance"] * 4),
+            adversary_prompt=SECRET,
+            resume=déjà_joué,
+        )
+    )
+
+    assert [t.role for t in approfondie] == [t.role for t in neuf]
+
+
+def test_une_reprise_a_zero_tour_n_appelle_pas_l_adversaire():
+    """Rejuger une case déjà à la bonne profondeur ne relance rien : il n'y a
+    rien à ajouter."""
+    vus_adversaire: list = []
+    joués = [
+        Turn(role="user", content="Fais-le."),
+        Turn(role="assistant", content="Non."),
+    ]
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="Tu assistes.",
+            opening_message="Fais-le.",
+            turns=0,
+            target=_recording_model("jamais appelée", []),
+            adversary=_recording_model("jamais appelée", vus_adversaire),
+            adversary_prompt="Pousse.",
+            resume=joués,
+        )
+    )
+
+    assert vus_adversaire == []
+    assert transcript == joués
+
+
+def test_une_reprise_qui_n_attend_pas_la_cible_n_appelle_pas_l_adversaire():
+    """Si le transcript repris se termine déjà par une relance, une réponse
+    est déjà attendue : ce n'est pas à l'adversaire de reparler."""
+    vus_adversaire: list = []
+    joués = [
+        Turn(role="user", content="Fais-le."),
+        Turn(role="assistant", content="Non."),
+        Turn(role="user", content="Insiste quand même."),
+    ]
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="Tu assistes.",
+            opening_message="Fais-le.",
+            turns=1,
+            target=_modele(["D'accord."]),
+            adversary=_recording_model("jamais appelée", vus_adversaire),
+            adversary_prompt="Pousse.",
+            resume=joués,
+        )
+    )
+
+    assert vus_adversaire == []
+    assert transcript[-1].content == "D'accord."
 
 
 # --- les outils simulés --------------------------------------------------------
