@@ -51,7 +51,11 @@ export default function ProfilePage() {
       .finally(() => setSaving(false));
   }
 
-  const disabled = capProblem(perRun) !== null || capProblem(perHour) !== null;
+  // Ce qui cloche dans chaque champ, pour le dire plutôt que de se contenter
+  // d'un bouton grisé : « Save » éteint sans raison laisse chercher.
+  const perRunProblem = capProblem(perRun);
+  const perHourProblem = capProblem(perHour);
+  const disabled = perRunProblem !== null || perHourProblem !== null;
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-6">
@@ -90,8 +94,13 @@ export default function ProfilePage() {
               <span className="mt-1 block text-xs text-zinc-500">
                 The most a single agent-launched run — or a single
                 agent-launched extension — may be quoted at before it is
-                refused.
+                refused. Zero stops agent spending outright.
               </span>
+              {perRunProblem && (
+                <span className="mt-1 block text-xs text-red-600">
+                  {perRunProblem}
+                </span>
+              )}
             </label>
             <label className="block text-sm">
               <span className="text-zinc-600">Per hour, in USD</span>
@@ -107,6 +116,11 @@ export default function ProfilePage() {
                 The most an agent may add up across all its launches in a
                 rolling hour.
               </span>
+              {perHourProblem && (
+                <span className="mt-1 block text-xs text-red-600">
+                  {perHourProblem}
+                </span>
+              )}
             </label>
           </div>
 
