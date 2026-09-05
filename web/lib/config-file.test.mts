@@ -445,3 +445,14 @@ test("une longueur hors bornes est refusée plutôt que ramenée", () => {
     null,
   );
 });
+
+test("les bornes 1 et 100000 sont acceptées", () => {
+  assert.equal(
+    configProblem({ ...CONFIG_MINIMAL, average_output_tokens: 1 }),
+    null,
+  );
+  assert.equal(
+    configProblem({ ...CONFIG_MINIMAL, average_output_tokens: 100_000 }),
+    null,
+  );
+});

@@ -63,6 +63,18 @@ def test_une_longueur_de_sortie_hors_bornes_est_refusee(valeur: int):
         EvalRunConfig(**_config_minimale(), average_output_tokens=valeur)
 
 
+def test_average_output_tokens_borne_basse_acceptee():
+    """average_output_tokens=1 doit être accepté (borne basse incluse)."""
+    config = _config(average_output_tokens=1)
+    assert config.average_output_tokens == 1
+
+
+def test_average_output_tokens_borne_haute_acceptee():
+    """average_output_tokens=100000 doit être accepté (borne haute incluse)."""
+    config = _config(average_output_tokens=100_000)
+    assert config.average_output_tokens == 100_000
+
+
 def test_un_one_shot_ne_reclame_pas_d_adversaire():
     config = _config(turns=1)
     assert config.models.adversary is None

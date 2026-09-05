@@ -103,6 +103,7 @@ scenarios:
 - A judge is always required. An adversary model **and** an adversary prompt are
   required as soon as \`turns\` is above 1.
 - Temperatures lie between 0 and 2, and \`max\` is not below \`min\`.
+- \`average_output_tokens\` is a required whole number between 1 and 100000.
 - \`max_tool_calls_per_turn\` is a whole number between 1 and 20.
 - A tool name may only use letters, digits, - and _, at most 64 of them, and
   every tool needs a description. A scenario cannot ask for a tool the run
