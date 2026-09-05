@@ -28,6 +28,7 @@ import { budgetProblem, formatUsd } from "@/lib/mcp-budget";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
+import { scenarioAdvice } from "@/lib/scenario-advice";
 import {
   NotFound,
   createRun,
@@ -217,6 +218,31 @@ const handler = createMcpHandler((server) => {
         ? { maxUsdPerRun: profile.max_usd_per_run, maxUsdPerHour: profile.max_usd_per_hour }
         : null;
       return { content: [{ type: "text", text: mcpAgentPrompt(agentModels(), caps) }] };
+    },
+  );
+
+  server.registerTool(
+    "read_scenario_advice",
+    {
+      title: "Read the scenario-writing advice",
+      description:
+        "Reads nothing and spends nothing. Returns what makes a scenario smell " +
+        "like a test to the model being evaluated, so you can avoid it: the tells, " +
+        "the naming patterns that give an AI-written scenario away, how tool " +
+        "results and planted information have to look. Read this before writing " +
+        "scenarios — a model that suspects a test behaves differently, and the run " +
+        "measures nothing. Returns the caller's own version when they have edited " +
+        "it on the Scenarios page, otherwise the default.",
+      inputSchema: z.object({}),
+    },
+    async (_input, ctx) => {
+      // Le conseil est personnel : c'est celui que cette personne a réécrit,
+      // pas un texte global. D'où la lecture du profil plutôt qu'une constante
+      // — et `ensureProfile` le fait exister au passage, comme partout
+      // ailleurs sur ce serveur.
+      const caller = await callerEmail(ctx);
+      const profile = await ensureProfile(caller);
+      return { content: [{ type: "text", text: scenarioAdvice(profile.scenario_advice) }] };
     },
   );
 
