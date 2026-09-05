@@ -15,12 +15,15 @@ import type { ExtendRequest } from "@/lib/types";
  * répétitions.
  *
  * Ce que cette route n'accepte pas est aussi important que ce qu'elle accepte :
- * ni critère, ni échelle, ni juge, ni nombre de tours. Un lot jugé autrement ne
- * serait plus comparable au premier, et la matrice n'aurait plus de sens comme
- * matrice. Ce qui ne peut pas être envoyé ne peut pas dériver.
+ * ni critère, ni échelle, ni juge. Un lot jugé autrement ne serait plus
+ * comparable au premier, et la matrice n'aurait plus de sens comme matrice. Ce
+ * qui ne peut pas être envoyé ne peut pas dériver.
  *
- * La température fait exception parce qu'elle est portée par chaque case et non
- * par le run : les anciennes gardent la leur, inscrite sur leur ligne. */
+ * La température et le nombre de tours font exception : la première parce qu'elle
+ * est portée par chaque case et non par le run, les anciennes gardent donc la
+ * leur. Les tours peuvent s'allonger — jamais se raccourcir — et si une case
+ * est approfondie, elle est rejugée entière. La profondeur du run reste
+ * identique pour toutes ses cases : la comparabilité tient. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },

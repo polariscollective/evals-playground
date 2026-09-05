@@ -150,12 +150,20 @@ export interface ExpectedCsv {
 
 /** Ce qu'on ajoute à un run existant : une sous-matrice, et rien d'autre.
  *
- * Ni juge, ni échelle, ni nombre de tours : ce qui ne peut pas être envoyé ne
- * peut pas dériver, et deux lots jugés différemment ne seraient plus
- * comparables — ce qu'une matrice existe précisément pour permettre.
+ * Ni juge, ni échelle, ni critère : ce qui ne peut pas être envoyé ne peut pas
+ * dériver, et deux lots jugés différemment ne seraient plus comparables — ce
+ * qu'une matrice existe précisément pour permettre.
  *
  * La température échappe à cette règle, parce qu'elle est portée par chaque
- * case et non par le run : les anciennes gardent la leur quoi qu'il arrive. */
+ * case et non par le run : les anciennes gardent la leur quoi qu'il arrive.
+ *
+ * Le nombre de tours échappe aussi, mais justifié : on ne coupe jamais une
+ * conversation déjà jouée, on ne peut que l'allonger. Si on l'approfondit, elle
+ * est rejugée entière — un verdict sur quatre tours ne dit rien de la même
+ * conversation à huit. Enfin, la profondeur du run reste la même pour toutes
+ * ses cases : celle qu'on a demandée. Une case qui s'est arrêtée plus tôt l'a
+ * fait parce qu'elle n'avait plus rien à donner ; la forcer au-delà n'apprendrait
+ * rien, et la moyenne la compte en équilibre avec les autres. */
 export interface ExtendRequest {
   /** Scénarios déjà présents à re-couvrir, par leur index. */
   scenario_indices: number[];
