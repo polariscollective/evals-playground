@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { extendProblem } from "./validate.ts";
-import type { ExtendRequest, ToolSpec } from "./types.ts";
+import { answerLengthsFor, measureRun } from "./measured-length.ts";
+import type { EvalModels, ExtendRequest, ToolSpec } from "./types.ts";
 
 const OUTIL = (name: string): ToolSpec => ({
   name,
@@ -242,4 +243,37 @@ test("ajouter un scénario sans modèle reste refusé", () => {
     [],
   );
   assert.match(problem ?? "", /at least one model is required/);
+});
+
+test("l'extension estime sur ce que le run a mesuré, pas sur une constante", () => {
+  const models: EvalModels = {
+    targets: ["grok/grok-4.3"],
+    adversary: "anthropic/claude-haiku-4-5",
+    judge: "openai/gpt-5.6-luna",
+  };
+  const mesure = measureRun(
+    [
+      {
+        scenario_index: 0,
+        target_model: "grok/grok-4.3",
+        status: "done",
+        usage: {
+          "grok/grok-4.3": {
+            input_tokens: 0,
+            output_tokens: 6000,
+            input_tokens_cache_read: 0,
+            input_tokens_cache_write: 0,
+            reasoning_tokens: 0,
+          },
+        },
+      },
+    ],
+    models,
+    3,
+  );
+
+  // Le scénario 0 a mesuré 2000 jetons par tour ; le scénario 1 est neuf et
+  // hérite de la moyenne du run, la même. La longueur déclarée — 100 — ne sert
+  // pas : on a mieux qu'une déclaration.
+  assert.deepEqual(answerLengthsFor([0, 1], mesure, 100), [2000, 2000]);
 });
