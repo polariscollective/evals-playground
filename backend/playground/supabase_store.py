@@ -356,6 +356,52 @@ def write_sample(
     )
 
 
+def write_awareness(
+    supabase: Supabase,
+    run_id: str,
+    scenario_index: int,
+    target_model: str,
+    repetition: int,
+    *,
+    awareness: tuple[int | None, str, str | None],
+    usage: dict[str, Any] | None = None,
+    cost_usd: float | None = None,
+) -> None:
+    """Écrit la note d'éveil d'une case, et rien d'autre.
+
+    Volontairement séparée de `write_sample`, qui écrit une case entière. Cette
+    passe-ci arrive sur un run déjà terminé et déjà noté : toucher `status`,
+    `score`, `justification`, `messages` ou `turns_done` détruirait précisément
+    ce qu'on est venu compléter. Les seules colonnes partagées sont `usage` et
+    `cost_usd`, parce que la passe consomme des jetons pour de vrai — et
+    l'appelant les lui donne déjà fusionnés avec ce que la case portait.
+    """
+    values: dict[str, Any] = {
+        "awareness_score": awareness[0],
+        "awareness_justification": awareness[1],
+        "awareness_error": awareness[2],
+    }
+    if usage is not None:
+        values["usage"] = usage
+        values["cost_usd"] = cost_usd
+    supabase.update(
+        SAMPLES,
+        values,
+        **sample_filters(run_id, scenario_index, target_model, repetition),
+    )
+
+
+def mark_awareness_judged(supabase: Supabase, run_id: str) -> None:
+    """Note que le juge d'éveil est passé sur ce run après coup.
+
+    La configuration n'est pas touchée : elle dit ce qui a été demandé au
+    lancement, et c'est une information qu'on veut garder. Sans cette date,
+    rien ne distinguerait un run lancé avec le juge d'un run auquel on l'a
+    ajouté ensuite.
+    """
+    supabase.update(RUNS, {"awareness_judged_at": NOW}, id=f"eq.{run_id}")
+
+
 def cancel_unfinished_samples(supabase: Supabase, run_id: str) -> None:
     """Marque `cancelled` les cases qui ne seront pas faites.
 

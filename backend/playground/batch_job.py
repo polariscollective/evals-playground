@@ -6,7 +6,7 @@ Tout passe par l'environnement, jamais par la ligne de commande : Cloud Run Jobs
 sait remplacer des variables d'environnement au lancement, pas des arguments.
 
     EVAL_RUN_ID     le run à exécuter, déjà écrit en base avec ses échantillons
-    EVAL_JOB_MODE   `run` (défaut) ou `rejudge`
+    EVAL_JOB_MODE   `run` (défaut), `rejudge` ou `awareness`
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY
 
@@ -29,7 +29,7 @@ from playground.eval_schemas import EvalRunConfig
 from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
-from playground.scoring import ScoredSample, rubric_judge
+from playground.scoring import ScoredSample, awareness_only_judge, rubric_judge
 from playground.supabase_store import (
     SAMPLES,
     Cancellation,
@@ -38,10 +38,12 @@ from playground.supabase_store import (
     cancel_unfinished_samples,
     fetch_run,
     finish_run,
+    mark_awareness_judged,
     mark_sample_running,
     pending_samples,
     run_status,
     start_run,
+    write_awareness,
     write_sample,
 )
 
@@ -164,8 +166,9 @@ def run_batch_job(
     Args:
         run_id: Le run à exécuter, déjà en base avec ses échantillons.
         mode: `run` déroule les conversations puis les juge ; `rejudge` rejoue
-            le juge sur les transcripts déjà enregistrés, sans rappeler ni le
-            modèle évalué ni l'adversaire.
+            le juge de l'utilisateur sur les transcripts déjà enregistrés ;
+            `awareness` ne pose que la question de l'éveil, sur ces mêmes
+            transcripts, sans toucher aux notes existantes.
         supabase: Injectable pour les tests, qui n'ont ainsi besoin ni de réseau
             ni de base.
         cancellation: Injectable pour les tests, qui doivent pouvoir annuler
@@ -272,10 +275,47 @@ def run_batch_job(
             ),
         )
 
+    def enregistre_eveil(sample: ScoredSample) -> None:
+        """Une case dont seule la note d'éveil vient d'être obtenue.
+
+        Même fusion de consommation que `enregistre` — la passe a bien brûlé
+        des jetons, et les remplacer ferait passer la case pour moins chère
+        qu'elle ne l'a été — mais par `write_awareness`, qui ne touche ni la
+        note, ni le transcript, ni le statut.
+        """
+        cle = (sample.scenario_index, sample.target, sample.repetition)
+        usage = add_usage(deja_facture.get(cle, {}), sample.usage)
+        cout, sans_tarif = actual_cost_from_dicts(usage)
+        write_awareness(
+            supabase,
+            run_id,
+            sample.scenario_index,
+            sample.target,
+            sample.repetition,
+            awareness=(
+                sample.awareness_score,
+                sample.awareness_justification,
+                sample.awareness_error,
+            ),
+            usage=usage,
+            cost_usd=None if sans_tarif else cout,
+        )
+
     try:
-        if mode == "rejudge":
+        if mode == "awareness":
+            # Les mêmes conversations qu'une repasse de juge, et pour la même
+            # raison : elles sont déjà en base, et rien n'est rejoué.
             dataset = rejudge_dataset(supabase, run_id)
             solveur: Solver = stored_transcript()
+            deja_facture = {
+                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
+                    metadata.get("usage") or {}
+                )
+                for metadata in (echantillon.metadata for echantillon in dataset.samples)
+            }
+        elif mode == "rejudge":
+            dataset = rejudge_dataset(supabase, run_id)
+            solveur = stored_transcript()
             # Relu depuis les métadonnées que `rejudge_dataset` vient de poser,
             # et non redemandé à la base : c'est la même lecture, il n'y a pas
             # à la refaire. Une case rejugée a déjà été jouée une première
@@ -336,16 +376,20 @@ def run_batch_job(
             Task(
                 dataset=dataset,
                 solver=solveur,
-                scorer=rubric_judge(
-                    config,
-                    on_scored=enregistre,
-                    model_args=model_args,
-                    stopped=arret.stopped,
-                    # Jamais en rejugement, qui repasse la question de
-                    # l'utilisateur, pas la nôtre.
-                    check_awareness=(
-                        config.check_eval_awareness and mode != "rejudge"
-                    ),
+                scorer=(
+                    awareness_only_judge(
+                        config, on_scored=enregistre_eveil, model_args=model_args
+                    )
+                    if mode == "awareness"
+                    else rubric_judge(
+                        config,
+                        on_scored=enregistre,
+                        model_args=model_args,
+                        stopped=arret.stopped,
+                        check_awareness=(
+                            config.check_eval_awareness and mode != "rejudge"
+                        ),
+                    )
                 ),
                 # Une répétition ratée ne doit pas avorter le run : les autres
                 # portent l'information de fréquence, qui est le but du produit.
@@ -395,6 +439,9 @@ def run_batch_job(
                 if log.error
                 else f"inspect finished with status {log.status!r} and no message."
             )
+
+        if mode == "awareness" and not annule:
+            mark_awareness_judged(supabase, run_id)
 
         finish_run(
             supabase,

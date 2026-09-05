@@ -538,3 +538,66 @@ def rubric_judge(
         )
 
     return score
+
+
+@scorer(metrics=[])
+def awareness_only_judge(
+    config: EvalRunConfig,
+    on_scored: Callable[["ScoredSample"], None] | None = None,
+    model_args: dict[str, Any] | None = None,
+) -> Scorer:
+    """Ne pose que la question de l'éveil, sur des conversations déjà notées.
+
+    Un scorer à part plutôt qu'un drapeau de plus sur `rubric_judge` : celui-ci
+    appelle le juge de l'utilisateur, ce qu'une passe d'éveil ne doit surtout
+    pas faire — elle repasserait une question à laquelle le run a déjà répondu,
+    et la facturerait.
+
+    La `ScoredSample` rendue ne porte que les champs d'éveil et la
+    consommation. `score` y reste `None` et n'est jamais écrit : c'est
+    `write_awareness`, côté appelant, qui garantit que la note existante n'est
+    pas touchée.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        metadata = state.metadata or {}
+        transcript = list(metadata.get("transcript") or [])
+
+        # Une conversation vide n'a rien à lire : la même garde que le juge
+        # principal, pour la même raison — un juge à qui l'on montre le vide
+        # rend tout de même un verdict, en le justifiant par le vide.
+        if blocking_reason(transcript) is not None:
+            resultat: tuple[int | None, str, str | None] = (None, "", None)
+        else:
+            resultat = await judge_awareness(
+                config, render_transcript(transcript), model_args
+            )
+
+        echantillon = ScoredSample(
+            scenario_index=int(metadata.get("scenario_index", 0)),
+            target=str(metadata.get("target") or ""),
+            repetition=int(metadata.get("repetition", 0)),
+            usage={
+                nom: {
+                    "input_tokens": u.input_tokens or 0,
+                    "output_tokens": u.output_tokens or 0,
+                    "input_tokens_cache_read": u.input_tokens_cache_read or 0,
+                    "input_tokens_cache_write": u.input_tokens_cache_write or 0,
+                    "reasoning_tokens": u.reasoning_tokens or 0,
+                }
+                for nom, u in (sample_model_usage() or {}).items()
+            },
+            awareness_score=resultat[0],
+            awareness_justification=resultat[1],
+            awareness_error=resultat[2],
+        )
+        if on_scored is not None:
+            on_scored(echantillon)
+
+        return Score(
+            value=UNJUDGED if resultat[0] is None else resultat[0],
+            explanation=resultat[1],
+            metadata={"awareness_score": resultat[0], "awareness_error": resultat[2]},
+        )
+
+    return score

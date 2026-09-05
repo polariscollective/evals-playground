@@ -496,6 +496,113 @@ def test_le_rejugement_ne_rappelle_pas_le_juge_d_eveil_et_garde_sa_note(
     assert appels_eveil == [], "le juge d'éveil ne doit pas être rappelé en rejugement"
 
 
+# --- la passe d'éveil après coup, de bout en bout ----------------------------
+#
+# Le dessin de la passe tient tout entier dans `write_awareness` (verrouillé
+# isolément dans `test_awareness.py`) : ici, on verrouille le câblage qui
+# l'atteint — le mode `awareness` du job — plutôt que la fonction seule.
+
+
+def test_la_passe_d_eveil_n_appelle_ni_le_modele_evalue_ni_le_juge_de_l_utilisateur(
+    tmp_path: Path,
+):
+    """Seul le juge d'éveil doit tourner : la conversation n'est pas rejouée,
+    et la question de l'utilisateur n'est pas reposée — ni payée une seconde
+    fois."""
+    supabase = FakeSupabase(samples=_samples_enregistres())
+    appels_modele_evalue: list = []
+    appels_juge_utilisateur: list = []
+
+    def outputs(input, tools, tool_choice, config):
+        if tools and tools[0].name == "submit_awareness":
+            return ModelOutput.for_tool_call(
+                model="mockllm",
+                tool_name="submit_awareness",
+                tool_arguments={"score": 9, "justification": "Le tour 2 le dit."},
+            )
+        if tools:
+            appels_juge_utilisateur.append(1)
+            return ModelOutput.for_tool_call(
+                model="mockllm",
+                tool_name="submit_score",
+                tool_arguments={"score": 0, "justification": "ne devrait pas arriver"},
+            )
+        appels_modele_evalue.append(input)
+        return ModelOutput.from_content(model="mockllm", content="ne devrait pas arriver")
+
+    _lancer(supabase, tmp_path, mode="awareness", outputs=outputs)
+
+    assert appels_modele_evalue == [], "le modèle évalué ne doit jamais être rappelé"
+    assert appels_juge_utilisateur == [], "le juge de l'utilisateur ne doit jamais être rappelé"
+
+
+def test_la_passe_d_eveil_n_ecrit_que_les_colonnes_d_eveil_et_la_consommation(
+    tmp_path: Path,
+):
+    """Le test qui protège tout le dessin de cette passe, sur le câblage réel
+    cette fois plutôt que sur `write_awareness` seule (voir
+    `test_awareness.py`) : la case arrive déjà notée, et la passe ne doit
+    toucher ni son statut, ni sa note, ni son transcript, ni sa profondeur."""
+    supabase = FakeSupabase(samples=_samples_enregistres())
+    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
+
+    notes_eveil = [v for v in supabase.ecrites(SAMPLES) if "awareness_score" in v]
+    assert len(notes_eveil) == 2, "deux cases enregistrées, deux notes d'éveil"
+    assert all(v["awareness_score"] == 9 for v in notes_eveil)
+    assert all("usage" in v and "cost_usd" in v for v in notes_eveil), (
+        "la passe a bien consommé des jetons, et doit les compter"
+    )
+    for interdit in (
+        "status", "score", "justification", "messages", "turns_done", "error",
+    ):
+        assert all(interdit not in v for v in notes_eveil), (
+            f"une passe d'éveil ne doit pas écrire {interdit}"
+        )
+
+
+def test_la_passe_d_eveil_marque_le_run_comme_juge_apres_coup(tmp_path: Path):
+    # `mark_awareness_judged` et `finish_run` sont deux écritures distinctes
+    # sur `RUNS` — chacune une passe PATCH qui ne pose que ses propres
+    # colonnes — donc la marque n'est pas forcément sur la dernière ligne.
+    supabase = FakeSupabase(samples=_samples_enregistres())
+    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
+
+    ecritures_run = supabase.ecrites(RUNS)
+    assert any(v.get("awareness_judged_at") is not None for v in ecritures_run)
+    assert ecritures_run[-1]["status"] == "done"
+
+
+def test_une_passe_d_eveil_annulee_ne_marque_pas_le_run_comme_juge(tmp_path: Path):
+    """Une passe interrompue n'a pas fini de poser ses notes : la marquer
+    quand même laisserait croire que le run est désormais couvert."""
+    supabase = FakeSupabase(samples=_samples_enregistres())
+    supabase.statut = "cancelled"
+    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
+
+    ecritures_run = [v for nom, v, _ in supabase.ecritures if nom == RUNS]
+    assert not any("awareness_judged_at" in v for v in ecritures_run)
+
+
+def test_le_ramassage_final_ne_cible_jamais_que_les_cases_pending_ou_running(
+    tmp_path: Path,
+):
+    """Piège de câblage à ne pas rouvrir : cette passe arrive sur un run dont
+    TOUTES les cases sont déjà `done`. Le ramassage des cases inachevées, en
+    toute fin de job, doit continuer à ne viser que `pending`/`running` — le
+    même filtre qu'en mode `run` ou `rejudge`, non touché ici — sans quoi une
+    case déjà notée serait reclassée en erreur sur la vraie base."""
+    supabase = FakeSupabase(samples=_samples_enregistres())
+    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
+
+    ramassages = [
+        f for nom, v, f in supabase.ecritures if nom == SAMPLES and "status" in v
+    ]
+    assert ramassages, "le ramassage doit avoir lieu"
+    assert all(f.get("status") == "in.(pending,running)" for f in ramassages), (
+        "le ramassage ne doit jamais s'appliquer à toutes les cases"
+    )
+
+
 # --- la consommation ---------------------------------------------------------
 
 

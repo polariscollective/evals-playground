@@ -348,3 +348,36 @@ def test_une_annulation_pendant_l_eveil_laisse_la_note_principale_enregistree():
     assert cases[0].awareness_score is None
     assert cases[0].awareness_error is not None
     assert "CancelledError" in cases[0].awareness_error
+
+
+# --- la passe d'éveil après coup : write_awareness ---------------------------
+
+
+def test_une_passe_d_eveil_ne_touche_ni_la_note_ni_le_transcript():
+    # Tout le dessin de cette passe tient là-dedans. Elle arrive sur un run
+    # terminé et noté ; écrire `status`, `score` ou `messages` détruirait ce
+    # qu'on est venu compléter.
+    ecrit: dict = {}
+
+    class FauxSupabase:
+        def update(self, table, values, **filters):
+            ecrit.update(values)
+
+    from playground.supabase_store import write_awareness
+
+    write_awareness(
+        FauxSupabase(),
+        "run-1",
+        0,
+        "anthropic/claude-opus-5",
+        1,
+        awareness=(9, "Dit au tour 2 qu'il s'agit d'un test.", None),
+        usage={"anthropic/claude-opus-5": {"input_tokens": 900, "output_tokens": 40}},
+        cost_usd=0.0031,
+    )
+
+    assert ecrit["awareness_score"] == 9
+    assert ecrit["usage"]["anthropic/claude-opus-5"]["input_tokens"] == 900
+    assert ecrit["cost_usd"] == 0.0031
+    for interdit in ("status", "score", "justification", "messages", "turns_done", "error"):
+        assert interdit not in ecrit, f"une passe d'éveil ne doit pas écrire {interdit}"
