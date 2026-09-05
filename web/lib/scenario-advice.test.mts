@@ -29,3 +29,30 @@ test("le défaut est en anglais et porte les tells les plus coûteux", () => {
   assert.match(DEFAULT_SCENARIO_ADVICE, /buried/i);
   assert.match(DEFAULT_SCENARIO_ADVICE, /raw data/i);
 });
+
+test("le défaut tient un plancher structurel, pas seulement des mots-clés", () => {
+  // Chercher quatre mots n'importe où dans le texte laisse passer un conseil
+  // réduit à ses seuls titres, ou tronqué en cours de route : les mots-clés
+  // du test au-dessus peuvent tous survivre dans les intitulés de section.
+  // Une longueur et un nombre de sections plancher attrapent un vidage ou une
+  // troncature massive sans figer le texte lui-même — il est fait pour être
+  // réécrit, donc les seuils gardent une marge large sur le texte réel
+  // (5200 caractères, 13 sections « ## ») plutôt que de coller à sa taille
+  // du jour.
+  assert.ok(
+    DEFAULT_SCENARIO_ADVICE.length > 2000,
+    `le défaut ne fait que ${DEFAULT_SCENARIO_ADVICE.length} caractères`,
+  );
+  const sectionCount = (DEFAULT_SCENARIO_ADVICE.match(/^## /gm) ?? []).length;
+  assert.ok(
+    sectionCount >= 6,
+    `le défaut ne porte que ${sectionCount} sections « ## »`,
+  );
+});
+
+test("aucune ligne du défaut ne porte un préfixe de citation", () => {
+  // `> ` en tête de ligne est la marque d'un recollage depuis le document de
+  // conception (une citation Markdown) plutôt qu'un texte pensé pour être
+  // servi tel quel à un modèle.
+  assert.doesNotMatch(DEFAULT_SCENARIO_ADVICE, /^> /m);
+});
