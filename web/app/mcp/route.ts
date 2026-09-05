@@ -37,6 +37,7 @@ import {
   mcpSpendLastHour,
   recordStart,
   saveAnalysis,
+  saveNotes,
 } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
@@ -116,6 +117,22 @@ function toolError(message: string) {
 function callerEmail(ctx: { http?: { authInfo?: AuthInfo } }): string {
   const email = ctx.http?.authInfo?.extra?.email;
   return typeof email === "string" ? email : "unknown";
+}
+
+/** Le refus d'écrire sur un run qui n'est pas le sien, ou rien quand
+ *  `callerEmail` désigne déjà `run.user_email` — une seule fonction pour les
+ *  trois outils qui écrivent sur un run : `extend_run`, `set_run_tags`, et
+ *  `update_run_text`. La lecture, elle, reste ouverte à tout appelant ;
+ *  aucun de ces trois-là n'y touche.
+ *
+ *  Ne nomme jamais le propriétaire réel : `get_run_metadata` répond déjà à
+ *  cette question pour qui la pose, mais un refus n'a pas à la pousser. */
+function authorOnly(ownerEmail: string, caller: string): string | null {
+  if (ownerEmail === caller) return null;
+  return (
+    `This run was created by someone other than you (you are calling as ${caller}). Only its ` +
+    "creator can write to it — reading a run stays open to anyone."
+  );
 }
 
 const handler = createMcpHandler((server) => {
@@ -385,16 +402,21 @@ const handler = createMcpHandler((server) => {
   server.registerTool(
     "update_draft_run",
     {
-      title: "Rewrite a draft in place",
+      title: "Rewrite a draft, or fork it",
       description:
         "Nothing is launched and nothing is spent by calling this, exactly like submit_draft_run: it " +
-        "checks the document first, and only then replaces the draft's contents. Use it to correct a " +
-        "draft rather than leave two of them side by side, when the person cannot tell which is the " +
-        "good one. Three refusals, all before anything is written: a draft created by someone else — " +
-        "only its own author may rewrite it; a draft that has already been launched — it produced a " +
-        "run, and rewriting it would falsify where that run came from, so submit a new one; and a " +
-        "document that would be refused anyway, with the reason. Note that a draft whose scenarios " +
-        "came from an uploaded CSV keeps the scenarios you send but loses the file itself.",
+        "checks the document first. What happens next depends on who is calling. Its own author gets " +
+        "the draft rewritten in place — use this to correct a draft rather than leave two of them " +
+        "side by side, when the person cannot tell which is the good one. Anyone else gets a new " +
+        "draft instead, carrying the submitted document and owned by the caller; the original is " +
+        "left exactly as it was, and the response names the new address so the caller does not " +
+        "mistake it for the one they called with — writing someone else's draft is not allowed, but " +
+        "proposing your own take on it is. A launched draft refuses a rewrite from its own author — " +
+        "it produced a run, and rewriting it now would falsify where that run came from, so submit a " +
+        "new one — but forking it for someone else still works, since that never touches the " +
+        "launched draft. The other refusal, for anyone: a document that would be refused anyway, " +
+        "with the reason. Note that a draft whose scenarios came from an uploaded CSV keeps the " +
+        "scenarios you send but loses the file itself, whichever draft ends up holding them.",
       inputSchema: z.object({
         draft_id: z.string().describe("The draft's UUID, from its address."),
         yaml: z
@@ -408,17 +430,13 @@ const handler = createMcpHandler((server) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
       const { draft } = found;
-
-      // L'auteur d'abord, avant même de regarder le document : refuser pour la
-      // bonne raison compte plus que refuser vite.
       const caller = callerEmail(ctx);
-      if (draft.created_by !== caller) {
-        return toolError(
-          `This draft was created by ${draft.created_by}, and you are calling as ${caller}. ` +
-            "Only its author can rewrite it — submit a new draft instead.",
-        );
-      }
-      if (draft.launched_at) {
+      const isOwner = draft.created_by === caller;
+
+      // Ce refus-ci ne vaut que pour l'auteur : lancer un run a marqué CE
+      // brouillon-là, et seule une réécriture à sa place le falsifierait.
+      // Forker n'y touche pas, donc reste possible même après lancement.
+      if (isOwner && draft.launched_at) {
         return toolError(
           "This draft has already been launched, and the run it produced points back to it. " +
             "Rewriting it now would falsify that. Submit a new draft instead.",
@@ -430,11 +448,28 @@ const handler = createMcpHandler((server) => {
         return toolError(verdict.message);
       }
       const { config } = readConfigFile(yaml);
-      // `csv_text` part avec l'ancienne configuration : les scénarios reçus ici
-      // sont écrits en clair, plus rien ne renvoie au fichier téléversé, et le
-      // garder attaché ferait croire à une source qui n'en est plus une.
-      await updateDraft(draft_id, config, null, "mcp");
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+
+      // `csv_text` part avec l'ancienne configuration, dans les deux branches :
+      // les scénarios reçus ici sont écrits en clair, plus rien ne renvoie au
+      // fichier téléversé, et le garder attaché ferait croire à une source qui
+      // n'en est plus une.
+      if (!isOwner) {
+        const newDraftId = await createDraft(config, null, caller, "mcp");
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `This draft was created by someone else, so your change was saved as a new draft ` +
+                `instead of replacing it — ${draft_id} is unchanged. ${verdict.message}\n\n` +
+                `${origin}/runs/drafts/${newDraftId}`,
+            },
+          ],
+        };
+      }
+
+      await updateDraft(draft_id, config, null, "mcp");
       return {
         content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draft_id}` }],
       };
@@ -615,7 +650,8 @@ const handler = createMcpHandler((server) => {
         "— a verdict given at four turns says nothing about the same conversation at eight, and turns " +
         "already played are neither replayed nor paid for again. Whatever this call proposes is saved " +
         "as a draft, nothing more: a human opens it on the run's page, reviews it, and decides — the " +
-        "run stays as it is until they do.",
+        "run stays as it is until they do. Restricted to the run's own creator — reading a run " +
+        "stays open to anyone, but only who created it may propose changes to it.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         scenario_indices: z
@@ -727,6 +763,10 @@ const handler = createMcpHandler((server) => {
       if ("error" in found) return found.error;
       const { run } = found.run;
 
+      const caller = callerEmail(ctx);
+      const ownership = authorOnly(run.user_email, caller);
+      if (ownership) return toolError(ownership);
+
       // `targets` et `repetitions` restent facultatifs côté schéma — une
       // demande qui n'approfondit que n'a besoin ni de l'un ni de l'autre —
       // mais `ExtendRequest` les veut présents : une demande qui n'ajoute
@@ -763,7 +803,7 @@ const handler = createMcpHandler((server) => {
       const draftId = await createExtendDraft(
         input.run_id,
         request,
-        callerEmail(ctx),
+        caller,
         "mcp",
       );
       const cells =
@@ -798,17 +838,23 @@ const handler = createMcpHandler((server) => {
         "Adds these labels to the tags a run already carries — the union, never a replacement: this " +
         "tool cannot remove a tag, and nothing a human placed is ever erased by calling it. Removing a " +
         "tag is a human gesture, done in the interface. A label that doesn't match an existing one " +
-        "(case-insensitively) creates a new tag; see list_tags first to reuse rather than duplicate.",
+        "(case-insensitively) creates a new tag; see list_tags first to reuse rather than duplicate. " +
+        "Restricted to the run's own creator — reading a run stays open to anyone, but only who " +
+        "created it may tag it.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         tags: z.array(z.string()).describe("Labels to add — not ids."),
       }),
     },
-    async ({ run_id, tags }) => {
+    async ({ run_id, tags }, ctx) => {
       const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
       if ("error" in result) return result.error;
-      const created = await tagsForLabels(tags);
       const runId = result.run.run.id;
+
+      const ownership = authorOnly(result.run.run.user_email, callerEmail(ctx));
+      if (ownership) return toolError(ownership);
+
+      const created = await tagsForLabels(tags);
       await addRunTags(runId, created.map((tag) => tag.id));
       const current = await tagsOf(runId);
       return {
@@ -818,48 +864,69 @@ const handler = createMcpHandler((server) => {
   );
 
   server.registerTool(
-    "update_run_analysis",
+    "update_run_text",
     {
-      title: "Save a run's analysis",
+      title: "Write a run's notes or analysis",
       description:
-        "Writes the run's `analysis` field — the write side of what get_run_metadata already reads. " +
-        "This overwrites, and there is no history to recover from: read the current analysis before " +
-        "calling. An empty analysis is written with no other condition. A non-empty one is only " +
+        "Writes one of a run's two free-text Markdown fields — the write side of what " +
+        "get_run_metadata already reads for both. Restricted to the run's own creator: reading " +
+        "either field stays open to anyone, but only who created the run may write to them. This " +
+        "overwrites, and there is no history to recover from: read the field's current content " +
+        "before calling. An empty field is written with no other condition. A non-empty one is only " +
         "replaced when `replaces` matches what is on record, compared with leading and trailing " +
         "whitespace stripped from both — a copy that gained or lost a trailing newline still matches. " +
-        "Otherwise the call is refused, and the refusal's message carries the current analysis: a " +
+        "Otherwise the call is refused, and the refusal's message carries the current content: a " +
         "caller who skipped reading it first gets it from the refusal itself, merges its addition in, " +
-        "and calls again with the merged text as `analysis` and this same text as `replaces` — without " +
+        "and calls again with the merged text as `text` and this same content as `replaces` — without " +
         "a separate read in between.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
-        analysis: z
-          .string()
-          .describe("The Markdown to write as the run's analysis, replacing whatever is on record."),
+        field: z
+          .enum(["notes", "analysis"])
+          .describe(
+            "Which of the run's two Markdown fields to write — choose by what the text is *for*, " +
+              "not by which name sounds closer to what you have in hand. `notes` is the preamble: " +
+              "what this run set out to measure, written before or while it ran; duplicating a run " +
+              "copies notes along with the rest of its configuration. `analysis` is written after " +
+              "the fact, about what the results of *this* run actually show; a duplicate never " +
+              "carries it, since it describes these numbers and no other run's. Just read a matrix " +
+              "and want to record what it shows: analysis. Recording what a run is meant to test, " +
+              "before or while it runs: notes.",
+          ),
+        text: z.string().describe("The Markdown to write, replacing whatever `field` currently holds."),
         replaces: z
           .string()
           .optional()
           .describe(
-            "The run's current analysis, verbatim — from get_run_metadata's `analysis` field. " +
-              "Required to overwrite a non-empty analysis; omit only when it is currently empty. A " +
-              "mismatch refuses the write and returns the current analysis instead.",
+            "The field's current content, verbatim — from get_run_metadata's `notes` or `analysis`. " +
+              "Required to overwrite a non-empty field; omit only when it is currently empty. A " +
+              "mismatch refuses the write and returns the current content instead.",
           ),
       }),
     },
-    async ({ run_id, analysis, replaces }) => {
+    async ({ run_id, field, text, replaces }, ctx) => {
       const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
       if ("error" in result) return result.error;
-      const current = result.run.run.analysis;
+      const { run } = result.run;
+
+      const ownership = authorOnly(run.user_email, callerEmail(ctx));
+      if (ownership) return toolError(ownership);
+
+      const current = field === "notes" ? run.notes : run.analysis;
       if (!analysisReplaceAllowed(current, replaces)) {
         return toolError(
-          "This run already carries a non-empty analysis, and `replaces` does not match it — writing " +
-            "now would silently overwrite it. Here is the current analysis; merge your change into it " +
-            "and call again with the full result as `analysis` and this text as `replaces`.\n\n" +
-            current,
+          `This run already carries a non-empty ${field}, and \`replaces\` does not match it — ` +
+            `writing now would silently overwrite it. Here is the current ${field}; merge your ` +
+            "change into it and call again with the full result as `text` and this text as " +
+            `\`replaces\`.\n\n${current}`,
         );
       }
-      await saveAnalysis(run_id, analysis);
-      return { content: [{ type: "text", text: "Analysis saved." }] };
+      if (field === "notes") {
+        await saveNotes(run_id, text);
+      } else {
+        await saveAnalysis(run_id, text);
+      }
+      return { content: [{ type: "text", text: `${field === "notes" ? "Notes" : "Analysis"} saved.` }] };
     },
   );
 }, {});
