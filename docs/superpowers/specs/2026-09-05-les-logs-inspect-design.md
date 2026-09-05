@@ -107,6 +107,14 @@ donc `/inspect-view/inspect-view/<runId>/logs`. Vérifié en rejouant `joinURI`,
 Les assets, eux, sont des attributs HTML résolus par le navigateur et non par
 `joinURI` : un chemin absolu y convient.
 
+**Et l'origine de cette URI vient des en-têtes, pas de `request.url`.** Next le
+normalise — une page ouverte sur `127.0.0.1` s'y relit `localhost` — et derrière
+le proxy de Vercel il porte l'URL interne. Comme le `log_dir` est absolu, une
+origine fausse rend le dossier de journaux cross-origin : le navigateur refuse,
+et le viewer n'affiche qu'un « Failed to fetch » sans dire pourquoi. C'est
+arrivé au premier essai en navigateur. `originOf` lit `x-forwarded-host` puis
+`host`, avec `request.url` en repli.
+
 Le viewer va chercher `log_dir + "/listing.json"` (`fetchManifest`) — c'est ce
 nom que la route doit servir. Et comme il indexe son cache IndexedDB sur le
 `log_dir` canonique, deux runs ne se marchent pas dessus.

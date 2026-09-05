@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isRunId } from "@/lib/run-id";
 import { canReadRun } from "@/lib/run-access";
-import { logDirUri, viewerHtml } from "@/lib/inspect-view";
+import { logDirUri, originOf, viewerHtml } from "@/lib/inspect-view";
 
 const DIST = path.join(process.cwd(), "public", "inspect-view", "index.html");
 
@@ -33,9 +33,13 @@ export async function GET(
 
   const html = viewerHtml(dist, {
     assetsBase: "/inspect-view/assets",
-    // L'origine vient de la requête : la même route sert en local, en
-    // prévisualisation et en production, et le viewer exige une URI complète.
-    logDir: logDirUri(new URL(request.url).origin, runId),
+    // L'origine vient des en-têtes, pas de `request.url` : voir `originOf`.
+    // Se tromper d'origine rend le dossier de journaux cross-origin, et le
+    // viewer n'affiche plus qu'un « Failed to fetch ».
+    logDir: logDirUri(
+      originOf(request.headers, new URL(request.url).origin),
+      runId,
+    ),
   });
 
   return new Response(html, {

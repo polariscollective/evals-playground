@@ -7,8 +7,14 @@ import {
   bareLogName,
   isSafeLogName,
   logDirUri,
+  originOf,
   viewerHtml,
 } from "./inspect-view.ts";
+
+/** Des en-têtes, comme une requête en porte. */
+const entêtes = (paires: Record<string, string>) => ({
+  get: (nom: string) => paires[nom.toLowerCase()] ?? null,
+});
 
 const DIST = `<!doctype html>
 <html>
@@ -159,4 +165,51 @@ test("le document livré, retouché, ne garde aucun chemin relatif", () => {
     ),
     "https://app.test/inspect-view/r1/logs",
   );
+});
+
+// --- l'origine ----------------------------------------------------------------
+//
+// Ce que ces tests protègent est arrivé pour de vrai : le `log_dir` portait
+// `localhost` pendant que la page était servie depuis `127.0.0.1`, et le
+// navigateur refusait le dossier de journaux comme cross-origin. Le viewer
+// n'affichait qu'un « Failed to fetch », sans dire pourquoi.
+
+test("l'origine est celle que le navigateur a demandée, pas celle de request.url", () => {
+  assert.equal(
+    originOf(entêtes({ host: "127.0.0.1:3996" }), "http://localhost:3996"),
+    "http://127.0.0.1:3996",
+  );
+});
+
+test("derrière un proxy, c'est l'adresse publique qui compte", () => {
+  assert.equal(
+    originOf(
+      entêtes({
+        host: "app.internal",
+        "x-forwarded-host": "evals.example.com",
+        "x-forwarded-proto": "https",
+      }),
+      "http://app.internal",
+    ),
+    "https://evals.example.com",
+  );
+});
+
+test("un hôte distant sans x-forwarded-proto est supposé en https", () => {
+  assert.equal(
+    originOf(entêtes({ host: "evals.example.com" }), "http://x"),
+    "https://evals.example.com",
+  );
+});
+
+test("sans en-tête d'hôte, on retombe sur ce que l'appelant propose", () => {
+  assert.equal(originOf(entêtes({}), "http://repli:1234"), "http://repli:1234");
+});
+
+test("le dossier de journaux tombe sur la même origine que la page", () => {
+  // La condition qui manquait : même origine, sinon le navigateur refuse.
+  const origine = originOf(entêtes({ host: "127.0.0.1:3996" }), "http://x");
+  const logDir = logDirUri(origine, "r1");
+
+  assert.equal(new URL(logDir).origin, "http://127.0.0.1:3996");
 });

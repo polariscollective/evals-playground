@@ -5,6 +5,29 @@
 // suivre : c'est la partie qu'il faut tenir par des tests, parce qu'une erreur
 // y est silencieuse — le viewer demande simplement la mauvaise adresse.
 
+/** L'origine telle que le navigateur l'a demandée.
+ *
+ * Et non `new URL(request.url).origin` : Next normalise `request.url` — une
+ * page ouverte sur `127.0.0.1` s'y relit `localhost` — et derrière le proxy de
+ * Vercel il porte l'URL interne, pas l'adresse publique. Comme le `log_dir`
+ * doit être une URI absolue, une origine fausse rend le dossier de journaux
+ * cross-origin : le navigateur refuse, et le viewer n'affiche qu'un « Failed to
+ * fetch ». L'en-tête `host` est ce que le navigateur a écrit ; `x-forwarded-*`
+ * ce que le proxy a retenu de lui. */
+export function originOf(
+  headers: { get(name: string): string | null },
+  fallback: string,
+): string {
+  const host = headers.get("x-forwarded-host") ?? headers.get("host");
+  if (!host) return fallback;
+  const proto =
+    headers.get("x-forwarded-proto") ??
+    (host.startsWith("localhost") || host.startsWith("127.0.0.1")
+      ? "http"
+      : "https");
+  return `${proto}://${host}`;
+}
+
 /** Le dossier de journaux d'un run, en **URI complète**.
  *
  * L'URI complète n'est pas un détail de goût, c'est la seule forme qui marche.
