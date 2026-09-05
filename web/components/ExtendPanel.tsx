@@ -25,7 +25,9 @@ import { HistoryEditor } from "@/components/HistoryEditor";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
+import { measureRun } from "@/lib/measured-length";
 import { addEstimates, estimateCost } from "@/lib/pricing";
+import { SHARED_PRICING } from "@/lib/shared";
 import { MAX_TURNS } from "@/lib/validate";
 import type {
   CostEstimate,
@@ -242,6 +244,11 @@ export function ExtendPanel({
   const gradedCount = countAllGraded(samples);
   const deepenCount = countsForSelection(samples, deepen);
   const deepensToMore = turns > config.turns;
+
+  // Sur quoi le devis de l'ajout va reposer. Recalculé ici pour l'annoncer :
+  // le serveur fera la même mesure au moment d'étendre, sur les mêmes cases.
+  const measured = measureRun(samples, config.models, config.turns);
+  const { kept } = measured;
 
   // Le devis des cases neuves : les scénarios retenus, existants et nouveaux,
   // couverts par les modèles cochés — à la profondeur demandée, puisque c'est
@@ -848,22 +855,48 @@ export function ExtendPanel({
             )}
           </p>
           {totalEstimate && (
-            <p>
-              Estimated cost{" "}
-              <strong>${totalEstimate.usd.toFixed(2)}</strong> (€
-              {totalEstimate.eur.toFixed(2)}) — between $
-              {totalEstimate.min_usd.toFixed(2)} and $
-              {totalEstimate.max_usd.toFixed(2)} depending on how long the
-              answers run.
-              {totalEstimate.unpriced_models.length > 0 && (
-                <>
-                  {" "}
-                  No price on file for{" "}
-                  {totalEstimate.unpriced_models.join(", ")}: the real cost is
-                  higher.
-                </>
+            <>
+              <p>
+                Estimated cost{" "}
+                <strong>${totalEstimate.usd.toFixed(2)}</strong> (€
+                {totalEstimate.eur.toFixed(2)}) — between $
+                {totalEstimate.min_usd.toFixed(2)} and $
+                {totalEstimate.max_usd.toFixed(2)} depending on how long the
+                answers run.
+                {totalEstimate.unpriced_models.length > 0 && (
+                  <>
+                    {" "}
+                    No price on file for{" "}
+                    {totalEstimate.unpriced_models.join(", ")}: the real cost is
+                    higher.
+                  </>
+                )}
+              </p>
+              {measured.run !== null ? (
+                <p className="text-xs text-zinc-500">
+                  Priced on what this run actually spent —{" "}
+                  {measured.run.toLocaleString()} output tokens per turn,
+                  measured on {kept} cell{kept === 1 ? "" : "s"}
+                  {measured.skipped > 0 ? (
+                    <>
+                      . {measured.skipped} left out: their evaluated model was
+                      also the judge or the adversary, and the token counter
+                      cannot tell the two apart
+                    </>
+                  ) : null}
+                  .
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-500">
+                  Nothing measurable in this run yet — priced on the{" "}
+                  {(
+                    run.config.average_output_tokens ??
+                    SHARED_PRICING.default_response_tokens
+                  ).toLocaleString()}{" "}
+                  output tokens it assumed when it was composed.
+                </p>
               )}
-            </p>
+            </>
           )}
         </div>
         {/* Ajouter un outil au décor du run. Permis parce qu'un scénario

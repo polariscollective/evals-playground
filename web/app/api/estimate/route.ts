@@ -13,14 +13,13 @@ export async function POST(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
 
-  const url = new URL(request.url);
-  const raw = url.searchParams.get("response_tokens");
   const config = (await request.json().catch(() => null)) as EvalRunConfig | null;
 
   const problem = configProblem(config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  return NextResponse.json(
-    estimateCost(config!, raw === null ? null : Number(raw)),
-  );
+  // La longueur supposée est dans la config, comme le reste : un paramètre de
+  // requête à côté permettait d'estimer autre chose que ce qu'on s'apprêtait à
+  // lancer.
+  return NextResponse.json(estimateCost(config!));
 }

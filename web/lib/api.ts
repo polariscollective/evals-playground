@@ -212,17 +212,12 @@ export const setDraftTags = (draftId: string, tagIds: number[]) =>
     body: JSON.stringify({ tag_ids: tagIds }),
   });
 
-/** Estime un run. Sans `responseTokens`, chaque modèle prend sa longueur mesurée. */
-export const estimateRun = (
-  config: EvalRunConfig,
-  responseTokens?: number | null,
-) =>
-  request<CostEstimate>(
-    responseTokens == null
-      ? "/api/estimate"
-      : `/api/estimate?response_tokens=${responseTokens}`,
-    { method: "POST", body: JSON.stringify(config) },
-  );
+/** Estime un run. La longueur supposée voyage dans la config. */
+export const estimateRun = (config: EvalRunConfig) =>
+  request<CostEstimate>("/api/estimate", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
 
 export const previewJudgePrompt = (criterion: string, rubric: RubricLevel[]) =>
   request<JudgePromptPreview>("/api/judge-prompt", {

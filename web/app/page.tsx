@@ -39,6 +39,7 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
 import { configProblem } from "@/lib/validate";
+import { SHARED_PRICING } from "@/lib/shared";
 import { RubricEditor } from "@/components/RubricEditor";
 import { ScenarioList } from "@/components/ScenarioList";
 
@@ -143,10 +144,9 @@ function EvaluateForm() {
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
   const [estimateError, setEstimateError] = useState<string | null>(null);
-  // `null` — le cas normal — laisse chaque modèle prendre la longueur de
-  // réponse mesurée pour lui. Une valeur l'impose à tous : c'est une surcharge,
-  // pas un réglage à remplir.
-  const [responseTokens, setResponseTokens] = useState<number | null>(null);
+  const [averageOutputTokens, setAverageOutputTokens] = useState<number | null>(
+    SHARED_PRICING.default_response_tokens,
+  );
   const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
@@ -397,6 +397,7 @@ function EvaluateForm() {
         judge,
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
+      average_output_tokens: averageOutputTokens ?? undefined,
       tools,
       max_tool_calls_per_turn: maxToolCalls,
       label: label.trim() || null,
@@ -431,6 +432,7 @@ function EvaluateForm() {
       adversary,
       judge,
       adversaryPrompt,
+      averageOutputTokens,
       tools,
       maxToolCalls,
       temperatureMin,
@@ -489,7 +491,7 @@ function EvaluateForm() {
         }
         return;
       }
-      estimateRun(config(), responseTokens)
+      estimateRun(config())
         .then((result) => {
           if (!cancelled) {
             setEstimate(result);
@@ -510,7 +512,7 @@ function EvaluateForm() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [ready, config, responseTokens]);
+  }, [ready, config]);
 
   const onCsv = async (file: File) => {
     const text = await file.text();
@@ -705,18 +707,6 @@ function EvaluateForm() {
       setLaunching(false);
     }
   };
-
-  // Ce que le devis suppose en moyenne pour les modèles évalués de ce run.
-  // Pondéré par leur nombre d'appels, donc simplement la moyenne des longueurs
-  // retenues — le juge est exclu, sa réponse étant une constante courte qui
-  // n'apprend rien sur ce qu'on est en train de régler.
-  const assumedAverage = (() => {
-    const lengths = (estimate?.per_model ?? [])
-      .filter((model) => targets.includes(model.model))
-      .map((model) => model.response_tokens);
-    if (lengths.length === 0) return 1100;
-    return Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
-  })();
 
   const modelRows = providers.flatMap((provider) =>
     provider.models.map((model) => ({
@@ -1286,7 +1276,31 @@ function EvaluateForm() {
           <strong>{scenarios.length * targets.length * repetitions}</strong>{" "}
           conversations
         </p>
-        {estimate ? (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span>Average output tokens:</span>
+          <input
+            type="number"
+            min={1}
+            max={100000}
+            step={100}
+            value={averageOutputTokens ?? ""}
+            onChange={(e) =>
+              setAverageOutputTokens(
+                e.target.value.trim() === ""
+                  ? null
+                  : Math.max(1, Number(e.target.value) || 1),
+              )
+            }
+            className="w-28 rounded border border-zinc-300 p-1 text-right"
+          />
+          <span>per answer</span>
+        </label>
+
+        {averageOutputTokens == null ? (
+          <p className="text-sm text-zinc-600">
+            Fill in the average output tokens to see what this run would cost.
+          </p>
+        ) : estimate ? (
           <>
             <p className="text-sm">
               About <strong>{estimate.model_calls}</strong> model calls —
@@ -1305,7 +1319,7 @@ function EvaluateForm() {
                       {model.model}
                     </td>
                     <td className="py-1 pr-4 text-right text-zinc-500">
-                      {model.response_tokens.toLocaleString()} tok/answer
+                      {model.response_tokens.toLocaleString()} tok/turn
                     </td>
                     <td className="py-1 pr-4 text-right text-zinc-500">
                       {model.input_tokens.toLocaleString()} in /{" "}
@@ -1319,58 +1333,16 @@ function EvaluateForm() {
               </tbody>
             </table>
 
-            <label className="flex flex-wrap items-center gap-2 text-sm">
-              <span>Answer length:</span>
-              <input
-                type="number"
-                min={1}
-                max={100000}
-                step={100}
-                value={responseTokens ?? ""}
-                // Le champ vide n'est pas un champ oublié : il veut dire « à
-                // chacun la sienne ». L'indication montre ce que ça donne en
-                // moyenne pour les modèles cochés, pour qu'on voie sur quoi le
-                // devis repose sans avoir à lire le tableau ci-dessus.
-                placeholder={String(assumedAverage)}
-                onChange={(e) =>
-                  setResponseTokens(
-                    e.target.value.trim() === ""
-                      ? null
-                      : Math.max(1, Number(e.target.value) || 1),
-                  )
-                }
-                className="w-28 rounded border border-zinc-300 p-1 text-right"
-              />
-              <span>tokens</span>
-              <span className="text-zinc-500">
-                {responseTokens === null ? (
-                  <>
-                    — each model uses its own measured length (
-                    {assumedAverage.toLocaleString()} on average here)
-                  </>
-                ) : (
-                  <>
-                    — imposed on every model.{" "}
-                    <button
-                      onClick={() => setResponseTokens(null)}
-                      className="underline hover:text-zinc-900"
-                    >
-                      Use the measured lengths
-                    </button>
-                  </>
-                )}
-              </span>
-            </label>
-
             <p className="text-xs text-zinc-500">
-              Each model is priced on the answer length measured for it — from
-              137 tokens per call to 5 954, which is why a single average was
-              wrong. Leave the box empty to keep those; fill it to impose one
-              length on all of them. Cost grows faster than the turn count,
-              since every turn resends the whole history. Across the catalogue,
-              very short answers put this run at ${estimate.min_usd.toFixed(2)}{" "}
-              and very long ones at ${estimate.max_usd.toFixed(2)}. Anthropic
-              cache writes, billed at 1.25×, are not counted here.
+              Everything the model produces on each call — reasoning included,
+              not just the reply you read. A model that thinks before answering
+              spends several times its visible answer, and that thinking is
+              billed. It only feeds this estimate; it changes nothing about what
+              the run does. Cost grows faster than the turn count, since every
+              turn resends the whole history. Across the range this estimate can
+              assume, the run sits between ${estimate.min_usd.toFixed(2)} and $
+              {estimate.max_usd.toFixed(2)}. Anthropic cache writes, billed at
+              1.25×, are not counted here.
             </p>
             {estimate.unpriced_models.length > 0 && (
               <p className="text-sm text-amber-800">
