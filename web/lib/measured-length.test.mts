@@ -11,8 +11,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measureRun, answerLengthsFor } from "./measured-length.ts";
+import { estimateTokens } from "./pricing.ts";
 import { SHARED_PRICING } from "./shared.ts";
-import type { EvalModels, ModelUsage } from "./types.ts";
+import type { EvalModels, EvalRunConfig, ModelUsage } from "./types.ts";
 
 const MODELS: EvalModels = {
   targets: ["anthropic/claude-sonnet-5", "grok/grok-4.3"],
@@ -264,12 +265,67 @@ test("le compte des cases retenues est rendu avec la mesure", () => {
   assert.equal(mesure.skipped, 0);
 });
 
-test("une mesure sur des cases à outils reproduit le total observé", () => {
-  // 6000 jetons sur 3 tours, quel que soit le nombre d'appels d'outils qu'il a
-  // fallu pour les produire : l'estimateur multipliera 2000 par 3 tours et
-  // retombera sur 6000.
-  const mesure = measureRun([cell(0, "grok/grok-4.3", 6000)], MODELS, 3);
-  assert.equal(mesure.byScenario.get(0)! * 3, 6000);
+test("le devis reproduit exactement les jetons de sortie observés", () => {
+  // La promesse centrale du chantier, et elle n'était vérifiée nulle part :
+  // ce qui sort de la mesure, rendu à l'estimateur, retombe sur le total
+  // réellement facturé — y compris quand des appels d'outils ont fait payer
+  // plus d'appels que de tours. C'est ce que la division par les tours, et non
+  // par les appels, achète.
+  //
+  // Deux cases du scénario 0, à 3 tours : 6000 et 3000 jetons de sortie. La
+  // première a demandé cinq appels au modèle pour ses trois tours, la seconde
+  // trois — `usage` n'en garde pas la trace, et c'est bien pour ça que le
+  // dénominateur ne peut pas être le nombre d'appels.
+  const observés = [6000, 3000];
+  const cells = observés.map((jetons) =>
+    cell(0, "grok/grok-4.3", jetons, {}, 3),
+  );
+  const mesure = measureRun(cells, MODELS, 3);
+
+  const config = {
+    scenarios: [
+      {
+        title: "Archives",
+        system_prompt: "Tu gères les archives.",
+        opening_message: "Retrouve le dossier de mars.",
+      },
+    ],
+    criterion: "A-t-il retrouvé le dossier ?",
+    rubric: [
+      { value: 0, meaning: "Non." },
+      { value: 1, meaning: "Oui." },
+    ],
+    turns: 3,
+    // Autant de conversations que de cases mesurées : le devis porte alors sur
+    // exactement ce qu'on a observé.
+    repetitions: observés.length,
+    models: {
+      targets: ["grok/grok-4.3"],
+      adversary: MODELS.adversary,
+      judge: MODELS.judge,
+    },
+    adversary_prompt: "Insiste.",
+    tools: [
+      {
+        name: "chercher",
+        description: "Cherche un dossier par mois.",
+        parameters: [
+          { name: "mois", type: "string", description: "Le mois voulu." },
+        ],
+        result: "dossier-mars",
+      },
+    ],
+  } as EvalRunConfig;
+
+  const { perModel } = estimateTokens(config, {
+    answer: answerLengthsFor([0], mesure, undefined),
+    adversary: mesure.adversary,
+  });
+
+  assert.equal(
+    perModel.get("grok/grok-4.3")?.output,
+    observés.reduce((total, jetons) => total + jetons, 0),
+  );
 });
 
 test("un total de zéro jeton n'est pas une mesure", () => {
