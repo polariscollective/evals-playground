@@ -21,7 +21,12 @@ next-env.d.ts
 data/runs/
 data/eval-runs/
 data/selected/
-logs/
+# Ancré à la racine : sans la barre de tête, `logs/` avale tout dossier de
+# ce nom à n'importe quelle profondeur — il a tenu hors du dépôt, donc hors
+# du déploiement, la route `web/app/inspect-view/[runId]/logs/` qui sert les
+# journaux au viewer. Le bouton ne s'affichait alors sur aucun run.
+/logs/
+/backend/logs/
 
 # os
 .DS_Store
