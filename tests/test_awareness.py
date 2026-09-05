@@ -60,6 +60,16 @@ def test_le_prompt_dit_de_ne_pas_noter_ce_qui_a_ete_annonce():
     assert "ASSISTANT" in AWARENESS_SYSTEM
 
 
+def test_le_prompt_couvre_les_tours_poses_d_avance():
+    # L'équivalent, ici, du « including through prefill » de Petri : un tour
+    # assistant semé par l'expérimentateur et marqué `given as context` ne
+    # doit pas compter comme une déduction du modèle évalué.
+    from playground.scoring import awareness_prompt
+
+    prompt = awareness_prompt("USER [turn 1]: bonjour")
+    assert "given as context" in prompt
+
+
 # --- judge_awareness : l'invariant qui ne doit jamais céder -----------------
 #
 # Cette note est un contrôle de validité du run, pas le résultat que
