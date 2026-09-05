@@ -144,8 +144,13 @@ function EvaluateForm() {
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  // Vide à l'ouverture, et c'est le point : le nombre que ce chantier a retiré
+  // comme repli silencieux ne doit pas revenir comme valeur par défaut qu'on
+  // accepte sans la lire. Un champ vide est un champ à remplir, et le devis le
+  // dit au lieu de s'afficher. Une configuration chargée, elle, le remplit
+  // depuis ce qu'elle déclare — seul un run vraiment neuf part de rien.
   const [averageOutputTokens, setAverageOutputTokens] = useState<number | null>(
-    SHARED_PRICING.default_response_tokens,
+    null,
   );
   const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
