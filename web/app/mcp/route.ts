@@ -10,6 +10,7 @@ import { createMcpHandler, getPublicOrigin, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
+import { analysisReplaceAllowed } from "@/lib/analysis";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
 import {
   DraftNotFound,
@@ -21,7 +22,7 @@ import {
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import { costSentence } from "@/lib/pricing";
-import { NotFound, loadRun, loadRuns, loadSampleTranscript } from "@/lib/runs";
+import { NotFound, loadRun, loadRuns, loadSampleTranscript, saveAnalysis } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
 import { addRunTags, loadTags, setDraftTags, tagsByRun, tagsForLabels, tagsOf } from "@/lib/tags";
@@ -467,25 +468,34 @@ const handler = createMcpHandler((server) => {
   server.registerTool(
     "extend_run",
     {
-      title: "Propose adding to an existing run",
+      title: "Propose changes to an existing run",
       description:
-        "Nothing is launched and nothing is spent by calling this. It proposes a change to a run that " +
-        "already exists — more models, more repetitions, more scenarios, pushing already-played " +
-        "attempts to more turns, or any mix of those — and saves it as a draft. A human opens it on " +
-        "the run's page, reviews it and decides; the run is untouched until they do. Deepening resumes " +
-        "a played conversation where it stopped instead of replaying it — turns already played are " +
-        "neither replayed nor paid for again — and re-judges it whole once it reaches the new depth: a " +
-        "verdict given at four turns says nothing about the same conversation at eight. `deepen` " +
-        "selects which attempts to push, by grade and at the attempt level rather than the cell — a " +
-        "cell holds several attempts and the judge grades each on its own, so they don't all carry the " +
-        "same grade. `\"all\"` takes every graded attempt in the run; a list of grades takes only the " +
-        "attempts carrying one of those grades. An attempt with no grade, or that errored, has no " +
-        "conversation to continue and is never picked. Call get_run_results first: it already returns " +
-        "this run's rubric, with each grade's meaning and how many attempts carry it — that is how to " +
-        "know what to ask for before asking. Turns only ever grow: a run is never shortened, and a " +
-        "request that would is refused. What extending never touches, deepening included: the judge, " +
-        "the scale and the criterion — a second batch judged differently would not be comparable to " +
-        "the first, and a matrix exists to be compared.",
+        "Nothing is launched and nothing is spent by calling this. It bundles several independent " +
+        "changes to a run that already exists — most calls make only one of them, and should pass " +
+        "only the parameters that one needs, leaving the rest out rather than filled in as a guess.\n\n" +
+        "Cover scenarios already in the run again, with more models or more repetitions: " +
+        "scenario_indices, together with targets and repetitions. Add brand-new scenarios: " +
+        "new_scenarios, together with the same targets and repetitions — a scenario, existing or new, " +
+        "is always covered by some models some number of times. Add tools to the run's set: new_tools, " +
+        "and optionally new_tools_for_existing — independent of everything else, needing no scenario, " +
+        "model or depth. Raise the run's depth on its own: turns — it only takes effect on scenarios " +
+        "or cells this same call adds, and leaves already-played attempts at the depth they were " +
+        "judged at unless they are also named in deepen. Deepen attempts already played, chosen by the " +
+        "grade the judge gave them: deepen, together with turns, since there would otherwise be no new " +
+        "depth to push them to — needing no model and no repetitions, since deepening resumes real " +
+        "conversations rather than adding cells. Call get_run_results first: it already returns this " +
+        "run's rubric, with each grade's meaning and how many attempts carry it, which is what " +
+        "choosing deepen requires.\n\n" +
+        "Any of these can be combined in one call, each still asking only for its own parameters. What " +
+        "none of them ever touches, deepening included: the judge, the rubric and the criterion — a " +
+        "run exists to be compared against itself, and a second batch judged differently would not be. " +
+        "Turns only ever grow, for the run and for a deepened attempt alike: a request that would " +
+        "lower either is refused — a played conversation is never shortened. An attempt pushed to a " +
+        "new depth is re-judged from scratch on the whole conversation, never on the increment alone " +
+        "— a verdict given at four turns says nothing about the same conversation at eight, and turns " +
+        "already played are neither replayed nor paid for again. Whatever this call proposes is saved " +
+        "as a draft, nothing more: a human opens it on the run's page, reviews it, and decides — the " +
+        "run stays as it is until they do.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         scenario_indices: z
@@ -507,7 +517,8 @@ const handler = createMcpHandler((server) => {
                 .nullable()
                 .optional()
                 .describe(
-                  "Tool names this scenario may call. Omit for every tool the run defines, [] for none.",
+                  "Tool names this scenario may call, drawn from the run's existing tools or any " +
+                    "new_tools added in this same call. Omit for every tool the run defines, [] for none.",
                 ),
             }),
           )
@@ -551,7 +562,8 @@ const handler = createMcpHandler((server) => {
           .optional()
           .describe(
             "Tools to add to the run's set. Adding is allowed; redefining an existing name is not — " +
-              "cells already run would be read as having had this one.",
+              "cells already run would be read as having had this one. Independent of everything else " +
+              "in this call: no scenario, model or turns change is needed to add a tool.",
           ),
         new_tools_for_existing: z
           .boolean()
@@ -569,11 +581,12 @@ const handler = createMcpHandler((server) => {
           .max(MAX_TURNS)
           .optional()
           .describe(
-            "New depth for the run. Never below its current turns — a played conversation cannot be " +
-              "shortened, and a value that would lower it is refused. Raising it alone, without " +
-              "deepen, only takes effect for scenarios or cells this call adds; already-played attempts " +
-              "are untouched unless named in deepen. Required alongside deepen — there would otherwise " +
-              "be no new depth to push attempts to.",
+            "New depth for the run. Optional when this call only covers scenarios again or adds new " +
+              "ones: the cells it adds simply play at the run's current depth. Never below its current " +
+              "turns — a played conversation cannot be shortened, and a value that would lower it is " +
+              "refused. Raising it alone, without deepen, only takes effect for scenarios or cells this " +
+              "call adds; already-played attempts are untouched unless named in deepen. Required " +
+              "alongside deepen — there would otherwise be no new depth to push attempts to.",
           ),
         deepen: z
           .union([z.literal("all"), z.array(z.number())])
@@ -581,10 +594,11 @@ const handler = createMcpHandler((server) => {
           .describe(
             "Which already-played attempts to push to turns, chosen by the grade the judge gave them " +
               "— at the attempt level, not the cell, since a cell's attempts are not all graded alike. " +
-              "\"all\" for every graded attempt in the run; a list of grades for only the attempts " +
-              "carrying one of those grades — see get_run_results for this run's rubric and how many " +
-              "attempts carry each grade before choosing. An attempt with no grade, or that errored, is " +
-              "never picked. Omit to add without deepening anything.",
+              "Needs no targets or repetitions: deepening resumes real conversations rather than adding " +
+              "cells. \"all\" for every graded attempt in the run; a list of grades for only the " +
+              "attempts carrying one of those grades — see get_run_results for this run's rubric and " +
+              "how many attempts carry each grade before choosing. An attempt with no grade, or that " +
+              "errored, is never picked. Omit to add without deepening anything.",
           ),
       }),
     },
@@ -680,6 +694,52 @@ const handler = createMcpHandler((server) => {
       return {
         content: [{ type: "text", text: JSON.stringify(current.map((tag) => tag.label), null, 2) }],
       };
+    },
+  );
+
+  server.registerTool(
+    "update_run_analysis",
+    {
+      title: "Save a run's analysis",
+      description:
+        "Writes the run's `analysis` field — the write side of what get_run_metadata already reads. " +
+        "This overwrites, and there is no history to recover from: read the current analysis before " +
+        "calling. An empty analysis is written with no other condition. A non-empty one is only " +
+        "replaced when `replaces` matches what is on record, compared with leading and trailing " +
+        "whitespace stripped from both — a copy that gained or lost a trailing newline still matches. " +
+        "Otherwise the call is refused, and the refusal's message carries the current analysis: a " +
+        "caller who skipped reading it first gets it from the refusal itself, merges its addition in, " +
+        "and calls again with the merged text as `analysis` and this same text as `replaces` — without " +
+        "a separate read in between.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run's UUID."),
+        analysis: z
+          .string()
+          .describe("The Markdown to write as the run's analysis, replacing whatever is on record."),
+        replaces: z
+          .string()
+          .optional()
+          .describe(
+            "The run's current analysis, verbatim — from get_run_metadata's `analysis` field. " +
+              "Required to overwrite a non-empty analysis; omit only when it is currently empty. A " +
+              "mismatch refuses the write and returns the current analysis instead.",
+          ),
+      }),
+    },
+    async ({ run_id, analysis, replaces }) => {
+      const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
+      if ("error" in result) return result.error;
+      const current = result.run.run.analysis;
+      if (!analysisReplaceAllowed(current, replaces)) {
+        return toolError(
+          "This run already carries a non-empty analysis, and `replaces` does not match it — writing " +
+            "now would silently overwrite it. Here is the current analysis; merge your change into it " +
+            "and call again with the full result as `analysis` and this text as `replaces`.\n\n" +
+            current,
+        );
+      }
+      await saveAnalysis(run_id, analysis);
+      return { content: [{ type: "text", text: "Analysis saved." }] };
     },
   );
 }, {});
