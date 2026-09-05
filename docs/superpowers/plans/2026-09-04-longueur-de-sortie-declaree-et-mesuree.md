@@ -8,28 +8,30 @@
 
 **Tech Stack:** Next.js 15 / TypeScript (`web/`), Python 3 + Pydantic + inspect_ai (`backend/`), JSON partagé (`shared/pricing.json`), tests `node --test` et `pytest`.
 
-## ⏸ Ce plan est en attente — à rebaser avant de l'exécuter
+## ✅ Rebasé le 5 septembre — la phase 6 a atterri
 
-Écrit le 4 septembre contre un code qui a changé depuis. Une session Claude
-Code concurrente mène le plan `2026-09-05-approfondir-un-run.md` dans le même
-dossier, et sa tâche 3 (commit `8d05845`) a réécrit `web/lib/pricing.ts` pour
-chiffrer une continuation sans refacturer les tours déjà joués.
+Le plan a été écrit le 4 septembre ; la session concurrente a depuis terminé
+« approfondir un run ». Ce qui a changé sous le plan, et ce que chaque tâche en
+tire :
 
-**Avant tout dispatch, relire et réaligner :**
+**Les jumeaux ont divergé.** `web/lib/pricing.ts` a gagné un troisième
+paramètre `billFrom` (les tours déjà joués, qu'une continuation ne refacture
+pas) et une fonction `estimateDeepening`. `backend/playground/pricing.py` n'a
+ni l'un ni l'autre — le job calcule le coût réel, il n'estime pas. **Les étapes
+Python du plan restent donc exactes telles qu'écrites** ; seules les étapes
+TypeScript doivent préserver ce qui s'est ajouté.
 
-- **Tâche 2** — `estimateTokens` n'est plus celle que le plan cite. Le
-  paramètre par scénario doit se poser *par-dessus* la logique de continuation,
-  pas à sa place. Lire `web/lib/pricing.ts` et `web/lib/deepening.test.mts`
-  avant d'écrire quoi que ce soit.
-- **Tâche 4** — `ExtendRequest` porte désormais `turns` et `deepen`. Une
-  extension qui approfondit facture des tours neufs : la liste de longueurs
-  passée à `estimateCost` reste juste, l'unité étant le tour, mais le câblage
-  doit passer par leur chemin de continuation.
-- **Tâche 5** — leurs tâches 6 et 7 réécrivent `ExtendPanel.tsx` et la page du
-  run. Attendre qu'elles aient atterri.
+**Une extension peut maintenant approfondir.** `ExtendRequest` porte `turns` et
+`deepen`. C'est sans conséquence sur la règle : l'unité mesurée est le tour, et
+une case qui gagne des tours se chiffre en tours de plus à la même longueur.
 
-Les tâches **1** (le champ déclaré) et **3** (`measured-length.ts`, fichier
-neuf) sont indépendantes de tout cela et restent exactes telles qu'écrites.
+| tâche | état |
+|---|---|
+| 1 — le champ déclaré | inchangée |
+| 2 — les estimateurs | TypeScript à réaligner : garder `billFrom`, faire passer la longueur à travers `estimateDeepening` |
+| 3 — `measured-length.ts` | inchangée, fichier neuf |
+| 4 — l'extension mesure | le bloc de devis d'`extendRun` est désormais en deux parts, `ajoutNeuf` et `ajoutDeepen` |
+| 5 — l'écran | `ExtendPanel` reçoit déjà `samples` : cette plomberie est faite |
 
 ---
 
@@ -710,7 +712,43 @@ Puis la boucle des scénarios devient indexée et la cible lit la longueur du sc
 
 Attention : `config.scenarios.forEach` remplace `for (const scenario of config.scenarios)` ; le corps est inchangé par ailleurs, et le `}` de fin de boucle devient `});`.
 
-Dans `costsFor` et `estimateCost`, remplacer `responseTokens: number | null` par `lengths: LengthAssumption | number | null | undefined` et transmettre. Le calcul de la valeur annoncée :
+Dans `costsFor` et `estimateCost`, remplacer `responseTokens: number | null` par
+`lengths: LengthAssumption | number | null | undefined` et transmettre —
+**en gardant le troisième paramètre `billFrom` intact, à sa place** :
+
+```ts
+export function estimateCost(
+  config: EvalRunConfig,
+  lengths?: LengthAssumption | number | null,
+  billFrom = 0,
+): CostEstimate {
+```
+
+`estimateTokens` et `costsFor` suivent la même forme. `billFrom` porte les tours
+déjà joués qu'une continuation ne refacture pas : il est orthogonal à la
+longueur supposée et ne doit être ni fusionné avec elle, ni déplacé.
+
+Enfin, faire passer la longueur à travers la chaîne d'approfondissement, qui
+sinon retomberait sur la déclaration alors que le run est mesurable —
+`estimateDeepening` (`web/lib/pricing.ts:343`) :
+
+```ts
+export function estimateDeepening(
+  config: EvalRunConfig,
+  from: number,
+  to: number,
+  cells: number,
+  /** Longueur d'un tour de réponse. Un seul nombre, jamais une liste : la
+   *  fonction épingle `scenarios` à un seul élément, si bien qu'une longueur
+   *  par scénario n'aurait rien à indexer. */
+  answerTokens?: number | null,
+): CostEstimate {
+```
+
+Les deux `estimateCost` de son corps reçoivent `answerTokens ?? null` en
+deuxième argument, `from` restant le troisième. Et `estimateDeepeningCost`
+(`web/lib/deepen-counts.ts:171`) gagne le même paramètre en queue et le
+transmet à chaque appel de `estimateDeepening`. Le calcul de la valeur annoncée :
 
 ```ts
   const { perScenario } = resolve(config, lengths);
@@ -1264,9 +1302,14 @@ Dans `extendRun`, juste avant le calcul de `ajout` (vers la ligne 380), lire les
   const mesure = measureRun(jouees, config.models, config.turns);
 ```
 
-Puis remplacer le calcul du devis d'ajout :
+Puis réécrire les deux devis. Le premier — les cases neuves — prend les
+longueurs par scénario :
 
 ```ts
+  // Les scénarios réellement ajoutés, et leurs longueurs, dans le même ordre :
+  // un décalage donnerait à un scénario la longueur d'un autre, en silence.
+  const retenus = indices.filter((index) => Boolean(scenarios[index]));
+
   // Le devis de l'ajout seul, puis additionné à celui du run : sans ça,
   // « devis vs réel » opposerait un coût qui a grandi à une estimation restée
   // sur la première matrice, et ne mesurerait plus l'estimation mais l'ajout.
@@ -1275,29 +1318,43 @@ Puis remplacer le calcul du devis d'ajout :
   // un scénario rejoué prend sa propre longueur, un scénario neuf celle du run
   // — on suppose alors qu'il ressemblera aux précédents, ce qui est faux dans
   // le détail et reste la meilleure information disponible.
-  const ajoutes = indices
-    .map((index) => scenarios[index])
-    .filter((scenario) => Boolean(scenario));
-  const ajout = estimateCost(
+  const ajoutNeuf = estimateCost(
     {
       ...config,
-      scenarios: ajoutes,
+      tools: outils,
+      // La profondeur demandée, pas celle d'avant : ces cases-là sont neuves et
+      // tourneront à la nouvelle, puisque la configuration l'aura déjà reçue.
+      turns: request.turns ?? config.turns,
+      scenarios: retenus.map((index) => scenarios[index]),
       models: { ...config.models, targets: request.targets },
       repetitions: request.repetitions,
       temperature,
     },
     {
-      answer: answerLengthsFor(
-        indices.filter((index) => Boolean(scenarios[index])),
-        mesure,
-        config.average_output_tokens,
-      ),
+      answer: answerLengthsFor(retenus, mesure, config.average_output_tokens),
       adversary: mesure.adversary,
     },
   );
 ```
 
-Le filtre est le même des deux côtés, pour que la liste des longueurs reste alignée sur la liste des scénarios — un décalage donnerait à un scénario la longueur d'un autre, en silence.
+Le second — les essais continués — prend un nombre unique. Ne pas chercher à lui
+passer une longueur par scénario : `estimateDeepeningCost` groupe par couple
+(modèle, profondeur de départ) et jamais par scénario, si bien qu'un groupe
+recouvre plusieurs scénarios à la fois. La mesure du run entier est la seule
+qui s'applique à tous ses groupes.
+
+```ts
+  const ajoutDeepen = estimateDeepeningCost(
+    config,
+    àContinuer,
+    request.turns ?? config.turns,
+    config.turns,
+    mesure.run ?? config.average_output_tokens ?? null,
+  );
+```
+
+Le reste du bloc — `const ajout = ajoutDeepen ? addEstimates(...) : ajoutNeuf`
+et l'`update` qui suit — est inchangé.
 
 - [ ] **Step 4 : Vérifier**
 
@@ -1468,48 +1525,33 @@ Dans `web/components/ExtendPanel.tsx`, là où le devis de l'ajout s'affiche, an
 ```
 
 `measured` et `kept` viennent de `measureRun`, que le panneau appelle lui-même.
-Trois changements le lui permettent, tous nécessaires :
+`ExtendPanel` **reçoit déjà** `samples?: EvalSample[]` (`web/components/ExtendPanel.tsx:105`)
+et son appelant les lui passe depuis `c4ce482` : cette plomberie est faite. Il
+reste deux choses.
 
-1. `web/lib/runs.ts:36` — ajouter `usage` à `SAMPLE_COLUMNS` :
+1. `web/lib/runs.ts:37` — ajouter `usage` à `SAMPLE_COLUMNS`, sans quoi les
+   cases arrivent au panneau sans leurs compteurs et toute mesure rend `null` :
 
 ```ts
 const SAMPLE_COLUMNS =
   "id,run_id,scenario_index,scenario_title,target_model,repetition,status," +
   // `usage` porte les jetons facturés de la case. Petit — cinq compteurs par
   // modèle — et sans commune mesure avec les transcripts, qu'on continue de ne
-  // ramener que sur demande. C'est ce qui permet au panneau d'extension
-  // d'annoncer sur quoi son devis repose.
+  // ramener que sur demande. C'est ce qui permet au panneau d'annoncer sur quoi
+  // son devis repose, et à `extendRun` de le calculer pareil.
   "temperature,score,justification,error,started_at,finished_at,cost_usd,usage";
 ```
 
-2. `web/app/eval/[runId]/page.tsx:728` — passer les cases au panneau :
+2. `web/components/ExtendPanel.tsx` — mesurer, à côté des compteurs déjà là :
 
 ```tsx
-        <ExtendPanel
-          samples={detail.samples}
-```
-
-3. `web/components/ExtendPanel.tsx` — accepter la prop et mesurer :
-
-```tsx
-export function ExtendPanel({
-  run,
-  samples,
-  ...
-}: {
-  run: EvalRun;
-  samples: EvalSample[];
-  ...
-}) {
-  const config = run.config;
   // Sur quoi le devis de l'ajout va reposer. Recalculé ici pour l'annoncer :
-  // le serveur fera la même mesure au moment d'étendre, à partir des mêmes
-  // cases.
+  // le serveur fera la même mesure au moment d'étendre, sur les mêmes cases.
   const measured = measureRun(samples, config.models, config.turns);
 ```
 
-`EvalSample` porte déjà les quatre champs de `MeasurableCell`, donc il passe
-sans conversion.
+`EvalSample` porte les quatre champs de `MeasurableCell`, donc il passe sans
+conversion.
 
 - [ ] **Step 5 : Vérifier**
 
