@@ -18,6 +18,12 @@
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { ViewControls } from "@/components/ViewControls";
+import {
+  AWARENESS_ALARM,
+  AWARENESS_VISIBLE,
+  awarenessSentence,
+  awarenessSummary,
+} from "@/lib/awareness";
 import { cellsOf } from "@/lib/matrix";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
@@ -312,33 +318,54 @@ export function ScenarioModal({
 
 export function JudgeBlock({ detail }: { detail: PublicRunDetail }) {
   const { config } = detail.run;
+  // Le voyant d'éveil : un chiffre pour tout le run, calculé ici plutôt que
+  // dans un en-tête séparé pour qu'il s'affiche pareil sur la page privée et
+  // sur la page publique, qui partagent ce composant mais n'ont pas le même
+  // en-tête. Quand il sonne, on descend dans les conversations — d'où le fait
+  // qu'il ne dise pas lesquelles.
+  const awareness = awarenessSummary(detail.samples);
+  const awarenessPhrase = awarenessSentence(awareness);
   return (
-    <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-medium">What the judge was asked</h2>
-        <span className="font-mono text-xs text-zinc-500">
-          judged by {shortModel(config.models.judge)}
-          {detail.run.rejudged_at && " · re-judged since the run"}
-        </span>
-      </div>
+    <>
+      <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium">What the judge was asked</h2>
+          <span className="font-mono text-xs text-zinc-500">
+            judged by {shortModel(config.models.judge)}
+            {detail.run.rejudged_at && " · re-judged since the run"}
+          </span>
+        </div>
 
-      <p className="whitespace-pre-wrap text-sm text-zinc-800">
-        {config.criterion}
-      </p>
+        <p className="whitespace-pre-wrap text-sm text-zinc-800">
+          {config.criterion}
+        </p>
 
-      <table className="text-sm">
-        <tbody>
-          {sortedRubric(config.rubric).map((level) => (
-            <tr key={level.value}>
-              <td className="py-0.5 pr-3 text-right align-top font-mono text-xs text-zinc-500">
-                {formatValue(level.value)}
-              </td>
-              <td className="py-0.5 align-top">{level.meaning}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+        <table className="text-sm">
+          <tbody>
+            {sortedRubric(config.rubric).map((level) => (
+              <tr key={level.value}>
+                <td className="py-0.5 pr-3 text-right align-top font-mono text-xs text-zinc-500">
+                  {formatValue(level.value)}
+                </td>
+                <td className="py-0.5 align-top">{level.meaning}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {awarenessPhrase && (
+        <p
+          className={
+            awareness.flagged > 0
+              ? "text-sm font-medium text-amber-700"
+              : "text-sm text-zinc-500"
+          }
+        >
+          {awarenessPhrase}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -564,6 +591,33 @@ export function AttemptView({
       {attempt.error && (
         <p className="px-3 pb-3 text-sm text-red-800">{attempt.error}</p>
       )}
+
+      {/* L'éveil ne s'affiche qu'au-dessus du seuil de visibilité, et la
+          panne du juge en gris : dans l'immense majorité des tentatives il
+          n'y a rien à dire, et l'écrire partout noierait le seul cas qui
+          compte. En dessous du seuil d'alarme, la note reste lisible mais en
+          ton neutre — c'est la bande que la revue a jugée trop floue pour
+          affirmer quoi que ce soit ; l'ambre reste réservé aux notes qui ont
+          fait sonner le voyant du run. */}
+      {attempt.awareness_error ? (
+        <p className="px-3 pb-3 text-xs text-zinc-400">
+          Eval-awareness judge failed: {attempt.awareness_error}
+        </p>
+      ) : typeof attempt.awareness_score === "number" &&
+        attempt.awareness_score >= AWARENESS_VISIBLE ? (
+        <p
+          className={
+            attempt.awareness_score >= AWARENESS_ALARM
+              ? "px-3 pb-3 text-sm font-medium text-amber-700"
+              : "px-3 pb-3 text-sm text-zinc-600"
+          }
+        >
+          <span className="font-semibold">
+            Eval awareness {attempt.awareness_score}/10:
+          </span>{" "}
+          {attempt.awareness_justification}
+        </p>
+      ) : null}
 
       {open && (
         <div className="space-y-2 border-t border-zinc-200 p-3">

@@ -32,6 +32,9 @@ function sample(overrides: Partial<EvalSample> = {}): EvalSample {
     finished_at: null,
     usage: {},
     cost_usd: null,
+    awareness_score: null,
+    awareness_justification: "",
+    awareness_error: null,
     ...overrides,
   };
 }

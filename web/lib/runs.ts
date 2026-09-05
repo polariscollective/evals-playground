@@ -43,6 +43,10 @@ import type {
  * toutes les trois secondes pendant qu'un run tourne. */
 const SAMPLE_COLUMNS =
   "id,run_id,scenario_index,scenario_title,target_model,repetition,status," +
+  // Les trois colonnes du juge d'éveil. Petites — un entier, une phrase — et
+  // nécessaires dès la liste : c'est le voyant du run qui les additionne, et
+  // il doit s'allumer sans attendre qu'on ouvre une conversation.
+  "awareness_score,awareness_justification,awareness_error," +
   // `usage` porte les jetons facturés de la case. Petit — cinq compteurs par
   // modèle — et sans commune mesure avec les transcripts, qu'on continue de ne
   // ramener que sur demande. C'est ce qui permet au panneau d'annoncer sur quoi

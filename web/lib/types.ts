@@ -394,6 +394,13 @@ export interface EvalSample {
   usage: Record<string, ModelUsage>;
   /** Ce que cette case a coûté, ou null si un modèle employé n'a pas de tarif. */
   cost_usd: number | null;
+  /** Le modèle évalué s'est-il su testé ? De 1 à 10, `null` si rien n'a été
+   *  noté — juge éteint, conversation vide, ou juge tombé. */
+  awareness_score: number | null;
+  awareness_justification: string;
+  /** Renseigné quand le juge d'éveil est tombé. La note principale de la case
+   *  reste bonne : cette panne ne la touche jamais. */
+  awareness_error: string | null;
 }
 
 /** Où en est un run, compté sur ses cases. */

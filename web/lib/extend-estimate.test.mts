@@ -87,6 +87,9 @@ const CASE = (scenario_index: number, repetition: number): EvalSample => ({
     "openai/gpt-5.6-luna": 200,
   }),
   cost_usd: 0,
+  awareness_score: null,
+  awareness_justification: "",
+  awareness_error: null,
 });
 
 const JOUÉES: EvalSample[] = [0, 1].flatMap((scenario) =>

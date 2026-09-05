@@ -45,6 +45,9 @@ function sample(score: number | null, target = "m", scenario = 0): EvalSample {
     finished_at: null,
     usage: {},
     cost_usd: null,
+    awareness_score: null,
+    awareness_justification: "",
+    awareness_error: null,
   } as EvalSample;
 }
 
