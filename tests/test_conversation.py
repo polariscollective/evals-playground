@@ -690,3 +690,39 @@ def test_le_plafond_d_appels_est_reglable():
         )
     )
     assert modele.appels == 3, "deux appels, puis la réponse coupée"
+
+
+def test_une_reprise_qui_se_termine_sur_un_tour_outil_appelle_quand_meme_l_adversaire():
+    """Le plafond d'appels d'outils termine un tour sur un tour `tool` de
+    synthèse, pas sur un tour `assistant` — c'est une case `done` ordinaire,
+    et personne n'y attend déjà de réponse. Le garde-fou de la reprise doit le
+    reconnaître comme les autres fins de tour de la cible, et relancer."""
+    modele = ModeleQuiAppelle(combien=99)
+    joués = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=modele,
+            tools=[_outil()],
+        )
+    )
+    assert joués[-1].role == "tool", "le montage doit produire une fin sur un outil"
+
+    vus_adversaire: list = []
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="o",
+            turns=1,
+            target=_modele(["Toujours non."]),
+            adversary=_recording_model("Insiste.", vus_adversaire),
+            adversary_prompt="Pousse.",
+            resume=joués,
+        )
+    )
+
+    assert len(vus_adversaire) == 1
+    assert transcript[len(joués)].role == "user"
+    assert transcript[len(joués)].content == "Insiste."
+    assert transcript[-1].content == "Toujours non."

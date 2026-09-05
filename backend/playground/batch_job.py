@@ -91,11 +91,19 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     Le transcript voyage dans les métadonnées, là où le juge le cherche : c'est
     le même contrat que remplit `conversation_solver` pendant un run, ce qui
     permet de réutiliser le juge sans le paramétrer autrement.
+
+    `usage` et `cost_usd` voyagent aussi, comme dans `pending_dataset`
+    (`eval_task.py`) : une case rejugée a déjà été jouée une première fois, et
+    c'est ce qu'elle porte ici qui permet à `enregistre`, plus bas, d'ajouter
+    la passe du juge à cette dépense plutôt que de l'effacer.
     """
     rows = supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
-        select="scenario_index,target_model,repetition,temperature,messages",
+        select=(
+            "scenario_index,target_model,repetition,temperature,messages,"
+            "usage,cost_usd"
+        ),
         order="scenario_index,target_model,repetition",
     )
     return MemoryDataset(
@@ -104,11 +112,17 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
                 id=index + 1,
                 input=(row.get("messages") or [{}])[0].get("content", ""),
                 metadata={
-                    "scenario_index": row["scenario_index"],
+                    "scenario_index": int(row["scenario_index"]),
                     "target": row["target_model"],
-                    "repetition": row["repetition"],
+                    "repetition": int(row["repetition"]),
                     "temperature": row.get("temperature"),
                     "transcript": row.get("messages") or [],
+                    "usage": row.get("usage") or {},
+                    "cost_usd": (
+                        None
+                        if row.get("cost_usd") is None
+                        else float(row["cost_usd"])
+                    ),
                 },
             )
             for index, row in enumerate(rows)
@@ -231,6 +245,17 @@ def run_batch_job(
         if mode == "rejudge":
             dataset = rejudge_dataset(supabase, run_id)
             solveur: Solver = stored_transcript()
+            # Relu depuis les métadonnées que `rejudge_dataset` vient de poser,
+            # et non redemandé à la base : c'est la même lecture, il n'y a pas
+            # à la refaire. Une case rejugée a déjà été jouée une première
+            # fois — sans cette lecture, `enregistre` ne verrait que la passe
+            # du juge et effacerait toute la dépense de la conversation.
+            deja_facture = {
+                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
+                    metadata.get("usage") or {}
+                )
+                for metadata in (echantillon.metadata for echantillon in dataset.samples)
+            }
         else:
             # Ce qui reste à faire, et rien d'autre : un run dont on relance les
             # erreurs ou auquel on ajoute des scénarios ne doit pas repayer ses
@@ -238,9 +263,7 @@ def run_batch_job(
             dataset = pending_dataset(pending_samples(supabase, run_id), config)
             # Relu depuis les métadonnées que `pending_dataset` vient de poser,
             # et non redemandé à la base : c'est la même lecture, il n'y a pas
-            # à la refaire. Absent en mode `rejudge`, qui ne passe pas par ce
-            # dataset — sa passe garde donc son comportement actuel, non
-            # couvert par cette correction.
+            # à la refaire.
             deja_facture = {
                 (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
                     metadata.get("usage") or {}

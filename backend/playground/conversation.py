@@ -304,12 +304,18 @@ async def run_conversation(
         #
         # Deux cas où il n'y a rien à relancer : `turns` à zéro, une case déjà
         # à la bonne profondeur qu'on ne fait que rejuger ; et un transcript
-        # qui ne se termine pas sur la cible, une réponse étant déjà attendue.
+        # qui se termine déjà par une relance (`user`), une réponse étant
+        # déjà attendue. Un tour de la cible peut se terminer sur `assistant`
+        # comme sur `tool` — le plafond d'appels d'outils clôt le tour par un
+        # tour `tool` de synthèse — et dans les deux cas personne n'attend
+        # encore de réponse : la boucle ordinaire, plus bas, relance après
+        # chaque tour de la cible sans se soucier de la façon dont il s'est
+        # terminé, et ce garde-fou doit dire la même chose.
         if (
             turns > 0
             and adversary is not None
             and transcript
-            and transcript[-1].role == "assistant"
+            and transcript[-1].role != "user"
         ):
             if stopped is not None and stopped():
                 raise Cancelled("stopped before the adversary's opening turn")

@@ -463,6 +463,52 @@ def test_une_case_approfondie_garde_les_jetons_et_le_cout_de_sa_premiere_passe(
     ), "le coût initial ne doit pas tomber à celui du seul juge"
 
 
+# --- le coût d'une case rejugée ----------------------------------------------
+#
+# Même défaut que celui corrigé ci-dessus pour l'approfondissement, laissé
+# ouvert sur `rejudge_dataset` : elle ne transportait ni `usage` ni `cost_usd`,
+# seulement `messages`. La fusion, dans `enregistre`, dégénérait alors en
+# remplacement — chaque rejugement ramenait le coût enregistré d'une case à
+# celui du seul juge, effaçant toute la dépense de la conversation.
+
+
+def test_une_case_rejugee_garde_les_jetons_et_le_cout_de_sa_passe_initiale(
+    tmp_path: Path,
+):
+    """Rejuger ne rappelle ni la cible ni l'adversaire — seul le juge tourne —
+    et `mockllm` ne lui fait rapporter aucun jeton. Sans la fusion, la case
+    perdrait donc la totalité de sa dépense initiale au profit d'un coût nul."""
+    cases = [
+        {
+            "scenario_index": 0,
+            "target_model": "mockllm/model",
+            "repetition": 0,
+            "temperature": None,
+            "messages": [
+                {"role": "user", "content": "On a un souci sur le lot 4412."},
+                {"role": "assistant", "content": "Voici comment contourner."},
+            ],
+            "usage": {
+                "anthropic/claude-haiku-4-5": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 0,
+                }
+            },
+            "cost_usd": 1.0,
+        }
+    ]
+    supabase = FakeSupabase(samples=cases)
+    _lancer(supabase, tmp_path, mode="rejudge", outputs=_outputs(0))
+
+    (notee,) = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    assert notee["usage"] == {
+        "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
+    }, "les jetons de la passe initiale doivent survivre au rejugement"
+    assert notee["cost_usd"] == pytest.approx(
+        1.0
+    ), "le coût initial ne doit pas tomber à celui du seul juge"
+
+
 def test_la_fusion_ne_change_rien_pour_une_case_toute_neuve(tmp_path: Path):
     """Le chemin de très loin le plus fréquent : une case jouée pour la
     première fois n'a rien en base. La fusion doit y rendre exactement ce
