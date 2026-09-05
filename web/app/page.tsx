@@ -211,6 +211,12 @@ function EvaluateForm() {
       setTemperatureMin(config.temperature?.min ?? 1);
       setVaryTemperature(config.temperature?.max != null);
       setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
+      // La longueur déclarée est un champ comme les autres : ne pas la charger
+      // laissait l'état d'ouverture en place pendant que tout le reste venait
+      // de la configuration, et `config()` réenregistrait ensuite ce reste-là.
+      // Ce que l'auteur du run avait annoncé disparaissait alors du dossier
+      // au premier humain qui rouvrait le brouillon.
+      setAverageOutputTokens(config.average_output_tokens ?? null);
 
       // Un seul scénario tient dans le mode manuel ; au-delà, le formulaire
       // passe par un CSV, quitte à le reconstruire depuis les scénarios.
@@ -581,6 +587,9 @@ function EvaluateForm() {
     setTemperatureMin(config.temperature?.min ?? 1);
     setVaryTemperature(config.temperature?.max != null);
     setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
+    // Comme la reprise d'un run : le document porte la longueur déclarée, et
+    // ne pas la lire ici la remplacerait en silence par celle du formulaire.
+    setAverageOutputTokens(config.average_output_tokens ?? null);
 
     if (csv) {
       // Le fichier annonce un CSV sans le porter : le formulaire passe en mode
