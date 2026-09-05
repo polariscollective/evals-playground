@@ -5,14 +5,21 @@ import {
   discardDraft,
   loadDraft,
   markDraftLaunched,
-  updateDraft,
+  updateDraftOwned,
 } from "@/lib/drafts";
-import type { EvalRunConfig } from "@/lib/types";
+import type { EvalRunConfig, ExtendRequest } from "@/lib/types";
 
-/** Le contenu d'un brouillon, pour que le formulaire l'ouvre prérempli.
+/** Le contenu d'un brouillon, pour que le formulaire ou le panneau
+ *  d'extension l'ouvre prérempli.
  *
  * Gardée comme les autres routes `/api` : un brouillon porte la configuration
- * qu'un agent a soumise, pas un contenu public. */
+ * qu'un agent a soumise, pas un contenu public.
+ *
+ * `mine` s'ajoute au brouillon lui-même : le navigateur ne connaît jamais
+ * l'adresse de l'utilisateur courant — seule la route la lie à la session —
+ * et ne peut donc pas comparer `created_by` par lui-même. C'est ce verdict-là
+ * qu'un bouton lit pour s'annoncer « Save as my own copy » avant d'écrire,
+ * plutôt que de le découvrir après coup dans une redirection. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -24,7 +31,8 @@ export async function GET(
   try {
     // Le brouillon entier : le genre en fait partie, et l'appelant ne peut
     // pas lire sa charge sans savoir comment la lire.
-    return NextResponse.json(await loadDraft(draftId));
+    const draft = await loadDraft(draftId);
+    return NextResponse.json({ ...draft, mine: draft.created_by === user.email });
   } catch (error) {
     if (error instanceof DraftNotFound) {
       return NextResponse.json({ error: error.message }, { status: 404 });
@@ -58,9 +66,15 @@ export async function DELETE(
  * adresse reste ouverte, et ce qu'il a produit se lit sur le run, qui porte
  * `draft_id`.
  *
- * `config` : on le réécrit en place, après l'avoir rouvert et corrigé.
- * Remplacer plutôt qu'en semer un second, sans quoi la liste d'attente
- * accumulerait des doublons dont on ne saurait plus lequel est le bon.
+ * `config` : on le réécrit — en place pour son auteur, remplacer plutôt qu'en
+ * semer un second, sans quoi la liste d'attente accumulerait des doublons
+ * dont on ne saurait plus lequel est le bon. Mais pour n'importe qui d'autre,
+ * la réécriture pose un nouveau brouillon à la place : l'original n'est pas
+ * touché, exactement la règle que l'outil MCP `update_draft_run` applique
+ * déjà — `updateDraftOwned` la porte pour les deux plutôt que de la répéter
+ * ici sous une autre forme. `forked` le dit dans la réponse, pour que l'écran
+ * navigue vers la bonne adresse au lieu de laisser croire qu'il éditait
+ * encore l'original.
  *
  * Pas de validation sur le second : un brouillon manuel a le droit d'être
  * incomplet, c'est même sa raison d'être. */
@@ -84,12 +98,25 @@ export async function PATCH(
   }
 
   if (body && typeof body.config === "object" && body.config !== null) {
-    await updateDraft(
-      draftId,
-      body.config as EvalRunConfig,
-      typeof body.csv_text === "string" ? body.csv_text : null,
-    );
-    return NextResponse.json({ ok: true });
+    try {
+      const draft = await loadDraft(draftId);
+      const result = await updateDraftOwned(
+        draft,
+        body.config as EvalRunConfig | ExtendRequest,
+        typeof body.csv_text === "string" ? body.csv_text : null,
+        user.email,
+      );
+      return NextResponse.json({
+        ok: true,
+        forked: result.forked,
+        draft_id: result.draftId,
+      });
+    } catch (error) {
+      if (error instanceof DraftNotFound) {
+        return NextResponse.json({ error: error.message }, { status: 404 });
+      }
+      throw error;
+    }
   }
 
   return NextResponse.json(

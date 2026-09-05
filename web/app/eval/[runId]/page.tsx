@@ -18,10 +18,12 @@ import {
   publishRun,
   rejudgeRun,
   saveAnalysis,
+  saveExtendDraft,
   retryFailedCells,
   saveNotes,
   setRunTags,
   sourceCsvUrl,
+  updateDraft,
 } from "@/lib/api";
 import { extensionsOf } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
@@ -248,6 +250,11 @@ export default function EvalRunPage({
   // tant que personne n'a confirmé, outils proposés compris.
   const [proposal, setProposal] = useState<ExtendRequest | null>(null);
   const [proposalId, setProposalId] = useState<string | null>(null);
+  // Si le brouillon ouvert appartient à qui regarde — calculé par la route,
+  // jamais comparé ici : cette page ne connaît pas l'adresse de qui regarde.
+  // Vrai par défaut : sans proposition ouverte, enregistrer en crée toujours
+  // une à soi.
+  const [proposalMine, setProposalMine] = useState(true);
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
   // pas un résultat, et un rechargement ramène la lecture ordinaire.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
@@ -334,6 +341,7 @@ export default function EvalRunPage({
         }
         setProposal(draft.config);
         setProposalId(draftId);
+        setProposalMine(draft.mine);
         setExtending(true);
       })
       .catch((e: Error) => {
@@ -830,6 +838,8 @@ export default function EvalRunPage({
           repetitionRange={repetitionRange(detail.samples)}
           samples={detail.samples}
           proposal={proposal}
+          draftId={proposalId}
+          draftMine={proposalMine}
           onCancel={() => setExtending(false)}
           onSubmit={async (request) => {
             await extendRun(run.id, request);
@@ -843,6 +853,29 @@ export default function EvalRunPage({
             setProposal(null);
             setProposalId(null);
             await load(transcripts);
+          }}
+          onSaveDraft={async (request) => {
+            // En place pour son auteur ; à part pour n'importe qui d'autre,
+            // qui reçoit son propre brouillon sans toucher à l'original —
+            // même règle que le formulaire de composition d'un run.
+            // `updateDraft` sert les deux genres de brouillon, celui-ci
+            // compris : la route lit le genre depuis ce qu'elle a en base.
+            if (proposalId) {
+              const result = await updateDraft(proposalId, request, null);
+              if (result.forked) {
+                setProposalId(result.draft_id);
+                setProposalMine(true);
+                router.replace(`/eval/${run.id}?extend=${result.draft_id}`);
+              }
+              return { forked: result.forked };
+            }
+            const { id } = await saveExtendDraft(run.id, request);
+            // L'adresse dans la barre suit : réenregistrer met à jour
+            // celui-ci au lieu d'en créer un second.
+            setProposalId(id);
+            setProposalMine(true);
+            router.replace(`/eval/${run.id}?extend=${id}`);
+            return { forked: false };
           }}
         />
       )}

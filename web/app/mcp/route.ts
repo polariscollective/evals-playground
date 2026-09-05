@@ -21,7 +21,7 @@ import {
   createExtendDraft,
   loadDraft,
   markDraftLaunched,
-  updateDraft,
+  updateDraftOwned,
 } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { budgetProblem, formatUsd, maxUsdPerHour, maxUsdPerRun } from "@/lib/mcp-budget";
@@ -466,9 +466,11 @@ const handler = createMcpHandler((server) => {
       // `csv_text` part avec l'ancienne configuration, dans les deux branches :
       // les scénarios reçus ici sont écrits en clair, plus rien ne renvoie au
       // fichier téléversé, et le garder attaché ferait croire à une source qui
-      // n'en est plus une.
-      if (!isOwner) {
-        const newDraftId = await createDraft(config, null, caller, "mcp");
+      // n'en est plus une. `updateDraftOwned` porte la règle « son auteur en
+      // place, n'importe qui d'autre à part » — c'est elle que l'écran suit
+      // aussi, plutôt que de la réécrire une seconde fois.
+      const result = await updateDraftOwned(draft, config, null, caller, "mcp");
+      if (result.forked) {
         return {
           content: [
             {
@@ -476,15 +478,16 @@ const handler = createMcpHandler((server) => {
               text:
                 `This draft was created by someone else, so your change was saved as a new draft ` +
                 `instead of replacing it — ${draft_id} is unchanged. ${verdict.message}\n\n` +
-                `${origin}/runs/drafts/${newDraftId}`,
+                `${origin}/runs/drafts/${result.draftId}`,
             },
           ],
         };
       }
 
-      await updateDraft(draft_id, config, null, "mcp");
       return {
-        content: [{ type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${draft_id}` }],
+        content: [
+          { type: "text", text: `${verdict.message}\n\n${origin}/runs/drafts/${result.draftId}` },
+        ],
       };
     },
   );

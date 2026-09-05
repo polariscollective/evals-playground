@@ -463,6 +463,16 @@ export interface ExtendDraft extends DraftCommon {
 
 export type Draft = RunDraft | ExtendDraft;
 
+/** Un brouillon tel que la route de lecture le rend : son contenu, plus un
+ *  verdict que seule la session peut trancher.
+ *
+ * Le navigateur ne connaît jamais l'adresse de l'utilisateur courant — c'est
+ * la route qui la lie à la session — donc il ne peut pas comparer lui-même
+ * `created_by` à qui regarde. `mine` porte ce verdict déjà tranché : c'est ce
+ * qui permet d'annoncer « Save as my own copy » avant même d'enregistrer,
+ * plutôt que de le découvrir après coup par une redirection silencieuse. */
+export type DraftRead = Draft & { mine: boolean };
+
 /** Un run ouvert : sa configuration, ses cases, sa matrice. */
 export interface RunDetail {
   run: EvalRun;

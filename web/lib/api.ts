@@ -4,6 +4,7 @@
 import type {
   CostEstimate,
   Draft,
+  DraftRead,
   EvalRunConfig,
   ExpectedCsv,
   JudgePromptPreview,
@@ -108,16 +109,27 @@ export const extendRun = (runId: string, body: ExtendRequest) =>
     body: JSON.stringify(body),
   });
 
+/** Met de côté une extension composée à la main, sans l'appliquer au run —
+ *  le même geste que « Save as draft » sur le formulaire de composition, pour
+ *  agrandir un run existant plutôt qu'en lancer un nouveau. */
+export const saveExtendDraft = (runId: string, extension: ExtendRequest) =>
+  request<{ id: string }>(`/api/runs/${runId}/extend/draft`, {
+    method: "POST",
+    body: JSON.stringify({ config: extension }),
+  });
+
 export const saveNotes = (runId: string, notes: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/notes`, {
     method: "PUT",
     body: JSON.stringify({ notes }),
   });
 
-/** Le contenu d'un brouillon soumis par un agent, pour ouvrir le formulaire
- *  dessus plutôt que de le montrer dans une page à part. */
+/** Le contenu d'un brouillon soumis par un agent, pour ouvrir le formulaire ou
+ *  le panneau d'extension dessus plutôt que de le montrer dans une page à
+ *  part. Porte aussi `mine` — calculé par la route, jamais comparé ici : le
+ *  navigateur ne connaît pas l'adresse de qui regarde. */
 export const getDraft = (draftId: string) =>
-  request<Draft>(`/api/runs/drafts/${draftId}`);
+  request<DraftRead>(`/api/runs/drafts/${draftId}`);
 
 /** L'adresse de qui regarde, pour pouvoir filtrer « les miens ». */
 export const getMe = () => request<{ email: string }>("/api/me");
@@ -134,16 +146,24 @@ export const saveDraft = (config: EvalRunConfig, csvText: string | null) =>
     body: JSON.stringify({ config, csv_text: csvText }),
   });
 
-/** Réécrit un brouillon rouvert, plutôt que d'en semer un second. */
+/** Réécrit un brouillon rouvert — en place pour son auteur, remplacer plutôt
+ *  qu'en semer un second. Pour n'importe qui d'autre, la réécriture pose un
+ *  nouveau brouillon à la place : `forked` le dit, avec l'adresse à suivre —
+ *  l'original reste intact. Sert aussi bien un brouillon de run qu'un
+ *  brouillon d'extension : la route lit le genre depuis celui qu'elle a en
+ *  base. */
 export const updateDraft = (
   draftId: string,
-  config: EvalRunConfig,
+  config: EvalRunConfig | ExtendRequest,
   csvText: string | null,
 ) =>
-  request<{ ok: true }>(`/api/runs/drafts/${draftId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ config, csv_text: csvText }),
-  });
+  request<{ ok: true; forked: boolean; draft_id: string }>(
+    `/api/runs/drafts/${draftId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ config, csv_text: csvText }),
+    },
+  );
 
 /** Jette un brouillon : il sort de la liste et son adresse cesse de répondre. */
 export const discardDraft = (draftId: string) =>

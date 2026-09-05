@@ -113,15 +113,36 @@ export function ExtendPanel({
    * propose d'ajouter, et de la réponse qu'elle donne sur les anciens
    * scénarios — on peut la changer avant de valider. */
   proposal = null,
+  /** L'identifiant du brouillon dont vient `proposal`, quand il en vient un.
+   *  `null` : le panneau part de rien, et enregistrer en crée un nouveau.
+   *
+   * Enregistrer par-dessus le réécrit en place plutôt que d'en semer un
+   * second — la page le tient pour pouvoir suivre la même adresse d'un
+   * enregistrement à l'autre. */
+  draftId = null,
+  /** Si le brouillon ouvert appartient à qui regarde — calculé par la route
+   *  qui l'a rendu, jamais comparé ici : le panneau ne connaît pas l'adresse
+   *  de l'utilisateur courant. Vrai par défaut : sans brouillon ouvert,
+   *  enregistrer en crée toujours un à soi, jamais un fork. */
+  draftMine = true,
   onCancel,
   onSubmit,
+  /** Mettre l'extension composée de côté, sans l'appliquer. `forked` dit si
+   *  l'enregistrement a réécrit `draftId` en place ou posé un nouveau
+   *  brouillon à côté — c'est le cas dès que `draftId` n'appartient pas à qui
+   *  enregistre. La page tient l'adresse à jour ensuite ; le panneau n'a
+   *  besoin que de savoir lequel des deux vient d'arriver. */
+  onSaveDraft,
 }: {
   run: EvalRun;
   repetitionRange: [number, number];
   samples?: EvalSample[];
   proposal?: ExtendRequest | null;
+  draftId?: string | null;
+  draftMine?: boolean;
   onCancel: () => void;
   onSubmit: (request: ExtendRequest) => Promise<void>;
+  onSaveDraft: (request: ExtendRequest) => Promise<{ forked: boolean }>;
 }) {
   const config = run.config;
 
@@ -160,6 +181,10 @@ export function ExtendPanel({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Ce que l'enregistrement d'un brouillon vient de faire, le temps qu'on le
+  // lise — même vocabulaire que l'écran de composition d'un run.
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftNotice, setDraftNotice] = useState("");
   // Le scénario qu'on regarde. Décider de recouvrir une ligne demande de la
   // relire, et un titre n'a jamais suffi pour ça — c'est déjà pour cette
   // raison que la page du run l'ouvre en entier.
@@ -303,36 +328,79 @@ export function ExtendPanel({
     );
   };
 
+  // Le contenu de la demande, tel qu'il est là — utilisé pour confirmer et
+  // pour enregistrer un brouillon, seule différence entre les deux.
+  //
+  // `new_tools_for_existing` n'est écrit que si la question a été répondue :
+  // l'absence de clé et `true` se lisent pareil pour le serveur (voir
+  // `extendRun`), donc rien ne change pour la confirmation, où le bouton
+  // garantit déjà une réponse. Mais un brouillon peut la laisser en suspens,
+  // et il faut alors que la relire retrouve « pas encore répondu » plutôt
+  // qu'un `true` que personne n'a choisi.
+  const buildRequest = (): ExtendRequest => {
+    const min = tempMin.trim() === "" ? null : Number(tempMin);
+    return {
+      scenario_indices: indices,
+      new_scenarios: newScenarios,
+      targets,
+      repetitions,
+      temperature:
+        min === null
+          ? null
+          : { min, max: tempMax.trim() === "" ? null : Number(tempMax) },
+      ...(newTools.length > 0
+        ? {
+            new_tools: newTools,
+            ...(forExisting !== null
+              ? { new_tools_for_existing: forExisting }
+              : {}),
+          }
+        : {}),
+      // Absent laisse la profondeur telle quelle : envoyer la valeur de
+      // départ quand rien n'a changé n'apprendrait rien au serveur qu'il ne
+      // sache déjà.
+      ...(turns !== config.turns ? { turns } : {}),
+      ...(deepen !== null ? { deepen } : {}),
+    };
+  };
+
   const submit = async () => {
     setError("");
     setBusy(true);
     try {
-      const min = tempMin.trim() === "" ? null : Number(tempMin);
-      await onSubmit({
-        scenario_indices: indices,
-        new_scenarios: newScenarios,
-        targets,
-        repetitions,
-        temperature:
-          min === null
-            ? null
-            : { min, max: tempMax.trim() === "" ? null : Number(tempMax) },
-        ...(newTools.length > 0
-          ? {
-              new_tools: newTools,
-              new_tools_for_existing: forExisting ?? true,
-            }
-          : {}),
-        // Absent laisse la profondeur telle quelle : envoyer la valeur de
-        // départ quand rien n'a changé n'apprendrait rien au serveur qu'il ne
-        // sache déjà.
-        ...(turns !== config.turns ? { turns } : {}),
-        ...(deepen !== null ? { deepen } : {}),
-      });
+      await onSubmit(buildRequest());
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** Mettre l'extension composée de côté, sans l'appliquer.
+   *
+   * Aucune validation, contrairement à la confirmation : un brouillon manuel
+   * a le droit d'être incomplet, c'est précisément pour y revenir plus tard.
+   * Enregistrer par-dessus `draftId` le réécrit en place quand il est à qui
+   * enregistre, sinon la route en pose un nouveau à côté — la page suit
+   * ensuite la bonne adresse, le panneau n'a qu'à annoncer laquelle des deux
+   * vient d'arriver. */
+  const saveAsDraft = async () => {
+    setError("");
+    setSavingDraft(true);
+    try {
+      const { forked } = await onSaveDraft(buildRequest());
+      setDraftNotice(
+        forked
+          ? "Saved as your own copy — the original draft is untouched."
+          : draftId
+            ? "Draft updated."
+            : "Saved as draft.",
+      );
+      setTimeout(() => setDraftNotice(""), 4000);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingDraft(false);
     }
   };
 
@@ -963,13 +1031,35 @@ export function ExtendPanel({
           </div>
         </details>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={onCancel}
             className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
           >
             Cancel
           </button>
+          {/* Jamais désactivé, à la différence de la confirmation : c'est
+              précisément une extension encore incomplète qu'on veut pouvoir
+              mettre de côté, pour y revenir plus tard. Même vocabulaire que
+              l'écran de composition d'un run, pour le même geste. */}
+          <button
+            onClick={saveAsDraft}
+            disabled={savingDraft}
+            className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
+          >
+            {savingDraft
+              ? "Saving…"
+              : !draftId
+                ? "Save as draft"
+                : draftMine
+                  ? "Update draft"
+                  : "Save as my own copy"}
+          </button>
+          {draftNotice && (
+            <span className="text-sm text-teal-700">
+              {draftNotice} Find it under Runs → Show drafts.
+            </span>
+          )}
           <button
             onClick={submit}
             disabled={

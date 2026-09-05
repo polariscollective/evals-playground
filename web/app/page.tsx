@@ -276,6 +276,13 @@ function EvaluateForm() {
   // Ouvrir un brouillon soumis par un agent : le même formulaire, prérempli,
   // qu'on peut modifier avant de lancer. Pas d'écran à part — ce qu'on veut
   // faire d'un brouillon est exactement ce qu'on fait d'un run qu'on compose.
+  //
+  // `mine` vient de la route : elle seule relie une session à une adresse
+  // e-mail, et c'est ce verdict qui dit si enregistrer réécrira ce brouillon
+  // ou en posera un nouveau à côté. Vrai par défaut — sans brouillon ouvert,
+  // enregistrer en crée toujours un à soi.
+  const [draftMine, setDraftMine] = useState(true);
+
   useEffect(() => {
     if (!draftOf) return;
     let cancelled = false;
@@ -292,6 +299,7 @@ function EvaluateForm() {
           );
           return;
         }
+        setDraftMine(draft.mine);
         fillFromConfig(draft.config, draft.config.label ?? "", draft.csv_text);
       })
       .catch((e: Error) => {
@@ -676,15 +684,23 @@ function EvaluateForm() {
    *
    * Aucune validation, contrairement au lancement : c'est précisément quand il
    * manque des morceaux qu'on veut y revenir plus tard. Rouvrir un brouillon
-   * et réenregistrer le réécrit plutôt que d'en semer un second. */
+   * et réenregistrer le réécrit plutôt que d'en semer un second — sauf si ce
+   * brouillon n'est pas le nôtre : la route le fork alors plutôt que de
+   * l'écraser, et `forked` le dit pour qu'on navigue vers la bonne adresse
+   * au lieu de laisser croire qu'on éditait encore l'original. */
   const saveAsDraft = async () => {
     setError(null);
     setSavingDraft(true);
     try {
       const csv = source === "csv" ? csvText : null;
       if (draftOf) {
-        await updateDraft(draftOf, config(), csv);
-        setDraftNotice("Draft updated.");
+        const result = await updateDraft(draftOf, config(), csv);
+        if (result.forked) {
+          router.replace(`/?draft=${result.draft_id}`);
+          setDraftNotice("Saved as your own copy — the original draft is untouched.");
+        } else {
+          setDraftNotice("Draft updated.");
+        }
       } else {
         const { id } = await saveDraft(config(), csv);
         // L'adresse dans la barre suit : réenregistrer met à jour celui-ci au
@@ -1416,7 +1432,13 @@ function EvaluateForm() {
           }
           className="rounded border border-zinc-300 px-4 py-2 hover:bg-zinc-50 disabled:opacity-40"
         >
-          {savingDraft ? "Saving…" : draftOf ? "Update draft" : "Save as draft"}
+          {savingDraft
+            ? "Saving…"
+            : !draftOf
+              ? "Save as draft"
+              : draftMine
+                ? "Update draft"
+                : "Save as my own copy"}
         </button>
         {label.trim() === "" && (
           <span className="text-sm text-zinc-500">

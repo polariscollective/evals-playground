@@ -126,10 +126,14 @@ export async function loadDrafts(
  * D'où le paramètre plutôt qu'une constante : `update_draft_run` valide avant
  * d'écrire, exactement comme `submit_draft_run`, et la garantie tient donc
  * encore après son passage. Le défaut reste `manual` — c'est le formulaire qui
- * appelle le plus souvent, et c'est lui qui ne garantit rien. */
+ * appelle le plus souvent, et c'est lui qui ne garantit rien.
+ *
+ * `config` porte une `EvalRunConfig` pour un brouillon de run, une
+ * `ExtendRequest` pour un brouillon d'extension — la même colonne en base
+ * accueille les deux, et c'est l'appelant qui sait lequel il réécrit. */
 export async function updateDraft(
   id: string,
-  config: EvalRunConfig,
+  config: EvalRunConfig | ExtendRequest,
   csvText: string | null,
   origin: "manual" | "mcp" = "manual",
 ): Promise<void> {
@@ -138,6 +142,55 @@ export async function updateDraft(
     { config, csv_text: csvText, origin },
     { id: `eq.${id}` },
   );
+}
+
+/** Ce qu'a fait une écriture qui respecte la propriété d'un brouillon :
+ *  réécrit en place, ou posé à part. */
+export interface DraftWriteResult {
+  /** `true` si l'écriture a créé un nouveau brouillon plutôt que de réécrire
+   *  celui visé — parce que qui écrit n'en est pas l'auteur. */
+  forked: boolean;
+  /** L'adresse à lire ensuite : celle qu'on a passée si `forked` est faux,
+   *  une nouvelle sinon. */
+  draftId: string;
+}
+
+/** Réécrire un brouillon en respectant sa propriété — la même règle que
+ *  l'outil MCP `update_draft_run` applique, faite pour être appelée par les
+ *  deux plutôt que réécrite une seconde fois d'une autre façon.
+ *
+ * Son auteur le voit réécrit en place, remplacer plutôt qu'en semer un
+ * second. Quiconque d'autre reçoit un nouveau brouillon portant sa
+ * proposition, à son nom ; l'original n'est pas touché. `forked` le dit,
+ * pour que l'appelant sache où renvoyer qui l'a demandé — une redirection
+ * silencieuse laisserait croire qu'on éditait encore l'original.
+ *
+ * `csvText` ne vaut que pour un brouillon de run : une extension n'en porte
+ * jamais, quoi que l'appelant passe ici. */
+export async function updateDraftOwned(
+  draft: Draft,
+  config: EvalRunConfig | ExtendRequest,
+  csvText: string | null,
+  requestedBy: string,
+  origin: "manual" | "mcp" = "manual",
+): Promise<DraftWriteResult> {
+  const effectiveCsv = draft.kind === "run" ? csvText : null;
+
+  if (draft.created_by === requestedBy) {
+    await updateDraft(draft.id, config, effectiveCsv, origin);
+    return { forked: false, draftId: draft.id };
+  }
+
+  const draftId =
+    draft.kind === "run"
+      ? await createDraft(config as EvalRunConfig, effectiveCsv, requestedBy, origin)
+      : await createExtendDraft(
+          draft.extends_run_id,
+          config as ExtendRequest,
+          requestedBy,
+          origin,
+        );
+  return { forked: true, draftId };
 }
 
 /** Jeter un brouillon : il sort de la liste, et son adresse ne répond plus.
