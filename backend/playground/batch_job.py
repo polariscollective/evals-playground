@@ -92,17 +92,17 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     le même contrat que remplit `conversation_solver` pendant un run, ce qui
     permet de réutiliser le juge sans le paramétrer autrement.
 
-    `usage` et `cost_usd` voyagent aussi, comme dans `pending_dataset`
-    (`eval_task.py`) : une case rejugée a déjà été jouée une première fois, et
-    c'est ce qu'elle porte ici qui permet à `enregistre`, plus bas, d'ajouter
-    la passe du juge à cette dépense plutôt que de l'effacer.
+    `usage` voyage aussi, comme dans `pending_dataset` (`eval_task.py`) : une
+    case rejugée a déjà été jouée une première fois, et c'est ce qu'elle porte
+    ici qui permet à `enregistre`, plus bas, d'ajouter la passe du juge à cette
+    dépense plutôt que de l'effacer. `cost_usd` n'y voyage pas : il est
+    toujours recalculé depuis les jetons fusionnés.
     """
     rows = supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
         select=(
-            "scenario_index,target_model,repetition,temperature,messages,"
-            "usage,cost_usd"
+            "scenario_index,target_model,repetition,temperature,messages,usage"
         ),
         order="scenario_index,target_model,repetition",
     )
@@ -118,11 +118,6 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
                     "temperature": row.get("temperature"),
                     "transcript": row.get("messages") or [],
                     "usage": row.get("usage") or {},
-                    "cost_usd": (
-                        None
-                        if row.get("cost_usd") is None
-                        else float(row["cost_usd"])
-                    ),
                 },
             )
             for index, row in enumerate(rows)
