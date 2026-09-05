@@ -1295,6 +1295,13 @@ function EvaluateForm() {
           />
           <span>per answer</span>
         </label>
+        <p className="text-xs text-zinc-500">
+          Everything the model produces on each call — reasoning included,
+          not just the reply you read. A model that thinks before answering
+          spends several times its visible answer, and that thinking is
+          billed. It only feeds this estimate; it changes nothing about what
+          the run does.
+        </p>
 
         {averageOutputTokens == null ? (
           <p className="text-sm text-zinc-600">
@@ -1334,13 +1341,9 @@ function EvaluateForm() {
             </table>
 
             <p className="text-xs text-zinc-500">
-              Everything the model produces on each call — reasoning included,
-              not just the reply you read. A model that thinks before answering
-              spends several times its visible answer, and that thinking is
-              billed. It only feeds this estimate; it changes nothing about what
-              the run does. Cost grows faster than the turn count, since every
-              turn resends the whole history. Across the range this estimate can
-              assume, the run sits between ${estimate.min_usd.toFixed(2)} and $
+              Cost grows faster than the turn count, since every turn resends
+              the whole history. Across the range this estimate can assume,
+              the run sits between ${estimate.min_usd.toFixed(2)} and $
               {estimate.max_usd.toFixed(2)}. Anthropic cache writes, billed at
               1.25×, are not counted here.
             </p>

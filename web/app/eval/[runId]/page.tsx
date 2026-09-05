@@ -405,7 +405,7 @@ export default function EvalRunPage({
                   <span
                     className="text-zinc-500"
                     title={`Estimated $${run.estimate.usd.toFixed(4)} before launching, assuming ${run.estimate.per_model
-                      .map((m) => `${m.model} ${m.response_tokens} tok/answer`)
+                      .map((m) => `${m.model} ${m.response_tokens} tok/turn`)
                       .join(", ")}`}
                   >
                     {" "}
