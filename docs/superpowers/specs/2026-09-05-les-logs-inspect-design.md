@@ -83,8 +83,24 @@ style : `listRunLogs(runId)` et `fetchRunLog(runId, name, range)`.
 
 **`web/app/inspect-view/[runId]/route.ts`** — lit
 `web/public/inspect-view/index.html`, réécrit `./assets/` en
-`/inspect-view/assets/` et pose `log_dir` sur `/inspect-view/<runId>/logs`. Des
-chemins absolus, pour que la barre oblique finale ne décide de rien.
+`/inspect-view/assets/` et pose `log_dir` sur **l'URI complète**
+`<origine>/inspect-view/<runId>/logs`, l'origine venant de la requête.
+
+L'URI complète n'est pas un détail de goût, c'est la seule forme qui marche.
+`canonicalDirUrl` (`assets/index.js`) rend `log_dir` tel quel si `isUri` le
+reconnaît — `new URL(value)` réussit, donc dès qu'il y a un schéma. Sinon il le
+passe à `joinURI`, **qui retire les barres obliques de tête de chaque segment**
+et recolle le reste au dossier de la page. Un `log_dir` en chemin absolu
+`/inspect-view/<runId>/logs`, servi depuis `/inspect-view/<runId>`, donnerait
+donc `/inspect-view/inspect-view/<runId>/logs`. Vérifié en rejouant `joinURI`,
+`isUri` et `canonicalDirUrl` extraits du bundle.
+
+Les assets, eux, sont des attributs HTML résolus par le navigateur et non par
+`joinURI` : un chemin absolu y convient.
+
+Le viewer va chercher `log_dir + "/listing.json"` (`fetchManifest`) — c'est ce
+nom que la route doit servir. Et comme il indexe son cache IndexedDB sur le
+`log_dir` canonique, deux runs ne se marchent pas dessus.
 
 **`web/app/inspect-view/[runId]/logs/[...path]/route.ts`** — `listing.json`
 fabriqué depuis la liste Storage, et le `.eval` proxifié en transmettant `Range`
@@ -155,14 +171,6 @@ c'est lui qui doit être tenu par un test, pas le chemin heureux.
 "lib/**/*.test.mts"`. Les routes ne sont pas testées ici et ce chantier
 n'introduit pas de harnais pour deux handlers : la logique testable est dans
 `lib/`, les routes n'aiguillent.
-
-## Le point non prouvé
-
-Que le viewer accepte un `log_dir` en chemin absolu. Toute la route `[runId]`
-repose dessus et le JS est minifié — première tâche du plan, un pointage sur le
-bundle local. S'il refuse, le repli est de servir sous `/inspect-view/<runId>/`
-avec une redirection 308 des assets vers les statiques : plus laid, sans
-inconnue.
 
 ## Ce que ce chantier ne fait pas
 
