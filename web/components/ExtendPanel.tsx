@@ -20,6 +20,7 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import { addEstimates, estimateCost, estimateDeepening } from "@/lib/pricing";
+import { MAX_TURNS } from "@/lib/validate";
 import type {
   CostEstimate,
   EvalRun,
@@ -29,12 +30,6 @@ import type {
   ProviderInfo,
   ToolSpec,
 } from "@/lib/types";
-
-// Dupliquée ici faute d'être exportée par `web/lib/validate.ts` (qui porte la
-// même constante, non exportée non plus) ou par `web/app/page.tsx` : rien à
-// importer, donc rien d'autre à faire que de la recopier et de le dire — voir
-// le compte rendu de la tâche.
-const MAX_TURNS = 100;
 
 /** Un CSV reversé, avant qu'on ait dit quelles colonnes lire. */
 interface LoadedCsv {

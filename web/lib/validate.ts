@@ -15,7 +15,9 @@ import type {
 } from "./types";
 
 const MIN_TURNS = 1;
-const MAX_TURNS = 100;
+// Exportée : le panneau d'extension la dupliquait faute de mieux (tâche 6),
+// et l'outil MCP en a besoin pour borner `turns` sans la recopier à son tour.
+export const MAX_TURNS = 100;
 
 function isFilled(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
@@ -275,20 +277,6 @@ export function extendProblem(
   }
   const disponibles = [...runTools, ...ajoutés];
 
-  if (!Array.isArray(r.targets) || r.targets.length === 0) {
-    return "at least one model is required";
-  }
-  if (r.targets.some((target) => !isFilled(target))) {
-    return "a model identifier is empty";
-  }
-  if (new Set(r.targets).size !== r.targets.length) {
-    return "the same model appears more than once";
-  }
-
-  if (!Number.isInteger(r.repetitions) || r.repetitions < 1) {
-    return "repetitions must be at least 1";
-  }
-
   const indices = r.scenario_indices;
   if (!Array.isArray(indices)) return "scenario_indices must be a list";
   for (const index of indices) {
@@ -315,6 +303,26 @@ export function extendProblem(
       `scenario "${scenario.title}"`,
     );
     if (asked) return asked;
+  }
+
+  // Un modèle et des répétitions ne désignent rien pour une demande qui ne
+  // fait qu'approfondir : aucune case n'est ajoutée, et `cellsForExtension`
+  // ne les lit même pas dans ce cas. Ne les exiger que si la demande ajoute
+  // effectivement un scénario, existant ou neuf.
+  if (indices.length > 0 || nouveaux.length > 0) {
+    if (!Array.isArray(r.targets) || r.targets.length === 0) {
+      return "at least one model is required";
+    }
+    if (r.targets.some((target) => !isFilled(target))) {
+      return "a model identifier is empty";
+    }
+    if (new Set(r.targets).size !== r.targets.length) {
+      return "the same model appears more than once";
+    }
+
+    if (!Number.isInteger(r.repetitions) || r.repetitions < 1) {
+      return "repetitions must be at least 1";
+    }
   }
 
   const profondeur = r.turns ?? currentTurns;

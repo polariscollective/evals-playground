@@ -25,7 +25,7 @@ import { NotFound, loadRun, loadRuns, loadSampleTranscript } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { countMatches, searchRuns } from "@/lib/run-search";
 import { addRunTags, loadTags, setDraftTags, tagsByRun, tagsForLabels, tagsOf } from "@/lib/tags";
-import { extendProblem } from "@/lib/validate";
+import { MAX_TURNS, extendProblem } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
 import type { Draft, RunDetail } from "@/lib/types";
 
@@ -469,12 +469,23 @@ const handler = createMcpHandler((server) => {
     {
       title: "Propose adding to an existing run",
       description:
-        "Nothing is launched and nothing is spent by calling this. It proposes adding a sub-matrix to a " +
-        "run that already exists — more models, more repetitions, more scenarios — and saves that " +
-        "proposal as a draft. A human opens it on the run's page, reviews it and decides. The run is " +
-        "not touched until they do. What cannot be changed by extending: the judge, the scale, the " +
-        "criterion and the number of turns — a second batch judged differently would not be comparable " +
-        "to the first, and a matrix exists to be compared.",
+        "Nothing is launched and nothing is spent by calling this. It proposes a change to a run that " +
+        "already exists — more models, more repetitions, more scenarios, pushing already-played " +
+        "attempts to more turns, or any mix of those — and saves it as a draft. A human opens it on " +
+        "the run's page, reviews it and decides; the run is untouched until they do. Deepening resumes " +
+        "a played conversation where it stopped instead of replaying it — turns already played are " +
+        "neither replayed nor paid for again — and re-judges it whole once it reaches the new depth: a " +
+        "verdict given at four turns says nothing about the same conversation at eight. `deepen` " +
+        "selects which attempts to push, by grade and at the attempt level rather than the cell — a " +
+        "cell holds several attempts and the judge grades each on its own, so they don't all carry the " +
+        "same grade. `\"all\"` takes every graded attempt in the run; a list of grades takes only the " +
+        "attempts carrying one of those grades. An attempt with no grade, or that errored, has no " +
+        "conversation to continue and is never picked. Call get_run_results first: it already returns " +
+        "this run's rubric, with each grade's meaning and how many attempts carry it — that is how to " +
+        "know what to ask for before asking. Turns only ever grow: a run is never shortened, and a " +
+        "request that would is refused. What extending never touches, deepening included: the judge, " +
+        "the scale and the criterion — a second batch judged differently would not be comparable to " +
+        "the first, and a matrix exists to be compared.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         scenario_indices: z
@@ -504,8 +515,21 @@ const handler = createMcpHandler((server) => {
           .describe("Scenarios to add to the run, appended after the existing ones."),
         targets: z
           .array(z.string())
-          .describe("Models to cover — already evaluated in this run or not."),
-        repetitions: z.number().int().min(1).describe("How many attempts to add per cell."),
+          .optional()
+          .describe(
+            "Models to cover — already evaluated in this run or not. Required when this call adds " +
+              "anything (a non-empty scenario_indices or new_scenarios); omit for a request that only " +
+              "deepens, since deepening adds no cell and never reads this.",
+          ),
+        repetitions: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "How many attempts to add per cell. Required, and read, only when this call adds " +
+              "something; omit for a deepen-only request.",
+          ),
         new_tools: z
           .array(
             z.object({
@@ -539,6 +563,29 @@ const handler = createMcpHandler((server) => {
               "Cells already run are unaffected either way. The human confirms this before anything is " +
               "applied.",
           ),
+        turns: z
+          .number()
+          .int()
+          .max(MAX_TURNS)
+          .optional()
+          .describe(
+            "New depth for the run. Never below its current turns — a played conversation cannot be " +
+              "shortened, and a value that would lower it is refused. Raising it alone, without " +
+              "deepen, only takes effect for scenarios or cells this call adds; already-played attempts " +
+              "are untouched unless named in deepen. Required alongside deepen — there would otherwise " +
+              "be no new depth to push attempts to.",
+          ),
+        deepen: z
+          .union([z.literal("all"), z.array(z.number())])
+          .optional()
+          .describe(
+            "Which already-played attempts to push to turns, chosen by the grade the judge gave them " +
+              "— at the attempt level, not the cell, since a cell's attempts are not all graded alike. " +
+              "\"all\" for every graded attempt in the run; a list of grades for only the attempts " +
+              "carrying one of those grades — see get_run_results for this run's rubric and how many " +
+              "attempts carry each grade before choosing. An attempt with no grade, or that errored, is " +
+              "never picked. Omit to add without deepening anything.",
+          ),
       }),
     },
     async (input, ctx) => {
@@ -546,15 +593,22 @@ const handler = createMcpHandler((server) => {
       if ("error" in found) return found.error;
       const { run } = found.run;
 
+      // `targets` et `repetitions` restent facultatifs côté schéma — une
+      // demande qui n'approfondit que n'a besoin ni de l'un ni de l'autre —
+      // mais `ExtendRequest` les veut présents : une demande qui n'ajoute
+      // rien les porte donc vides, sans conséquence puisque
+      // `cellsForExtension` ne les lit jamais dans ce cas.
       const request = {
         scenario_indices: input.scenario_indices,
         new_scenarios: input.new_scenarios,
-        targets: input.targets,
-        repetitions: input.repetitions,
+        targets: input.targets ?? [],
+        repetitions: input.repetitions ?? 0,
         ...(input.new_tools ? { new_tools: input.new_tools } : {}),
         ...(input.new_tools_for_existing === undefined
           ? {}
           : { new_tools_for_existing: input.new_tools_for_existing }),
+        ...(input.turns === undefined ? {} : { turns: input.turns }),
+        ...(input.deepen === undefined ? {} : { deepen: input.deepen }),
       };
 
       // Les mêmes contrôles que la route d'extension, au dépôt plutôt qu'au
@@ -564,6 +618,9 @@ const handler = createMcpHandler((server) => {
         request,
         run.config.scenarios.length,
         run.config.tools ?? [],
+        run.config.turns,
+        run.config.models.adversary ?? null,
+        run.config.rubric.map((level) => level.value),
       );
       if (problem) {
         return { content: [{ type: "text", text: problem }], isError: true };
@@ -577,8 +634,12 @@ const handler = createMcpHandler((server) => {
       );
       const cells =
         (input.scenario_indices.length + input.new_scenarios.length) *
-        input.targets.length *
-        input.repetitions;
+        request.targets.length *
+        request.repetitions;
+      const parts: string[] = [];
+      if (cells > 0) parts.push(`${cells} cell${cells > 1 ? "s" : ""} to add`);
+      if (input.deepen !== undefined) parts.push("existing attempts to deepen");
+      const summary = parts.length > 0 ? parts.join(" and ") : "nothing to add";
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       return {
         content: [
@@ -586,7 +647,7 @@ const handler = createMcpHandler((server) => {
             type: "text",
             text:
               `Saved as a draft extension of "${run.label ?? input.run_id}": ` +
-              `${cells} cell${cells > 1 ? "s" : ""} to add. Nothing has been ` +
+              `${summary}. Nothing has been ` +
               `spent, and the run is unchanged until a human confirms it.\n\n` +
               `${origin}/eval/${input.run_id}?extend=${draftId}`,
           },

@@ -212,3 +212,34 @@ test("une demande sans scénario et sans case à approfondir tourne à vide", ()
   );
   assert.match(problem ?? "", /at least one scenario/);
 });
+
+test("approfondir seul ne désigne aucun modèle : ni targets ni repetitions ne sont exigés", () => {
+  // Aucune case n'est ajoutée, et `cellsForExtension` ne lit ni l'un ni
+  // l'autre dans ce cas : les exiger forcerait un agent à inventer un nom de
+  // modèle pour approfondir, sans que ça ne serve à rien.
+  const problem = extendProblem(
+    {
+      scenario_indices: [],
+      new_scenarios: [],
+      turns: 8,
+      deepen: "all",
+    },
+    1,
+    [],
+    4,
+    "adv",
+    [0, 1, 2],
+  );
+  assert.equal(problem, null);
+});
+
+test("ajouter un scénario sans modèle reste refusé", () => {
+  // Dès qu'un scénario existant ou neuf est demandé, une case naîtrait pour
+  // lui — et une case sans modèle ne veut toujours rien dire.
+  const problem = extendProblem(
+    { scenario_indices: [0], new_scenarios: [] },
+    1,
+    [],
+  );
+  assert.match(problem ?? "", /at least one model is required/);
+});
