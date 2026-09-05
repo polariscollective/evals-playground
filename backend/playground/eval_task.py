@@ -30,12 +30,18 @@ def pending_dataset(
     La température vient de la ligne et n'est jamais recalculée : un run complété
     en deux fois porte deux étalements, et repartir de `config.repetitions`
     réécrirait celui des cases anciennes.
+
+    `usage` et `cost_usd` voyagent aussi, comme `turns_done` et `played` :
+    c'est par cette même métadonnée que `batch_job.enregistre` retrouve ce
+    qu'une case porte déjà, pour l'ajouter à sa nouvelle passe plutôt que de
+    l'effacer quand elle est approfondie.
     """
     samples = []
     for index, row in enumerate(rows):
         scenario_index = int(row["scenario_index"])
         scenario = config.scenarios[scenario_index]
         temperature = row.get("temperature")
+        cost_usd = row.get("cost_usd")
         samples.append(
             Sample(
                 id=index + 1,
@@ -49,6 +55,8 @@ def pending_dataset(
                     "temperature": None if temperature is None else float(temperature),
                     "turns_done": row.get("turns_done") or 0,
                     "played": row.get("messages") or [],
+                    "usage": row.get("usage") or {},
+                    "cost_usd": None if cost_usd is None else float(cost_usd),
                 },
             )
         )

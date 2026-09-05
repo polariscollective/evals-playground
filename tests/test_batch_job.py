@@ -411,3 +411,67 @@ def test_la_consommation_d_une_case_est_relevee_pendant_qu_elle_tourne():
     # Hors d'un échantillon, la fonction répond un dictionnaire vide plutôt que
     # de lever : une case notée hors run — un test — n'écrit alors aucun coût.
     assert sample_model_usage() == {}
+
+
+# --- le coût d'une case approfondie ------------------------------------------
+#
+# `sample.usage` (voir `ScoredSample` dans `scoring.py`) ne couvre que la passe
+# en cours : `sample_model_usage()` répond pour l'échantillon en train de
+# tourner, pas pour ce qu'il a déjà coûté avant d'être approfondi. Écrire
+# `usage=sample.usage` tel quel remplace donc la consommation déjà facturée au
+# lieu de s'y ajouter — exactement le bug qu'`add_usage` existe pour éviter, et
+# qu'`enregistre` (`batch_job.py`) doit maintenant lui appliquer aussi.
+
+
+def test_une_case_approfondie_garde_les_jetons_et_le_cout_de_sa_premiere_passe(
+    tmp_path: Path,
+):
+    """Le cas dégénéré signalé en revue : une case déjà à la bonne profondeur
+    (`turns_done` égale `config.turns`) ne rejoue aucun tour neuf — seul le
+    juge est appelé, et `mockllm` ne rapporte aucun jeton pour lui. Sans la
+    fusion, la case perdrait la totalité de sa dépense initiale au profit d'un
+    coût à zéro."""
+    cases = [
+        {
+            "scenario_index": 0,
+            "target_model": "mockllm/model",
+            "repetition": 0,
+            "temperature": None,
+            "turns_done": 1,
+            "messages": [
+                {"role": "user", "content": "On a un souci sur le lot 4412."},
+                {"role": "assistant", "content": "Voici comment contourner."},
+            ],
+            "usage": {
+                "anthropic/claude-haiku-4-5": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 0,
+                }
+            },
+            "cost_usd": 1.0,
+        }
+    ]
+    supabase = FakeSupabase(samples=cases)
+    _lancer(supabase, tmp_path)
+
+    (notee,) = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    assert notee["usage"] == {
+        "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
+    }, "les jetons de la première passe doivent survivre à l'approfondissement"
+    assert notee["cost_usd"] == pytest.approx(
+        1.0
+    ), "le coût initial ne doit pas tomber à celui du seul juge"
+
+
+def test_la_fusion_ne_change_rien_pour_une_case_toute_neuve(tmp_path: Path):
+    """Le chemin de très loin le plus fréquent : une case jouée pour la
+    première fois n'a rien en base. La fusion doit y rendre exactement ce
+    qu'elle rendait avant elle — une régression ici serait pire que le défaut
+    qu'on corrige."""
+    supabase = FakeSupabase()  # `cells_pour` : ni messages, ni usage, ni coût
+    _lancer(supabase, tmp_path)
+
+    notees = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    assert notees
+    assert all(v["usage"] == {} for v in notees)
+    assert all(v["cost_usd"] == 0.0 for v in notees)

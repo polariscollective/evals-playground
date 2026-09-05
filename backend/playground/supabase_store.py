@@ -144,12 +144,20 @@ def pending_samples(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
     pour être approfondie les porte déjà, et c'est à leur présence que
     `pending_dataset` reconnaît une conversation à prolonger plutôt qu'à
     rejouer.
+
+    `usage` et `cost_usd` voyagent pour la même raison : une case approfondie a
+    déjà été facturée une première fois, et c'est ce qu'elle porte ici qui
+    permet à `batch_job.enregistre` d'ajouter la nouvelle passe à l'ancienne
+    plutôt que de l'effacer.
     """
     return supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
         status="eq.pending",
-        select="scenario_index,target_model,repetition,temperature,turns_done,messages",
+        select=(
+            "scenario_index,target_model,repetition,temperature,turns_done,"
+            "messages,usage,cost_usd"
+        ),
         order="scenario_index,target_model,repetition",
     )
 

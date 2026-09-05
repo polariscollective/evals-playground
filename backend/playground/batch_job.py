@@ -182,11 +182,28 @@ def run_batch_job(
             int(metadata.get("repetition", 0)),
         )
 
+    # Ce qu'une case portait déjà, avant cette passe — vide pour l'immense
+    # majorité des cases, qui n'ont jamais été jouées. Alimenté juste avant
+    # `inspect_eval`, dans la branche qui construit `dataset` (voir plus bas) :
+    # c'est la même métadonnée que `pending_dataset` vient de faire remonter
+    # jusqu'au solveur, lue ici pour la fusion plutôt que pour la conversation.
+    deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
+
     def enregistre(sample: ScoredSample) -> None:
-        # Tarifée avec notre table, pas celle d'inspect : deux sources de prix
-        # finiraient par ne plus dire la même chose, et c'est exactement ce que
-        # `shared/pricing.json` existe pour empêcher.
-        cout, sans_tarif = actual_cost_from_dicts(sample.usage)
+        # `sample.usage` ne couvre que cette passe (`sample_model_usage()` ne
+        # répond que pour l'échantillon en cours, voir `ScoredSample` dans
+        # `scoring.py`). Une case approfondie a déjà été facturée une première
+        # fois : la remplacer plutôt que l'additionner ferait passer la case
+        # pour moins chère qu'elle ne l'a été — c'est le même défaut qu'`add_usage`
+        # corrige déjà au niveau du run, appliqué ici au niveau de la case.
+        cle = (sample.scenario_index, sample.target, sample.repetition)
+        usage = add_usage(deja_facture.get(cle, {}), sample.usage)
+        # Recalculé sur la consommation fusionnée, et non en additionnant deux
+        # coûts déjà arrondis : le tarif est linéaire dans les jetons, donc les
+        # deux valent la même chose quand tout est tarifé, et cette forme
+        # rend gratuite la distinction avec une case neuve, dont la
+        # consommation « déjà là » est vide — voir `pending_dataset`.
+        cout, sans_tarif = actual_cost_from_dicts(usage)
         write_sample(
             supabase,
             run_id,
@@ -203,7 +220,7 @@ def run_batch_job(
             turns_done=config.turns,
             messages=sample.messages,
             temperature=sample.temperature,
-            usage=sample.usage,
+            usage=usage,
             # Un total amputé d'un modèle sans tarif connu serait plus trompeur
             # qu'une absence de total.
             cost_usd=None if sans_tarif else cout,
@@ -219,6 +236,17 @@ def run_batch_job(
             # erreurs ou auquel on ajoute des scénarios ne doit pas repayer ses
             # cases déjà notées.
             dataset = pending_dataset(pending_samples(supabase, run_id), config)
+            # Relu depuis les métadonnées que `pending_dataset` vient de poser,
+            # et non redemandé à la base : c'est la même lecture, il n'y a pas
+            # à la refaire. Absent en mode `rejudge`, qui ne passe pas par ce
+            # dataset — sa passe garde donc son comportement actuel, non
+            # couvert par cette correction.
+            deja_facture = {
+                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
+                    metadata.get("usage") or {}
+                )
+                for metadata in (echantillon.metadata for echantillon in dataset.samples)
+            }
             if len(dataset) == 0:
                 # Rien à faire : un run déjà complet qu'on relance, ou une
                 # reprise dont les cases ont été traitées entre-temps. Le
