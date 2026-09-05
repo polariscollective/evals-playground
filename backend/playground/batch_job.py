@@ -137,6 +137,61 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     )
 
 
+def awareness_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
+    """Les conversations déjà enregistrées, mais qui n'ont pas encore de note d'éveil.
+
+    Ressemble volontairement à `rejudge_dataset`, dont elle reprend la forme
+    trait pour trait — mais les deux jeux de cases ne sont **pas**
+    interchangeables. Un rejugement peut se permettre de reprendre toutes les
+    cases du run, parce qu'il écrit une note neuve à chaque fois. La passe
+    d'éveil, elle, ne doit jamais reposer sa question à une case qui porte déjà
+    une note d'éveil, sous peine de l'écraser — c'est tout le dessin de cette
+    passe (voir `run_batch_job`, mode `awareness`). Le filtre
+    `awareness_score=is.null` est donc à cette fonction ce que
+    `status=eq.pending` est à `pending_samples` : le tri qui dit exactement ce
+    qu'il reste à faire, ici « pas encore noté sur l'éveil » plutôt que « pas
+    encore joué ».
+
+    Une case dont le juge d'éveil est tombé au passage précédent a sa note
+    nulle et son erreur renseignée : ce filtre l'attrape donc aussi, et c'est
+    voulu — réessayer est exactement ce qu'on veut pouvoir faire pour elle.
+
+    Ne filtre pas sur le contenu du transcript : une case sans conversation
+    sera de toute façon écartée par `awareness_only_judge`, qui refuse de
+    juger une conversation vide avant même d'appeler le modèle. Elle ne coûte
+    donc rien, et ajouter ce filtre compliquerait la requête sans rien gagner.
+    """
+    rows = supabase.select(
+        SAMPLES,
+        run_id=f"eq.{run_id}",
+        awareness_score="is.null",
+        select=(
+            "scenario_index,target_model,repetition,temperature,messages,usage,"
+            "turns_done"
+        ),
+        order="scenario_index,target_model,repetition",
+    )
+    return MemoryDataset(
+        [
+            Sample(
+                id=index + 1,
+                input=(row.get("messages") or [{}])[0].get("content", ""),
+                metadata={
+                    "scenario_index": int(row["scenario_index"]),
+                    "target": row["target_model"],
+                    "repetition": int(row["repetition"]),
+                    "temperature": row.get("temperature"),
+                    "transcript": row.get("messages") or [],
+                    "usage": row.get("usage") or {},
+                    "turns_done": row.get("turns_done") or 0,
+                },
+            )
+            for index, row in enumerate(rows)
+        ],
+        name="eveil",
+    )
+
+
 @solver
 def stored_transcript() -> Solver:
     """Solver sans effet : le transcript est déjà dans les métadonnées.
@@ -167,8 +222,9 @@ def run_batch_job(
         run_id: Le run à exécuter, déjà en base avec ses échantillons.
         mode: `run` déroule les conversations puis les juge ; `rejudge` rejoue
             le juge de l'utilisateur sur les transcripts déjà enregistrés ;
-            `awareness` ne pose que la question de l'éveil, sur ces mêmes
-            transcripts, sans toucher aux notes existantes.
+            `awareness` ne pose la question de l'éveil qu'aux cases qui n'ont
+            pas encore de note d'éveil — jamais à tout le run — et ne touche à
+            aucune note déjà obtenue.
         supabase: Injectable pour les tests, qui n'ont ainsi besoin ni de réseau
             ni de base.
         cancellation: Injectable pour les tests, qui doivent pouvoir annuler
@@ -303,9 +359,10 @@ def run_batch_job(
 
     try:
         if mode == "awareness":
-            # Les mêmes conversations qu'une repasse de juge, et pour la même
-            # raison : elles sont déjà en base, et rien n'est rejoué.
-            dataset = rejudge_dataset(supabase, run_id)
+            # Pas les mêmes cases qu'une repasse de juge : celle-ci ne doit
+            # reprendre que celles qui n'ont pas encore de note d'éveil, sous
+            # peine de l'écraser sur les autres — voir `awareness_dataset`.
+            dataset = awareness_dataset(supabase, run_id)
             solveur: Solver = stored_transcript()
             deja_facture = {
                 (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (

@@ -68,7 +68,14 @@ class FakeSupabase(Supabase):
             # `run_status` ne demande qu'une colonne : la même ligne convient,
             # et c'est par elle que l'arrêt est lu.
             return [{**self.run, "status": self.statut}]
-        return list(self.samples)
+        rows = list(self.samples)
+        # Seul le filtre dont la passe d'éveil a besoin est honoré ici : c'est
+        # lui qui distingue `awareness_dataset` de `rejudge_dataset`, et sans
+        # lui aucun test ne pourrait prouver que le premier ne reprend pas
+        # tout le run comme le second.
+        if params.get("awareness_score") == "is.null":
+            rows = [row for row in rows if row.get("awareness_score") is None]
+        return rows
 
     def update(self, table, values, **filters):
         self.ecritures.append((table, values, filters))
@@ -603,6 +610,43 @@ def test_une_passe_d_eveil_annulee_ne_marque_pas_le_run_comme_juge(tmp_path: Pat
 
     ecritures_run = [v for nom, v, _ in supabase.ecritures if nom == RUNS]
     assert not any("awareness_judged_at" in v for v in ecritures_run)
+
+
+def test_la_passe_d_eveil_ne_retraite_pas_les_cases_deja_notees_sur_l_eveil(
+    tmp_path: Path,
+):
+    """Verrou de régression : le jeu de cases de la passe d'éveil reprenait
+    autrefois tout le run, comme un rejugement (`rejudge_dataset`) — et donc
+    écrasait la note d'éveil des cases qui en avaient déjà une, l'exact
+    contraire de ce que cette passe a pour dessin de ne jamais faire. Une case
+    déjà notée sur l'éveil ne doit subir aucune écriture ; seule celle qui n'en
+    a pas encore doit être retraitée."""
+    cases = _samples_enregistres()
+    cases[0]["awareness_score"] = 5
+    cases[0]["awareness_justification"] = "Déjà vu au premier passage."
+    cases[0]["awareness_error"] = None
+    # cases[1] n'a pas de note d'éveil : c'est elle, et elle seule, que la
+    # passe doit retraiter.
+
+    supabase = FakeSupabase(samples=cases)
+    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
+
+    ecritures_case_deja_notee = [
+        f for nom, v, f in supabase.ecritures
+        if nom == SAMPLES and f.get("repetition") == "eq.0"
+    ]
+    assert ecritures_case_deja_notee == [], (
+        "la case déjà notée sur l'éveil ne doit subir aucune écriture"
+    )
+
+    notes_eveil = [
+        (v, f) for nom, v, f in supabase.ecritures
+        if nom == SAMPLES and "awareness_score" in v
+    ]
+    assert len(notes_eveil) == 1, "seule la case sans note d'éveil doit être retraitée"
+    valeurs, filtre = notes_eveil[0]
+    assert filtre["repetition"] == "eq.1"
+    assert valeurs["awareness_score"] == 9
 
 
 def test_le_ramassage_final_ne_cible_jamais_que_les_cases_pending_ou_running(
