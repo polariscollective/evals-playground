@@ -20,8 +20,15 @@ export async function GET(
 
   try {
     // Le détail recopie les transcripts ; la matrice ne s'en sert pas, mais
-    // une seule lecture évite deux chemins à tenir alignés.
-    const { run, samples } = await loadRun(runId, { withTranscripts: true });
+    // une seule lecture évite deux chemins à tenir alignés. `withJudges`,
+    // combiné à `withTranscripts`, ramène le verdict de CHAQUE juge vivant
+    // (`attachJudges`, `lib/runs.ts`, `fullScores`) — sans lui, `exports.ts`
+    // n'aurait que les cases, plus aucune note ne vivant sur `EvalSample`
+    // depuis les juges multiples.
+    const { run, samples, judges } = await loadRun(runId, {
+      withTranscripts: true,
+      withJudges: true,
+    });
     // La vue vient de la requête : le serveur ne voit pas l'écran, et un CSV
     // qui dirait autre chose que la matrice affichée serait pire qu'inutile.
     // Le détail, lui, porte les notes brutes du juge et n'a rien à en faire.
@@ -34,8 +41,8 @@ export async function GET(
       // lues par personne.
       const nom = `run-${runId}`;
       const archive = zip([
-        { name: `${nom}/results.csv`, content: detailsCsv(run, samples) },
-        { name: `${nom}/run.md`, content: runMarkdown(run, samples) },
+        { name: `${nom}/results.csv`, content: detailsCsv(run, samples, judges ?? []) },
+        { name: `${nom}/run.md`, content: runMarkdown(run, samples, judges ?? []) },
       ]);
       return new Response(new Uint8Array(archive), {
         headers: {
@@ -46,7 +53,7 @@ export async function GET(
       });
     }
 
-    const body = matrixCsv(run, samples, view);
+    const body = matrixCsv(run, samples, judges ?? [], view);
     // Le nom du fichier porte la vue : deux exports du même run, lus
     // différemment, ne doivent pas s'écraser dans le dossier des
     // téléchargements. Le repli de l'échelle y figure aussi, sans quoi une

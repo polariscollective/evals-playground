@@ -7,12 +7,29 @@
 // ce que le run avait réellement dépensé — un facteur trois sur un
 // approfondissement, sous une phrase qui annonçait pourtant la mesure. Chaque
 // côté construit ici sa demande comme il la construit vraiment, avec ce qu'il
-// a sous la main : la page ses `EvalSample` complètes, `extendRun` la
-// projection à cinq colonnes qu'il lit en base et la demande d'API.
+// a sous la main : la page ses `EvalSample` complètes plus le verdict du
+// principal joint à chacune (`ExtendPanelSample`, `components/ExtendPanel.tsx`),
+// `extendRun` la projection à cinq colonnes qu'il lit en base plus ce que
+// `deepenCandidates` lit sur `judge_scores` pour le même principal, et la
+// demande d'API.
+//
+// Depuis les juges multiples, la note d'un essai n'est plus la colonne
+// `eval_samples.score` (supprimée par la migration
+// `20260906093000_drop_eval_samples_score_columns.sql`, dépôt
+// polaris-supabase) : c'est le verdict du juge PRINCIPAL — jamais un autre —
+// sur `judge_scores`, une ligne par (juge, essai). `PRINCIPAL` ci-dessous
+// tient cette table à part de `JOUÉES`, exactement comme la vraie base la
+// tient à part d'`eval_samples` : chaque côté la lit à sa façon, voir
+// `commePanneau` et `commeServeur`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { estimateExtension } from "./extend-estimate.ts";
-import { estimateDeepeningCost, samplesForSelection } from "./deepen-counts.ts";
+import {
+  estimateDeepeningCost,
+  samplesForSelection,
+  type DeepenSampleWithDepth,
+  type PrincipalVerdict,
+} from "./deepen-counts.ts";
 import { measureRun, type MeasurableCell } from "./measured-length.ts";
 import type {
   EvalRunConfig,
@@ -62,7 +79,9 @@ const usage = (counts: Record<string, number>): Record<string, ModelUsage> =>
     ]),
   );
 
-/** Une case jouée du run, telle que la page la tient en mémoire. */
+/** Une case jouée du run, telle que la page la tient en mémoire — sans note :
+ *  depuis les juges multiples, `EvalSample` n'en porte plus aucune, voir le
+ *  commentaire de tête. */
 const CASE = (scenario_index: number, repetition: number): EvalSample => ({
   id: `${scenario_index}-${repetition}`,
   run_id: "run",
@@ -73,8 +92,6 @@ const CASE = (scenario_index: number, repetition: number): EvalSample => ({
   status: "done",
   temperature: null,
   turns_done: 3,
-  score: repetition === 0 ? 0 : 1,
-  justification: "",
   messages: [],
   error: null,
   started_at: null,
@@ -87,14 +104,45 @@ const CASE = (scenario_index: number, repetition: number): EvalSample => ({
     "openai/gpt-5.6-luna": 200,
   }),
   cost_usd: 0,
-  awareness_score: null,
-  awareness_justification: "",
-  awareness_error: null,
 });
 
 const JOUÉES: EvalSample[] = [0, 1].flatMap((scenario) =>
   [0, 1, 2].map((repetition) => CASE(scenario, repetition)),
 );
+
+/** Le verdict du juge PRINCIPAL sur chaque essai ci-dessus — même chiffre
+ *  qu'avant (0 sur la première répétition, 1 sur les deux autres), simplement
+ *  déplacé : c'est `judge_scores` qui le porte désormais, jamais `EvalSample`.
+ *
+ * Une seule table pour les deux côtés, comme la vraie base n'en a qu'une :
+ * `commePanneau` la lit comme la page lit `detail.judges` (un verdict par
+ * `sample.id`, en attente par défaut), `commeServeur` comme `deepenCandidates`
+ * lit `judge_scores` (une ligne par essai réellement noté, jamais une
+ * absence). */
+const PRINCIPAL: Record<string, PrincipalVerdict> = Object.fromEntries(
+  JOUÉES.map((sample) => [sample.id, { status: "done", score: sample.repetition === 0 ? 0 : 1 }]),
+);
+
+/** En attente : ni notée, ni tombée — même repli que `verdictOf`
+ *  (`components/RunRead.tsx`, `app/eval/[runId]/page.tsx`) pour un essai sans
+ *  ligne sur `judge_scores`. N'arrive jamais dans ce fichier, `PRINCIPAL`
+ *  couvrant toujours `JOUÉES` entièrement, mais un défaut qui inventerait une
+ *  note serait faux par construction. */
+const PENDING: PrincipalVerdict = { status: "pending", score: null };
+
+/** `EvalSample`, plus le verdict du juge principal joint dessus — ce que la
+ *  page tient réellement en mémoire depuis les juges multiples
+ *  (`ExtendPanelSample`, `components/ExtendPanel.tsx`), construit ici comme
+ *  `app/eval/[runId]/page.tsx` le construit : un verdict par `sample.id`,
+ *  jamais `sample.score`, qui n'existe plus. */
+function avecPrincipal(samples: EvalSample[]): DeepenSampleWithDepth[] {
+  return samples.map((sample) => ({
+    target_model: sample.target_model,
+    status: sample.status,
+    turns_done: sample.turns_done,
+    principal: PRINCIPAL[sample.id] ?? PENDING,
+  }));
+}
 
 /** Ce que le panneau construit, à partir de son état et des cases que la page
  *  lui a passées — la lecture de `ExtendPanel`. */
@@ -138,15 +186,17 @@ function commePanneau(
       repetitions: ui.repetitions,
       turns: ui.turns,
       tools: [...(config.tools ?? []), ...(ui.newTools ?? [])],
-      deepen: samplesForSelection(samples, ui.deepen),
+      // Le verdict du principal, joint case par case — jamais `sample.score`,
+      // qui n'existe plus sur `EvalSample` : voir `avecPrincipal`.
+      deepen: samplesForSelection(avecPrincipal(samples), ui.deepen),
     },
     measured,
   );
 }
 
 /** Ce que `extendRun` construit, à partir de la demande d'API et de ce qu'il
- *  lit en base — sa projection à quatre colonnes, et le filtre `status=done`
- *  plus la note que porte `deepen`. */
+ *  lit en base — sa projection à cinq colonnes pour la mesure, et ce que
+ *  `deepenCandidates` lit sur `judge_scores` du principal pour `deepen`. */
 function commeServeur(
   config: EvalRunConfig,
   samples: EvalSample[],
@@ -172,7 +222,8 @@ function commeServeur(
     (a, b) => a - b,
   );
 
-  // La projection lue en base : cinq colonnes, jamais les transcripts.
+  // La projection lue en base : cinq colonnes, jamais les transcripts —
+  // jamais non plus de note, qui ne vit plus sur cette table.
   const jouées: MeasurableCell[] = samples.map((sample) => ({
     scenario_index: sample.scenario_index,
     target_model: sample.target_model,
@@ -182,18 +233,26 @@ function commeServeur(
   }));
   const mesure = measureRun(jouées, config.models, config.turns);
 
-  // Le filtre `score=in.(...)` / `not.is.null` sur les essais terminés.
+  // Ce que `deepenCandidates` fait réellement : filtre `judge_scores` du
+  // juge PRINCIPAL sur `status = 'done'` et la note demandée, puis relit
+  // `target_model`/`turns_done` sur `eval_samples` par identifiant — jamais
+  // un second filtre sur le statut d'exécution de la case, qu'une ligne de
+  // score ne peut atteindre `done` qu'après (voir le moteur,
+  // `backend/playground/batch_job.py`).
   const àContinuer =
     request.deepen === undefined
       ? []
       : samples
-          .filter(
-            (sample) =>
-              sample.status === "done" &&
-              sample.score !== null &&
-              (request.deepen === "all" ||
-                (request.deepen as number[]).includes(sample.score)),
-          )
+          .filter((sample) => {
+            const verdict = PRINCIPAL[sample.id];
+            if (!verdict || verdict.status !== "done" || verdict.score === null) {
+              return false;
+            }
+            return (
+              request.deepen === "all" ||
+              (request.deepen as number[]).includes(verdict.score)
+            );
+          })
           .map((sample) => ({
             target_model: sample.target_model,
             turns_done: sample.turns_done,
