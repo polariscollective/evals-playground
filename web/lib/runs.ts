@@ -54,6 +54,7 @@ import type {
   Judge,
   JudgeScore,
   JudgeSpec,
+  JudgeSystemTypeColumn,
   JudgeVerdictEntry,
   RunDetail,
   RunJudge,
@@ -610,6 +611,61 @@ export async function loadLiveRunJudges(runId: string): Promise<LiveRunJudge[]> 
     }
     return { ...liaison, judge };
   });
+}
+
+/** Le juge et son verdict, pour une liaison vivante d'un run — ce que
+ *  `judgeVerdictsForSample`, juste en dessous, rend pour CHACUNE. */
+export interface SampleJudgeVerdict {
+  judge: Judge;
+  is_principal: boolean;
+  system_type: JudgeSystemTypeColumn;
+  verdict: JudgeVerdictEntry;
+}
+
+/** Le verdict de chaque juge vivant d'un run sur UNE conversation choisie —
+ *  ce qu'il faut à l'outil MCP `get_run_trajectory` pour montrer le verdict
+ *  de chacun sur une seule case, sans charger tout le run comme le ferait
+ *  `attachJudges` : une ligne de `judge_scores` par juge vivant, jamais une
+ *  par conversation du run entier. Passe par `loadLiveRunJudges`, comme tout
+ *  code qui a besoin de savoir quels juges sont vivants sur un run — un juge
+ *  délié ne doit jamais apparaître ici non plus.
+ *
+ * Une liaison sans ligne pour ce `sampleId` — ne devrait pas arriver, voir la
+ * conception, section « Les lignes de score sont créées d'avance » — rend son
+ * attente par défaut plutôt que de disparaître de la liste : chaque juge
+ * vivant apparaît toujours, exactement comme `attachJudges` le fait déjà pour
+ * un run entier. */
+export async function judgeVerdictsForSample(
+  runId: string,
+  sampleId: string,
+): Promise<SampleJudgeVerdict[]> {
+  const live = await loadLiveRunJudges(runId);
+  if (live.length === 0) return [];
+
+  const rows = await select<{
+    run_judge_id: string;
+    status: JudgeScore["status"];
+    score: number | null;
+    justification: string;
+    error: string | null;
+  }>(JUDGE_SCORES, {
+    run_judge_id: `in.(${live.map((liaison) => liaison.id).join(",")})`,
+    sample_id: `eq.${sampleId}`,
+    select: "run_judge_id,status,score,justification,error",
+  });
+  const byJudge = new Map(rows.map((row) => [row.run_judge_id, row]));
+
+  return live.map((liaison) => ({
+    judge: liaison.judge,
+    is_principal: liaison.is_principal,
+    system_type: liaison.system_type,
+    verdict: byJudge.get(liaison.id) ?? {
+      status: "pending",
+      score: null,
+      justification: "",
+      error: null,
+    },
+  }));
 }
 
 /** Traduit un refus de `run_judges_unlink` ou `run_judges_transfer_principal`
