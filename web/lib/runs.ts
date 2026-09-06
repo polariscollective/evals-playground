@@ -18,6 +18,7 @@ import {
   failStaleRuns,
   insert,
   remove,
+  rpc,
   select,
   update,
 } from "./supabase";
@@ -27,6 +28,7 @@ import { measureRun, type MeasurableCell } from "./measured-length";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import type { NewCell } from "./cells";
 import { judgesForLaunch } from "./launch-judges.ts";
+import { classifyRunJudgesRefusal } from "./run-judges-refusal";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
 import type {
@@ -70,16 +72,19 @@ const SAMPLE_COLUMNS =
 
 export class NotFound extends Error {}
 
-/** Délier le principal sans avoir désigné de remplaçant.
+/** Délier le principal d'un run sans remplaçant valide, alors qu'il reste
+ *  d'autres liaisons vivantes sur ce run.
  *
- * La conception (docs/superpowers/specs/2026-09-06-juges-multiples.md) et le
- * cahier des charges de cette tâche annoncent ce refus comme posé **par la
- * base**. Ce n'est pas le cas : la migration réellement appliquée
- * (`evals/supabase/migrations/20260906092100_create_judges_tables.sql`) ne
- * pose qu'un index unique partiel garantissant qu'il n'y a jamais *deux*
- * liaisons vivantes principales pour un run — rien n'y garantit qu'il en
- * reste *au moins une*. Voir `unlinkJudge` et task-3-report.md : ce contrôle
- * est un filet posé en application, faute d'un tel garde-fou en base. */
+ * Posé par la base, pas par ce fichier — c'est le changement par rapport à
+ * une version précédente de ce commentaire, qui décrivait ceci comme un
+ * filet posé en application faute d'un tel garde-fou en base. Le déclencheur
+ * différé `run_judges_require_principal_trg`
+ * (`evals/supabase/migrations/20260906102248_require_run_judges_principal.sql`,
+ * dépôt `polaris-supabase`) garantit désormais, au commit, qu'un run ayant au
+ * moins une liaison vivante en a toujours exactement une principale.
+ * `unlinkJudge` ne fait plus que traduire son message — du français d'une
+ * trace serveur vers une phrase anglaise lisible — voir
+ * `classifyRunJudgesRefusal`. */
 export class PrincipalRequiresReplacement extends Error {}
 
 /** Combien d'essais chaque couple scénario × modèle porte : le moins, le plus.
@@ -362,9 +367,12 @@ export interface LiveRunJudge extends RunJudge {
  * ignorait un champ pendant tout un plan (voir la conception,
  * docs/superpowers/specs/2026-09-06-juges-multiples.md). Un juge délié ne
  * doit plus jamais ressortir nulle part ; le seul moyen de le garantir est
- * qu'il n'y ait qu'un seul endroit à vérifier. `unlinkJudge` et
- * `designatePrincipal`, juste en dessous, s'appuient sur elle plutôt que de
- * relire `run_judges` chacun à sa façon. */
+ * qu'il n'y ait qu'un seul endroit à vérifier. Tout code qui a besoin de
+ * savoir quels juges sont vivants sur un run passe par elle plutôt que de
+ * relire `run_judges` à sa façon — `unlinkJudge` et `designatePrincipal`,
+ * juste en dessous, n'en font plus partie : ils délèguent désormais ce
+ * même filtre aux fonctions RPC qui portent leur geste en base, en une
+ * transaction (voir leurs commentaires). */
 export async function loadLiveRunJudges(runId: string): Promise<LiveRunJudge[]> {
   const liaisons = await select<RunJudge>(RUN_JUDGES, {
     run_id: `eq.${runId}`,
@@ -397,73 +405,110 @@ export async function loadLiveRunJudges(runId: string): Promise<LiveRunJudge[]> 
   });
 }
 
+/** Traduit un refus de `run_judges_unlink` ou `run_judges_transfer_principal`
+ *  — ou du déclencheur différé qui les couvre — en l'erreur que ces deux
+ *  fonctions exposent déjà, avec un message anglais lisible. Toute erreur
+ *  qui n'est pas un refus reconnu de ces fonctions (`SupabaseError` sans
+ *  correspondance, ou une erreur d'une autre nature) traverse telle quelle :
+ *  mieux vaut un message imparfait que d'en avaler un qu'on n'a pas su lire.
+ *
+ * Le classement lui-même — reconnaître le texte français que Postgres rend —
+ * vit dans `run-judges-refusal.ts`, à part de ce fichier, pour rester
+ * testable sans Supabase (voir son commentaire). Cette fonction-ci ne fait
+ * que choisir, selon le classement, laquelle des classes d'erreur de ce
+ * fichier lever.
+ */
+function throwRunJudgesRefusal(error: unknown): never {
+  if (error instanceof SupabaseError) {
+    const refusal = classifyRunJudgesRefusal(error.message);
+    if (refusal) {
+      if (refusal.kind === "principal_needs_replacement") {
+        throw new PrincipalRequiresReplacement(refusal.message);
+      }
+      if (refusal.kind === "not_found") throw new NotFound(refusal.message);
+      throw new Error(refusal.message);
+    }
+  }
+  throw error;
+}
+
 /** Délie un juge d'un run : marque sa liaison supprimée, sans toucher au
  *  juge — une configuration qui peut resservir — ni à `judge_scores`, qui
  *  disparaît en cascade avec la liaison (voir le commentaire de la
  *  migration sur `run_judges.deleted_at`).
  *
- * Idempotent : délier une liaison déjà déliée, ou un identifiant qui n'est
- * plus vivant sur ce run, ne fait rien — `loadLiveRunJudges` ne la trouvant
- * plus, il n'y a rien à protéger ni à écrire.
+ * Passe par la fonction RPC `run_judges_unlink`, qui délie et — si
+ * `replacementRunJudgeId` est fourni et que `runJudgeId` porte le principal —
+ * transfère le principal au remplaçant, en une seule transaction.
  *
- * Refuse de délier le principal tant qu'un remplaçant n'a pas été désigné
- * par `designatePrincipal`. **Ce contrôle est posé ici, en application, et
- * non par la base** : voir la docstring de `PrincipalRequiresReplacement`
- * pour l'écart entre ce qu'annonçait le cahier des charges de cette tâche et
- * ce que la migration réellement appliquée impose — seulement « jamais deux
- * principaux vivants », jamais « toujours au moins un ».
+ * **Pourquoi une fonction en base, et non deux écritures** : PostgREST fait
+ * un aller-retour par écriture, donc une transaction par écriture. Poser
+ * `deleted_at` sur le principal comme écriture séparée de celle qui
+ * désignerait son remplaçant laisserait, la première validée seule, un run
+ * sans aucun principal — ce que le déclencheur différé
+ * `run_judges_require_principal_trg` refuse désormais à son propre commit
+ * (voir `PrincipalRequiresReplacement`). Deux écritures redeviendraient donc
+ * un aller simple qui échoue toujours dès qu'il reste d'autres juges vivants
+ * sur le run. Voir .superpowers/sdd/fix-principal-rpc-report.md pour le SQL
+ * exact des deux fonctions RPC et ce que chaque refus signifie.
  *
- * Sujet à une fenêtre de temps entre la lecture (`loadLiveRunJudges`, juste
- * au-dessus) et l'écriture : deux allers-retours PostgREST, pas une
- * transaction. Une liaison qui redeviendrait principale entre les deux
- * échapperait au contrôle — rare, et pas pire que ce que fait déjà
- * `retryFailed` un peu plus haut dans ce fichier, qui lit puis écrit de la
- * même façon.
+ * Sans `replacementRunJudgeId` : délier une liaison qui n'est pas principale
+ * ne pose aucune question. Délier la dernière liaison vivante du run est
+ * permis aussi — un run sans aucun juge est un état valide. Délier le
+ * principal alors qu'il reste d'autres liaisons vivantes, sans remplaçant,
+ * est refusé par le déclencheur différé cité plus haut ; ce n'est plus ce
+ * fichier qui recompte les liaisons pour l'anticiper.
  *
  * Throws:
- *   PrincipalRequiresReplacement: si `runJudgeId` désigne le principal
- *   vivant de ce run.
+ *   NotFound: si `runJudgeId` (ou le remplaçant fourni) ne désigne aucune
+ *     liaison de ce run, ou en désigne une déjà déliée.
+ *   PrincipalRequiresReplacement: si `runJudgeId` est le principal vivant du
+ *     run, qu'aucun remplaçant valide n'est fourni, et qu'il reste d'autres
+ *     liaisons vivantes sur ce run.
  */
-export async function unlinkJudge(runId: string, runJudgeId: string): Promise<void> {
-  const live = await loadLiveRunJudges(runId);
-  const target = live.find((liaison) => liaison.id === runJudgeId);
-  if (!target) return;
-
-  if (target.is_principal) {
-    throw new PrincipalRequiresReplacement(
-      `Judge ${runJudgeId} is the principal of run ${runId}; call designatePrincipal with a replacement before unlinking it.`,
-    );
+export async function unlinkJudge(
+  runId: string,
+  runJudgeId: string,
+  replacementRunJudgeId: string | null = null,
+): Promise<void> {
+  try {
+    await rpc("run_judges_unlink", {
+      p_run_id: runId,
+      p_run_judge_id: runJudgeId,
+      p_replacement_run_judge_id: replacementRunJudgeId,
+    });
+  } catch (error) {
+    throwRunJudgesRefusal(error);
   }
-
-  await update(RUN_JUDGES, { deleted_at: NOW }, { id: `eq.${runJudgeId}` });
 }
 
 /** Désigne le principal d'un run : celui que la matrice affiche.
  *
- * Retire d'abord `is_principal` à l'ancien principal vivant, s'il y en a un,
- * puis le pose sur `runJudgeId` — dans cet ordre, jamais l'inverse : poser le
- * nouveau avant de retirer l'ancien ferait cohabiter, l'instant d'un aller-
- * retour, deux liaisons vivantes principales pour le même run, ce que
- * l'index unique partiel `run_judges_single_principal_idx` refuse. C'est
- * cette contrainte-là, contrairement à celle d'`unlinkJudge`, que la base
- * tient réellement — voir `RunJudge.is_principal` dans `types.ts`.
+ * Passe par la fonction RPC `run_judges_transfer_principal`, qui retire
+ * `is_principal` à l'ancien principal vivant, s'il y en a un, et le pose sur
+ * `runJudgeId` — dans cet ordre, jamais l'inverse — en une seule transaction.
+ * L'ordre importe pour la même raison qu'avant : poser le nouveau principal
+ * avant de retirer l'ancien ferait cohabiter, l'instant d'un aller-retour,
+ * deux liaisons vivantes principales pour le même run, ce que l'index unique
+ * partiel `run_judges_single_principal_idx` refuse. Voir le commentaire
+ * d'`unlinkJudge` pour pourquoi c'est désormais la fonction RPC, et non ce
+ * fichier en deux écritures, qui tient cet ordre.
  *
- * Idempotent : désigner un juge déjà principal ne réécrit rien.
+ * Idempotent : désigner un juge déjà principal ne réécrit rien — c'est la
+ * fonction RPC elle-même qui le garantit, pas une vérification ici.
  *
  * Throws:
  *   NotFound: si `runJudgeId` ne désigne aucune liaison vivante de ce run.
  */
 export async function designatePrincipal(runId: string, runJudgeId: string): Promise<void> {
-  const live = await loadLiveRunJudges(runId);
-  const target = live.find((liaison) => liaison.id === runJudgeId);
-  if (!target) throw new NotFound(`Unknown live judge on run ${runId}: ${runJudgeId}`);
-  if (target.is_principal) return;
-
-  const current = live.find((liaison) => liaison.is_principal);
-  if (current) {
-    await update(RUN_JUDGES, { is_principal: false }, { id: `eq.${current.id}` });
+  try {
+    await rpc("run_judges_transfer_principal", {
+      p_run_id: runId,
+      p_run_judge_id: runJudgeId,
+    });
+  } catch (error) {
+    throwRunJudgesRefusal(error);
   }
-  await update(RUN_JUDGES, { is_principal: true }, { id: `eq.${runJudgeId}` });
 }
 
 /** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler : le
