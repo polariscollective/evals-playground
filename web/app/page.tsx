@@ -28,6 +28,7 @@ import type {
   EvalRunConfig,
   EvalScenario,
   JudgePromptPreview,
+  JudgeSpec,
   ProviderInfo,
   RubricLevel,
   SeededTurn,
@@ -141,6 +142,10 @@ function EvaluateForm() {
   const [targets, setTargets] = useState<string[]>([]);
   const [adversary, setAdversary] = useState("");
   const [judge, setJudge] = useState("");
+  // Les juges secondaires — voir `JudgeSpec` (`lib/types.ts`). Le principal
+  // reste porté par `criterion`/`rubric`/`judge` ci-dessus : rien ici ne peut
+  // se déclarer principal, la forme de `JudgeSpec` ne le permet pas.
+  const [secondaryJudges, setSecondaryJudges] = useState<JudgeSpec[]>([]);
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
@@ -211,6 +216,7 @@ function EvaluateForm() {
       setNotes(config.notes ?? "");
       setCriterion(config.criterion ?? "");
       setRubric(config.rubric ?? DEFAULT_RUBRIC);
+      setSecondaryJudges(config.judges ?? []);
       setTurns(config.turns ?? 1);
       setRepetitions(config.repetitions ?? 5);
       setAdversaryPrompt(config.adversary_prompt ?? "");
@@ -429,6 +435,7 @@ function EvaluateForm() {
       scenarios,
       criterion,
       rubric,
+      judges: secondaryJudges,
       turns,
       repetitions,
       models: {
@@ -467,6 +474,7 @@ function EvaluateForm() {
       scenarios,
       criterion,
       rubric,
+      secondaryJudges,
       turns,
       repetitions,
       targets,
@@ -607,6 +615,7 @@ function EvaluateForm() {
     setNotes(config.notes ?? "");
     setCriterion(config.criterion);
     setRubric(config.rubric);
+    setSecondaryJudges(config.judges ?? []);
     setTurns(config.turns);
     setRepetitions(config.repetitions);
     setAdversaryPrompt(config.adversary_prompt);
@@ -702,6 +711,24 @@ function EvaluateForm() {
       setError((e as Error).message);
     }
   };
+
+  /** Un juge secondaire de plus, en plus du principal ci-dessus — une
+   *  répétition de la même mécanique (critère, échelle, modèle), jamais une
+   *  seconde invention. La même échelle de départ que le principal : deux
+   *  paliers sans texte, à écrire. */
+  const addSecondaryJudge = () =>
+    setSecondaryJudges((current) => [
+      ...current,
+      { criterion: "", rubric: DEFAULT_RUBRIC },
+    ]);
+
+  const updateSecondaryJudge = (index: number, patch: Partial<JudgeSpec>) =>
+    setSecondaryJudges((current) =>
+      current.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)),
+    );
+
+  const removeSecondaryJudge = (index: number) =>
+    setSecondaryJudges((current) => current.filter((_, i) => i !== index));
 
   // Ce que l'enregistrement vient de faire, le temps qu'on le lise.
   const [draftNotice, setDraftNotice] = useState("");
@@ -1235,6 +1262,91 @@ function EvaluateForm() {
         )}
       </section>
 
+      {/* ---------------- Secondary judges ---------------- */}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium">Additional judges</h2>
+          <button
+            onClick={addSecondaryJudge}
+            className="text-sm text-teal-700 underline hover:text-teal-900"
+          >
+            + Add another judge
+          </button>
+        </div>
+        <p className="text-sm text-zinc-600">
+          Each one asks its own question, on its own scale, and rereads every
+          conversation once more — a full extra judge call per conversation,
+          on top of the one above. They never replace the judge above, which
+          stays the principal: the matrix follows it, and these are kept
+          alongside for comparison.
+        </p>
+
+        {secondaryJudges.map((entry, index) => (
+          <div
+            key={index}
+            className="space-y-3 rounded border border-zinc-300 p-4"
+          >
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-medium">
+                Additional judge {index + 1}
+              </span>
+              <button
+                onClick={() => removeSecondaryJudge(index)}
+                className="text-sm text-red-700 underline hover:text-red-900"
+              >
+                Remove
+              </button>
+            </div>
+
+            <textarea
+              value={entry.criterion}
+              onChange={(e) =>
+                updateSecondaryJudge(index, { criterion: e.target.value })
+              }
+              rows={3}
+              className="w-full rounded border border-zinc-300 p-3"
+              placeholder="What should this judge look at?"
+            />
+
+            <div className="space-y-2">
+              <span className="text-sm font-medium">Grades</span>
+              <RubricEditor
+                rubric={entry.rubric}
+                onChange={(rubric) => updateSecondaryJudge(index, { rubric })}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label
+                htmlFor={`secondary-judge-model-${index}`}
+                className="block text-sm font-medium"
+              >
+                Judge model
+              </label>
+              <select
+                id={`secondary-judge-model-${index}`}
+                value={entry.model ?? ""}
+                onChange={(e) =>
+                  updateSecondaryJudge(index, {
+                    model: e.target.value || undefined,
+                  })
+                }
+                className="w-full rounded border border-zinc-300 bg-white p-2 text-sm"
+              >
+                <option value="">Same as the run&apos;s judge above</option>
+                {modelRows.map((m) => (
+                  <option key={m.id} value={m.id} disabled={!m.available}>
+                    {m.label}
+                    {m.price ? ` — ${m.price}` : ""}
+                    {m.available ? "" : ` (${m.missing} missing)`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ))}
+      </section>
+
       {/* ---------------- Models ---------------- */}
       <section className="space-y-3">
         <h2 className="font-medium">Models</h2>
@@ -1333,6 +1445,14 @@ function EvaluateForm() {
           <strong>{scenarios.length * targets.length * repetitions}</strong>{" "}
           conversations
         </p>
+
+        {secondaryJudges.length > 0 && (
+          <p className="text-xs text-zinc-500">
+            Plus <strong>{secondaryJudges.length}</strong> additional judge
+            {secondaryJudges.length > 1 ? "s" : ""} — one more model call per
+            graded conversation each, already included in the estimate below.
+          </p>
+        )}
 
         {/* Le seul endroit d'où un humain peut éteindre ce juge : un agent le
             fait déjà par la configuration qu'il soumet, et un fichier importé
