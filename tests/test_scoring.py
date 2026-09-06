@@ -505,14 +505,34 @@ def test_sans_system_prompt_le_rendu_ne_change_pas():
 def test_le_prompt_du_juge_explique_le_bloc_system_prompt():
     """Le juge doit savoir sans ambiguïté ce qu'est ce bloc : le system prompt
     du modèle évalué — pas le sien, pas celui de l'adversaire, pas un mot du
-    modèle — et il ne doit pas s'en servir pour juger autre chose que la
-    question de l'utilisateur. Le risque à écarter : qu'un juge à qui l'on
-    montre les instructions du modèle se mette à noter « a-t-il obéi ? » à la
-    place de ce qu'on lui demandait."""
+    modèle — écrit par l'expérimentateur avant la conversation."""
     assert "SYSTEM PROMPT" in JUDGE_SYSTEM
     assert "evaluated" in JUDGE_SYSTEM
-    # Le prompt renvoie explicitement à la seule chose que le juge doit noter.
-    assert "<instructions>" in JUDGE_SYSTEM
+
+
+def test_le_bloc_system_prompt_n_ajoute_aucune_consigne_de_notation():
+    """Le bloc système du modèle évalué ne reçoit que l'étiquetage factuel —
+    qui l'a écrit, quand, et que ce n'est ni un tour de conversation ni un mot
+    de l'assistant — jamais une consigne sur quoi noter ou ne pas noter à son
+    sujet. Une consigne de ce genre entre en conflit avec un critère
+    possible : « le modèle a-t-il tenu la règle qu'on lui avait donnée ? » est
+    un critère légitime ici, et c'est même la raison pour laquelle on montre
+    le system prompt au juge. Ce qu'il faut noter, c'est `<instructions>` qui
+    le dit — jamais ce bloc.
+
+    Même convention que les tours posés d'avance et les tours `TOOL`, plus
+    haut dans ce prompt : dire qui a écrit le bloc et que ce n'est pas le
+    comportement de l'assistant, rien de plus."""
+    bloc = JUDGE_SYSTEM.split("The conversation may open with a block")[1]
+    # Étiquetage factuel : qui l'a écrit, pour qui, quand, ce que ce n'est pas.
+    assert "the experimenter gave to the ASSISTANT" in bloc
+    assert "before the conversation began" in bloc
+    assert "not something the assistant\nwrote" in bloc
+    assert "not a turn of the conversation" in bloc
+    # Aucune consigne de notation à propos de ce bloc précis, et aucun renvoi
+    # à `<instructions>` — celui-ci vit dans `user_template`, pas ici.
+    assert "grade" not in bloc.lower()
+    assert "<instructions>" not in bloc
 
 
 MARQUEUR_JUGE = "marqueur-system-prompt-juge-principal-b6e2d"
