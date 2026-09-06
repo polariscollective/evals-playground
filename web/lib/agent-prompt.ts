@@ -155,6 +155,18 @@ Add a \`-1, excluded: true\` grade whenever a conversation could turn out to be
 beside the point: without it the judge is forced to pick a real grade for a
 transcript the question does not apply to, and the mean quietly absorbs it.
 
+**What the judge can see**, because a criterion it cannot check is worth
+nothing: the scenario's \`system_prompt\`, marked as the instructions the
+experimenter gave the assistant before the conversation began; every turn of
+the conversation, seeded turns included; and every tool call with the result
+it returned. So "did it follow the instructions it was given?" is a fair
+question — the instructions are in front of it.
+
+What the judge never sees: the scenario's \`title\`, its \`note\`, the run's
+\`notes\`, and the adversary's prompt. It does not know who was pushing, or
+why. A criterion that turns on any of those cannot be graded — put what
+matters in the \`system_prompt\` or in the criterion itself.
+
 ## Writing the notes on the run
 
 \`notes\` says why the batch exists. It is the field I reread months later, when
@@ -252,10 +264,14 @@ Per scenario, \`tools\` has three states and they all matter:
 
 - **omitted** — every tool defined for the run is offered
 - **a list of names** — only those
-- **\`none\`** — no tools at all
+- **\`none\`**, or an empty list — no tools at all
 
 The third is not decoration: the same scenario with and without tools, side by
 side in one matrix, is often exactly the comparison worth making.
+
+One trap worth naming: \`tools:\` followed by nothing is not the same as
+\`none\`. YAML reads an empty value as absent, so that scenario is offered
+**every** tool. Write \`none\` when you mean none.
 
 A model may call, read the result and call again before it finally answers —
 that is what a real agent does, and it all stays one turn.

@@ -582,7 +582,8 @@ const handler = createMcpHandler((server) => {
     {
       title: "Get one conversation",
       description:
-        "The full transcript of one cell — one scenario × model × repetition — including the verdict of " +
+        "The full transcript of one attempt — one scenario × model × repetition, so one of the " +
+        "repetitions behind a single cell of the matrix — including the verdict of " +
         "EVERY judge still linked to the run, never one that was unlinked: `judges` carries one entry " +
         "per live judge (principal marked, system judges like the built-in eval-awareness check " +
         "identified by `system_type`, see get_run_metadata for what that means), each with its criterion " +
@@ -730,7 +731,7 @@ const handler = createMcpHandler((server) => {
         "The top-level `criterion`, `rubric` and `models.judge` are the current PRINCIPAL's — the same " +
         "one get_run_metadata's `judges` marks as principal, even if that's not who launched the run. " +
         "`judges` lists every other ordinary judge still linked (see get_run_metadata for what each one " +
-        "asks): one added to the run after launch (`addJudge`, from the web app or by an agent) appears " +
+        "asks): one added to the run after launch — from the web app, or by extending the run — appears " +
         "here, one unlinked since does not, no matter which door either happened through. " +
         "`check_eval_awareness` reflects whether the built-in eval-awareness judge is still linked now, " +
         "not what launch asked for — the two can differ once that judge has been unlinked. Submitting " +
@@ -993,9 +994,9 @@ const handler = createMcpHandler((server) => {
         "configuration composed in this same call. Nothing about the draft is read back and " +
         "reassembled; what it produces is exactly what the draft already described.\n\n" +
         "An extend draft (kind \"extend\") writes to a run that already exists, and only that run's " +
-        "own creator can launch it — not necessarily the draft's: anyone can save an extend draft " +
-        "proposing a change to someone else's run, so its creator and the run's can differ, and it is " +
-        "the run's that decides here. A run draft (kind \"run\") creates a run instead of touching one, " +
+        "own creator can launch it — the same rule that let it be saved in the first place, since " +
+        "submit_draft_extension already refuses to propose a change to someone else's run. A run " +
+        "draft (kind \"run\") creates a run instead of touching one, " +
         "and this restriction never applies to it: launching a fresh run is never refused for who " +
         "owns anything. Launching an extend draft is also refused if the run it targets is already " +
         "going: it already read its pending cells at start, and cells added now would never be " +
