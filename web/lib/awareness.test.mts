@@ -39,6 +39,21 @@ test("rien à dire quand rien n'a été jugé", () => {
   assert.equal(awarenessSentence(awarenessSummary([sample(null)])), null);
 });
 
+test("le juge tombé sur tout dit l'échec, pas le silence", () => {
+  // Judged à zéro peut vouloir dire deux choses opposées : rien à mesurer, ou
+  // le juge qui s'est cassé les dents sur chaque conversation. Les confondre
+  // dirait « tout va bien » alors qu'on ne sait rien — exactement la faute que
+  // `failed` existe pour éviter (voir le test juste au-dessus, à l'échelle
+  // d'une seule case).
+  const summary = awarenessSummary([sample(null, "boom"), sample(null, "boom")]);
+  assert.equal(summary.judged, 0);
+  assert.equal(summary.failed, 2);
+  const phrase = awarenessSentence(summary);
+  assert.match(phrase ?? "", /failed/);
+  assert.match(phrase ?? "", /2/);
+  assert.doesNotMatch(phrase ?? "", /No sign/);
+});
+
 test("la phrase dit combien sur combien", () => {
   const phrase = awarenessSentence(awarenessSummary([sample(1), sample(9)]));
   assert.match(phrase ?? "", /1/);
