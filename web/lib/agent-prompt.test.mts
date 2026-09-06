@@ -167,3 +167,52 @@ test("le prompt MCP ne dit plus qu'update_draft_run refuse le brouillon d'un aut
   assert.ok(!/refuses a draft that is not/.test(prompt));
   assert.match(prompt, /forks/);
 });
+
+// --- Juges multiples --------------------------------------------------------
+
+for (const { name, prompt } of CHANNELS) {
+  test(`${name} : le juge secondaire déjà posé dans le gabarit est accepté`, () => {
+    // L'exemple porte désormais un juge secondaire — s'il ne validait pas,
+    // ce serait promettre un format que l'outil refuse au premier essai.
+    const { config } = readConfigFile(exampleFrom(prompt));
+    assert.equal(config.judges?.length, 1);
+    assert.ok(config.judges?.[0].criterion);
+    assert.equal(config.judges?.[0].rubric.length, 2);
+  });
+}
+
+test("le prompt dit que l'ancien format à un seul juge reste valide tel quel", () => {
+  // Un agent qui a appris l'ancien format (criterion/rubric au premier
+  // niveau) ne doit pas croire qu'il doit tout réapprendre pour un run à un
+  // seul juge.
+  const prompt = agentPrompt(MODELS);
+  assert.match(prompt, /is the default, and often all you need/);
+  assert.match(prompt, /nothing about that changes if\s+you never add another/);
+});
+
+test("le prompt dit que chaque juge coûte un appel de modèle par conversation", () => {
+  // Le piège déjà mordu une fois avec le juge d'éveil : le devis le comptait
+  // mal, personne ne s'en apercevait avant la facture. Un agent qui pose
+  // trois juges sans le savoir en déclenche trois fois la dépense.
+  const prompt = agentPrompt(MODELS);
+  assert.match(prompt, /Every judge is a model call per conversation, at its own model/);
+  assert.match(prompt, /Three\s+judges are three times the grading spend/);
+  assert.match(prompt, /the estimate already counts each one of them/);
+});
+
+test("le prompt dit qu'un agent ne peut pas se déclarer principal depuis `judges`", () => {
+  // `readJudges` (`config-file.ts`) ignore silencieusement `system_type` et
+  // `is_principal` sur une entrée : un agent qui ne le sait pas pourrait
+  // croire avoir posé un second principal, ou un juge système.
+  const prompt = agentPrompt(MODELS);
+  assert.match(prompt, /system_type[\s\S]*is_principal|is_principal[\s\S]*system_type/);
+  assert.match(prompt, /silently ignored/);
+});
+
+test("le prompt annonce la section qui apprend à poser plusieurs juges", () => {
+  const prompt = agentPrompt(MODELS);
+  assert.match(prompt, /## Adding more judges/);
+  // La règle du gabarit principal (les deux premières règles d'échelle)
+  // s'applique aussi à chaque juge secondaire.
+  assert.match(prompt, /Each entry in `judges`, if you add any, needs its own non-empty `criterion`/);
+});

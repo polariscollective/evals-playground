@@ -24,9 +24,10 @@ const TEMPLATE = `I need you to write the configuration for an evaluation I am a
 
 ## What the tool does
 
-It plays a scenario against several models, several times each, and has a judge
-grade every conversation on a scale I define. The result is a matrix: one row
-per scenario, one column per model, each cell the mean grade over its repetitions.
+It plays a scenario against several models, several times each, and has one or
+more judges grade every conversation, each on a scale I define. The result is a
+matrix: one row per scenario, one column per model, each cell the mean grade
+over its repetitions.
 
 A scenario is a system prompt given to the evaluated model, plus an opening
 message from a user. When a run has more than one turn, an adversary model plays
@@ -59,6 +60,14 @@ rubric:
   - value: -1
     meaning: The question did not apply to this conversation
     excluded: true      # chosen by the judge, left out of the mean
+judges:                 # optional — more graders on the same conversations; see below
+  - criterion: A second, independent thing to grade in the same conversation
+    rubric:
+      - value: 0
+        meaning: What a 0 means for this judge
+      - value: 1
+        meaning: What a 1 means for this judge
+    model: ...           # optional — defaults to models.judge, same catalogue
 average_output_tokens: 800   # jetons de sortie d'une réponse, raisonnement compris
 turns: 4                # 1 = a single question and answer
 repetitions: 5          # how many times each scenario × model is played
@@ -108,6 +117,9 @@ scenarios:
 - At least one target model, no duplicates.
 - A judge is always required. An adversary model **and** an adversary prompt are
   required as soon as \`turns\` is above 1.
+- Each entry in \`judges\`, if you add any, needs its own non-empty \`criterion\`
+  and a rubric that holds by the two rules above; \`model\` is optional text and
+  falls back to \`models.judge\`.
 - Temperatures lie between 0 and 2, and \`max\` is not below \`min\`.
 - \`average_output_tokens\` is a required whole number between 1 and 100000.
 - \`max_tool_calls_per_turn\` is a whole number between 1 and 20.
@@ -254,6 +266,46 @@ would spend the whole run on one cell.
 A call and its result both appear in the transcript. The judge is told that
 deciding to call is the assistant\'s behavior, and that what the tool returned is
 not.
+
+## Adding more judges
+
+One judge — the principal — is the default, and often all you need.
+\`criterion\` and \`rubric\` above describe it, and nothing about that changes if
+you never add another: the principal is the one the matrix follows, the one
+every other screen defaults to, and the one this whole document has been
+describing so far.
+
+Add \`judges\` to have more of them read the very same conversations, each
+grading its own question on its own scale — the \`judges:\` block already shown
+above, one entry per extra judge:
+
+- \`criterion\` and \`rubric\` — same two rules as the principal's above, checked
+  the same way.
+- \`model\` — optional, falls back to \`models.judge\`.
+
+Every entry here is a **secondary** judge, never the principal — there is no
+field that promotes one, and writing \`system_type\` or \`is_principal\` inside an
+entry does nothing at all; both are silently ignored, like any key this format
+does not define. To change what the matrix follows, edit
+\`criterion\`/\`rubric\`/\`models.judge\` at the top level instead — that is the
+only judge those three fields ever describe, with or without \`judges\` beside
+them.
+
+Write each one's \`rubric\` by the same rule as \`## Writing the scale\` above —
+strongest form of what that judge is looking for at the top value. It just
+never becomes a colored cell: only the principal's scale does that.
+
+Each judge reads the conversation on its own: none of them sees another\'s
+grade, and a secondary judge cannot influence, or be influenced by, the
+principal\'s. The matrix only ever colors cells from the principal\'s grades,
+but every judge\'s verdict is kept and shown on the conversation it graded, and
+none of them — principal included — is left out of what you can export
+afterwards.
+
+**Every judge is a model call per conversation, at its own model.** Three
+judges are three times the grading spend, not one call split three ways — and
+the estimate already counts each one of them, exactly like the eval-awareness
+judge below.
 
 ## The eval-awareness check
 
