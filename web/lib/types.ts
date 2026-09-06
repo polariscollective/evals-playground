@@ -196,15 +196,36 @@ export interface RunJudge {
    *  `run_judges_single_system_type_idx` filtre désormais sur
    *  `system_type <> 'ordinary'`, plus sur `is not null`. */
   system_type: JudgeSystemTypeColumn;
-  /** Le juge que la matrice affiche. Exactement une liaison vivante
-   *  principale par run, garanti en base par un index unique partiel
-   *  (`run_judges_single_principal_idx`) — pas par le code appelant. */
+  /** Le juge que la matrice affiche. La base garantit AU PLUS une liaison
+   *  vivante principale par run — l'index unique partiel
+   *  (`run_judges_single_principal_idx`), jamais « exactement une ». Le
+   *  « au moins une » qui complète l'invariant tient à un déclencheur à
+   *  part, `run_judges_require_principal_trg` : il ne s'arme que sur
+   *  `UPDATE` (perdre le principal qu'on avait), jamais sur `INSERT` — créer
+   *  la toute première liaison d'un run n'est donc jamais couvert par lui,
+   *  et c'est le code applicatif (`judgesForLaunch`, `lib/launch-judges.ts`)
+   *  qui pose `is_principal` à la création. Depuis la migration
+   *  `20260906154500`, un second déclencheur (`run_judges_require_ordinary_trg`)
+   *  et le refus d'un juge système comme principal ou remplaçant composent
+   *  pour garantir qu'un run gardant au moins une liaison vivante a toujours
+   *  un principal, par construction plutôt que par rattrapage — mais aucun
+   *  des deux ne couvre `INSERT` non plus. */
   is_principal: boolean;
   /** `null` tant que la liaison est vivante. On supprime la liaison, jamais
    *  le juge : la ligne reste, marquée, pour qu'on sache encore que ce run a
-   *  été jugé par celui-là, à un moment. Supprimer une liaison efface ses
-   *  scores en cascade sans toucher une ligne de `JudgeScore` : elles
-   *  disparaissent avec elle, le juge lui reste. */
+   *  été jugé par celui-là, à un moment.
+   *
+   *  « Supprimer », ici, veut dire poser cette colonne — un `UPDATE`, jamais
+   *  un `DELETE` : `unlinkJudge` (`lib/runs.ts`) ne fait que ça, via la
+   *  fonction RPC `run_judges_unlink`. `JudgeScore` porte bien une clé
+   *  étrangère composée vers cette table avec `ON DELETE CASCADE`, mais rien
+   *  ne la déclenche jamais en pratique : `service_role` n'a même pas le
+   *  droit de `DELETE` sur `run_judges` (seuls `SELECT`, `INSERT`, `UPDATE`
+   *  lui sont accordés). Les lignes de `JudgeScore` d'une liaison déliée
+   *  restent donc en base, inchangées ; c'est la discipline de lecture —
+   *  filtrer sur `deleted_at is null`, une seule fois, dans
+   *  `loadLiveRunJudges` (`lib/runs.ts`) — qui porte tout le poids de ne
+   *  plus les montrer. */
   deleted_at: string | null;
   created_at: string;
 }

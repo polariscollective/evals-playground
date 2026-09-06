@@ -723,9 +723,15 @@ function throwRunJudgesRefusal(error: unknown): never {
 }
 
 /** Délie un juge d'un run : marque sa liaison supprimée, sans toucher au
- *  juge — une configuration qui peut resservir — ni à `judge_scores`, qui
- *  disparaît en cascade avec la liaison (voir le commentaire de la
- *  migration sur `run_judges.deleted_at`).
+ *  juge — une configuration qui peut resservir — ni à `judge_scores`, dont
+ *  les lignes restent en base, inchangées : la suppression est un `UPDATE`
+ *  qui pose `deleted_at`, jamais un `DELETE`, et rien ne déclenche jamais la
+ *  cascade `ON DELETE` que porte la clé étrangère de `judge_scores` vers
+ *  cette table — voir le commentaire de `RunJudge.deleted_at` (`types.ts`)
+ *  et celui de la migration du même nom qui l'a corrigé après coup. C'est la
+ *  discipline de lecture — filtrer sur `deleted_at is null`, une seule fois,
+ *  dans `loadLiveRunJudges` — qui porte tout le poids de ne plus les
+ *  montrer.
  *
  * Passe par la fonction RPC `run_judges_unlink`, qui délie et — si
  * `replacementRunJudgeId` est fourni et que `runJudgeId` porte le principal —
