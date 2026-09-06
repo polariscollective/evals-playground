@@ -162,8 +162,12 @@ class FakeSupabase(Supabase):
         if table == JUDGE_SCORES:
             run_id = _sans_prefixe(params.get("run_id"))
             lignes = [s for s in self.judge_scores if s["run_id"] == run_id]
-            if params.get("status") == "eq.pending":
-                lignes = [s for s in lignes if s["status"] == "pending"]
+            statut = params.get("status")
+            if statut is not None:
+                statuts = _parse_in(statut) if statut.startswith("in.(") else {
+                    _sans_prefixe(statut)
+                }
+                lignes = [s for s in lignes if s["status"] in statuts]
             return lignes
         # SAMPLES
         rows = list(self.samples)
@@ -892,6 +896,59 @@ def test_le_rattrapage_ne_retraite_pas_un_juge_deja_a_jour_sur_une_case(
     filtres = [f for nom, _, f in supabase.ecritures if nom == JUDGE_SCORES]
     assert len(filtres) == 1, "seule la ligne encore en attente doit être retraitée"
     assert filtres[0]["sample_id"] == f"eq.{samples[0]['id']}"
+
+
+def test_le_rattrapage_reprend_aussi_une_ligne_en_erreur(tmp_path: Path):
+    """Une panne réseau passagère écrit une ligne `error` — voir
+    `write_judge_score`. Sans ce test, rien ne la reprend plus jamais : ni le
+    rattrapage, ni la reprise des cases en échec (qui ne vise que les
+    conversations, pas les lignes de juge), ni l'ajout d'un juge (qui ne crée
+    des lignes que pour un juge tout neuf). Le seul contournement resterait
+    de poser un second juge identique — précisément ce que ce rattrapage doit
+    éviter."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    for score in scores:
+        if score["run_judge_id"] == "rj-nouveau":
+            score["status"] = "error"
+            score["error"] = "TimeoutError: le juge n'a pas répondu à temps."
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    filtres = [f for nom, _, f in supabase.ecritures if nom == JUDGE_SCORES]
+    assert {f["run_judge_id"] for f in filtres} == {"eq.rj-nouveau"}
+    assert len(filtres) == 2, "les deux lignes en erreur doivent être reprises"
+
+
+def test_la_reprise_d_une_ligne_en_erreur_efface_son_message_precedent(
+    tmp_path: Path,
+):
+    """Effet de bord à ne pas manquer : une reprise réussie ne doit pas
+    laisser le message d'erreur de la tentative précédente survivre à côté
+    de la note fraîche — `write_judge_score` réécrit la ligne en entier, il
+    ne la complète pas."""
+    samples = _samples_enregistres()[:1]
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    for score in scores:
+        if score["run_judge_id"] == "rj-nouveau":
+            score["status"] = "error"
+            score["error"] = "TimeoutError: le juge n'a pas répondu à temps."
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(1))
+
+    filtres = [v for nom, v, _ in supabase.ecritures if nom == JUDGE_SCORES]
+    assert len(filtres) == 1
+    assert filtres[0]["status"] == "done"
+    assert filtres[0]["score"] == 1.0
+    assert filtres[0]["error"] is None, (
+        "le message d'erreur précédent ne doit pas survivre à côté d'une note fraîche"
+    )
 
 
 def test_un_juge_delie_apres_avoir_cree_ses_lignes_n_est_jamais_rattrape(

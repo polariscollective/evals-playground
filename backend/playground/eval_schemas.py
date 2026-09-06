@@ -186,16 +186,31 @@ class RunJudge(BaseModel):
     cette table-ci, il lui faut donc sa propre colonne."""
 
     is_principal: bool = False
-    """Le juge que la matrice affiche. Exactement une liaison vivante
-    principale par run, garanti en base par un index unique partiel
-    (`run_judges_single_principal_idx`) — pas par le code appelant."""
+    """Le juge que la matrice affiche. Deux garanties distinctes, en base,
+    composent l'« exactement une » que la conception vise pour tout run
+    ayant au moins une liaison vivante — ni l'une ni l'autre ne le fait
+    seule. L'index unique partiel `run_judges_single_principal_idx` ne
+    garantit qu'**au plus une** liaison vivante principale par run ; il ne
+    dit rien sur l'absence de principal. C'est le déclencheur différé
+    `run_judges_require_principal_trg` (migration `20260906102248`) qui
+    referme l'autre bord, et seulement pour les UPDATE qui retirent le
+    principal à une liaison qui le portait déjà — un INSERT n'est jamais
+    couvert, voir le commentaire de la migration pour ce trou de portée
+    assumé."""
 
     deleted_at: str | None = None
     """`None` tant que la liaison est vivante. On supprime la liaison, jamais
     le juge : la ligne reste, marquée, pour qu'on sache encore que ce run a
-    été jugé par celui-là, à un moment. Supprimer une liaison efface ses
-    scores en cascade sans toucher une ligne de `JudgeScore` : elles
-    disparaissent avec elle, le juge lui reste."""
+    été jugé par celui-là, à un moment. La suppression est douce — un UPDATE
+    qui pose cette colonne, jamais un DELETE : `judge_scores` porte bien une
+    clé étrangère `on delete cascade` vers cette liaison, mais rien ne la
+    déclenche jamais en pratique, et `service_role` n'a même pas le droit de
+    supprimer une ligne de `run_judges` (seuls `select`, `insert`, `update`
+    lui sont accordés — migration `20260906092100`). Les lignes de
+    `JudgeScore` d'un juge délié restent donc en base, inchangées ; c'est la
+    discipline de lecture — filtrer sur `deleted_at is null` avant de les
+    lire — qui porte tout le poids de ne plus les montrer, pas une
+    suppression qui n'a jamais lieu."""
 
     created_at: str
 

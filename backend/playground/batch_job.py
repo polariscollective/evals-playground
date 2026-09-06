@@ -116,7 +116,7 @@ def judge_metadata(liaison: dict[str, Any]) -> dict[str, Any]:
 
 def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     """Les conversations déjà jouées qui portent encore, pour au moins un juge
-    vivant, une ligne de `judge_scores` en attente.
+    vivant, une ligne de `judge_scores` en attente ou en erreur.
 
     Remplace `rejudge_dataset` et `awareness_dataset` : les modes qu'ils
     servaient (`rejudge`, qui écrasait la note du juge de l'utilisateur avant
@@ -124,10 +124,20 @@ def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     disparaissent au profit d'un seul mécanisme de rattrapage, valable pour
     n'importe quel juge — voir la conception,
     docs/superpowers/specs/2026-09-06-juges-multiples.md, section « Le
-    rattrapage, généralisé ». Il ne fait rien d'autre que compter les lignes
-    de score en attente et les faire remplir, ce qui couvre quatre cas d'un
-    coup : un juge ajouté à un run terminé, un run étendu, un juge tombé sur
-    quelques cases, un run interrompu.
+    rattrapage, généralisé ». Il ne fait rien d'autre que réunir les lignes
+    de score `pending` et `error`, et les faire remplir, ce qui couvre
+    quatre cas d'un coup : un juge ajouté à un run terminé, un run étendu, un
+    juge tombé sur quelques cases, un run interrompu.
+
+    `error` compte autant que `pending` : une panne réseau passagère écrit
+    une ligne `error` (voir `write_judge_score`), et rien d'autre ne la
+    reprend jamais — ni ce rattrapage s'il ne la ciblait pas, ni le
+    lancement, ni l'ajout d'un juge. L'exclure ferait d'une panne passagère
+    une impasse définitive, sans autre recours que poser un second juge
+    identique. `write_judge_score` réécrit la ligne en entier à la reprise :
+    un juge qui retombe en erreur y laisse une ligne `error` fraîche, un
+    juge qui aboutit y efface l'ancien message au profit de la note — jamais
+    les deux à la fois.
 
     Ne cible que les conversations `status = 'done'` : c'est la seule
     garantie qu'un transcript existe à relire — l'inverse exact de
@@ -137,26 +147,27 @@ def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
     reprise de la conversation elle-même.
 
     Un juge délié depuis que sa ligne de score a été créée n'est jamais
-    rappelé ici : une ligne en attente dont le `run_judge_id` n'apparaît plus
-    dans `load_live_run_judges` — la seule fonction autorisée à dire qui est
-    vivant — reste en attente pour de bon. C'est voulu : un juge supprimé
-    n'apparaît nulle part (invariant 5 de la conception), pas même dans ce
-    qui reste à rattraper. Rien ne la comblera jamais, ce qui est sans
-    conséquence : personne ne la lira plus non plus.
+    rappelé ici : une ligne en attente ou en erreur dont le `run_judge_id`
+    n'apparaît plus dans `load_live_run_judges` — la seule fonction
+    autorisée à dire qui est vivant — reste telle quelle pour de bon. C'est
+    voulu : un juge supprimé n'apparaît nulle part (invariant 5 de la
+    conception), pas même dans ce qui reste à rattraper. Rien ne la
+    comblera jamais, ce qui est sans conséquence : personne ne la lira plus
+    non plus.
     """
     juges_vivants = load_live_run_judges(supabase, run_id)
     vivants_par_id = {liaison["id"]: liaison for liaison in juges_vivants}
     if not vivants_par_id:
         return MemoryDataset([], name="rattrapage")
 
-    en_attente = supabase.select(
+    a_reprendre = supabase.select(
         JUDGE_SCORES,
         run_id=f"eq.{run_id}",
-        status="eq.pending",
+        status="in.(pending,error)",
         select="run_judge_id,sample_id",
     )
     juges_par_echantillon: dict[str, list[str]] = {}
-    for ligne in en_attente:
+    for ligne in a_reprendre:
         run_judge_id = str(ligne["run_judge_id"])
         if run_judge_id not in vivants_par_id:
             continue
