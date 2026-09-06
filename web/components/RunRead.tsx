@@ -549,10 +549,17 @@ function MakePrincipalButton({
   );
 }
 
-/** Délier le principal, avec le remplaçant que le déclencheur en base exige
- *  dans le même geste dès qu'il reste d'autres juges vivants — voir
- *  `unlinkJudge` dans `lib/runs.ts`. Sans autre juge vivant, délier est permis
- *  directement : le run reste sans aucun juge, un état valide.
+/** Délier le principal — toujours un juge ordinaire — avec le remplaçant que
+ *  le déclencheur en base exige dans le même geste. Le remplaçant doit
+ *  lui-même être ordinaire : un juge système (l'éveil) ne peut pas devenir
+ *  principal, sa question et son échelle n'appartenant pas à l'utilisateur
+ *  (voir `judgeLabel`) — le proposer présélectionnerait un choix qui casse
+ *  silencieusement l'écran.
+ *
+ * Un run garde toujours au moins un juge ordinaire vivant : délier le
+ * dernier n'est pas permis, ni ici ni en base. Sans autre juge ORDINAIRE pour
+ * prendre le relais, ce composant ne propose donc rien à cliquer — juste
+ * l'explication ; le seul chemin est d'ajouter un juge ordinaire d'abord.
  *
  * N'apparaît que si `onUnlink` est fourni — jamais sur la page publique. */
 function PrincipalUnlink({
@@ -564,16 +571,28 @@ function PrincipalUnlink({
   others: PublicRunJudgeView[];
   onUnlink: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
 }) {
+  const ordinaryOthers = others.filter((judge) => judge.system_type === "ordinary");
+
   const [open, setOpen] = useState(false);
-  const [replacement, setReplacement] = useState(others[0]?.run_judge_id ?? "");
+  const [replacement, setReplacement] = useState(ordinaryOthers[0]?.run_judge_id ?? "");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+
+  // Rien à cliquer : dire pourquoi plutôt que de griser sans explication.
+  if (ordinaryOthers.length === 0) {
+    return (
+      <p className="text-xs text-zinc-500">
+        This is the run&apos;s only ordinary judge — a run always keeps at
+        least one. Add another ordinary judge before unlinking this one.
+      </p>
+    );
+  }
 
   const confirm = async () => {
     setBusy(true);
     setFailed(null);
     try {
-      await onUnlink(principal.run_judge_id, others.length > 0 ? replacement : undefined);
+      await onUnlink(principal.run_judge_id, replacement);
       setOpen(false);
     } catch (e) {
       setFailed((e as Error).message);
@@ -595,41 +614,32 @@ function PrincipalUnlink({
 
   return (
     <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm">
-      {others.length > 0 ? (
-        <>
-          <p className="text-xs text-amber-900">
-            {/* Le déclencheur différé refuse de délier le principal sans
-                remplaçant tant qu'il reste d'autres juges vivants — voir le
-                commentaire d'`unlinkJudge`, `lib/runs.ts`. Le choisir ici est
-                donc obligatoire, pas une simple commodité. */}
-            This judge is the principal — the matrix follows it. Choose who
-            takes over before unlinking it.
-          </p>
-          <select
-            value={replacement}
-            onChange={(e) => setReplacement(e.target.value)}
-            className="rounded border border-zinc-300 bg-white p-1 text-xs"
-          >
-            {others.map((other) => (
-              <option key={other.run_judge_id} value={other.run_judge_id}>
-                {shortModel(other.judge.model)} — {judgeLabel(other.judge)}
-              </option>
-            ))}
-          </select>
-        </>
-      ) : (
-        <p className="text-xs text-amber-900">
-          This is the only judge left on this run. Unlinking it leaves the run
-          without any judge — the matrix will show nothing new.
-        </p>
-      )}
+      <p className="text-xs text-amber-900">
+        {/* Le déclencheur différé refuse de délier le principal sans
+            remplaçant tant qu'il reste d'autres juges vivants — voir le
+            commentaire d'`unlinkJudge`, `lib/runs.ts`. Le choisir ici est
+            donc obligatoire, pas une simple commodité. */}
+        This judge is the principal — the matrix follows it. Choose who
+        takes over before unlinking it.
+      </p>
+      <select
+        value={replacement}
+        onChange={(e) => setReplacement(e.target.value)}
+        className="rounded border border-zinc-300 bg-white p-1 text-xs"
+      >
+        {ordinaryOthers.map((other) => (
+          <option key={other.run_judge_id} value={other.run_judge_id}>
+            {shortModel(other.judge.model)} — {judgeLabel(other.judge)}
+          </option>
+        ))}
+      </select>
       <div className="flex gap-2">
         <button
           onClick={confirm}
           disabled={busy}
           className="cursor-pointer rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 disabled:opacity-50"
         >
-          {busy ? "Working…" : others.length > 0 ? "Unlink and hand over" : "Unlink"}
+          {busy ? "Working…" : "Unlink and hand over"}
         </button>
         <button
           onClick={() => setOpen(false)}
@@ -700,13 +710,28 @@ export function JudgeBlock({
   // Jamais un juge système : son échelle ne se lit pas comme une grille de
   // notation (voir `judgeLabel`), et il ne peut de toute façon pas devenir
   // principal.
+  //
+  // Un run garde toujours au moins un juge ordinaire vivant — `PrincipalUnlink`
+  // plus bas refuse de délier le dernier — donc `principal` ne devrait jamais
+  // manquer. S'il manque quand même (incohérence, run migré depuis l'ancien
+  // monde), se rabattre sur le premier juge ordinaire vivant plutôt que sur
+  // rien : c'est ce qui permet au bandeau ci-dessous de rester actionnable
+  // plutôt que de disparaître avec le seul geste qui répare la situation.
   const displayedJudge =
     others.find(
       (judge) =>
         judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
-    ) ?? principal;
+    ) ??
+    principal ??
+    others.find((judge) => judge.system_type === "ordinary");
+  // Vrai seulement s'il existe un principal ET que c'est lui qu'on regarde.
+  // Un principal devrait toujours exister (voir ci-dessus) : le cas
+  // `principal === undefined` n'est pas censé se produire, mais s'il
+  // survient, il doit se voir — jamais se faire passer en silence pour
+  // « on regarde déjà le principal », ce qui masquerait précisément le
+  // bandeau « Make principal » qui permet d'en sortir.
   const viewingPrincipal =
-    !principal || displayedJudge?.run_judge_id === principal.run_judge_id;
+    principal !== undefined && displayedJudge?.run_judge_id === principal.run_judge_id;
 
   // Le juge affiché fait foi une fois attaché — il peut différer de `config`
   // si un autre juge a repris le titre depuis le lancement, ou si on a choisi
