@@ -12,9 +12,11 @@ from playground.supabase_store import (
     abandon_unfinished_samples,
     fetch_run,
     finish_run,
+    load_live_run_judges,
     mark_sample_running,
     sample_filters,
     start_run,
+    write_judge_score,
     write_sample,
 )
 
@@ -243,3 +245,131 @@ def test_terminer_sur_un_arret_donne_le_statut_cancelled():
     corps = _body(envoyees[0])
     assert corps["status"] == "cancelled"
     assert corps["error"] is None
+
+
+# --- les juges -----------------------------------------------------------
+
+
+def test_les_juges_vivants_fusionnent_liaison_et_configuration():
+    """Deux requêtes : les liaisons vivantes, puis les juges qu'elles visent —
+    jamais l'inverse, et jamais plus."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/rest/v1/run_judges" in str(request.url):
+            assert "deleted_at=is.null" in str(request.url)
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "rj1",
+                        "run_id": "r1",
+                        "judge_id": "j1",
+                        "system_type": None,
+                        "is_principal": True,
+                        "created_at": "t",
+                    },
+                    {
+                        "id": "rj2",
+                        "run_id": "r1",
+                        "judge_id": "j2",
+                        "system_type": "awake",
+                        "is_principal": False,
+                        "created_at": "t",
+                    },
+                ],
+            )
+        assert "/rest/v1/judges" in str(request.url)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "j1",
+                    "criterion": "A-t-il cédé ?",
+                    "rubric": [{"value": 1, "meaning": "non"}],
+                    "model": "m",
+                    "system_type": None,
+                    "created_by": "a@b.c",
+                    "created_at": "t",
+                },
+                {
+                    "id": "j2",
+                    "criterion": None,
+                    "rubric": None,
+                    "model": "m",
+                    "system_type": "awake",
+                    "created_by": "a@b.c",
+                    "created_at": "t",
+                },
+            ],
+        )
+
+    supabase, envoyees = _supabase(handler)
+    juges = load_live_run_judges(supabase, "r1")
+
+    assert len(envoyees) == 2
+    assert len(juges) == 2
+    assert juges[0]["is_principal"] is True
+    assert juges[0]["judge"]["criterion"] == "A-t-il cédé ?"
+    assert juges[1]["system_type"] == "awake"
+    assert juges[1]["judge"]["system_type"] == "awake"
+
+
+def test_sans_liaison_vivante_les_juges_ne_sont_pas_lus():
+    """Une deuxième requête pour zéro liaison serait un aller-retour pour rien."""
+    supabase, envoyees = _supabase(_ok([]))
+    assert load_live_run_judges(supabase, "r1") == []
+    assert len(envoyees) == 1
+
+
+def test_une_liaison_sans_juge_correspondant_est_une_erreur_bruyante():
+    # Ne devrait jamais arriver — la clé étrangère composée l'interdit en
+    # base — mais une base qui viole sa propre contrainte doit casser fort,
+    # pas rendre une liaison sans juge en silence.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/rest/v1/run_judges" in str(request.url):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "rj1",
+                        "run_id": "r1",
+                        "judge_id": "j1",
+                        "system_type": None,
+                        "is_principal": True,
+                        "created_at": "t",
+                    }
+                ],
+            )
+        return httpx.Response(200, json=[])
+
+    supabase, _ = _supabase(handler)
+    with pytest.raises(SupabaseError, match="j1"):
+        load_live_run_judges(supabase, "r1")
+
+
+def test_ecrire_la_note_d_un_juge_vise_la_ligne_par_sa_cle_primaire():
+    supabase, envoyees = _supabase(_ok())
+    write_judge_score(supabase, "rj1", "s1", score=2.0, justification="clair.")
+
+    requete = envoyees[0]
+    assert requete.method == "PATCH"
+    assert "run_judge_id=eq.rj1" in str(requete.url)
+    assert "sample_id=eq.s1" in str(requete.url)
+    corps = _body(requete)
+    assert corps == {
+        "status": "done",
+        "score": 2.0,
+        "justification": "clair.",
+        "error": None,
+    }
+
+
+def test_ecrire_la_panne_d_un_juge_donne_le_statut_error():
+    supabase, envoyees = _supabase(_ok())
+    write_judge_score(
+        supabase, "rj1", "s1", score=None, justification="", error="le juge est tombé"
+    )
+    corps = _body(envoyees[0])
+    assert corps["status"] == "error"
+    assert corps["score"] is None
+    assert corps["error"] == "le juge est tombé"

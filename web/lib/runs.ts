@@ -6,11 +6,15 @@ import "server-only";
 import { overallMean, progressOf } from "./matrix";
 import { awarenessMissing } from "./awareness";
 import {
+  JUDGES,
+  JUDGE_SCORES,
   MCP_LAUNCHES,
   NOW,
   RUNS,
+  RUN_JUDGES,
   RUN_TAGS,
   SAMPLES,
+  SupabaseError,
   failStaleRuns,
   insert,
   remove,
@@ -22,6 +26,7 @@ import { estimateExtension } from "./extend-estimate";
 import { measureRun, type MeasurableCell } from "./measured-length";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import type { NewCell } from "./cells";
+import { judgesForLaunch } from "./launch-judges.ts";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
 import type {
@@ -31,7 +36,9 @@ import type {
   EvalSample,
   EvalScenario,
   ExtendRequest,
+  Judge,
   RunDetail,
+  RunJudge,
   RunSummary,
   TemperatureSpec,
   ToolSpec,
@@ -62,6 +69,18 @@ const SAMPLE_COLUMNS =
   "finished_at,cost_usd,usage";
 
 export class NotFound extends Error {}
+
+/** Délier le principal sans avoir désigné de remplaçant.
+ *
+ * La conception (docs/superpowers/specs/2026-09-06-juges-multiples.md) et le
+ * cahier des charges de cette tâche annoncent ce refus comme posé **par la
+ * base**. Ce n'est pas le cas : la migration réellement appliquée
+ * (`evals/supabase/migrations/20260906092100_create_judges_tables.sql`) ne
+ * pose qu'un index unique partiel garantissant qu'il n'y a jamais *deux*
+ * liaisons vivantes principales pour un run — rien n'y garantit qu'il en
+ * reste *au moins une*. Voir `unlinkJudge` et task-3-report.md : ce contrôle
+ * est un filet posé en application, faute d'un tel garde-fou en base. */
+export class PrincipalRequiresReplacement extends Error {}
 
 /** Combien d'essais chaque couple scénario × modèle porte : le moins, le plus.
  *
@@ -292,12 +311,159 @@ export async function createRun(
   // complétera plus tard verra ses nouvelles répétitions étalées à part, et
   // recalculer depuis `config.repetitions` réécrirait alors la température des
   // cases déjà payées.
-  await insert(
+  //
+  // `returning: true` : les identifiants des cases sont nécessaires juste en
+  // dessous pour poser les lignes de `judge_scores`, qui visent une
+  // conversation par son `id` et non par son quadruplet.
+  const samples = await insert<{ id: string }>(
     SAMPLES,
     cellsForRun(config).map((cell) => ({ run_id: run.id, ...cell })),
+    { returning: true },
   );
 
+  // Les juges du run, et toutes leurs lignes de score en attente — même
+  // geste que la matrice ci-dessus : rien n'est inventé plus tard, tout
+  // existe déjà, en pending. Trois inserts dans cet ordre précisément parce
+  // que chacune des tables suivantes porte une clé étrangère vers la
+  // précédente : judges avant run_judges, run_judges (et les échantillons,
+  // déjà en base) avant judge_scores.
+  const { judges, runJudges, judgeScores } = judgesForLaunch(
+    config,
+    run.id,
+    userEmail,
+    samples.map((sample) => sample.id),
+  );
+  await insert(JUDGES, judges);
+  await insert(RUN_JUDGES, runJudges);
+  await insert(JUDGE_SCORES, judgeScores);
+
   return run;
+}
+
+// --- les juges -----------------------------------------------------------
+
+/** Une liaison vivante, avec le juge qu'elle vise déjà résolu — ce qu'un
+ *  appelant a besoin de savoir pour afficher, exporter, ou noter au nom de ce
+ *  juge, sans jamais relire `judges` à côté. */
+export interface LiveRunJudge extends RunJudge {
+  judge: Judge;
+}
+
+/** LA fonction qui charge les juges d'un run — la seule autorisée à filtrer
+ *  `run_judges` sur `deleted_at`. Tout code qui a besoin de savoir quels
+ *  juges sont vivants sur un run — l'écran, un export, un outil MCP, le
+ *  devis, la configuration renvoyée à un agent — appelle celle-ci ; rien
+ *  d'autre dans ce dépôt n'a le droit de relire `run_judges` par un `select`
+ *  direct.
+ *
+ * Recopié dans deux lectures, ce filtre serait oublié dans une troisième :
+ * ce chantier a déjà produit deux exemples réels de cet oubli — un compte qui
+ * alourdissait douze routes qu'on n'avait pas vues, un formulaire qui
+ * ignorait un champ pendant tout un plan (voir la conception,
+ * docs/superpowers/specs/2026-09-06-juges-multiples.md). Un juge délié ne
+ * doit plus jamais ressortir nulle part ; le seul moyen de le garantir est
+ * qu'il n'y ait qu'un seul endroit à vérifier. `unlinkJudge` et
+ * `designatePrincipal`, juste en dessous, s'appuient sur elle plutôt que de
+ * relire `run_judges` chacun à sa façon. */
+export async function loadLiveRunJudges(runId: string): Promise<LiveRunJudge[]> {
+  const liaisons = await select<RunJudge>(RUN_JUDGES, {
+    run_id: `eq.${runId}`,
+    // Le seul endroit du dépôt qui filtre sur deleted_at pour cette table.
+    deleted_at: "is.null",
+    select: "*",
+    order: "created_at.asc",
+  });
+  if (liaisons.length === 0) return [];
+
+  const judgeIds = [...new Set(liaisons.map((liaison) => liaison.judge_id))];
+  const judges = await select<Judge>(JUDGES, {
+    id: `in.(${judgeIds.join(",")})`,
+    select: "*",
+  });
+  const byId = new Map(judges.map((judge) => [judge.id, judge]));
+
+  return liaisons.map((liaison) => {
+    const judge = byId.get(liaison.judge_id);
+    if (!judge) {
+      // Ne devrait jamais arriver : la clé étrangère composée
+      // `run_judges_judge_fk` garantit qu'un `judge_id` de `run_judges`
+      // existe toujours dans `judges`. Une base qui viole sa propre
+      // contrainte mérite un échec bruyant, pas une liaison sans juge.
+      throw new SupabaseError(
+        `run_judges ${liaison.id} references unknown judge ${liaison.judge_id}`,
+      );
+    }
+    return { ...liaison, judge };
+  });
+}
+
+/** Délie un juge d'un run : marque sa liaison supprimée, sans toucher au
+ *  juge — une configuration qui peut resservir — ni à `judge_scores`, qui
+ *  disparaît en cascade avec la liaison (voir le commentaire de la
+ *  migration sur `run_judges.deleted_at`).
+ *
+ * Idempotent : délier une liaison déjà déliée, ou un identifiant qui n'est
+ * plus vivant sur ce run, ne fait rien — `loadLiveRunJudges` ne la trouvant
+ * plus, il n'y a rien à protéger ni à écrire.
+ *
+ * Refuse de délier le principal tant qu'un remplaçant n'a pas été désigné
+ * par `designatePrincipal`. **Ce contrôle est posé ici, en application, et
+ * non par la base** : voir la docstring de `PrincipalRequiresReplacement`
+ * pour l'écart entre ce qu'annonçait le cahier des charges de cette tâche et
+ * ce que la migration réellement appliquée impose — seulement « jamais deux
+ * principaux vivants », jamais « toujours au moins un ».
+ *
+ * Sujet à une fenêtre de temps entre la lecture (`loadLiveRunJudges`, juste
+ * au-dessus) et l'écriture : deux allers-retours PostgREST, pas une
+ * transaction. Une liaison qui redeviendrait principale entre les deux
+ * échapperait au contrôle — rare, et pas pire que ce que fait déjà
+ * `retryFailed` un peu plus haut dans ce fichier, qui lit puis écrit de la
+ * même façon.
+ *
+ * Throws:
+ *   PrincipalRequiresReplacement: si `runJudgeId` désigne le principal
+ *   vivant de ce run.
+ */
+export async function unlinkJudge(runId: string, runJudgeId: string): Promise<void> {
+  const live = await loadLiveRunJudges(runId);
+  const target = live.find((liaison) => liaison.id === runJudgeId);
+  if (!target) return;
+
+  if (target.is_principal) {
+    throw new PrincipalRequiresReplacement(
+      `Judge ${runJudgeId} is the principal of run ${runId}; call designatePrincipal with a replacement before unlinking it.`,
+    );
+  }
+
+  await update(RUN_JUDGES, { deleted_at: NOW }, { id: `eq.${runJudgeId}` });
+}
+
+/** Désigne le principal d'un run : celui que la matrice affiche.
+ *
+ * Retire d'abord `is_principal` à l'ancien principal vivant, s'il y en a un,
+ * puis le pose sur `runJudgeId` — dans cet ordre, jamais l'inverse : poser le
+ * nouveau avant de retirer l'ancien ferait cohabiter, l'instant d'un aller-
+ * retour, deux liaisons vivantes principales pour le même run, ce que
+ * l'index unique partiel `run_judges_single_principal_idx` refuse. C'est
+ * cette contrainte-là, contrairement à celle d'`unlinkJudge`, que la base
+ * tient réellement — voir `RunJudge.is_principal` dans `types.ts`.
+ *
+ * Idempotent : désigner un juge déjà principal ne réécrit rien.
+ *
+ * Throws:
+ *   NotFound: si `runJudgeId` ne désigne aucune liaison vivante de ce run.
+ */
+export async function designatePrincipal(runId: string, runJudgeId: string): Promise<void> {
+  const live = await loadLiveRunJudges(runId);
+  const target = live.find((liaison) => liaison.id === runJudgeId);
+  if (!target) throw new NotFound(`Unknown live judge on run ${runId}: ${runJudgeId}`);
+  if (target.is_principal) return;
+
+  const current = live.find((liaison) => liaison.is_principal);
+  if (current) {
+    await update(RUN_JUDGES, { is_principal: false }, { id: `eq.${current.id}` });
+  }
+  await update(RUN_JUDGES, { is_principal: true }, { id: `eq.${runJudgeId}` });
 }
 
 /** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler : le

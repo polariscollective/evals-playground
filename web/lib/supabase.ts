@@ -25,6 +25,13 @@ export const MCP_LAUNCHES = "mcp_launches";
 // `ensureProfile` dans `profiles.ts`. Migrée et poussée dans
 // `polaris-supabase`, jamais ici.
 export const PROFILES = "profiles";
+// Les trois tables des juges multiples — voir `Judge`, `RunJudge` et
+// `JudgeScore` dans `types.ts`, et la migration
+// `evals/supabase/migrations/20260906092100_create_judges_tables.sql`.
+// Migrées et poussées dans `polaris-supabase`, jamais ici.
+export const JUDGES = "judges";
+export const RUN_JUDGES = "run_judges";
+export const JUDGE_SCORES = "judge_scores";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *

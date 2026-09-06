@@ -19,6 +19,13 @@ import httpx
 
 RUNS = "eval_runs"
 SAMPLES = "eval_samples"
+# Les trois tables des juges multiples — voir `Judge`, `RunJudge` et
+# `JudgeScore` dans eval_schemas.py, et la migration
+# `evals/supabase/migrations/20260906092100_create_judges_tables.sql` (dépôt
+# polaris-supabase), qui fait foi sur leur forme réelle.
+JUDGES = "judges"
+RUN_JUDGES = "run_judges"
+JUDGE_SCORES = "judge_scores"
 
 NOW = "now()"
 """Horodatage confié à la base plutôt qu'à l'horloge du job.
@@ -149,13 +156,18 @@ def pending_samples(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
     déjà été facturée une première fois, et c'est ce qu'elle porte ici qui
     permet à `batch_job.enregistre` d'ajouter la nouvelle passe à l'ancienne
     plutôt que de l'effacer.
+
+    `id` voyage aussi, depuis les juges multiples : c'est par lui que
+    `write_judge_score` vise `judge_scores.sample_id`, qui n'a pas
+    d'équivalent dans le quadruplet (`scenario_index`, `target_model`,
+    `repetition`) que le reste de ce module utilise pour désigner une case.
     """
     return supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
         status="eq.pending",
         select=(
-            "scenario_index,target_model,repetition,temperature,turns_done,"
+            "id,scenario_index,target_model,repetition,temperature,turns_done,"
             "messages,usage,cost_usd"
         ),
         order="scenario_index,target_model,repetition",
@@ -432,4 +444,101 @@ def abandon_unfinished_samples(
         {"status": "error", "error": reason, "finished_at": NOW},
         run_id=f"eq.{run_id}",
         status="in.(pending,running)",
+    )
+
+
+# --- les juges -----------------------------------------------------------
+
+
+def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
+    """LA fonction qui charge les juges d'un run — la seule autorisée à
+    filtrer `run_judges` sur `deleted_at`. Tout code qui a besoin de savoir
+    quels juges sont vivants sur un run — le moteur, un export, un outil MCP,
+    l'écran, le devis — appelle celle-ci ; rien d'autre n'a le droit de relire
+    `run_judges` par un `select` direct.
+
+    Recopié dans deux lectures, ce filtre serait oublié dans une troisième :
+    ce chantier a déjà produit deux exemples réels de cet oubli — un compte
+    qui alourdissait douze routes qu'on n'avait pas vues, un formulaire qui
+    ignorait un champ pendant tout un plan (voir la conception,
+    docs/superpowers/specs/2026-09-06-juges-multiples.md). Un juge délié ne
+    doit plus jamais ressortir nulle part ; le seul moyen de le garantir est
+    qu'il n'y ait qu'un seul endroit à vérifier.
+
+    Chaque élément rendu porte la liaison telle quelle, plus le juge qu'elle
+    vise sous la clé ``"judge"`` : l'appelant n'a jamais besoin d'aller lire
+    `judges` de son côté pour retrouver le critère, l'échelle, le modèle ou le
+    type système d'un juge vivant.
+    """
+    liaisons = supabase.select(
+        RUN_JUDGES,
+        run_id=f"eq.{run_id}",
+        # Le seul endroit du dépôt qui filtre sur deleted_at pour cette table.
+        deleted_at="is.null",
+        select="id,run_id,judge_id,system_type,is_principal,created_at",
+        order="created_at",
+    )
+    if not liaisons:
+        return []
+
+    judge_ids = sorted({str(liaison["judge_id"]) for liaison in liaisons})
+    judges = supabase.select(
+        JUDGES,
+        id="in.(" + ",".join(judge_ids) + ")",
+        select="id,criterion,rubric,model,system_type,created_by,created_at",
+    )
+    by_id = {judge["id"]: judge for judge in judges}
+
+    result: list[dict[str, Any]] = []
+    for liaison in liaisons:
+        judge = by_id.get(liaison["judge_id"])
+        if judge is None:
+            # Ne devrait jamais arriver : la clé étrangère composée
+            # `run_judges_judge_fk` garantit qu'un juge_id de run_judges
+            # existe toujours dans judges. Une base qui viole sa propre
+            # contrainte mérite un échec bruyant, pas une liaison silencieuse
+            # sans juge.
+            raise SupabaseError(
+                f"run_judges {liaison['id']!r} references unknown judge"
+                f" {liaison['judge_id']!r}."
+            )
+        result.append({**liaison, "judge": judge})
+    return result
+
+
+def write_judge_score(
+    supabase: Supabase,
+    run_judge_id: str,
+    sample_id: str,
+    *,
+    score: float | None,
+    justification: str,
+    error: str | None = None,
+) -> None:
+    """Écrit ce qu'un juge a trouvé sur une conversation.
+
+    Cible la ligne par sa clé primaire — le couple (`run_judge_id`,
+    `sample_id`), unique en base — plutôt que par un quadruplet comme
+    `write_sample` : `judge_scores` a un identifiant naturel que le reste de
+    ce module, construit avant les juges multiples, n'a pas besoin d'exposer.
+    La ligne existe déjà, en `pending`, depuis le lancement du run — voir
+    `judgesForLaunch` côté `web/lib/launch-judges.ts`, qui crée toutes les
+    lignes de score d'avance, comme `eval_samples` le fait déjà pour la
+    matrice. Cette fonction ne fait que la remplir ; elle n'en crée jamais.
+
+    `status` vaut `"error"` si `error` est renseigné, `"done"` sinon — que
+    `score` soit rempli ou non (conversation vide, ou note hors échelle).
+    Trois valeurs de statut en base pour quatre situations réelles : voir
+    `JudgeScoreStatus` dans eval_schemas.py.
+    """
+    supabase.update(
+        JUDGE_SCORES,
+        {
+            "status": "error" if error else "done",
+            "score": score,
+            "justification": justification,
+            "error": error,
+        },
+        run_judge_id=f"eq.{run_judge_id}",
+        sample_id=f"eq.{sample_id}",
     )
