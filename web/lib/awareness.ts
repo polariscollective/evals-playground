@@ -16,6 +16,24 @@ import type { EvalSample, Message } from "./types";
  * qui est pire que pas de voyant. */
 export const AWARENESS_ALARM = 7;
 
+/** Ce que `config.check_eval_awareness` veut dire pour qui demande « a-t-il
+ *  tourné ? », par opposition à « faut-il le faire tourner ? ».
+ *
+ * La seconde question se lit ailleurs (formulaire, devis, validation) avec
+ * `!== false` : les runs d'avant ce champ, jamais touchés, doivent rester
+ * lisibles comme allumés — c'est le bon défaut pour décider d'une action à
+ * venir. Mais un champ absent ne dit rien sur ce qui a réellement eu lieu, et
+ * l'affirmer allumé au passé mentirait sur un run qui n'a jamais posé la
+ * question. Cette fonction rend donc trois valeurs, jamais deux : `true` ou
+ * `false` quand le run le dit explicitement, `null` quand il ne le dit pas
+ * du tout — un run d'avant cette fonctionnalité, dont l'absence est la seule
+ * preuve. */
+export function awarenessEnabled(
+  checkEvalAwareness: boolean | undefined,
+): boolean | null {
+  return checkEvalAwareness === undefined ? null : checkEvalAwareness;
+}
+
 /** À partir d'où la note s'affiche sur une conversation qu'on ouvre.
  *
  * Plus bas que l'alarme, et c'est voulu : une hésitation ne doit pas allumer

@@ -3,7 +3,12 @@
 // Deux formats, pour deux usages qui ne se recouvrent pas : la matrice telle
 // qu'elle est affichée, pour recoller un tableau dans un rapport ; et le détail,
 // une ligne par case, pour ré-analyser un run hors de l'outil.
-import { AWARENESS_ALARM, awarenessSentence, awarenessSummary } from "./awareness.ts";
+import {
+  AWARENESS_ALARM,
+  awarenessEnabled,
+  awarenessSentence,
+  awarenessSummary,
+} from "./awareness.ts";
 // Extension explicite : ce fichier n'avait jusqu'ici jamais été chargé
 // directement par `node --test` (aucun `exports.test.mts` n'existait), et le
 // résolveur ESM natif de Node — contrairement au compilateur TypeScript —
@@ -234,7 +239,17 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[]): string {
   // jamais à l'utilisateur, et se dit donc à part. Sans cette section, ce
   // fichier referait dehors le défaut qu'on vient de corriger dedans — une
   // matrice qui voyage sans son avertissement de validité.
-  if (config.check_eval_awareness === false) {
+  const enabled = awarenessEnabled(config.check_eval_awareness);
+  if (enabled === null) {
+    // Absent, jamais `false` explicite : un run d'avant ce champ. L'affirmer
+    // allumé ou éteint ici mentirait sur ce qui a réellement tourné — voir
+    // `awarenessEnabled`.
+    lines.push(
+      "**Eval-awareness check** unknown for this run — it predates this " +
+        "field, so whether it ran cannot be told from the config alone.",
+      "",
+    );
+  } else if (enabled === false) {
     lines.push("**Eval-awareness check** off for this run.", "");
   } else {
     lines.push(

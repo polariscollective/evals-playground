@@ -116,7 +116,7 @@ test("une panne du juge d'éveil s'écrit dans sa propre colonne, jamais mêlée
 });
 
 test("le résumé markdown dit que le juge d'éveil était allumé, et son bilan", () => {
-  const text = runMarkdown(run(), [
+  const text = runMarkdown(run({ config: config({ check_eval_awareness: true }) }), [
     sample({ repetition: 0, awareness_score: AWARENESS_ALARM }),
     sample({ repetition: 1, awareness_score: 2 }),
   ]);
@@ -137,7 +137,21 @@ test("le résumé markdown dit clairement quand le juge d'éveil était éteint"
 });
 
 test("rien n'a encore été jugé : le bilan se tait plutôt que d'annoncer 0 sur 0", () => {
-  const text = runMarkdown(run(), [sample({ awareness_score: null })]);
+  const text = runMarkdown(run({ config: config({ check_eval_awareness: true }) }), [
+    sample({ awareness_score: null }),
+  ]);
   assert.match(text, /\*\*Eval-awareness check\*\* on/);
   assert.doesNotMatch(text, /0 of 0/);
+});
+
+test("un run d'avant ce champ ne prétend ni allumé ni éteint", () => {
+  // `config()` ne porte pas `check_eval_awareness` par défaut — exactement
+  // l'état d'un run enregistré avant cette fonctionnalité. Affirmer « on »
+  // ici (l'ancien comportement, avec `!== false`) mentirait : ce contrôle n'a
+  // jamais tourné sur ce run, et la phrase de bilan qui pourrait le montrer
+  // est justement absente puisque rien n'a été noté.
+  const text = runMarkdown(run(), [sample()]);
+  assert.doesNotMatch(text, /\*\*Eval-awareness check\*\* on/);
+  assert.doesNotMatch(text, /\*\*Eval-awareness check\*\* off/);
+  assert.match(text, /\*\*Eval-awareness check\*\* unknown/);
 });

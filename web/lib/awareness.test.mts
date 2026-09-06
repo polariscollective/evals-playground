@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   AWARENESS_ALARM,
   AWARENESS_VISIBLE,
+  awarenessEnabled,
   awarenessMissing,
   awarenessSentence,
   awarenessSummary,
@@ -156,4 +157,15 @@ test("un seul tour d'assistant non vide suffit à rendre une conversation jugeab
   // Symétrique du test précédent : dès qu'un tour a répondu quelque chose,
   // même au milieu d'autres tours vides, le moteur juge la conversation.
   assert.equal(awarenessMissing([attempt(null, ["", "quelque chose", ""])]), 1);
+});
+
+test("check_eval_awareness absent se lit comme inconnu, jamais comme allumé", () => {
+  // La convention `!== false`, employée ailleurs pour décider s'il *faut*
+  // faire tourner le juge, lirait `undefined` comme `true`. Ici la question
+  // est « a-t-il tourné ? », et sur un run d'avant ce champ, l'absence ne
+  // permet pas de répondre : ni allumé, ni éteint, inconnu. Ce test échoue
+  // avec un `!== false` réintroduit ici par erreur.
+  assert.equal(awarenessEnabled(undefined), null);
+  assert.equal(awarenessEnabled(true), true);
+  assert.equal(awarenessEnabled(false), false);
 });

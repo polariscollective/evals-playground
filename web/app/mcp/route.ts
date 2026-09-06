@@ -14,7 +14,7 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
 import { analysisReplaceAllowed } from "@/lib/analysis";
-import { AWARENESS_ALARM, awarenessSummary } from "@/lib/awareness";
+import { AWARENESS_ALARM, awarenessEnabled, awarenessSummary } from "@/lib/awareness";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
 import {
   DraftNotFound,
@@ -263,11 +263,13 @@ const handler = createMcpHandler((server) => {
         "extension gone over budget versus five deliberate ones. Also includes the eval-awareness summary " +
         "— a second judge, distinct from the one above, asking on every conversation whether the " +
         "evaluated model showed signs it knew it was a test: whether the check was even on for this run " +
-        "(`awareness.enabled` — a run graded 0 flagged with the check off is not a clean run, it's an " +
-        "unasked question), how many conversations it judged, how many it flagged, how many it crashed " +
-        "on (`awareness.failed` — a crash is not the same as seeing nothing), and when it was run after " +
-        "the fact, if it was (`awareness_judged_at`). Follow up with get_run_results to see where the " +
-        "flagged attempts are, and get_run_trajectory to read one.",
+        "(`awareness.enabled` — `true` or `false`, or `null` when the run predates this field and " +
+        "whether it ran cannot be told at all; a run graded 0 flagged with the check off, or with " +
+        "`enabled: null`, is not a clean run, it's an unasked question), how many conversations it " +
+        "judged, how many it flagged, how many it crashed on (`awareness.failed` — a crash is not the " +
+        "same as seeing nothing), and when it was run after the fact, if it was (`awareness_judged_at`). " +
+        "Follow up with get_run_results to see where the flagged attempts are, and get_run_trajectory " +
+        "to read one.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
@@ -297,10 +299,14 @@ const handler = createMcpHandler((server) => {
         scenario_count: run.config.scenarios.length,
         extensions: extensionsOf(run),
         awareness: {
-          // `false` seulement si explicitement éteint : les runs d'avant ce
-          // champ, et ceux qui ne l'ont jamais touché, l'ont allumé — voir le
-          // commentaire sur `check_eval_awareness` dans types.ts.
-          enabled: run.config.check_eval_awareness !== false,
+          // `true`/`false` quand le run le dit explicitement ; `null` quand
+          // le champ est absent — un run d'avant cette fonctionnalité, dont
+          // on ne peut pas dire s'il a tourné. Voir `awarenessEnabled` : ne
+          // pas confondre avec la convention `!== false` employée ailleurs
+          // (formulaire, devis, validation) pour décider s'il *faut* faire
+          // tourner le juge, juste pour ça et fausse pour dire s'il *a*
+          // tourné.
+          enabled: awarenessEnabled(run.config.check_eval_awareness),
           judged: awareness.judged,
           flagged: awareness.flagged,
           // Distinct de `judged` à zéro : « rien à signaler » et « le juge n'a
