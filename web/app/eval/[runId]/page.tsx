@@ -428,8 +428,25 @@ export default function EvalRunPage({
   // tourner — le même geste que celui qu'ouvrir une case déclenche déjà.
   // Par un timer, même raison que plus haut : un setState synchrone dans le
   // corps de l'effet est ce que react-hooks/set-state-in-effect interdit.
+  //
+  // Le garde-fou qui suit existe pour éviter de le déclencher quand il ne
+  // peut rien changer : si chaque case porte déjà une note d'éveil numérique,
+  // `awarenessMissing` vaudra zéro que les transcripts soient chargés ou non
+  // — plus rien ne peut lui faire dire autre chose — et le bouton restera cru
+  // sans eux. C'est le cas courant, le juge d'éveil étant allumé par défaut :
+  // sans ce garde-fou, ouvrir n'importe quel run déjà entièrement noté, ou un
+  // run où le juge n'a jamais tourné, ferait passer par le réseau tous les
+  // transcripts de la matrice — plusieurs kilo-octets par case, comme le dit
+  // déjà `SAMPLE_COLUMNS` dans `lib/runs.ts` — pour un bouton qui de toute
+  // façon ne s'affichera pas. L'enlever ne casserait rien d'observable, mais
+  // ferait payer ce coût réseau à chaque ouverture de la quasi-totalité des
+  // runs terminés.
   useEffect(() => {
     if (!detail || running || transcripts) return;
+    const allScored = detail.samples.every(
+      (sample) => typeof sample.awareness_score === "number",
+    );
+    if (allScored) return;
     const timer = setTimeout(() => setTranscripts(true), 0);
     return () => clearTimeout(timer);
   }, [detail, running, transcripts]);
