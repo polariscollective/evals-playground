@@ -99,7 +99,10 @@ export default function ScenariosPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <CopyButton
-              value={shown}
+              // Pendant l'édition, ce qu'on copie doit être ce qu'on regarde
+              // dans la zone de saisie — le brouillon, pas la version encore
+              // enregistrée en dessous.
+              value={editing ? draft : shown}
               title="Copy the scenario-writing advice"
               className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
             >
