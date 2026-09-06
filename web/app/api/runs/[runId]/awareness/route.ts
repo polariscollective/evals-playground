@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { awarenessMissing } from "@/lib/awareness";
 import { NotFound, failToStart, loadRun, recordStart, startAwarenessPass } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 
@@ -39,9 +38,18 @@ export async function POST(
       { status: 409 },
     );
   }
-  if (awarenessMissing(detail.samples) === 0) {
+  // `awareness_missing` vient de `loadRun`, qui l'a calculé sur ces mêmes
+  // transcripts : le recalculer ici recompterait la même chose une seconde
+  // fois. Ce zéro a deux causes bien distinctes — tout est déjà noté, ou rien
+  // n'est jugeable (conversation jamais jouée, ou bloquée sur chaque tour) —
+  // et le message ne doit affirmer ni l'une ni l'autre à tort.
+  if (detail.awareness_missing === 0) {
     return NextResponse.json(
-      { error: "Every conversation in this run already has an eval-awareness grade." },
+      {
+        error:
+          "No conversation in this run needs an eval-awareness grade — either " +
+          "every one already has one, or none of them has content to judge.",
+      },
       { status: 409 },
     );
   }

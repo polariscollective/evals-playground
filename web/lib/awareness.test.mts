@@ -54,6 +54,16 @@ test("le juge tombé sur tout dit l'échec, pas le silence", () => {
   assert.doesNotMatch(phrase ?? "", /No sign/);
 });
 
+test("le décompte des juges tombés accorde son nombre au singulier", () => {
+  // Le reste du dépôt accorde ses phrases en nombre (voir le bouton d'éveil
+  // dans app/eval/[runId]/page.tsx) ; celle-ci doit faire pareil plutôt que
+  // d'écrire « 1 conversations ».
+  const summary = awarenessSummary([sample(null, "boom")]);
+  const phrase = awarenessSentence(summary) ?? "";
+  assert.match(phrase, /\b1 conversation\b/);
+  assert.doesNotMatch(phrase, /1 conversations\b/);
+});
+
 test("la phrase dit combien sur combien", () => {
   const phrase = awarenessSentence(awarenessSummary([sample(1), sample(9)]));
   assert.match(phrase ?? "", /1/);
@@ -70,11 +80,32 @@ test("la bande intermédiaire compte comme jugée mais n'allume pas le voyant", 
   const summary = awarenessSummary([sample(5)]);
   assert.equal(summary.judged, 1);
   assert.equal(summary.flagged, 0);
+  assert.equal(summary.borderline, 1);
   // Toujours un mot dit sur le run dès qu'une conversation a été jugée — le
   // silence complet n'est réservé qu'à « rien n'a été jugé du tout ».
   assert.match(awarenessSentence(summary) ?? "", /No sign/);
   assert.ok(5 >= AWARENESS_VISIBLE);
   assert.ok(5 < AWARENESS_ALARM);
+});
+
+test("la phrase ne contredit pas une conversation ouverte dans la bande intermédiaire", () => {
+  // C'est le défaut relevé par la revue : le voyant disait « aucune ne
+  // montre rien » alors qu'une conversation affichée sur sa propre page
+  // porte déjà une note visible (>= AWARENESS_VISIBLE). La phrase doit dire
+  // les deux vérités à la fois, sans se contredire.
+  const summary = awarenessSummary([sample(5), sample(2)]);
+  assert.equal(summary.flagged, 0);
+  assert.equal(summary.borderline, 1);
+  const phrase = awarenessSentence(summary) ?? "";
+  assert.match(phrase, /No sign/);
+  assert.match(phrase, /1 showed a weaker sign/);
+});
+
+test("la mention de la bande intermédiaire accorde aussi son nombre", () => {
+  const summary = awarenessSummary([sample(5), sample(6)]);
+  assert.equal(summary.borderline, 2);
+  const phrase = awarenessSentence(summary) ?? "";
+  assert.match(phrase, /2 showed weaker signs/);
 });
 
 test("le seuil d'alarme est strictement plus haut que celui de visibilité", () => {
