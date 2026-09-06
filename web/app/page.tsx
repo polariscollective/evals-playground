@@ -152,6 +152,11 @@ function EvaluateForm() {
   const [averageOutputTokens, setAverageOutputTokens] = useState<number | null>(
     null,
   );
+  // Allumé par défaut, comme l'absence du champ dans une configuration
+  // enregistrée : c'est la même règle que lit `configProblem`, `!== false` et
+  // jamais `=== true`, et le formulaire doit s'y tenir tout autant qu'un
+  // fichier importé ou qu'un brouillon d'agent.
+  const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
   const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
@@ -222,6 +227,11 @@ function EvaluateForm() {
       // Ce que l'auteur du run avait annoncé disparaissait alors du dossier
       // au premier humain qui rouvrait le brouillon.
       setAverageOutputTokens(config.average_output_tokens ?? null);
+      // Même défaut qu'à l'écriture — `!== false`, jamais `=== true` — sinon
+      // rouvrir un brouillon où un agent avait explicitement éteint le juge
+      // le rallumerait ici, et « Save as draft » réécrirait l'interrupteur en
+      // base sans lui : c'est exactement le défaut que ce champ corrige.
+      setCheckEvalAwareness(config.check_eval_awareness !== false);
 
       // Un seul scénario tient dans le mode manuel ; au-delà, le formulaire
       // passe par un CSV, quitte à le reconstruire depuis les scénarios.
@@ -417,6 +427,7 @@ function EvaluateForm() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       average_output_tokens: averageOutputTokens ?? undefined,
+      check_eval_awareness: checkEvalAwareness,
       tools,
       max_tool_calls_per_turn: maxToolCalls,
       label: label.trim() || null,
@@ -452,6 +463,7 @@ function EvaluateForm() {
       judge,
       adversaryPrompt,
       averageOutputTokens,
+      checkEvalAwareness,
       tools,
       maxToolCalls,
       temperatureMin,
@@ -603,6 +615,10 @@ function EvaluateForm() {
     // Comme la reprise d'un run : le document porte la longueur déclarée, et
     // ne pas la lire ici la remplacerait en silence par celle du formulaire.
     setAverageOutputTokens(config.average_output_tokens ?? null);
+    // Un fichier importé est le seul moyen qu'a un humain d'éteindre ce juge
+    // depuis l'écran ; ne pas le lire ici le jetterait à l'arrivée, alors que
+    // le formulaire vient tout juste d'apprendre à l'afficher.
+    setCheckEvalAwareness(config.check_eval_awareness !== false);
 
     if (csv) {
       // Le fichier annonce un CSV sans le porter : le formulaire passe en mode
@@ -1306,6 +1322,24 @@ function EvaluateForm() {
           <strong>{scenarios.length * targets.length * repetitions}</strong>{" "}
           conversations
         </p>
+
+        {/* Le seul endroit d'où un humain peut éteindre ce juge : un agent le
+            fait déjà par la configuration qu'il soumet, et un fichier importé
+            le porte aussi, mais rien d'autre sur cet écran ne l'exposait. */}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={checkEvalAwareness}
+            onChange={(e) => setCheckEvalAwareness(e.target.checked)}
+          />
+          Check whether the evaluated model noticed it was being tested
+        </label>
+        <p className="text-xs text-zinc-500">
+          One extra judge call per graded conversation, included in the
+          estimate below. It can be run later on a run that skipped it, or
+          left off entirely — it never touches any other grade.
+        </p>
+
         <label className="flex flex-wrap items-center gap-2 text-sm">
           <span>Average output tokens:</span>
           <input
