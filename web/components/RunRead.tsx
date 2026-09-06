@@ -415,33 +415,39 @@ export function ScenarioModal({
 /** Une ligne pour un juge secondaire ou système, dans la liste des « autres
  *  juges » — jamais le principal, déjà affiché par le bloc qui l'entoure.
  *
- * `onUnlink`/`onDesignatePrincipal` absents : lecture pure, c'est ce qui garde
- * ce composant utilisable depuis la page publique — voir `JudgeBlock`.
- * « Make principal » n'apparaît jamais pour un juge système : sa question ne
- * vient pas de l'utilisateur et son échelle est fixe (voir la conception,
- * section « Les juges système ») — le désigner principal ferait lire la
- * matrice sur une question que personne n'a écrite. */
+ * `onUnlink`/`onView` absents : lecture pure, c'est ce qui garde ce composant
+ * utilisable depuis la page publique — voir `JudgeBlock`. « View » n'apparaît
+ * jamais pour un juge système : sa question ne vient pas de l'utilisateur et
+ * son échelle est fixe (voir la conception, section « Les juges système ») —
+ * l'afficher ferait lire la matrice sur une question que personne n'a écrite.
+ * Le bouton qui écrit — « Make principal » — a migré dans `JudgeBlock`, sur
+ * le juge affiché plutôt que sur chaque ligne : voir son commentaire. */
 function OtherJudgeRow({
   judge,
+  viewing,
   onUnlink,
-  onDesignatePrincipal,
+  onView,
 }: {
   judge: PublicRunJudgeView;
+  /** Ce juge est celui qu'on regarde en ce moment — un choix purement local
+   *  (voir `JudgeBlock`), jamais écrit en base. */
+  viewing: boolean;
   onUnlink?: (runJudgeId: string) => Promise<void>;
-  onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
+  onView?: (runJudgeId: string) => void;
 }) {
-  const [busy, setBusy] = useState<"unlink" | "principal" | null>(null);
+  const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const run = async (kind: "unlink" | "principal", action: () => Promise<void>) => {
-    setBusy(kind);
+  const unlink = async () => {
+    if (!onUnlink) return;
+    setBusy(true);
     setFailed(null);
     try {
-      await action();
+      await onUnlink(judge.run_judge_id);
     } catch (e) {
       setFailed((e as Error).message);
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -458,30 +464,84 @@ function OtherJudgeRow({
           </span>
         )}
       </div>
-      {(onUnlink || onDesignatePrincipal) && (
+      {(onUnlink || onView) && (
         <div className="flex items-center gap-2">
-          {onDesignatePrincipal && judge.system_type === "ordinary" && (
-            <button
-              onClick={() => run("principal", () => onDesignatePrincipal(judge.run_judge_id))}
-              disabled={busy !== null}
-              className="cursor-pointer rounded border px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50"
-            >
-              {busy === "principal" ? "Working…" : "Make principal"}
-            </button>
+          {onView && judge.system_type === "ordinary" && (
+            viewing ? (
+              <span className="rounded bg-zinc-900 px-2 py-0.5 text-xs text-white">
+                Viewing
+              </span>
+            ) : (
+              <button
+                onClick={() => onView(judge.run_judge_id)}
+                className="cursor-pointer rounded border px-2 py-0.5 text-xs hover:bg-zinc-100"
+              >
+                View
+              </button>
+            )
           )}
           {onUnlink && (
             <button
-              onClick={() => run("unlink", () => onUnlink(judge.run_judge_id))}
-              disabled={busy !== null}
+              onClick={unlink}
+              disabled={busy}
               className="cursor-pointer rounded border border-red-300 px-2 py-0.5 text-xs text-red-800 hover:bg-red-50 disabled:opacity-50"
             >
-              {busy === "unlink" ? "Working…" : "Unlink"}
+              {busy ? "Working…" : "Unlink"}
             </button>
           )}
         </div>
       )}
       {failed && (
         <p role="alert" className="w-full text-xs text-red-700">
+          {failed}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Le bouton qui fait du juge affiché le principal — la seule écriture de ce
+ *  fichier sur ce sujet, voir la route `.../judges/[id]/principal`
+ *  (`lib/runs.ts`, `designatePrincipal`). N'apparaît que dans `JudgeBlock`,
+ *  et seulement quand on regarde déjà un juge qui n'est pas le principal :
+ *  regarder n'est pas décider, mais ce bouton est le geste explicite qui fait
+ *  passer de l'un à l'autre. Un refus de la base (base d'un juge déjà délié,
+ *  par exemple par quelqu'un d'autre entretemps) arrive déjà traduit en
+ *  anglais lisible — voir `designatePrincipal`, qui classe le refus Postgres
+ *  via `run-judges-refusal.ts` avant qu'il n'atteigne cette route. */
+function MakePrincipalButton({
+  runJudgeId,
+  onDesignatePrincipal,
+}: {
+  runJudgeId: string;
+  onDesignatePrincipal: (runJudgeId: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await onDesignatePrincipal(runJudgeId);
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={run}
+        disabled={busy}
+        className="cursor-pointer rounded border border-amber-400 bg-white px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+      >
+        {busy ? "Working…" : "Make principal"}
+      </button>
+      {failed && (
+        <p role="alert" className="text-xs text-red-700">
           {failed}
         </p>
       )}
@@ -587,13 +647,21 @@ function PrincipalUnlink({
   );
 }
 
-/** Ce que le juge principal a été chargé de regarder, et l'accès aux autres
- *  juges non supprimés du run.
+/** Ce que le juge AFFICHÉ a été chargé de regarder — le principal par défaut,
+ *  un autre juge ordinaire si on a choisi de le regarder — et l'accès aux
+ *  autres juges non supprimés du run.
  *
- * `onUnlink`/`onDesignatePrincipal` : présents seulement sur l'écran privé
- * (`app/eval/[runId]/page.tsx`) — la page publique, via `SharedRunView.tsx`,
- * appelle ce composant sans eux, et n'affiche donc jamais de bouton
- * d'écriture, exactement comme le reste de ce fichier (voir son en-tête).
+ * Regarder n'est pas décider : `displayedRunJudgeId`/`onSelectDisplayed`
+ * changent ce que cet écran montre, jamais ce que la base tient pour
+ * principal. C'est `onDesignatePrincipal` qui écrit, et seulement quand on le
+ * demande explicitement — voir `MakePrincipalButton`, qui n'apparaît que
+ * lorsque le juge affiché n'est pas le principal.
+ *
+ * `onUnlink`/`onDesignatePrincipal`/`onSelectDisplayed` : présents seulement
+ * sur l'écran privé (`app/eval/[runId]/page.tsx`) — la page publique, via
+ * `SharedRunView.tsx`, appelle ce composant sans eux : pas de sélecteur ni de
+ * bouton d'écriture, exactement comme le reste de ce fichier (voir son
+ * en-tête). Elle ne montre donc jamais que le principal.
  *
  * `detail.judges` absent (voir l'en-tête de ce fichier) : ce bloc retombe sur
  * `config.criterion`/`config.rubric`/`config.models.judge` et ne montre
@@ -603,10 +671,19 @@ export function JudgeBlock({
   detail,
   onUnlink,
   onDesignatePrincipal,
+  displayedRunJudgeId,
+  onSelectDisplayed,
 }: {
   detail: PublicRunDetail;
   onUnlink?: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
   onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
+  /** Le juge qu'on regarde en ce moment. `undefined`, ou un identifiant qui
+   *  ne désigne plus un juge ordinaire vivant de ce run (délié entretemps,
+   *  ou jamais valide), retombe sur le principal — jamais une page blanche. */
+  displayedRunJudgeId?: string;
+  /** Change `displayedRunJudgeId` chez l'appelant. Absent : pas de sélecteur,
+   *  ce bloc n'affiche alors jamais que le principal. */
+  onSelectDisplayed?: (runJudgeId: string) => void;
 }) {
   const { config } = detail.run;
   const [showOthers, setShowOthers] = useState(false);
@@ -617,12 +694,27 @@ export function JudgeBlock({
     (judge) => judge.run_judge_id !== principal?.run_judge_id,
   );
 
-  // Le principal fait foi une fois attaché — il peut différer de `config` si
-  // un autre juge a repris le titre depuis le lancement. Sans lui, `config`
-  // reste la seule source, comme avant les juges multiples.
-  const judgeModel = principal?.judge.model ?? config.models.judge;
-  const criterion = principal?.judge.criterion ?? config.criterion;
-  const rubric = principal?.judge.rubric ?? config.rubric;
+  // Le juge affiché : celui choisi localement s'il vit encore et reste
+  // ordinaire, sinon le principal. Un choix de lecture, jamais une écriture —
+  // il se perd au rechargement et ne change rien pour personne d'autre.
+  // Jamais un juge système : son échelle ne se lit pas comme une grille de
+  // notation (voir `judgeLabel`), et il ne peut de toute façon pas devenir
+  // principal.
+  const displayedJudge =
+    others.find(
+      (judge) =>
+        judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
+    ) ?? principal;
+  const viewingPrincipal =
+    !principal || displayedJudge?.run_judge_id === principal.run_judge_id;
+
+  // Le juge affiché fait foi une fois attaché — il peut différer de `config`
+  // si un autre juge a repris le titre depuis le lancement, ou si on a choisi
+  // d'en regarder un autre. Sans lui, `config` reste la seule source, comme
+  // avant les juges multiples.
+  const judgeModel = displayedJudge?.judge.model ?? config.models.judge;
+  const criterion = displayedJudge?.judge.criterion ?? config.criterion;
+  const rubric = displayedJudge?.judge.rubric ?? config.rubric;
 
   // Le voyant d'éveil : un chiffre pour tout le run, calculé ici plutôt que
   // dans un en-tête séparé pour qu'il s'affiche pareil sur la page privée et
@@ -642,7 +734,9 @@ export function JudgeBlock({
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-medium">What the judge was asked</h2>
           <span className="font-mono text-xs text-zinc-500">
-            judged by {shortModel(judgeModel)}
+            {viewingPrincipal ? "judged by " : "viewing "}
+            {shortModel(judgeModel)}
+            {!viewingPrincipal && " — not the principal"}
             {detail.run.rejudged_at && " · re-judged since the run"}
             {detail.run.awareness_judged_at && " · eval-awareness added after the run"}
           </span>
@@ -663,6 +757,28 @@ export function JudgeBlock({
           </tbody>
         </table>
 
+        {/* Regarder n'est pas décider : ce bandeau ne dit rien tant qu'on
+            regarde le principal, mais dès qu'on regarde un autre juge, il dit
+            lequel des deux gestes est en train de se faire — et que l'export
+            et les outils MCP, eux, ne suivent que le principal, jamais ce
+            qu'on a choisi de regarder ici. */}
+        {!viewingPrincipal && displayedJudge && (
+          <div className="space-y-1 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            <p>
+              You are viewing {shortModel(displayedJudge.judge.model)}, not
+              this run&apos;s principal — the matrix below follows what you
+              view, but the export and the MCP tools still follow the
+              principal.
+            </p>
+            {onDesignatePrincipal && (
+              <MakePrincipalButton
+                runJudgeId={displayedJudge.run_judge_id}
+                onDesignatePrincipal={onDesignatePrincipal}
+              />
+            )}
+          </div>
+        )}
+
         {onUnlink && principal && (
           <PrincipalUnlink principal={principal} others={others} onUnlink={onUnlink} />
         )}
@@ -670,7 +786,9 @@ export function JudgeBlock({
         {/* Par défaut on ne voit que le principal, comme avant les juges
             multiples — voir la conception, section « L'écran ». `others`
             vide (aucun autre juge, ou `detail.judges` pas encore fourni) :
-            rien derrière le bouton, il ne sert donc à rien. */}
+            rien derrière le bouton, il ne sert donc à rien. C'est ici que
+            vit le sélecteur d'affichage — un juge ordinaire de cette liste
+            devient le juge affiché en cliquant « View », sans rien écrire. */}
         {others.length > 0 && (
           <div className="border-t border-zinc-200 pt-2">
             <button
@@ -686,8 +804,9 @@ export function JudgeBlock({
                   <OtherJudgeRow
                     key={judge.run_judge_id}
                     judge={judge}
+                    viewing={displayedJudge?.run_judge_id === judge.run_judge_id}
                     onUnlink={onUnlink}
-                    onDesignatePrincipal={onDesignatePrincipal}
+                    onView={onSelectDisplayed}
                   />
                 ))}
               </div>
@@ -1049,34 +1168,54 @@ export function RunMatrix({
   onViewChange,
   onOpenScenario,
   onOpenCell,
+  displayedRunJudgeId,
 }: {
   detail: PublicRunDetail;
   view: MatrixView;
   onViewChange: (next: MatrixView) => void;
   onOpenScenario: (index: number) => void;
   onOpenCell: (scenario: number, target: string) => void;
+  /** Le juge qu'on a choisi de regarder — voir `JudgeBlock`, qui porte le
+   *  sélecteur. `undefined`, ou un identifiant qui ne désigne plus un juge
+   *  ordinaire vivant de ce run, retombe sur le principal : c'est ce que
+   *  cette matrice affiche par défaut, et ce que l'appelant public
+   *  (`SharedRunView.tsx`, qui ne passe jamais cette prop) affiche toujours. */
+  displayedRunJudgeId?: string;
 }) {
   const { run, progress } = detail;
-  // Le principal fait foi pour l'échelle affichée — même repli que
-  // `JudgeBlock` tant que `detail.judges` n'est pas encore fourni.
   const principal = principalJudge(detail.judges);
-  const rubric = principal?.judge.rubric ?? run.config.rubric;
+  // Le juge affiché fait foi pour l'échelle : deux juges peuvent avoir écrit
+  // des échelles différentes, et une case ne se lit qu'à la lumière de celle
+  // du juge dont elle montre la note. Même repli que `JudgeBlock` tant que
+  // `detail.judges` n'est pas encore fourni, ou que `displayedRunJudgeId` ne
+  // désigne plus rien de vivant.
+  const displayedJudge =
+    detail.judges?.find(
+      (judge) =>
+        judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
+    ) ?? principal;
+  const rubric = displayedJudge?.judge.rubric ?? run.config.rubric;
   const targets = run.config.models.targets;
   // La liaison `awake` du run, pour le badge d'éveil des cases — même
   // recherche inline que `JudgeBlock` (voir son commentaire sur
   // `findAwakeJudge`).
   const awake = detail.judges?.find((judge) => judge.system_type === AWAKE_TYPE);
-  // La matrice suit le PRINCIPAL, jamais un autre juge non supprimé — voir la
-  // conception, section « L'écran », et le commentaire de tête de
-  // `lib/matrix.ts`. `awake` voyage à part : c'est un juge différent sur la
-  // même conversation, dont le badge d'éveil de chaque case ne dépend pas de
-  // ce que le principal a tranché.
+  // La matrice suit le juge AFFICHÉ — le principal par défaut, ou celui
+  // choisi dans `JudgeBlock` — jamais un autre juge non supprimé qu'on
+  // n'aurait pas demandé à voir. Un choix de lecture, jamais une écriture :
+  // rien ici ne change ce que la base tient pour principal, ni ce que
+  // l'export ou les outils MCP liront — voir la conception, section
+  // « L'écran », et le commentaire de tête de `lib/matrix.ts`, qui n'a pas à
+  // savoir que ce champ peut désormais porter un autre juge que le principal
+  // réel. `awake` voyage à part : c'est un juge différent sur la même
+  // conversation, dont le badge d'éveil de chaque case ne dépend pas de ce
+  // que le juge affiché a tranché.
   const matrixSamples: MatrixSample[] = detail.samples.map((sample) => ({
     scenario_index: sample.scenario_index,
     target_model: sample.target_model,
     status: sample.status,
     cost_usd: sample.cost_usd,
-    principal: verdictOf(principal, sample.id),
+    principal: verdictOf(displayedJudge, sample.id),
     awake: awake ? verdictOf(awake, sample.id) : undefined,
   }));
   const cells = cellsOf(
@@ -1097,7 +1236,7 @@ export function RunMatrix({
           sample.scenario_index === scenarioIndex &&
           sample.target_model === target,
       )
-      .map((sample) => verdictOf(principal, sample.id).score);
+      .map((sample) => verdictOf(displayedJudge, sample.id).score);
 
   // Décide si la légende doit expliquer le marqueur d'éveil : il est absent de
   // la quasi-totalité des runs, et une phrase qui parle d'un signe qu'on ne
@@ -1115,7 +1254,7 @@ export function RunMatrix({
       <ViewControls
         rubric={rubric}
         scores={detail.samples
-          .map((sample) => verdictOf(principal, sample.id).score)
+          .map((sample) => verdictOf(displayedJudge, sample.id).score)
           .filter((score): score is number => score !== null)}
         view={view}
         onChange={onViewChange}

@@ -331,6 +331,15 @@ export default function EvalRunPage({
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
   // pas un résultat, et un rechargement ramène la lecture ordinaire.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
+  // À travers quel juge on regarde la matrice — `undefined` veut dire « le
+  // principal ». Un choix d'affichage, pas une écriture : contrairement à
+  // `handleDesignatePrincipal` plus bas, rien ici ne touche la base, et un
+  // rechargement de la page l'oublie. C'est `JudgeBlock` qui porte le
+  // sélecteur ; `RunMatrix`, plus bas sur cette page, le reçoit pour suivre
+  // le même juge que ce que `JudgeBlock` explique.
+  const [displayedRunJudgeId, setDisplayedRunJudgeId] = useState<
+    string | undefined
+  >(undefined);
   const [openScenario, setOpenScenario] = useState<number | null>(null);
   const [stopping, setStopping] = useState(false);
   // Quelle action attend d'être confirmée, s'il y en a une.
@@ -1009,6 +1018,8 @@ export default function EvalRunPage({
         detail={detail}
         onUnlink={handleUnlinkJudge}
         onDesignatePrincipal={handleDesignatePrincipal}
+        displayedRunJudgeId={displayedRunJudgeId}
+        onSelectDisplayed={setDisplayedRunJudgeId}
       />
 
       <ToolsBlock detail={detail} />
@@ -1019,6 +1030,7 @@ export default function EvalRunPage({
         onViewChange={setView}
         onOpenScenario={setOpenScenario}
         onOpenCell={openCell}
+        displayedRunJudgeId={displayedRunJudgeId}
       />
 
       <NotesField
