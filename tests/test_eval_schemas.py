@@ -407,10 +407,11 @@ def test_un_juge_ordinaire_porte_son_critere_et_son_echelle():
         criterion="Le modèle a-t-il cédé ?",
         rubric=_rubric(),
         model="anthropic/claude-opus-5",
+        system_type="ordinary",
         created_by="a@b.com",
         created_at="2026-09-06T00:00:00Z",
     )
-    assert juge.system_type is None
+    assert juge.system_type == "ordinary"
     assert juge.criterion is not None
     assert juge.rubric is not None
 
@@ -442,7 +443,13 @@ def test_un_juge_systeme_avec_critere_est_refuse():
 
 def test_un_juge_ordinaire_sans_critere_est_refuse():
     with pytest.raises(ValidationError):
-        Judge(id="j4", model="m", created_by="a", created_at="t")
+        Judge(
+            id="j4",
+            model="m",
+            system_type="ordinary",
+            created_by="a",
+            created_at="t",
+        )
 
 
 def test_un_juge_ordinaire_sans_echelle_est_refuse():
@@ -452,16 +459,34 @@ def test_un_juge_ordinaire_sans_echelle_est_refuse():
             id="j5",
             criterion="Une question sans échelle.",
             model="m",
+            system_type="ordinary",
+            created_by="a",
+            created_at="t",
+        )
+
+
+def test_un_juge_sans_system_type_est_refuse():
+    # NOT NULL des deux côtés, sans valeur par défaut (migration 20260906113533,
+    # dépôt polaris-supabase) : omettre le champ doit échouer, pas retomber
+    # silencieusement sur un sentinelle choisi par le code.
+    with pytest.raises(ValidationError):
+        Judge(
+            id="j6",
+            criterion="Une question complète.",
+            rubric=_rubric(),
+            model="m",
             created_by="a",
             created_at="t",
         )
 
 
 def test_une_liaison_ordinaire_n_est_pas_principale_par_defaut():
-    liaison = RunJudge(id="rj1", run_id="r1", judge_id="j1", created_at="t")
+    liaison = RunJudge(
+        id="rj1", run_id="r1", judge_id="j1", system_type="ordinary", created_at="t"
+    )
     assert liaison.is_principal is False
     assert liaison.deleted_at is None
-    assert liaison.system_type is None
+    assert liaison.system_type == "ordinary"
 
 
 def test_une_ligne_de_score_nait_en_attente():

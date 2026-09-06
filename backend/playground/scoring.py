@@ -28,7 +28,7 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
 
-from playground.eval_schemas import EvalRunConfig, RubricLevel
+from playground.eval_schemas import EvalRunConfig, JudgeSystemType, RubricLevel
 from playground.generation import tool_call_arguments
 from playground.shared_data import load
 
@@ -82,19 +82,21 @@ class LiveJudge:
     à Supabase lui-même, il reçoit ce dont il a besoin — même principe que
     `EvalRunConfig`, déjà transmis en entier plutôt que relu.
 
-    `criterion`/`rubric` : nuls pour un juge système (`system_type` non nul),
-    exactement l'exclusion que `judges_ordinary_or_system_check` pose en base
-    et que `Judge._ordinaire_ou_systeme` fait respecter en Python
-    (eval_schemas.py). C'est ici, dans `judge_conversation`, que commence
-    l'invariant 3 : pour un juge système, ces deux champs ne sont même pas
-    regardés — sa question et son échelle viennent du code, retrouvées par
-    `system_type`, jamais de ce que porterait `criterion`/`rubric` ici, fût-ce
-    par erreur.
+    `criterion`/`rubric` : nuls pour un juge système (`system_type` différent
+    de `"ordinary"` — le sentinelle qui marque un juge ordinaire depuis la
+    migration `20260906113533`, dépôt polaris-supabase ; jamais `None`,
+    `system_type` étant NOT NULL en base des deux côtés), exactement
+    l'exclusion que `judges_ordinary_or_system_check` pose en base et que
+    `Judge._ordinaire_ou_systeme` fait respecter en Python (eval_schemas.py).
+    C'est ici, dans `judge_conversation`, que commence l'invariant 3 : pour
+    un juge système, ces deux champs ne sont même pas regardés — sa question
+    et son échelle viennent du code, retrouvées par `system_type`, jamais de
+    ce que porterait `criterion`/`rubric` ici, fût-ce par erreur.
     """
 
     run_judge_id: str
     model: str
-    system_type: str | None = None
+    system_type: JudgeSystemType = "ordinary"
     criterion: str | None = None
     rubric: list[RubricLevel] | None = None
 

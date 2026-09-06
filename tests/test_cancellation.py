@@ -73,7 +73,7 @@ class BaseQuiSAnnule(Supabase):
                     "criterion": CONFIG["criterion"],
                     "rubric": CONFIG["rubric"],
                     "model": CONFIG["models"]["judge"],
-                    "system_type": None,
+                    "system_type": "ordinary",
                     "created_by": "test@exemple.com",
                     "created_at": "t",
                 }
@@ -86,7 +86,7 @@ class BaseQuiSAnnule(Supabase):
                     "id": "rj-principal",
                     "run_id": "r1",
                     "judge_id": "j-principal",
-                    "system_type": None,
+                    "system_type": "ordinary",
                     "is_principal": True,
                     "deleted_at": None,
                     "created_at": "t",

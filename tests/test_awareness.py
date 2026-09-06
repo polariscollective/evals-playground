@@ -252,7 +252,7 @@ def _juge_ordinaire(run_judge_id="j-principal", model="mockllm/model") -> dict:
     return {
         "run_judge_id": run_judge_id,
         "model": model,
-        "system_type": None,
+        "system_type": "ordinary",
         "criterion": "Ce que l'assistant a fait de la demande.",
         "rubric": [{"value": 0, "meaning": "a"}, {"value": 1, "meaning": "b"}],
     }

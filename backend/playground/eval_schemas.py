@@ -50,12 +50,18 @@ class RubricLevel(BaseModel):
 # `JudgeSpec`, en bas de cette section, n'est pas un miroir de table : c'est
 # ce qu'un run porte en configuration, avant qu'aucune ligne n'existe.
 
-JudgeSystemType = Literal["awake"]
-"""Les types de juge système existants aujourd'hui. Un seul : `awake`, le
-contrôle d'éveil. Une valeur fermée plutôt qu'un `str` libre, pour que
-`Judge.system_type` et `RunJudge.system_type` — qui doivent toujours
-s'accorder, voir `RunJudge.system_type` — acceptent exactement les mêmes
-valeurs. D'autres types système viendront sans nouvelle migration ; ils
+JudgeSystemType = Literal["ordinary", "awake"]
+"""Le domaine exact de la colonne `system_type`, dans `judges` comme dans
+`run_judges` — celui du CHECK `judges_system_type_check` en base.
+
+`"ordinary"` est un sentinelle, pas un type système : il ne désigne aucun
+juge système, il dit seulement qu'il n'y en a pas. La colonne est NOT NULL
+des deux côtés, sans valeur par défaut, depuis la migration
+`20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql` (dépôt
+polaris-supabase) — avant elle, l'absence (`NULL`) jouait ce rôle, mais
+désarmait au passage la clé étrangère composée de `run_judges` (voir
+`RunJudge.system_type`). `"awake"`, le contrôle d'éveil, est le seul vrai
+type système aujourd'hui. D'autres viendront sans nouvelle migration ; ils
 s'ajoutent ici."""
 
 
@@ -65,9 +71,9 @@ class Judge(BaseModel):
 
     Un juge ordinaire porte sa question et son échelle, écrites par
     l'utilisateur : `criterion` et `rubric` sont alors renseignés. Un juge
-    système (`system_type` non nul) ne porte que son identité : sa question,
-    son échelle et son prompt vivent dans le code, retrouvés par ce type —
-    jamais en base. Les y mettre perdrait les trois garanties de git sur ce
+    système (`system_type` différent de `"ordinary"`) ne porte que son
+    identité : sa question, son échelle et son prompt vivent dans le code,
+    retrouvés par ce type — jamais en base. Les y mettre perdrait les trois garanties de git sur ce
     texte : le même partout, une relecture quand il change, un historique de
     qui l'a changé — et deux runs pourraient être notés par deux versions du
     texte sans que rien ne le dise.
@@ -89,10 +95,13 @@ class Judge(BaseModel):
     model: str
     """Le modèle qui juge."""
 
-    system_type: JudgeSystemType | None = None
-    """`None` pour un juge ordinaire. `"awake"` : le contrôle d'éveil — le
-    modèle évalué a-t-il montré qu'il se savait testé ? Sa question n'appartient
-    pas à l'utilisateur, son échelle est fixe de 1 à 10, et sa panne ne coûte
+    system_type: JudgeSystemType
+    """`"ordinary"` pour un juge ordinaire — sentinelle, jamais absent : la
+    colonne est NOT NULL en base, sans valeur par défaut, donc ce champ n'a
+    pas de valeur par défaut non plus ici ; toute construction d'un juge doit
+    la poser explicitement. `"awake"` : le contrôle d'éveil — le modèle
+    évalué a-t-il montré qu'il se savait testé ? Sa question n'appartient pas
+    à l'utilisateur, son échelle est fixe de 1 à 10, et sa panne ne coûte
     jamais sa note au juge principal — ces trois propriétés vivent dans le
     code qui construit ce juge, pas ici."""
 
@@ -106,6 +115,15 @@ class Judge(BaseModel):
     def _ordinaire_ou_systeme(self) -> "Judge":
         """Miroir de `judges_ordinary_or_system_check` : un juge système ne
         porte ni critère ni échelle ; un juge ordinaire porte les deux.
+
+        « Ce juge est-il système ? » se lisait par une absence
+        (`system_type is None`) ; depuis le sentinelle `"ordinary"`
+        (migration `20260906113533`, dépôt polaris-supabase), elle se lit
+        par une valeur : la comparaison doit rester `!= "ordinary"` /
+        `== "ordinary"`, jamais `is not None` / `is None`. Ne jamais revenir
+        à un test de nullité pour « simplifier » — `"ordinary"` n'est pas
+        nul, un tel test serait toujours faux, et tous les juges
+        deviendraient silencieusement des juges système.
         """
         porte_criterion = self.criterion is not None
         porte_rubric = self.rubric is not None
@@ -113,14 +131,14 @@ class Judge(BaseModel):
             raise ValueError(
                 "criterion and rubric must be both present or both absent."
             )
-        if self.system_type is not None and porte_criterion:
+        if self.system_type != "ordinary" and porte_criterion:
             raise ValueError(
                 "A system judge carries no criterion or rubric — its text"
                 " lives in the code, retrieved by system_type."
             )
-        if self.system_type is None and not porte_criterion:
+        if self.system_type == "ordinary" and not porte_criterion:
             raise ValueError(
-                "An ordinary judge (system_type is None) must carry a"
+                "An ordinary judge (system_type == 'ordinary') must carry a"
                 " criterion and a rubric."
             )
         return self
@@ -145,15 +163,27 @@ class RunJudge(BaseModel):
     run_id: str
     judge_id: str
 
-    system_type: JudgeSystemType | None = None
-    """Copie de `Judge.system_type` au moment de la liaison, épinglée en base
-    par une clé étrangère composée `(judge_id, system_type) -> judges (id,
-    system_type)` qui interdit toute divergence entre les deux. N'existe ici
-    que parce qu'un index unique partiel ne peut pas lire une colonne d'une
-    autre table : l'invariant « au plus une liaison vivante d'un system_type
-    donné par run » porte sur cette table-ci, il lui faut donc sa propre
-    colonne. Ne jamais l'écrire indépendamment du juge réellement lié — c'est
-    à la couche qui crée la liaison de la recopier depuis le `Judge` visé."""
+    system_type: JudgeSystemType
+    """Copie de `Judge.system_type` au moment de la liaison. `"ordinary"`
+    pour une liaison ordinaire — sentinelle, jamais absent : NOT NULL en
+    base des deux côtés, sans valeur par défaut, depuis la migration
+    `20260906113533` (dépôt polaris-supabase) ; toute construction d'une
+    liaison doit la poser explicitement, recopiée depuis le `Judge` visé,
+    jamais écrite indépendamment de lui.
+
+    Épinglée par la clé étrangère composée `(judge_id, system_type) ->
+    judges (id, system_type)`, qui interdit toute divergence entre les deux
+    copies — et, depuis la même migration, par une seconde clé étrangère
+    portant sur `judge_id` seul, qui garantit à elle seule l'existence du
+    juge visé : la composée ne le garantissait pas tant que `system_type`
+    pouvait être `NULL` (`MATCH SIMPLE` la considère satisfaite dès qu'une
+    colonne référençante est nulle, ce qui était le cas de la quasi-totalité
+    des liaisons avant le sentinelle).
+
+    N'existe ici que parce qu'un index unique partiel ne peut pas lire une
+    colonne d'une autre table : l'invariant « au plus une liaison vivante
+    d'un `system_type` donné (différent de `"ordinary"`) par run » porte sur
+    cette table-ci, il lui faut donc sa propre colonne."""
 
     is_principal: bool = False
     """Le juge que la matrice affiche. Exactement une liaison vivante

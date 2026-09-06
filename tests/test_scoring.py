@@ -226,7 +226,7 @@ def _juge_ordinaire(
     return {
         "run_judge_id": run_judge_id,
         "model": model,
-        "system_type": None,
+        "system_type": "ordinary",
         "criterion": criterion,
         "rubric": [level.model_dump() for level in (rubric or RUBRIC)],
     }
@@ -791,7 +791,7 @@ def test_judge_from_metadata_reconstruit_bien_la_rubrique():
     brut = _juge_ordinaire("j1", RUBRIC)
     juge = judge_from_metadata(brut)
     assert juge.run_judge_id == "j1"
-    assert juge.system_type is None
+    assert juge.system_type == "ordinary"
     assert [level.value for level in juge.rubric] == [0, 1, 2]
 
 
