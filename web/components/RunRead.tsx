@@ -15,16 +15,36 @@
 // composants prennent un `PublicRunDetail`, dont le `run` n'a pas de
 // `user_email`. Rendre l'adresse de qui a lancé le run est une erreur de
 // compilation, pas une vigilance à tenir.
+//
+// DEPUIS LES JUGES MULTIPLES — un doute porté au rapport de cette tâche, à
+// lire avant de toucher à `RunJudgeView` ci-dessous : ni `RunDetail` ni
+// `PublicRunDetail` (`lib/types.ts`, `lib/public-run.ts`) ne portent encore
+// les juges d'un run, et aucune route ne les lit — `loadRun` (`lib/runs.ts`)
+// n'attache que `progress`/`awareness_missing`, jamais les liaisons vivantes
+// ni leurs `judge_scores`. Cette tâche a pour mandat de ne toucher QUE ce
+// fichier et `app/eval/[runId]/page.tsx` ; elle ne peut donc pas poser cette
+// jointure elle-même, sur le modèle de `principalVerdictsByRun` dans
+// `runs.ts`, qui ne le fait que pour la liste des runs, jamais pour un run
+// ouvert. `RunJudgeView` ci-dessous est donc une extension LOCALE, purement
+// additive (`detail.judges?`) : tant que `RunDetail` ne la porte pas
+// réellement, `judges` vaut `undefined` partout et cet écran se comporte
+// exactement comme avant les juges multiples — le principal lu dans
+// `config`, aucun autre juge à montrer, aucune action à proposer. Le jour où
+// une route l'attache avec cette forme (`run_judge_id`, `judge`,
+// `is_principal`, `system_type`, `scores` par `sample_id`), tout ce fichier
+// s'anime sans qu'une ligne d'ici ne bouge.
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { ViewControls } from "@/components/ViewControls";
 import {
+  AWAKE_TYPE,
   AWARENESS_ALARM,
   AWARENESS_VISIBLE,
   awarenessSentence,
   awarenessSummary,
 } from "@/lib/awareness";
 import { cellsOf } from "@/lib/matrix";
+import type { MatrixSample } from "@/lib/matrix";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
@@ -38,7 +58,90 @@ import {
   sortedRubric,
 } from "@/lib/rubric";
 import type { PublicRun, PublicRunDetail } from "@/lib/public-run";
-import type { EvalSample, RubricLevel } from "@/lib/types";
+import type {
+  EvalSample,
+  Judge,
+  JudgeScoreStatus,
+  JudgeSystemTypeColumn,
+  RubricLevel,
+  SampleStatus,
+} from "@/lib/types";
+
+// --- Juges multiples : lecture, en attendant la jointure serveur -----------
+
+/** Le verdict d'UN juge sur UNE conversation, tel que cet écran voudrait le
+ *  lire — un sous-ensemble de `JudgeScore` (`lib/types.ts`), sans
+ *  `run_judge_id` ni `sample_id` : ceux-ci se déduisent déjà de où cette
+ *  valeur est rangée (voir `RunJudgeView.scores`). */
+export interface JudgeVerdictEntry {
+  status: JudgeScoreStatus;
+  score: number | null;
+  justification: string;
+  error: string | null;
+}
+
+/** Un juge vivant d'un run, tel que cet écran le lit : son identité
+ *  (`judge`), son rôle sur CE run (`is_principal`, `system_type` — copiés
+ *  depuis `run_judges`, voir son commentaire dans `lib/types.ts`), et son
+ *  verdict sur chaque conversation, par `sample_id`. Jamais un juge
+ *  supprimé : voir l'en-tête de ce fichier — c'est à la fonction qui pose
+ *  cette jointure, pas à celle-ci, de filtrer `deleted_at`. */
+export interface RunJudgeView {
+  run_judge_id: string;
+  judge: Judge;
+  is_principal: boolean;
+  system_type: JudgeSystemTypeColumn;
+  scores: Record<string, JudgeVerdictEntry>;
+}
+
+/** `PublicRunDetail`/`RunDetail`, augmenté de `judges` — voir l'en-tête de ce
+ *  fichier pour pourquoi cette extension reste locale et optionnelle. Un
+ *  `RunDetail` ordinaire (sans `judges`) satisfait ce type sans conversion :
+ *  c'est ce qui garde `SharedRunView.tsx` et `app/shared/[runId]/page.tsx` —
+ *  hors du périmètre de cette tâche — compatibles sans y toucher. */
+export type ReadDetail = PublicRunDetail & { judges?: RunJudgeView[] };
+
+/** En attente : ni notée, ni tombée. Le même défaut que `loadRuns` rend déjà
+ *  pour une conversation sans principal vivant (`principalVerdictsByRun`,
+ *  `runs.ts`) — une absence de donnée n'est pas différente, pour l'affichage,
+ *  d'un juge qui n'est pas encore passé. */
+const PENDING_VERDICT: JudgeVerdictEntry = {
+  status: "pending",
+  score: null,
+  justification: "",
+  error: null,
+};
+
+/** Le principal vivant de la liste, ou `undefined` — aucun juge encore
+ *  attaché (voir l'en-tête de ce fichier), ou improbable liste sans
+ *  principal. Au plus un principal vivant est garanti en base (invariant 1
+ *  de la conception) : cette fonction n'a donc jamais à choisir entre
+ *  plusieurs candidats. */
+export function principalJudge(judges: RunJudgeView[] | undefined): RunJudgeView | undefined {
+  return judges?.find((judge) => judge.is_principal);
+}
+
+/** Le verdict de ce juge sur cette conversation, ou l'attente par défaut si
+ *  le juge est absent (pas encore de jointure) ou n'a pas encore cette
+ *  ligne. */
+export function verdictOf(
+  judge: RunJudgeView | undefined,
+  sampleId: string,
+): JudgeVerdictEntry {
+  return judge?.scores[sampleId] ?? PENDING_VERDICT;
+}
+
+/** Un court libellé pour un juge, dans la liste des « autres juges ».
+ *
+ * Un juge système ne porte ni critère ni échelle en base — voir la
+ * conception, section « Les juges système » — son texte vit dans le code qui
+ * le construit, jamais ici : `awake` est le seul aujourd'hui. */
+function judgeLabel(judge: Judge): string {
+  if (judge.system_type === AWAKE_TYPE) return "Eval awareness (built-in, 1–10)";
+  const text = (judge.criterion ?? "").trim();
+  if (!text) return "(no criterion)";
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+}
 
 /** Combien d'essais chaque couple scénario × modèle a déjà : le moins, le plus.
  *
@@ -61,35 +164,46 @@ export function shortModel(id: string): string {
   return id.split("/").pop() ?? id;
 }
 
-/** La note d'une tentative, avec le sens que l'échelle lui donne.
+/** La note d'un juge sur une tentative, avec le sens que l'échelle lui donne.
  *
  * Le nombre seul ne dit rien : c'est la phrase écrite à côté qui porte le
- * jugement, et la relire ici évite de remonter à l'échelle à chaque tentative. */
+ * jugement, et la relire ici évite de remonter à l'échelle à chaque tentative.
+ *
+ * Depuis les juges multiples, la note ne vit plus sur la tentative
+ * (`EvalSample`) mais dans une ligne de `judge_scores`, une par juge — d'où
+ * `status` (l'exécution) et `verdict` (CE juge) séparés : une tentative qui a
+ * fini de jouer peut très bien n'avoir encore aucune note d'un juge donné.
+ * `executionError` reste celui de la tentative, jamais celui du juge — voir
+ * `EvalSample.error` dans `lib/types.ts` pour cette distinction. */
 export function ScoreBadge({
-  sample,
+  status,
+  verdict,
   rubric,
+  executionError,
 }: {
-  sample: EvalSample;
+  status: SampleStatus;
+  verdict: JudgeVerdictEntry;
   rubric: RubricLevel[];
+  executionError?: string | null;
 }) {
-  if (sample.status === "pending" || sample.status === "running") {
+  if (status === "pending" || status === "running") {
     return (
       <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-        {sample.status === "running" ? "running…" : "queued"}
+        {status === "running" ? "running…" : "queued"}
       </span>
     );
   }
-  if (sample.status === "error") {
+  if (status === "error") {
     return (
       <span
         className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-900"
-        title={sample.error ?? undefined}
+        title={executionError ?? undefined}
       >
         failed
       </span>
     );
   }
-  if (sample.status === "cancelled") {
+  if (status === "cancelled") {
     // Pas rouge : on a décidé de ne pas la faire, elle n'a pas cassé.
     return (
       <span className="rounded bg-zinc-200 px-2 py-0.5 text-xs text-zinc-700">
@@ -97,7 +211,19 @@ export function ScoreBadge({
       </span>
     );
   }
-  if (sample.score === null) {
+  if (verdict.status === "error") {
+    // Le juge est tombé sur une conversation par ailleurs valide — jamais
+    // confondu avec `status === "error"` ci-dessus, qui est l'exécution.
+    return (
+      <span
+        className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-900"
+        title={verdict.error ?? undefined}
+      >
+        judge failed
+      </span>
+    );
+  }
+  if (verdict.status === "pending" || verdict.score === null) {
     return (
       <span className="rounded border border-dashed border-zinc-400 px-2 py-0.5 text-xs text-zinc-500">
         not judged
@@ -106,7 +232,7 @@ export function ScoreBadge({
   }
 
   const { min, max } = rubricBounds(rubric);
-  const level = rubric.find((one) => one.value === sample.score);
+  const level = rubric.find((one) => one.value === verdict.score);
   const meaning = level?.meaning;
 
   if (level?.excluded) {
@@ -121,7 +247,7 @@ export function ScoreBadge({
       </span>
     );
   }
-  const t = max > min ? (sample.score - min) / (max - min) : 0;
+  const t = max > min ? (verdict.score - min) / (max - min) : 0;
   const style =
     t <= 0
       ? "bg-teal-100 text-teal-900"
@@ -132,7 +258,7 @@ export function ScoreBadge({
           : "bg-zinc-900 text-white";
   return (
     <span className={`rounded px-2 py-0.5 text-xs ${style}`} title={meaning}>
-      {formatValue(sample.score)}
+      {formatValue(verdict.score)}
       {meaning ? ` — ${meaning}` : ""}
     </span>
   );
@@ -316,34 +442,247 @@ export function ScenarioModal({
   );
 }
 
-export function JudgeBlock({ detail }: { detail: PublicRunDetail }) {
+/** Une ligne pour un juge secondaire ou système, dans la liste des « autres
+ *  juges » — jamais le principal, déjà affiché par le bloc qui l'entoure.
+ *
+ * `onUnlink`/`onDesignatePrincipal` absents : lecture pure, c'est ce qui garde
+ * ce composant utilisable depuis la page publique — voir `JudgeBlock`.
+ * « Make principal » n'apparaît jamais pour un juge système : sa question ne
+ * vient pas de l'utilisateur et son échelle est fixe (voir la conception,
+ * section « Les juges système ») — le désigner principal ferait lire la
+ * matrice sur une question que personne n'a écrite. */
+function OtherJudgeRow({
+  judge,
+  onUnlink,
+  onDesignatePrincipal,
+}: {
+  judge: RunJudgeView;
+  onUnlink?: (runJudgeId: string) => Promise<void>;
+  onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<"unlink" | "principal" | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const run = async (kind: "unlink" | "principal", action: () => Promise<void>) => {
+    setBusy(kind);
+    setFailed(null);
+    try {
+      await action();
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 py-2 text-sm first:border-t-0">
+      <div>
+        <span className="font-mono text-xs text-zinc-500">
+          {shortModel(judge.judge.model)}
+        </span>{" "}
+        <span className="text-zinc-700">{judgeLabel(judge.judge)}</span>
+        {judge.system_type !== "ordinary" && (
+          <span className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] tracking-wide text-zinc-500 uppercase">
+            system
+          </span>
+        )}
+      </div>
+      {(onUnlink || onDesignatePrincipal) && (
+        <div className="flex items-center gap-2">
+          {onDesignatePrincipal && judge.system_type === "ordinary" && (
+            <button
+              onClick={() => run("principal", () => onDesignatePrincipal(judge.run_judge_id))}
+              disabled={busy !== null}
+              className="cursor-pointer rounded border px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:opacity-50"
+            >
+              {busy === "principal" ? "Working…" : "Make principal"}
+            </button>
+          )}
+          {onUnlink && (
+            <button
+              onClick={() => run("unlink", () => onUnlink(judge.run_judge_id))}
+              disabled={busy !== null}
+              className="cursor-pointer rounded border border-red-300 px-2 py-0.5 text-xs text-red-800 hover:bg-red-50 disabled:opacity-50"
+            >
+              {busy === "unlink" ? "Working…" : "Unlink"}
+            </button>
+          )}
+        </div>
+      )}
+      {failed && (
+        <p role="alert" className="w-full text-xs text-red-700">
+          {failed}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Délier le principal, avec le remplaçant que le déclencheur en base exige
+ *  dans le même geste dès qu'il reste d'autres juges vivants — voir
+ *  `unlinkJudge` dans `lib/runs.ts`. Sans autre juge vivant, délier est permis
+ *  directement : le run reste sans aucun juge, un état valide.
+ *
+ * N'apparaît que si `onUnlink` est fourni — jamais sur la page publique. */
+function PrincipalUnlink({
+  principal,
+  others,
+  onUnlink,
+}: {
+  principal: RunJudgeView;
+  others: RunJudgeView[];
+  onUnlink: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [replacement, setReplacement] = useState(others[0]?.run_judge_id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const confirm = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await onUnlink(principal.run_judge_id, others.length > 0 ? replacement : undefined);
+      setOpen(false);
+    } catch (e) {
+      setFailed((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="cursor-pointer text-xs text-zinc-500 underline hover:text-zinc-900"
+      >
+        Unlink this judge…
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm">
+      {others.length > 0 ? (
+        <>
+          <p className="text-xs text-amber-900">
+            {/* Le déclencheur différé refuse de délier le principal sans
+                remplaçant tant qu'il reste d'autres juges vivants — voir le
+                commentaire d'`unlinkJudge`, `lib/runs.ts`. Le choisir ici est
+                donc obligatoire, pas une simple commodité. */}
+            This judge is the principal — the matrix follows it. Choose who
+            takes over before unlinking it.
+          </p>
+          <select
+            value={replacement}
+            onChange={(e) => setReplacement(e.target.value)}
+            className="rounded border border-zinc-300 bg-white p-1 text-xs"
+          >
+            {others.map((other) => (
+              <option key={other.run_judge_id} value={other.run_judge_id}>
+                {shortModel(other.judge.model)} — {judgeLabel(other.judge)}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : (
+        <p className="text-xs text-amber-900">
+          This is the only judge left on this run. Unlinking it leaves the run
+          without any judge — the matrix will show nothing new.
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          onClick={confirm}
+          disabled={busy}
+          className="cursor-pointer rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {busy ? "Working…" : others.length > 0 ? "Unlink and hand over" : "Unlink"}
+        </button>
+        <button
+          onClick={() => setOpen(false)}
+          className="cursor-pointer text-xs underline"
+        >
+          cancel
+        </button>
+      </div>
+      {failed && (
+        <p role="alert" className="text-xs text-red-700">
+          {failed}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Ce que le juge principal a été chargé de regarder, et l'accès aux autres
+ *  juges non supprimés du run.
+ *
+ * `onUnlink`/`onDesignatePrincipal` : présents seulement sur l'écran privé
+ * (`app/eval/[runId]/page.tsx`) — la page publique, via `SharedRunView.tsx`,
+ * appelle ce composant sans eux, et n'affiche donc jamais de bouton
+ * d'écriture, exactement comme le reste de ce fichier (voir son en-tête).
+ *
+ * `detail.judges` absent (voir l'en-tête de ce fichier) : ce bloc retombe sur
+ * `config.criterion`/`config.rubric`/`config.models.judge` et ne montre
+ * aucun autre juge — le comportement d'avant les juges multiples, à la
+ * lettre. */
+export function JudgeBlock({
+  detail,
+  onUnlink,
+  onDesignatePrincipal,
+}: {
+  detail: ReadDetail;
+  onUnlink?: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
+  onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
+}) {
   const { config } = detail.run;
+  const [showOthers, setShowOthers] = useState(false);
+
+  const judges = detail.judges;
+  const principal = principalJudge(judges);
+  const others = (judges ?? []).filter(
+    (judge) => judge.run_judge_id !== principal?.run_judge_id,
+  );
+
+  // Le principal fait foi une fois attaché — il peut différer de `config` si
+  // un autre juge a repris le titre depuis le lancement. Sans lui, `config`
+  // reste la seule source, comme avant les juges multiples.
+  const judgeModel = principal?.judge.model ?? config.models.judge;
+  const criterion = principal?.judge.criterion ?? config.criterion;
+  const rubric = principal?.judge.rubric ?? config.rubric;
+
   // Le voyant d'éveil : un chiffre pour tout le run, calculé ici plutôt que
   // dans un en-tête séparé pour qu'il s'affiche pareil sur la page privée et
   // sur la page publique, qui partagent ce composant mais n'ont pas le même
   // en-tête. Quand il sonne, on descend dans les conversations — d'où le fait
-  // qu'il ne dise pas lesquelles.
-  const awareness = awarenessSummary(detail.samples);
+  // qu'il ne dise pas lesquelles. La liaison `awake` du run, si le run en a
+  // une — voir `findAwakeJudge`, `lib/awareness.ts`, dont la contrainte
+  // générique n'accepte plus `RunJudgeView` : `AWAKE_TYPE` seul, comme
+  // `lib/runs.ts` le fait déjà pour la même raison.
+  const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
+  const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
   const awarenessPhrase = awarenessSentence(awareness);
+
   return (
     <>
       <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-medium">What the judge was asked</h2>
           <span className="font-mono text-xs text-zinc-500">
-            judged by {shortModel(config.models.judge)}
+            judged by {shortModel(judgeModel)}
             {detail.run.rejudged_at && " · re-judged since the run"}
             {detail.run.awareness_judged_at && " · eval-awareness added after the run"}
           </span>
         </div>
 
-        <p className="whitespace-pre-wrap text-sm text-zinc-800">
-          {config.criterion}
-        </p>
+        <p className="whitespace-pre-wrap text-sm text-zinc-800">{criterion}</p>
 
         <table className="text-sm">
           <tbody>
-            {sortedRubric(config.rubric).map((level) => (
+            {sortedRubric(rubric).map((level) => (
               <tr key={level.value}>
                 <td className="py-0.5 pr-3 text-right align-top font-mono text-xs text-zinc-500">
                   {formatValue(level.value)}
@@ -353,6 +692,38 @@ export function JudgeBlock({ detail }: { detail: PublicRunDetail }) {
             ))}
           </tbody>
         </table>
+
+        {onUnlink && principal && (
+          <PrincipalUnlink principal={principal} others={others} onUnlink={onUnlink} />
+        )}
+
+        {/* Par défaut on ne voit que le principal, comme avant les juges
+            multiples — voir la conception, section « L'écran ». `others`
+            vide (aucun autre juge, ou `detail.judges` pas encore fourni) :
+            rien derrière le bouton, il ne sert donc à rien. */}
+        {others.length > 0 && (
+          <div className="border-t border-zinc-200 pt-2">
+            <button
+              onClick={() => setShowOthers((visible) => !visible)}
+              className="cursor-pointer text-xs text-zinc-600 underline hover:text-zinc-900"
+            >
+              {showOthers ? "Hide" : "Show"} {others.length} other judge
+              {others.length > 1 ? "s" : ""}
+            </button>
+            {showOthers && (
+              <div className="mt-2 space-y-1">
+                {others.map((judge) => (
+                  <OtherJudgeRow
+                    key={judge.run_judge_id}
+                    judge={judge}
+                    onUnlink={onUnlink}
+                    onDesignatePrincipal={onDesignatePrincipal}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {awarenessPhrase && (
@@ -377,7 +748,7 @@ export function DetailModal({
   loading,
   onClose,
 }: {
-  detail: PublicRunDetail;
+  detail: ReadDetail;
   scenarioIndex: number;
   target: string;
   loading: boolean;
@@ -390,6 +761,9 @@ export function DetailModal({
     (sample) =>
       sample.scenario_index === scenarioIndex && sample.target_model === target,
   );
+  // Le principal fait foi pour l'échelle de cette fenêtre — même repli que
+  // `JudgeBlock` quand `detail.judges` n'est pas encore fourni.
+  const rubric = principalJudge(detail.judges)?.judge.rubric ?? detail.run.config.rubric;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -515,7 +889,8 @@ export function DetailModal({
           <AttemptView
             key={attempt.id}
             attempt={attempt}
-            rubric={detail.run.config.rubric}
+            judges={detail.judges}
+            rubric={rubric}
             runTurns={detail.run.config.turns}
           />
         ))}
@@ -526,10 +901,17 @@ export function DetailModal({
 
 export function AttemptView({
   attempt,
+  judges,
   rubric,
   runTurns,
 }: {
   attempt: EvalSample;
+  /** Tous les juges vivants du run, avec leur verdict sur chaque
+   *  conversation — voir `RunJudgeView`. `undefined` tant qu'aucune route ne
+   *  les fournit encore (voir l'en-tête de ce fichier) : cette vue retombe
+   *  alors sur l'attente par défaut pour le principal, et ne montre aucun
+   *  autre juge. */
+  judges: RunJudgeView[] | undefined;
   rubric: RubricLevel[];
   /** La profondeur demandée par le run, pour ne signaler que les tentatives
    *  qui s'en écartent — voir le commentaire sur `turns_done` plus bas. */
@@ -538,6 +920,18 @@ export function AttemptView({
   // Repliée par défaut : dix répétitions de dix tours feraient un mur de texte
   // où l'on ne retrouve plus la tentative qu'on cherchait.
   const [open, setOpen] = useState(false);
+
+  const principal = principalJudge(judges);
+  const principalVerdict = verdictOf(principal, attempt.id);
+  const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
+  const awakeVerdict = awake ? verdictOf(awake, attempt.id) : null;
+  // Les juges non supprimés de ce run, sauf le principal (déjà affiché
+  // ci-dessus) et l'éveil (traité à part, avec son propre seuil de
+  // visibilité) — c'est cette liste qu'une conversation dépliée doit encore
+  // montrer pour tenir « tous les juges non supprimés » de la conception.
+  const others = (judges ?? []).filter(
+    (judge) => judge.run_judge_id !== principal?.run_judge_id && judge !== awake,
+  );
 
   return (
     <div className="rounded border border-zinc-300">
@@ -549,7 +943,12 @@ export function AttemptView({
         <span className="text-sm font-medium">
           Attempt {attempt.repetition + 1}
         </span>
-        <ScoreBadge sample={attempt} rubric={rubric} />
+        <ScoreBadge
+          status={attempt.status}
+          verdict={principalVerdict}
+          rubric={rubric}
+          executionError={attempt.error}
+        />
         {attempt.messages.some(
           (m) => m.role === "assistant" && !m.content.trim(),
         ) && (
@@ -582,15 +981,15 @@ export function AttemptView({
         </span>
       </button>
 
-      {/* La justification du juge reste visible repliée : c'est elle qui dit
-          si cette tentative mérite qu'on l'ouvre. */}
-      {attempt.justification && (
+      {/* La justification du juge principal reste visible repliée : c'est
+          elle qui dit si cette tentative mérite qu'on l'ouvre. */}
+      {principalVerdict.justification && (
         <p className="px-3 pb-3 text-sm text-zinc-700">
-          <span className="font-medium">Judge:</span> {attempt.justification}
+          <span className="font-medium">Judge:</span> {principalVerdict.justification}
         </p>
       )}
-      {attempt.error && (
-        <p className="px-3 pb-3 text-sm text-red-800">{attempt.error}</p>
+      {principalVerdict.error && (
+        <p className="px-3 pb-3 text-sm text-red-800">{principalVerdict.error}</p>
       )}
 
       {/* Repliée, l'éveil ne s'affiche qu'au-dessus du seuil de visibilité, et
@@ -603,25 +1002,56 @@ export function AttemptView({
           lisible mais en ton neutre — c'est la bande que la revue a jugée
           trop floue pour affirmer quoi que ce soit ; l'ambre reste réservé aux
           notes qui ont fait sonner le voyant du run. */}
-      {attempt.awareness_error ? (
+      {awakeVerdict?.error ? (
         <p className="px-3 pb-3 text-xs text-zinc-400">
-          Eval-awareness judge failed: {attempt.awareness_error}
+          Eval-awareness judge failed: {awakeVerdict.error}
         </p>
-      ) : typeof attempt.awareness_score === "number" &&
-        (open || attempt.awareness_score >= AWARENESS_VISIBLE) ? (
+      ) : typeof awakeVerdict?.score === "number" &&
+        (open || awakeVerdict.score >= AWARENESS_VISIBLE) ? (
         <p
           className={
-            attempt.awareness_score >= AWARENESS_ALARM
+            awakeVerdict.score >= AWARENESS_ALARM
               ? "px-3 pb-3 text-sm font-medium text-amber-700"
               : "px-3 pb-3 text-sm text-zinc-600"
           }
         >
           <span className="font-semibold">
-            Eval awareness {attempt.awareness_score}/10:
+            Eval awareness {awakeVerdict.score}/10:
           </span>{" "}
-          {attempt.awareness_justification}
+          {awakeVerdict.justification}
         </p>
       ) : null}
+
+      {/* Une conversation dépliée montre le verdict de TOUS les juges non
+          supprimés — le principal et l'éveil sont déjà au-dessus, quel que
+          soit l'état d'ouverture ; les juges secondaires n'apparaissent
+          qu'ici, une fois dépliée, comme le reste de la conversation. */}
+      {open && others.length > 0 && (
+        <div className="space-y-2 border-t border-zinc-200 p-3">
+          <p className="text-xs font-medium text-zinc-500">Other judges</p>
+          {others.map((judge) => {
+            const verdict = verdictOf(judge, attempt.id);
+            return (
+              <div key={judge.run_judge_id} className="space-y-0.5 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-zinc-500">
+                    {shortModel(judge.judge.model)}
+                  </span>
+                  <ScoreBadge
+                    status={attempt.status}
+                    verdict={verdict}
+                    rubric={judge.judge.rubric ?? []}
+                  />
+                </div>
+                {verdict.justification && (
+                  <p className="text-zinc-700">{verdict.justification}</p>
+                )}
+                {verdict.error && <p className="text-red-800">{verdict.error}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {open && (
         <div className="space-y-2 border-t border-zinc-200 p-3">
@@ -650,17 +1080,37 @@ export function RunMatrix({
   onOpenScenario,
   onOpenCell,
 }: {
-  detail: PublicRunDetail;
+  detail: ReadDetail;
   view: MatrixView;
   onViewChange: (next: MatrixView) => void;
   onOpenScenario: (index: number) => void;
   onOpenCell: (scenario: number, target: string) => void;
 }) {
   const { run, progress } = detail;
-  const rubric = run.config.rubric;
+  // Le principal fait foi pour l'échelle affichée — même repli que
+  // `JudgeBlock` tant que `detail.judges` n'est pas encore fourni.
+  const principal = principalJudge(detail.judges);
+  const rubric = principal?.judge.rubric ?? run.config.rubric;
   const targets = run.config.models.targets;
+  // La liaison `awake` du run, pour le badge d'éveil des cases — même
+  // recherche inline que `JudgeBlock` (voir son commentaire sur
+  // `findAwakeJudge`).
+  const awake = detail.judges?.find((judge) => judge.system_type === AWAKE_TYPE);
+  // La matrice suit le PRINCIPAL, jamais un autre juge non supprimé — voir la
+  // conception, section « L'écran », et le commentaire de tête de
+  // `lib/matrix.ts`. `awake` voyage à part : c'est un juge différent sur la
+  // même conversation, dont le badge d'éveil de chaque case ne dépend pas de
+  // ce que le principal a tranché.
+  const matrixSamples: MatrixSample[] = detail.samples.map((sample) => ({
+    scenario_index: sample.scenario_index,
+    target_model: sample.target_model,
+    status: sample.status,
+    cost_usd: sample.cost_usd,
+    principal: verdictOf(principal, sample.id),
+    awake: awake ? verdictOf(awake, sample.id) : undefined,
+  }));
   const cells = cellsOf(
-    detail.samples,
+    matrixSamples,
     run.config.scenarios.length,
     rubric,
     view,
@@ -677,7 +1127,7 @@ export function RunMatrix({
           sample.scenario_index === scenarioIndex &&
           sample.target_model === target,
       )
-      .map((sample) => sample.score);
+      .map((sample) => verdictOf(principal, sample.id).score);
 
   // Décide si la légende doit expliquer le marqueur d'éveil : il est absent de
   // la quasi-totalité des runs, et une phrase qui parle d'un signe qu'on ne
@@ -695,7 +1145,7 @@ export function RunMatrix({
       <ViewControls
         rubric={rubric}
         scores={detail.samples
-          .map((sample) => sample.score)
+          .map((sample) => verdictOf(principal, sample.id).score)
           .filter((score): score is number => score !== null)}
         view={view}
         onChange={onViewChange}

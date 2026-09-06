@@ -32,6 +32,7 @@ import { PLAIN_VIEW } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
+import type { ExtendPanelSample } from "@/components/ExtendPanel";
 import { CopyButton, CopyId, CopyIcon } from "@/components/CopyButton";
 import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
 import {
@@ -40,8 +41,11 @@ import {
   RunMatrix,
   ScenarioModal,
   ToolsBlock,
+  principalJudge,
   repetitionRange,
+  verdictOf,
 } from "@/components/RunRead";
+import type { RunJudgeView } from "@/components/RunRead";
 import { NotesField } from "@/components/NotesField";
 import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -52,6 +56,45 @@ import type {
   RunDetail,
   Tag,
 } from "@/lib/types";
+
+/** `RunDetail`, augmenté de `judges` — voir le commentaire de tête de
+ *  `components/RunRead.tsx` : ni `RunDetail` ni la route
+ *  `GET /api/runs/[runId]` ne portent encore les juges d'un run, donc ce
+ *  champ vaut toujours `undefined` aujourd'hui. Le déclarer ici plutôt que de
+ *  laisser `detail` en `RunDetail` nu est ce qui permet à cette page de
+ *  construire `ExtendPanelSample[]` et de passer `onUnlink`/
+ *  `onDesignatePrincipal` à `JudgeBlock` sans caster — et de s'animer sans
+ *  qu'une ligne d'ici ne bouge le jour où `loadRun` l'attache réellement. */
+type RunDetailRead = RunDetail & { judges?: RunJudgeView[] };
+
+/** Les deux routes que `unlinkRunJudge`/`designatePrincipalJudge` appellent
+ *  n'existent pas encore — voir le commentaire de `RunDetailRead` ci-dessus.
+ *  Tant qu'aucune des deux n'existe, `detail.judges` reste `undefined` et
+ *  `JudgeBlock` ne montre jamais le bouton qui les déclenche ; ces deux
+ *  fonctions sont donc mortes à l'exécution pour l'instant, mais écrites sur
+ *  le contrat qu'une future tâche doit poser :
+ *    DELETE /api/runs/:runId/judges/:runJudgeId
+ *      body { replacement_run_judge_id: string | null }
+ *    POST   /api/runs/:runId/judges/:runJudgeId/principal
+ *  Placées ici plutôt que dans `lib/api.ts`, hors du périmètre de cette
+ *  tâche : les y déplacer appartient à qui posera ces deux routes. */
+async function callJudgesRoute(path: string, init: RequestInit): Promise<void> {
+  const response = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let message = raw || `HTTP ${response.status}`;
+    try {
+      const parsed = JSON.parse(raw) as { error?: string };
+      if (typeof parsed.error === "string" && parsed.error.trim()) message = parsed.error;
+    } catch {
+      /* la réponse n'est pas du JSON : le corps brut fait l'affaire */
+    }
+    throw new Error(message);
+  }
+}
 
 /** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
  *  dollar — même repère que la ligne de coût du run, juste au-dessus. */
@@ -293,7 +336,7 @@ export default function EvalRunPage({
   const { runId } = use(params);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [detail, setDetail] = useState<RunDetail | null>(null);
+  const [detail, setDetail] = useState<RunDetailRead | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [analysis, setAnalysis] = useState("");
@@ -513,6 +556,43 @@ export default function EvalRunPage({
     // suivants les gardent.
     if (!transcripts) setTranscripts(true);
   };
+
+  // Voir `callJudgesRoute` en tête de ce fichier : les deux routes qu'elles
+  // appellent n'existent pas encore, donc `detail.judges` ne les affiche
+  // jamais aujourd'hui — écrites pour le jour où elles le feront.
+  const unlinkRunJudge = async (
+    runJudgeId: string,
+    replacementRunJudgeId?: string,
+  ) => {
+    await callJudgesRoute(`/api/runs/${run.id}/judges/${runJudgeId}`, {
+      method: "DELETE",
+      body: JSON.stringify({
+        replacement_run_judge_id: replacementRunJudgeId ?? null,
+      }),
+    });
+    await load(transcripts);
+  };
+
+  const designatePrincipalJudge = async (runJudgeId: string) => {
+    await callJudgesRoute(`/api/runs/${run.id}/judges/${runJudgeId}/principal`, {
+      method: "POST",
+    });
+    await load(transcripts);
+  };
+
+  // Le verdict du principal, joint à chaque case pour le panneau d'extension
+  // (`ExtendPanelSample`, qui approfondit sur celui-là — voir son
+  // commentaire) — même repli que `RunMatrix`/`JudgeBlock` quand
+  // `detail.judges` n'est pas encore fourni.
+  const principal = principalJudge(detail.judges);
+  const extendPanelSamples: ExtendPanelSample[] = detail.samples.map((sample) => ({
+    scenario_index: sample.scenario_index,
+    target_model: sample.target_model,
+    status: sample.status,
+    turns_done: sample.turns_done,
+    usage: sample.usage,
+    principal: verdictOf(principal, sample.id),
+  }));
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
@@ -900,7 +980,7 @@ export default function EvalRunPage({
         <ExtendPanel
           run={run}
           repetitionRange={repetitionRange(detail.samples)}
-          samples={detail.samples}
+          samples={extendPanelSamples}
           proposal={proposal}
           draftId={proposalId}
           draftMine={proposalMine}
@@ -959,7 +1039,11 @@ export default function EvalRunPage({
         <AwarenessButton detail={detail} onLaunched={() => load(transcripts)} />
       )}
 
-      <JudgeBlock detail={detail} />
+      <JudgeBlock
+        detail={detail}
+        onUnlink={unlinkRunJudge}
+        onDesignatePrincipal={designatePrincipalJudge}
+      />
 
       <ToolsBlock detail={detail} />
 
