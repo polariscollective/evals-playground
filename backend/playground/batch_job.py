@@ -6,12 +6,15 @@ Tout passe par l'environnement, jamais par la ligne de commande : Cloud Run Jobs
 sait remplacer des variables d'environnement au lancement, pas des arguments.
 
     EVAL_RUN_ID     le run à exécuter, déjà écrit en base avec ses échantillons
-    EVAL_JOB_MODE   `run` (défaut), `rejudge` ou `awareness`
+    EVAL_JOB_MODE   `run` (défaut) ou `catchup`
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY
 
 Le job n'invente rien : la matrice existe déjà en base, une ligne par case, en
-`pending`. Il ne fait que les remplir.
+`pending`. Il ne fait que les remplir. Depuis les juges multiples, c'est vrai
+aussi de `judge_scores` : toutes les lignes de score existent d'avance, en
+`pending`, pour chaque juge vivant du run — voir
+docs/superpowers/specs/2026-09-06-juges-multiples.md.
 """
 
 import os
@@ -29,8 +32,10 @@ from playground.eval_schemas import EvalRunConfig
 from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
-from playground.scoring import ScoredSample, awareness_only_judge, rubric_judge
+from playground.scoring import JudgeOutcome, ScoredSample, judges_scorer
 from playground.supabase_store import (
+    JUDGE_SCORES,
+    NOW,
     SAMPLES,
     Cancellation,
     Supabase,
@@ -38,13 +43,13 @@ from playground.supabase_store import (
     cancel_unfinished_samples,
     fetch_run,
     finish_run,
-    mark_awareness_judged,
+    load_live_run_judges,
     mark_sample_running,
     pending_samples,
     run_status,
+    sample_filters,
     start_run,
-    write_awareness,
-    write_sample,
+    write_judge_score,
 )
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
@@ -88,40 +93,100 @@ def add_usage(
     return total
 
 
-def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
-    """Un échantillon par conversation déjà enregistrée.
+def judge_metadata(liaison: dict[str, Any]) -> dict[str, Any]:
+    """Un juge vivant, réduit à ce que `judges_scorer` (scoring.py) doit en
+    recevoir pour le faire noter une conversation.
 
-    Le transcript voyage dans les métadonnées, là où le juge le cherche : c'est
-    le même contrat que remplit `conversation_solver` pendant un run, ce qui
-    permet de réutiliser le juge sans le paramétrer autrement.
-
-    `usage` voyage aussi, comme dans `pending_dataset` (`eval_task.py`) : une
-    case rejugée a déjà été jouée une première fois, et c'est ce qu'elle porte
-    ici qui permet à `enregistre`, plus bas, d'ajouter la passe du juge à cette
-    dépense plutôt que de l'effacer. `cost_usd` n'y voyage pas : il est
-    toujours recalculé depuis les jetons fusionnés.
-
-    `turns_done` voyage pour la même raison, mais pour la profondeur plutôt que
-    pour le coût : depuis l'approfondissement, les essais d'un run n'ont plus
-    tous la même profondeur, et une passe de juge ne rejoue aucun tour. La
-    profondeur réelle d'une case rejugée est donc celle qu'elle portait déjà,
-    jamais `config.turns` — voir `enregistre`, qui distingue les deux branches.
+    `liaison` est un élément de ce que rend `load_live_run_judges`
+    (supabase_store.py) : la liaison `run_judges` fusionnée avec le juge
+    qu'elle vise, sous la clé `"judge"`. Cette fonction ne garde que ce qui
+    traverse la frontière JSON de `Sample.metadata` — voir
+    `playground.scoring.judge_from_metadata`, qui fait le chemin inverse côté
+    scorer.
     """
+    judge = liaison["judge"]
+    return {
+        "run_judge_id": str(liaison["id"]),
+        "model": judge["model"],
+        "system_type": judge.get("system_type"),
+        "criterion": judge.get("criterion"),
+        "rubric": judge.get("rubric"),
+    }
+
+
+def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
+    """Les conversations déjà jouées qui portent encore, pour au moins un juge
+    vivant, une ligne de `judge_scores` en attente.
+
+    Remplace `rejudge_dataset` et `awareness_dataset` : les modes qu'ils
+    servaient (`rejudge`, qui écrasait la note du juge de l'utilisateur avant
+    de refaire, et `awareness`, qui ne rattrapait que le juge d'éveil)
+    disparaissent au profit d'un seul mécanisme de rattrapage, valable pour
+    n'importe quel juge — voir la conception,
+    docs/superpowers/specs/2026-09-06-juges-multiples.md, section « Le
+    rattrapage, généralisé ». Il ne fait rien d'autre que compter les lignes
+    de score en attente et les faire remplir, ce qui couvre quatre cas d'un
+    coup : un juge ajouté à un run terminé, un run étendu, un juge tombé sur
+    quelques cases, un run interrompu.
+
+    Ne cible que les conversations `status = 'done'` : c'est la seule
+    garantie qu'un transcript existe à relire — l'inverse exact de
+    `pending_samples`, qui vise les conversations pas encore jouées. Une
+    conversation `error`/`cancelled`/`running` n'a jamais atteint le juge la
+    première fois ; ce n'est pas ce rattrapage qui doit s'en charger, mais une
+    reprise de la conversation elle-même.
+
+    Un juge délié depuis que sa ligne de score a été créée n'est jamais
+    rappelé ici : une ligne en attente dont le `run_judge_id` n'apparaît plus
+    dans `load_live_run_judges` — la seule fonction autorisée à dire qui est
+    vivant — reste en attente pour de bon. C'est voulu : un juge supprimé
+    n'apparaît nulle part (invariant 5 de la conception), pas même dans ce
+    qui reste à rattraper. Rien ne la comblera jamais, ce qui est sans
+    conséquence : personne ne la lira plus non plus.
+    """
+    juges_vivants = load_live_run_judges(supabase, run_id)
+    vivants_par_id = {liaison["id"]: liaison for liaison in juges_vivants}
+    if not vivants_par_id:
+        return MemoryDataset([], name="rattrapage")
+
+    en_attente = supabase.select(
+        JUDGE_SCORES,
+        run_id=f"eq.{run_id}",
+        status="eq.pending",
+        select="run_judge_id,sample_id",
+    )
+    juges_par_echantillon: dict[str, list[str]] = {}
+    for ligne in en_attente:
+        run_judge_id = str(ligne["run_judge_id"])
+        if run_judge_id not in vivants_par_id:
+            continue
+        juges_par_echantillon.setdefault(str(ligne["sample_id"]), []).append(
+            run_judge_id
+        )
+    if not juges_par_echantillon:
+        return MemoryDataset([], name="rattrapage")
+
+    ids = sorted(juges_par_echantillon)
     rows = supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
+        status="eq.done",
+        id="in.(" + ",".join(ids) + ")",
         select=(
-            "scenario_index,target_model,repetition,temperature,messages,usage,"
-            "turns_done"
+            "id,scenario_index,target_model,repetition,temperature,messages,"
+            "usage,turns_done"
         ),
         order="scenario_index,target_model,repetition",
     )
-    return MemoryDataset(
-        [
+    samples = []
+    for index, row in enumerate(rows):
+        sample_id = str(row["id"])
+        samples.append(
             Sample(
                 id=index + 1,
                 input=(row.get("messages") or [{}])[0].get("content", ""),
                 metadata={
+                    "id": sample_id,
                     "scenario_index": int(row["scenario_index"]),
                     "target": row["target_model"],
                     "repetition": int(row["repetition"]),
@@ -129,67 +194,14 @@ def rejudge_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
                     "transcript": row.get("messages") or [],
                     "usage": row.get("usage") or {},
                     "turns_done": row.get("turns_done") or 0,
+                    "judges": [
+                        judge_metadata(vivants_par_id[run_judge_id])
+                        for run_judge_id in juges_par_echantillon.get(sample_id, [])
+                    ],
                 },
             )
-            for index, row in enumerate(rows)
-        ],
-        name="repasse",
-    )
-
-
-def awareness_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
-    """Les conversations déjà enregistrées, mais qui n'ont pas encore de note d'éveil.
-
-    Ressemble volontairement à `rejudge_dataset`, dont elle reprend la forme
-    trait pour trait — mais les deux jeux de cases ne sont **pas**
-    interchangeables. Un rejugement peut se permettre de reprendre toutes les
-    cases du run, parce qu'il écrit une note neuve à chaque fois. La passe
-    d'éveil, elle, ne doit jamais reposer sa question à une case qui porte déjà
-    une note d'éveil, sous peine de l'écraser — c'est tout le dessin de cette
-    passe (voir `run_batch_job`, mode `awareness`). Le filtre
-    `awareness_score=is.null` est donc à cette fonction ce que
-    `status=eq.pending` est à `pending_samples` : le tri qui dit exactement ce
-    qu'il reste à faire, ici « pas encore noté sur l'éveil » plutôt que « pas
-    encore joué ».
-
-    Une case dont le juge d'éveil est tombé au passage précédent a sa note
-    nulle et son erreur renseignée : ce filtre l'attrape donc aussi, et c'est
-    voulu — réessayer est exactement ce qu'on veut pouvoir faire pour elle.
-
-    Ne filtre pas sur le contenu du transcript : une case sans conversation
-    sera de toute façon écartée par `awareness_only_judge`, qui refuse de
-    juger une conversation vide avant même d'appeler le modèle. Elle ne coûte
-    donc rien, et ajouter ce filtre compliquerait la requête sans rien gagner.
-    """
-    rows = supabase.select(
-        SAMPLES,
-        run_id=f"eq.{run_id}",
-        awareness_score="is.null",
-        select=(
-            "scenario_index,target_model,repetition,temperature,messages,usage,"
-            "turns_done"
-        ),
-        order="scenario_index,target_model,repetition",
-    )
-    return MemoryDataset(
-        [
-            Sample(
-                id=index + 1,
-                input=(row.get("messages") or [{}])[0].get("content", ""),
-                metadata={
-                    "scenario_index": int(row["scenario_index"]),
-                    "target": row["target_model"],
-                    "repetition": int(row["repetition"]),
-                    "temperature": row.get("temperature"),
-                    "transcript": row.get("messages") or [],
-                    "usage": row.get("usage") or {},
-                    "turns_done": row.get("turns_done") or 0,
-                },
-            )
-            for index, row in enumerate(rows)
-        ],
-        name="eveil",
-    )
+        )
+    return MemoryDataset(samples, name="rattrapage")
 
 
 @solver
@@ -197,7 +209,7 @@ def stored_transcript() -> Solver:
     """Solver sans effet : le transcript est déjà dans les métadonnées.
 
     Inspect exige un solver. Celui-ci ne fait rien, volontairement — appeler
-    quoi que ce soit ici rejouerait la conversation, ce qu'une passe de juge ne
+    quoi que ce soit ici rejouerait la conversation, ce qu'un rattrapage ne
     doit précisément pas faire.
     """
 
@@ -216,15 +228,20 @@ def run_batch_job(
     cancellation: Cancellation | None = None,
     storage: Storage | None = None,
 ) -> None:
-    """Exécute un run, ou rejoue son juge, et écrit chaque case au fil de l'eau.
+    """Exécute un run, ou rattrape ses juges, et écrit chaque case au fil de l'eau.
 
     Args:
         run_id: Le run à exécuter, déjà en base avec ses échantillons.
-        mode: `run` déroule les conversations puis les juge ; `rejudge` rejoue
-            le juge de l'utilisateur sur les transcripts déjà enregistrés ;
-            `awareness` ne pose la question de l'éveil qu'aux cases qui n'ont
-            pas encore de note d'éveil — jamais à tout le run — et ne touche à
-            aucune note déjà obtenue.
+        mode: `run` déroule les conversations puis les fait noter par tous les
+            juges vivants du run. `catchup` remplit, pour les conversations
+            déjà jouées, les lignes de `judge_scores` encore en attente —
+            qu'un juge ait été ajouté après coup, que le run ait été étendu,
+            qu'un juge soit tombé sur quelques cases, ou que le run ait été
+            interrompu. C'est le seul mode de rattrapage désormais : les
+            anciens modes `rejudge` (qui écrasait la note du juge de
+            l'utilisateur avant de refaire) et `awareness` (qui ne
+            rattrapait que le juge d'éveil) ont disparu à son profit — voir
+            docs/superpowers/specs/2026-09-06-juges-multiples.md.
         supabase: Injectable pour les tests, qui n'ont ainsi besoin ni de réseau
             ni de base.
         cancellation: Injectable pour les tests, qui doivent pouvoir annuler
@@ -239,9 +256,13 @@ def run_batch_job(
             `mockllm` — voir la docstring de `scenario_solver.model_args`.
 
     Raises:
-        Toute exception rencontrée est enregistrée sur le run avec le statut
-        `error`, puis relancée.
+        ValueError: si `mode` n'est ni `run` ni `catchup`.
+        Toute autre exception rencontrée est enregistrée sur le run avec le
+        statut `error`, puis relancée.
     """
+    if mode not in ("run", "catchup"):
+        raise ValueError(f"Unknown job mode: {mode!r}. Expected 'run' or 'catchup'.")
+
     supabase = supabase or Supabase.from_env()
     row = fetch_run(supabase, run_id)
     config = EvalRunConfig(**row["config"])
@@ -266,25 +287,48 @@ def run_batch_job(
     # Ce qu'une case portait déjà, avant cette passe — vide pour l'immense
     # majorité des cases, qui n'ont jamais été jouées. Alimenté juste avant
     # `inspect_eval`, dans la branche qui construit `dataset` (voir plus bas) :
-    # c'est la même métadonnée que `pending_dataset` vient de faire remonter
-    # jusqu'au solveur, lue ici pour la fusion plutôt que pour la conversation.
+    # c'est la même métadonnée que `pending_dataset`/`catchup_dataset` vient
+    # de faire remonter jusqu'au scorer, lue ici pour la fusion plutôt que
+    # pour la conversation.
     deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
 
-    # La profondeur qu'une case rejugée portait déjà, alimentée juste avant
-    # `inspect_eval` dans la branche `rejudge` (voir plus bas) : c'est la même
-    # métadonnée que `rejudge_dataset` vient de faire remonter, lue ici pour
-    # que `enregistre` sache, sans rejouer un seul tour, ce que CETTE case a
-    # réellement atteint. Vide pour un run ou un approfondissement, où
-    # `config.turns` reste la valeur démontrable.
-    turns_deja_faits: dict[tuple[int, str, int], int] = {}
+    def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:
+        """Chaque juge écrit sa propre ligne, dès qu'il a rendu son verdict.
+
+        Appelé par `judges_scorer` (scoring.py) immédiatement après chaque
+        juge, avant de passer au suivant — voir la docstring de
+        `judge_conversation` pour l'invariant 2 (une annulation ne fait pas
+        perdre une note déjà obtenue) : c'est cette immédiateté qui le porte,
+        et non une garde `except BaseException` recopiée ici. L'invariant 1
+        (la panne d'un juge ne coûte jamais sa note à un autre) tient lui
+        aussi de ce côté : chaque appel vise une ligne distincte
+        (`run_judge_id`, `sample_id`), jamais une ligne partagée.
+        """
+        write_judge_score(
+            supabase,
+            resultat.run_judge_id,
+            sample_id,
+            score=resultat.score,
+            justification=resultat.justification,
+            error=resultat.error,
+        )
 
     def enregistre(sample: ScoredSample) -> None:
-        # `sample.usage` ne couvre que cette passe (`sample_model_usage()` ne
-        # répond que pour l'échantillon en cours, voir `ScoredSample` dans
-        # `scoring.py`). Une case approfondie a déjà été facturée une première
-        # fois : la remplacer plutôt que l'additionner ferait passer la case
-        # pour moins chère qu'elle ne l'a été — c'est le même défaut qu'`add_usage`
-        # corrige déjà au niveau du run, appliqué ici au niveau de la case.
+        """Termine la case, une fois tous ses juges appelés : son transcript,
+        sa profondeur, sa consommation totale.
+
+        `write_sample` (supabase_store.py) écrit encore, sans condition, dans
+        `eval_samples.score` et `.justification` — deux colonnes que la
+        migration `20260906093000_drop_eval_samples_score_columns.sql` a
+        supprimées, au profit de `judge_scores` où chaque juge écrit
+        désormais la sienne (voir `ecrire_juge`, plus haut). L'appeler
+        enverrait donc, à chaque case, un PATCH visant deux colonnes qui
+        n'existent plus, et échouerait contre la vraie base — hors du
+        périmètre de cette tâche de le corriger dans `supabase_store.py`
+        (limité à `scoring.py` et `batch_job.py`) : signalé dans le rapport
+        de tâche, pas réparé ici. On écrit donc directement, avec
+        `Supabase.update` et `sample_filters`, qui restent valides eux.
+        """
         cle = (sample.scenario_index, sample.target, sample.repetition)
         usage = add_usage(deja_facture.get(cle, {}), sample.usage)
         # Recalculé sur la consommation fusionnée, et non en additionnant deux
@@ -293,135 +337,115 @@ def run_batch_job(
         # rend gratuite la distinction avec une case neuve, dont la
         # consommation « déjà là » est vide — voir `pending_dataset`.
         cout, sans_tarif = actual_cost_from_dicts(usage)
-        write_sample(
-            supabase,
-            run_id,
-            sample.scenario_index,
-            sample.target,
-            sample.repetition,
-            score=sample.score,
-            justification=sample.justification,
-            # Pour un run ou un approfondissement, la case vient d'être
-            # poussée jusque-là : `on_scored` n'est appelé qu'une fois la
-            # conversation entièrement déroulée (voir `rubric_judge` dans
-            # `scoring.py`), donc `config.turns` est toujours ce qu'elle porte
-            # réellement une fois finie — y compris quand seul le juge, plus
-            # loin, a échoué. Pour un rejugement, en revanche, aucun tour n'a
-            # été rejoué : la profondeur est celle déjà atteinte, lue dans
-            # `turns_deja_faits` (voir `rejudge_dataset`), jamais celle du run.
-            turns_done=turns_deja_faits.get(cle, config.turns),
-            messages=sample.messages,
-            temperature=sample.temperature,
-            usage=usage,
-            # Un total amputé d'un modèle sans tarif connu serait plus trompeur
-            # qu'une absence de total.
-            cost_usd=None if sans_tarif else cout,
-            error=sample.error,
-            # `None` en rejugement : les trois colonnes ne sont pas touchées.
-            # La note d'éveil vient de la passe qui a réellement joué la
-            # conversation, et une repasse de juge ne la remet pas en question.
-            awareness=(
-                None
-                if mode == "rejudge"
-                else (
-                    sample.awareness_score,
-                    sample.awareness_justification,
-                    sample.awareness_error,
-                )
-            ),
+        supabase.update(
+            SAMPLES,
+            {
+                "status": "done",
+                # La case vient d'être poussée jusque-là : `config.turns` est
+                # toujours ce qu'elle porte réellement une fois finie — y
+                # compris quand seul un juge, plus loin, a échoué. En
+                # rattrapage, en revanche, aucun tour n'a été rejoué : voir
+                # `enregistre_rattrapage`, qui ne touche pas ce champ.
+                "turns_done": config.turns,
+                "messages": sample.messages,
+                "temperature": sample.temperature,
+                "usage": usage,
+                # Un total amputé d'un modèle sans tarif connu serait plus
+                # trompeur qu'une absence de total.
+                "cost_usd": None if sans_tarif else cout,
+                "error": None,
+                "finished_at": NOW,
+            },
+            **sample_filters(run_id, *cle),
         )
 
-    def enregistre_eveil(sample: ScoredSample) -> None:
-        """Une case dont seule la note d'éveil vient d'être obtenue.
+    def enregistre_rattrapage(sample: ScoredSample) -> None:
+        """La même case, mais en rattrapage : ni son transcript ni sa
+        profondeur n'ont changé — la conversation n'a pas été rejouée, voir
+        `stored_transcript` — seule sa consommation a grandi du coût des
+        juges qu'on vient d'appeler.
 
-        Même fusion de consommation que `enregistre` — la passe a bien brûlé
-        des jetons, et les remplacer ferait passer la case pour moins chère
-        qu'elle ne l'a été — mais par `write_awareness`, qui ne touche ni la
-        note, ni le transcript, ni le statut.
+        Une écriture volontairement étroite, pour la raison qui faisait déjà
+        la forme de l'ancien `write_awareness` : toucher `status`, `messages`
+        ou `turns_done` ici détruirait ce qu'on est venu compléter sur une
+        case déjà bonne.
         """
         cle = (sample.scenario_index, sample.target, sample.repetition)
         usage = add_usage(deja_facture.get(cle, {}), sample.usage)
         cout, sans_tarif = actual_cost_from_dicts(usage)
-        write_awareness(
-            supabase,
-            run_id,
-            sample.scenario_index,
-            sample.target,
-            sample.repetition,
-            awareness=(
-                sample.awareness_score,
-                sample.awareness_justification,
-                sample.awareness_error,
-            ),
-            usage=usage,
-            cost_usd=None if sans_tarif else cout,
+        supabase.update(
+            SAMPLES,
+            {"usage": usage, "cost_usd": None if sans_tarif else cout},
+            **sample_filters(run_id, *cle),
         )
 
     try:
-        if mode == "awareness":
-            # Pas les mêmes cases qu'une repasse de juge : celle-ci ne doit
-            # reprendre que celles qui n'ont pas encore de note d'éveil, sous
-            # peine de l'écraser sur les autres — voir `awareness_dataset`.
-            dataset = awareness_dataset(supabase, run_id)
+        if mode == "catchup":
+            dataset = catchup_dataset(supabase, run_id)
             solveur: Solver = stored_transcript()
+            # Relu depuis les métadonnées que `catchup_dataset` vient de
+            # poser, et non redemandé à la base : c'est la même lecture, il
+            # n'y a pas à la refaire. Une case en rattrapage a déjà été jouée
+            # une première fois — sans cette lecture, `enregistre_rattrapage`
+            # ne verrait que la passe des juges qu'on vient d'appeler et
+            # effacerait toute la dépense de la conversation.
             deja_facture = {
-                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
-                    metadata.get("usage") or {}
+                (m["scenario_index"], m["target"], m["repetition"]): (
+                    m.get("usage") or {}
                 )
-                for metadata in (echantillon.metadata for echantillon in dataset.samples)
+                for m in (echantillon.metadata for echantillon in dataset.samples)
             }
-        elif mode == "rejudge":
-            dataset = rejudge_dataset(supabase, run_id)
-            solveur = stored_transcript()
-            # Relu depuis les métadonnées que `rejudge_dataset` vient de poser,
-            # et non redemandé à la base : c'est la même lecture, il n'y a pas
-            # à la refaire. Une case rejugée a déjà été jouée une première
-            # fois — sans cette lecture, `enregistre` ne verrait que la passe
-            # du juge et effacerait toute la dépense de la conversation.
-            deja_facture = {
-                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
-                    metadata.get("usage") or {}
-                )
-                for metadata in (echantillon.metadata for echantillon in dataset.samples)
-            }
-            # Même lecture, pour la profondeur plutôt que pour le coût : sans
-            # elle, `enregistre` retomberait sur `config.turns` et écrirait la
-            # profondeur du run sur des cases qui ne l'ont jamais atteinte.
-            turns_deja_faits = {
-                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): int(
-                    metadata.get("turns_done") or 0
-                )
-                for metadata in (echantillon.metadata for echantillon in dataset.samples)
-            }
+            # La profondeur (`turns_done`) n'a pas besoin d'être relue ici :
+            # `enregistre_rattrapage` ne l'écrit jamais — voir sa docstring.
+            # Aucun tour n'a été rejoué, donc rien n'a changé à ce sujet, et
+            # l'écriture reste volontairement étroite.
         else:
             # Ce qui reste à faire, et rien d'autre : un run dont on relance les
             # erreurs ou auquel on ajoute des scénarios ne doit pas repayer ses
             # cases déjà notées.
-            dataset = pending_dataset(pending_samples(supabase, run_id), config)
+            rows_en_attente = pending_samples(supabase, run_id)
+            dataset = pending_dataset(rows_en_attente, config)
             # Relu depuis les métadonnées que `pending_dataset` vient de poser,
             # et non redemandé à la base : c'est la même lecture, il n'y a pas
             # à la refaire.
             deja_facture = {
-                (metadata["scenario_index"], metadata["target"], metadata["repetition"]): (
-                    metadata.get("usage") or {}
+                (m["scenario_index"], m["target"], m["repetition"]): (
+                    m.get("usage") or {}
                 )
-                for metadata in (echantillon.metadata for echantillon in dataset.samples)
+                for m in (echantillon.metadata for echantillon in dataset.samples)
             }
-            if len(dataset) == 0:
-                # Rien à faire : un run déjà complet qu'on relance, ou une
-                # reprise dont les cases ont été traitées entre-temps. Le
-                # terminer proprement vaut mieux que de laisser inspect
-                # trébucher sur un dataset vide, et le run resterait sinon
-                # `triggered` jusqu'au ramassage des deux heures.
-                usage = row.get("usage") or {}
-                cost, unpriced = actual_cost_from_dicts(usage)
-                finish_run(
-                    supabase,
-                    run_id,
-                    usage=usage,
-                    cost_usd=None if unpriced else cost,
-                )
-                return
+
+        if len(dataset) == 0:
+            # Rien à faire : un run déjà complet qu'on relance, un rattrapage
+            # dont les lignes ont été comblées entre-temps, ou une reprise
+            # dont les cases ont été traitées. Le terminer proprement vaut
+            # mieux que de laisser inspect trébucher sur un dataset vide, et
+            # le run resterait sinon `triggered` jusqu'au ramassage des deux
+            # heures.
+            usage = row.get("usage") or {}
+            cost, unpriced = actual_cost_from_dicts(usage)
+            finish_run(
+                supabase,
+                run_id,
+                usage=usage,
+                cost_usd=None if unpriced else cost,
+            )
+            return
+
+        if mode == "run":
+            # Chaque juge vivant a, par construction, une ligne en attente sur
+            # toute case qui n'a jamais été jouée (voir `judgesForLaunch`,
+            # web/lib/launch-judges.ts, et l'extension d'un run, qui doivent
+            # l'une comme l'autre créer les lignes de tous les juges vivants
+            # pour chaque conversation) : nul besoin d'interroger
+            # `judge_scores` ici, contrairement à `catchup_dataset`, qui doit
+            # savoir précisément lesquelles restent en attente sur des
+            # conversations déjà jouées.
+            juges_vivants = load_live_run_judges(supabase, run_id)
+            juges_meta = [judge_metadata(liaison) for liaison in juges_vivants]
+            for source, echantillon in zip(rows_en_attente, dataset.samples):
+                echantillon.metadata["id"] = str(source["id"])
+                echantillon.metadata["judges"] = juges_meta
             solveur = conversation_solver(
                 config,
                 model_args=model_args,
@@ -433,20 +457,12 @@ def run_batch_job(
             Task(
                 dataset=dataset,
                 solver=solveur,
-                scorer=(
-                    awareness_only_judge(
-                        config, on_scored=enregistre_eveil, model_args=model_args
-                    )
-                    if mode == "awareness"
-                    else rubric_judge(
-                        config,
-                        on_scored=enregistre,
-                        model_args=model_args,
-                        stopped=arret.stopped,
-                        check_awareness=(
-                            config.check_eval_awareness and mode != "rejudge"
-                        ),
-                    )
+                scorer=judges_scorer(
+                    config,
+                    on_judged=ecrire_juge,
+                    on_scored=enregistre if mode == "run" else enregistre_rattrapage,
+                    model_args=model_args,
+                    stopped=arret.stopped,
                 ),
                 # Une répétition ratée ne doit pas avorter le run : les autres
                 # portent l'information de fréquence, qui est le but du produit.
@@ -471,7 +487,8 @@ def run_batch_job(
         else:
             # Un échantillon dont le solver a échoué n'atteint jamais le scorer,
             # donc jamais `enregistre`. Sans ce ramassage il resterait « à
-            # faire » sur un run pourtant terminé.
+            # faire » sur un run pourtant terminé. Sans effet en rattrapage :
+            # aucune case n'y est `pending`/`running`, voir `catchup_dataset`.
             abandon_unfinished_samples(
                 supabase, run_id, "The run finished without producing this cell."
             )
@@ -496,9 +513,6 @@ def run_batch_job(
                 if log.error
                 else f"inspect finished with status {log.status!r} and no message."
             )
-
-        if mode == "awareness" and not annule:
-            mark_awareness_judged(supabase, run_id)
 
         finish_run(
             supabase,

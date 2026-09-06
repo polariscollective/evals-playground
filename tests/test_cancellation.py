@@ -19,7 +19,15 @@ from inspect_ai.model import ModelOutput
 from playground.batch_job import run_batch_job
 from playground.conversation import Cancelled as ConversationCancelled
 from playground.conversation import run_conversation
-from playground.supabase_store import RUNS, SAMPLES, Cancellation, Supabase
+from playground.supabase_store import (
+    JUDGE_SCORES,
+    JUDGES,
+    RUN_JUDGES,
+    RUNS,
+    SAMPLES,
+    Cancellation,
+    Supabase,
+)
 
 CONFIG = {
     "scenarios": [
@@ -58,10 +66,39 @@ class BaseQuiSAnnule(Supabase):
     def select(self, table, **params):
         if table == RUNS:
             return [{"id": "r1", "config": CONFIG, "usage": {}, "status": self.statut}]
+        if table == JUDGES:
+            return [
+                {
+                    "id": "j-principal",
+                    "criterion": CONFIG["criterion"],
+                    "rubric": CONFIG["rubric"],
+                    "model": CONFIG["models"]["judge"],
+                    "system_type": None,
+                    "created_by": "test@exemple.com",
+                    "created_at": "t",
+                }
+            ]
+        if table == RUN_JUDGES:
+            # Un seul juge, principal et vivant — cette base n'a pas besoin
+            # d'en simuler davantage, l'arrêt ne se soucie pas de leur nombre.
+            return [
+                {
+                    "id": "rj-principal",
+                    "run_id": "r1",
+                    "judge_id": "j-principal",
+                    "system_type": None,
+                    "is_principal": True,
+                    "deleted_at": None,
+                    "created_at": "t",
+                }
+            ]
         # Les cases existent en base avant que le job ne demarre : c'est la route
         # d'API qui les ecrit, et le job ne deroule que celles restees `pending`.
+        # Chaque case porte son `id` : c'est par lui que `judge_scores.sample_id`
+        # la désigne depuis les juges multiples.
         return [
             {
+                "id": f"smp-{repetition}",
                 "scenario_index": 0,
                 "target_model": "mockllm/model",
                 "repetition": repetition,
@@ -216,7 +253,9 @@ def test_ce_qui_a_ete_mesure_avant_l_arret_est_conserve(tmp_path: Path):
     base = BaseQuiSAnnule(annuler_apres=20)
     _lancer(base, tmp_path)
 
-    notees = [v for v in base.ecrites(SAMPLES) if v.get("score") is not None]
+    # La note vit désormais dans `judge_scores`, pas sur la case elle-même —
+    # voir les juges multiples.
+    notees = [v for v in base.ecrites(JUDGE_SCORES) if v.get("score") is not None]
     assert notees, "les cases terminées avant l'arrêt gardent leur note"
 
 

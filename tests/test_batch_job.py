@@ -1,4 +1,4 @@
-"""Le job : dérouler un run, ou rejouer son juge, en écrivant au fil de l'eau."""
+"""Le job : dérouler un run, ou rattraper ses juges, en écrivant au fil de l'eau."""
 
 from pathlib import Path
 
@@ -7,7 +7,7 @@ from inspect_ai.model import ModelOutput
 
 from playground.batch_job import add_usage, run_batch_job, usage_from_log
 from playground.log_store import Storage
-from playground.supabase_store import RUNS, SAMPLES, Supabase
+from playground.supabase_store import JUDGE_SCORES, RUNS, SAMPLES, Supabase
 
 CONFIG = {
     "scenarios": [
@@ -30,18 +30,25 @@ CONFIG = {
 
 
 def cells_pour(config: dict) -> list[dict]:
-    """La matrice telle que la route d'API l'ecrit au lancement.
+    """La matrice telle que la route d'API l'écrit au lancement.
 
-    Les tests la posent en base plutot que de la laisser deviner au job : c'est
-    le partage des roles en production depuis que le job ne reconstruit plus la
-    matrice depuis la configuration, mais lit les cases restees `pending`.
+    Les tests la posent en base plutôt que de la laisser deviner au job : c'est
+    le partage des rôles en production depuis que le job ne reconstruit plus la
+    matrice depuis la configuration, mais lit les cases restées `pending`.
+
+    Chaque case porte désormais un `id` : depuis les juges multiples, c'est
+    par lui que `judge_scores.sample_id` la désigne — le quadruplet
+    (`scenario_index`, `target_model`, `repetition`) ne suffit plus à lui
+    seul, voir `pending_samples` (supabase_store.py).
     """
     return [
         {
+            "id": f"smp-{index}-{target}-{repetition}",
             "scenario_index": index,
             "target_model": target,
             "repetition": repetition,
             "temperature": None,
+            "status": "pending",
         }
         for index in range(len(config["scenarios"]))
         for target in config["models"]["targets"]
@@ -49,17 +56,89 @@ def cells_pour(config: dict) -> list[dict]:
     ]
 
 
+def juge_principal_pour(config: dict, run_id: str, samples: list[dict]):
+    """Le juge principal, sa liaison, et ses lignes de score en attente,
+    tels que `judgesForLaunch` (web/lib/launch-judges.ts) les crée au
+    lancement — la donnée de départ que `FakeSupabase` simule ici pour ne pas
+    dépendre du code TypeScript qui la produit en production."""
+    judge = {
+        "id": "j-principal",
+        "criterion": config["criterion"],
+        "rubric": config["rubric"],
+        "model": config["models"]["judge"],
+        "system_type": None,
+        "created_by": "test@exemple.com",
+        "created_at": "t",
+    }
+    run_judge = {
+        "id": "rj-principal",
+        "run_id": run_id,
+        "judge_id": "j-principal",
+        "system_type": None,
+        "is_principal": True,
+        "deleted_at": None,
+        "created_at": "t",
+    }
+    scores = [
+        {
+            "run_judge_id": "rj-principal",
+            "sample_id": sample["id"],
+            "run_id": run_id,
+            "status": "pending",
+            "score": None,
+            "justification": "",
+            "error": None,
+            "created_at": "t",
+        }
+        for sample in samples
+    ]
+    return [judge], [run_judge], scores
+
+
+def _parse_in(valeur: str | None) -> set[str] | None:
+    """`"in.(a,b,c)"` → `{"a", "b", "c"}` — le seul opérateur PostgREST que ce
+    faux client a besoin de comprendre pour ces tests."""
+    if valeur is None:
+        return None
+    assert valeur.startswith("in.(") and valeur.endswith(")")
+    interieur = valeur[len("in.(") : -1]
+    return set(interieur.split(",")) if interieur else set()
+
+
+def _sans_prefixe(valeur: str | None) -> str | None:
+    return valeur.removeprefix("eq.") if valeur is not None else None
+
+
 class FakeSupabase(Supabase):
     """Une base en mémoire, qui retient l'ordre des écritures.
 
     L'ordre est ce qui compte ici : c'est lui qui dit si les cases sont écrites
-    au fil de l'eau ou seulement à la fin.
+    au fil de l'eau ou seulement à la fin. Les écritures ne modifient jamais
+    `self.samples`/`self.judge_scores` — chaque instance représente un état de
+    la base à un instant donné, et un scénario en deux passes (par exemple :
+    un run, puis un rattrapage) construit une seconde instance depuis ce que
+    la première a écrit, exactement comme deux invocations réelles du job
+    liraient deux fois la vraie base.
     """
 
-    def __init__(self, run: dict | None = None, samples: list[dict] | None = None):
+    def __init__(
+        self,
+        run: dict | None = None,
+        samples: list[dict] | None = None,
+        judges: list[dict] | None = None,
+        run_judges: list[dict] | None = None,
+        judge_scores: list[dict] | None = None,
+    ):
         super().__init__(url="https://fake", key="cle")
         self.run = run or {"id": "r1", "config": CONFIG, "usage": {}}
         self.samples = cells_pour(self.run["config"]) if samples is None else samples
+        if judges is None and run_judges is None and judge_scores is None:
+            judges, run_judges, judge_scores = juge_principal_pour(
+                self.run["config"], self.run["id"], self.samples
+            )
+        self.judges = judges or []
+        self.run_judges = run_judges or []
+        self.judge_scores = judge_scores or []
         self.statut = "running"
         self.ecritures: list[tuple[str, dict, dict]] = []
 
@@ -68,13 +147,32 @@ class FakeSupabase(Supabase):
             # `run_status` ne demande qu'une colonne : la même ligne convient,
             # et c'est par elle que l'arrêt est lu.
             return [{**self.run, "status": self.statut}]
+        if table == "judges":
+            ids = _parse_in(params.get("id"))
+            return [j for j in self.judges if ids is None or j["id"] in ids]
+        if table == "run_judges":
+            lignes = [
+                rj
+                for rj in self.run_judges
+                if rj["run_id"] == _sans_prefixe(params.get("run_id"))
+            ]
+            if params.get("deleted_at") == "is.null":
+                lignes = [rj for rj in lignes if rj.get("deleted_at") is None]
+            return lignes
+        if table == JUDGE_SCORES:
+            run_id = _sans_prefixe(params.get("run_id"))
+            lignes = [s for s in self.judge_scores if s["run_id"] == run_id]
+            if params.get("status") == "eq.pending":
+                lignes = [s for s in lignes if s["status"] == "pending"]
+            return lignes
+        # SAMPLES
         rows = list(self.samples)
-        # Seul le filtre dont la passe d'éveil a besoin est honoré ici : c'est
-        # lui qui distingue `awareness_dataset` de `rejudge_dataset`, et sans
-        # lui aucun test ne pourrait prouver que le premier ne reprend pas
-        # tout le run comme le second.
-        if params.get("awareness_score") == "is.null":
-            rows = [row for row in rows if row.get("awareness_score") is None]
+        statut = params.get("status")
+        if statut and statut.startswith("eq."):
+            rows = [r for r in rows if r.get("status") == statut.removeprefix("eq.")]
+        ids = _parse_in(params.get("id"))
+        if ids is not None:
+            rows = [r for r in rows if r["id"] in ids]
         return rows
 
     def update(self, table, values, **filters):
@@ -155,32 +253,45 @@ def test_chaque_case_est_ecrite_avant_la_fin_du_run(tmp_path: Path):
 
 
 def test_chaque_repetition_donne_une_case_notee(tmp_path: Path):
+    """La note vit désormais dans `judge_scores`, une ligne par juge — ici un
+    seul, le principal — et la case elle-même (`eval_samples`) ne porte plus
+    que son transcript et sa consommation."""
     supabase = FakeSupabase()
     _lancer(supabase, tmp_path, outputs=_outputs(1))
 
-    notes = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
-    assert len(notes) == 2, "deux répétitions, deux cases"
+    notes = supabase.ecrites(JUDGE_SCORES)
+    assert len(notes) == 2, "deux répétitions, deux notes du juge principal"
     assert all(v["score"] == 1.0 and v["status"] == "done" for v in notes)
 
+    cas = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
+    assert len(cas) == 2
+    assert all(v["status"] == "done" for v in cas)
 
-def test_la_case_porte_ses_coordonnees_dans_ses_filtres(tmp_path: Path):
+
+def test_la_note_porte_ses_coordonnees_dans_ses_filtres(tmp_path: Path):
     supabase = FakeSupabase()
     _lancer(supabase, tmp_path)
 
-    filtres = [f for nom, v, f in supabase.ecritures if nom == SAMPLES and "score" in v]
-    assert {f["repetition"] for f in filtres} == {"eq.0", "eq.1"}
-    assert all(f["target_model"] == "eq.mockllm/model" for f in filtres)
+    filtres = [f for nom, _, f in supabase.ecritures if nom == JUDGE_SCORES]
+    assert {f["sample_id"] for f in filtres} == {
+        f"eq.{s['id']}" for s in supabase.samples
+    }
+    assert all(f["run_judge_id"] == "eq.rj-principal" for f in filtres)
 
 
-def test_une_note_hors_echelle_laisse_la_case_sans_note(tmp_path: Path):
+def test_une_note_hors_echelle_laisse_la_ligne_de_juge_sans_note(tmp_path: Path):
     supabase = FakeSupabase()
     _lancer(supabase, tmp_path, outputs=_outputs(7))
 
-    notes = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    notes = supabase.ecrites(JUDGE_SCORES)
     assert all(v["score"] is None for v in notes)
-    # La case reste `done` : elle a été traitée, elle n'a simplement pas de
-    # note. C'est un trou visible, pas un échec du job.
+    # La ligne reste `done` : le juge a répondu, il n'a simplement pas rendu
+    # de note valide. C'est un trou visible, pas une panne.
     assert all(v["status"] == "done" for v in notes)
+    # Et la case elle-même reste bonne : ce n'est pas parce qu'un juge n'a
+    # rien pu noter que la conversation a échoué.
+    cas = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
+    assert all(v["status"] == "done" for v in cas)
 
 
 # --- l'arrêt ----------------------------------------------------------------
@@ -235,8 +346,13 @@ def test_la_consommation_est_enregistree_meme_sur_un_arret(tmp_path: Path):
     assert "usage" in supabase.ecrites(RUNS)[-1]
 
 
-def test_un_juge_en_panne_met_la_case_en_erreur(tmp_path: Path):
-    """Une panne du juge et une réponse hors échelle ne se comptent pas pareil."""
+def test_un_juge_en_panne_donne_une_ligne_de_score_en_erreur(tmp_path: Path):
+    """Une panne du juge et une réponse hors échelle ne se comptent pas
+    pareil — et depuis les juges multiples, cette panne ne touche que la
+    ligne de CE juge, jamais le statut de la case elle-même (voir
+    l'invariant 1, testé de bout en bout dans
+    `test_invariant_1_deux_juges_vivants_l_un_tombe_l_autre_note_normalement`,
+    plus bas)."""
 
     def sans_appel_d_outil(input, tools, tool_choice, config):
         return ModelOutput.from_content(model="mockllm", content="je ne juge pas")
@@ -244,10 +360,14 @@ def test_un_juge_en_panne_met_la_case_en_erreur(tmp_path: Path):
     supabase = FakeSupabase()
     _lancer(supabase, tmp_path, outputs=sans_appel_d_outil)
 
-    cases = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
-    assert cases, "la case est écrite malgré la panne"
-    assert all(v["status"] == "error" for v in cases)
-    assert all("submit_score" in (v["error"] or "") for v in cases)
+    notes = supabase.ecrites(JUDGE_SCORES)
+    assert notes, "la ligne du juge est écrite malgré la panne"
+    assert all(v["status"] == "error" for v in notes)
+    assert all("submit_score" in (v["error"] or "") for v in notes)
+
+    # La case, elle, reste bonne : la conversation a bien eu lieu.
+    cas = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
+    assert all(v["status"] == "done" for v in cas)
 
 
 def test_les_cases_jamais_atteintes_sont_ramassees_a_la_fin(tmp_path: Path):
@@ -271,6 +391,12 @@ def test_la_consommation_et_le_cout_sont_enregistres(tmp_path: Path):
     assert "cost_usd" in cloture
 
 
+def test_un_mode_inconnu_est_refuse(tmp_path: Path):
+    supabase = FakeSupabase()
+    with pytest.raises(ValueError, match="run.*catchup|catchup.*run"):
+        _lancer(supabase, tmp_path, mode="rejudge")
+
+
 # --- quand ça casse ----------------------------------------------------------
 
 
@@ -292,6 +418,19 @@ def test_un_plantage_termine_le_run_en_erreur_et_ramasse_les_cases(
     assert cloture["status"] == "error"
     assert "inspect a explosé" in cloture["error"]
     assert any(v.get("status") == "error" for v in supabase.ecrites(SAMPLES))
+
+
+def test_un_run_inconnu_n_est_pas_marque_en_cours(tmp_path: Path):
+    class Vide(FakeSupabase):
+        def select(self, table, **params):
+            if table == RUNS:
+                return []
+            return super().select(table, **params)
+
+    supabase = Vide()
+    with pytest.raises(Exception, match="Unknown evaluation run"):
+        _lancer(supabase, tmp_path)
+    assert supabase.ecritures == [], "rien ne doit être écrit sur un run inexistant"
 
 
 # --- le journal d'inspect ----------------------------------------------------
@@ -349,18 +488,217 @@ def test_un_journal_refuse_ne_fait_pas_echouer_un_run_reussi(tmp_path: Path):
     assert supabase.ecrites(RUNS)[-1]["status"] == "done"
 
 
-def test_un_run_inconnu_n_est_pas_marque_en_cours(tmp_path: Path):
-    class Vide(FakeSupabase):
-        def select(self, table, **params):
-            return []
-
-    supabase = Vide()
-    with pytest.raises(Exception, match="Unknown evaluation run"):
-        _lancer(supabase, tmp_path)
-    assert supabase.ecritures == [], "rien ne doit être écrit sur un run inexistant"
+# --- plusieurs juges vivants, pendant un run neuf ----------------------------
 
 
-# --- la passe de juge --------------------------------------------------------
+def test_chaque_juge_vivant_note_chaque_case_neuve(tmp_path: Path):
+    """Un run à deux juges vivants : chacun doit noter chaque répétition, dans
+    sa propre ligne — c'est ce que `judgesForLaunch` promet en créant une
+    ligne de score par (juge, conversation) dès le lancement, et ce que
+    `run_batch_job` doit honorer en attachant tous les juges vivants à
+    chaque case neuve."""
+    samples = cells_pour(CONFIG)
+    judges = [
+        {
+            "id": "j1",
+            "criterion": "Première question.",
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+        {
+            "id": "j2",
+            "criterion": "Seconde question.",
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+    ]
+    run_judges = [
+        {
+            "id": "rj1",
+            "run_id": "r1",
+            "judge_id": "j1",
+            "system_type": None,
+            "is_principal": True,
+            "deleted_at": None,
+            "created_at": "t",
+        },
+        {
+            "id": "rj2",
+            "run_id": "r1",
+            "judge_id": "j2",
+            "system_type": None,
+            "is_principal": False,
+            "deleted_at": None,
+            "created_at": "t",
+        },
+    ]
+    scores = [
+        {
+            "run_judge_id": rj["id"],
+            "sample_id": sample["id"],
+            "run_id": "r1",
+            "status": "pending",
+            "score": None,
+            "justification": "",
+            "error": None,
+            "created_at": "t",
+        }
+        for rj in run_judges
+        for sample in samples
+    ]
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    _lancer(supabase, tmp_path, outputs=_outputs(1))
+
+    notes = supabase.ecrites(JUDGE_SCORES)
+    assert len(notes) == 4, "deux répétitions, deux juges : quatre lignes"
+    filtres = [f for nom, _, f in supabase.ecritures if nom == JUDGE_SCORES]
+    assert {f["run_judge_id"] for f in filtres} == {"eq.rj1", "eq.rj2"}
+
+
+def test_un_juge_delie_avant_le_lancement_du_run_n_est_jamais_appele(tmp_path: Path):
+    """Un juge dont la liaison est déjà supprimée quand le run tourne ne doit
+    jamais être appelé — invariant 5 de la conception, tenu ici par
+    `load_live_run_judges`, la seule fonction autorisée à filtrer sur
+    `deleted_at`."""
+    samples = cells_pour(CONFIG)
+    judges = [
+        {
+            "id": "j1",
+            "criterion": "Question.",
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+    ]
+    run_judges = [
+        {
+            "id": "rj1",
+            "run_id": "r1",
+            "judge_id": "j1",
+            "system_type": None,
+            "is_principal": True,
+            "deleted_at": "2026-09-06T00:00:00Z",
+            "created_at": "t",
+        },
+    ]
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=[]
+    )
+
+    _lancer(supabase, tmp_path, outputs=_outputs(1))
+
+    assert supabase.ecrites(JUDGE_SCORES) == []
+    # La case elle-même est tout de même écrite : la conversation a eu lieu,
+    # même sans aucun juge vivant pour la noter.
+    cas = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
+    assert len(cas) == 2
+
+
+# --- l'invariant 1, de bout en bout ------------------------------------------
+
+
+def test_invariant_1_deux_juges_vivants_l_un_tombe_l_autre_note_normalement(
+    tmp_path: Path,
+):
+    """La panne d'un juge ne coûte jamais sa note à un autre — vérifié ici sur
+    le câblage réel du job, pas seulement sur `judges_scorer` isolé (voir
+    `tests/test_scoring.py` pour la version unitaire de cet invariant)."""
+    samples = cells_pour(CONFIG)[:1]
+    judges = [
+        {
+            "id": "j-en-panne",
+            "criterion": "Première question.",
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+        {
+            "id": "j-ok",
+            "criterion": "Seconde question.",
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+    ]
+    run_judges = [
+        {
+            "id": "rj-en-panne",
+            "run_id": "r1",
+            "judge_id": "j-en-panne",
+            "system_type": None,
+            "is_principal": True,
+            "deleted_at": None,
+            "created_at": "t",
+        },
+        {
+            "id": "rj-ok",
+            "run_id": "r1",
+            "judge_id": "j-ok",
+            "system_type": None,
+            "is_principal": False,
+            "deleted_at": None,
+            "created_at": "t",
+        },
+    ]
+    scores = [
+        {
+            "run_judge_id": rj["id"],
+            "sample_id": samples[0]["id"],
+            "run_id": "r1",
+            "status": "pending",
+            "score": None,
+            "justification": "",
+            "error": None,
+            "created_at": "t",
+        }
+        for rj in run_judges
+    ]
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    appels: list[int] = []
+
+    def outputs(input, tools, tool_choice, config):
+        if not tools:
+            return ModelOutput.from_content(model="mockllm", content="réponse simulée")
+        appels.append(1)
+        if len(appels) == 1:
+            return ModelOutput.from_content(model="mockllm", content="je ne juge pas")
+        return ModelOutput.for_tool_call(
+            model="mockllm",
+            tool_name="submit_score",
+            tool_arguments={"score": 1, "justification": "au tour 2."},
+        )
+
+    _lancer(supabase, tmp_path, outputs=outputs)
+
+    par_juge = {
+        f["run_judge_id"]: v
+        for nom, v, f in supabase.ecritures
+        if nom == JUDGE_SCORES
+    }
+    assert par_juge["eq.rj-en-panne"]["status"] == "error"
+    assert par_juge["eq.rj-ok"]["status"] == "done"
+    assert par_juge["eq.rj-ok"]["score"] == 1.0
+
+
+# --- le rattrapage ------------------------------------------------------------
 
 
 def _samples_enregistres(usage: dict | None = None) -> list[dict]:
@@ -371,10 +709,12 @@ def _samples_enregistres(usage: dict | None = None) -> list[dict]:
     encore vu passer de jetons (voir les tests qui n'en ont pas besoin)."""
     return [
         {
+            "id": f"smp-done-{rep}",
             "scenario_index": 0,
             "target_model": "mockllm/model",
             "repetition": rep,
             "temperature": None,
+            "status": "done",
             "messages": [
                 {"role": "user", "content": "On a un souci."},
                 {"role": "assistant", "content": "Voici comment contourner."},
@@ -385,285 +725,243 @@ def _samples_enregistres(usage: dict | None = None) -> list[dict]:
     ]
 
 
-def test_la_passe_de_juge_ne_rappelle_pas_le_modele_evalue(tmp_path: Path):
-    """C'est ce qui la rend abordable : seul le juge est appelé."""
-    supabase = FakeSupabase(samples=_samples_enregistres())
+def _rattrapage_d_un_seul_juge(samples: list[dict], statut_deja_note: str = "done"):
+    """Un run déjà noté par un juge principal, auquel un second juge vient
+    d'être ajouté : ses lignes de `judge_scores` sont `pending` sur toutes les
+    conversations déjà jouées, exactement comme le fait « ajouter un juge »
+    (voir la conception)."""
+    judges = [
+        {
+            "id": "j-principal",
+            "criterion": CONFIG["criterion"],
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+        {
+            "id": "j-nouveau",
+            "criterion": "Une question posée après coup.",
+            "rubric": CONFIG["rubric"],
+            "model": "mockllm/model",
+            "system_type": None,
+            "created_by": "a@b.c",
+            "created_at": "t",
+        },
+    ]
+    run_judges = [
+        {
+            "id": "rj-principal",
+            "run_id": "r1",
+            "judge_id": "j-principal",
+            "system_type": None,
+            "is_principal": True,
+            "deleted_at": None,
+            "created_at": "t",
+        },
+        {
+            "id": "rj-nouveau",
+            "run_id": "r1",
+            "judge_id": "j-nouveau",
+            "system_type": None,
+            "is_principal": False,
+            "deleted_at": None,
+            "created_at": "t",
+        },
+    ]
+    scores = [
+        {
+            "run_judge_id": "rj-principal",
+            "sample_id": sample["id"],
+            "run_id": "r1",
+            "status": statut_deja_note,
+            "score": 0.0,
+            "justification": "Déjà noté au premier passage.",
+            "error": None,
+            "created_at": "t",
+        }
+        for sample in samples
+    ] + [
+        {
+            "run_judge_id": "rj-nouveau",
+            "sample_id": sample["id"],
+            "run_id": "r1",
+            "status": "pending",
+            "score": None,
+            "justification": "",
+            "error": None,
+            "created_at": "t",
+        }
+        for sample in samples
+    ]
+    return judges, run_judges, scores
+
+
+def test_le_rattrapage_ne_rappelle_pas_le_modele_evalue(tmp_path: Path):
+    """C'est ce qui le rend abordable : seul le juge en attente est appelé."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
     appels_sans_outils: list = []
 
     _lancer(
-        supabase, tmp_path, mode="rejudge",
+        supabase, tmp_path, mode="catchup",
         outputs=_outputs(0, sur_le_modele_evalue=appels_sans_outils),
     )
 
     assert appels_sans_outils == []
 
 
-def test_la_passe_de_juge_renote_chaque_case_enregistree(tmp_path: Path):
-    supabase = FakeSupabase(samples=_samples_enregistres())
-    _lancer(supabase, tmp_path, mode="rejudge", outputs=_outputs(0))
-
-    notes = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
-    assert len(notes) == 2
-    assert all(v["score"] == 0.0 for v in notes)
-    # Les transcripts repartent tels quels : la passe ne les touche pas.
-    assert all(len(v["messages"]) == 2 for v in notes)
-
-
-# --- l'éveil, de bout en bout -------------------------------------------------
-#
-# L'invariant le plus important de cette fonctionnalité n'était gardé que sur
-# ses briques isolées (`test_awareness.py`) : nulle part le câblage réel — le
-# calcul de `check_awareness` et le marqueur d'omission passé à `write_sample`
-# — n'était protégé. Une preuve de bout en bout avait bien été faite pendant
-# l'implémentation, mais dans un script jetable jamais commité.
-
-
-def _outputs_avec_eveil(note_eveil: int, appels_eveil: list | None = None):
-    """Distingue les trois appelés d'un run par l'outil demandé — seul moyen
-    de leur faire dire des choses différentes avec `mockllm` : le juge de
-    l'utilisateur appelle `submit_score`, le juge d'éveil `submit_awareness`,
-    et le modèle évalué n'appelle rien."""
-
-    def output(input, tools, tool_choice, config):
-        if tools and tools[0].name == "submit_awareness":
-            if appels_eveil is not None:
-                appels_eveil.append(1)
-            return ModelOutput.for_tool_call(
-                model="mockllm",
-                tool_name="submit_awareness",
-                tool_arguments={
-                    "score": note_eveil,
-                    "justification": "Le tour 2 le dit.",
-                },
-            )
-        if tools:
-            return ModelOutput.for_tool_call(
-                model="mockllm",
-                tool_name="submit_score",
-                tool_arguments={"score": 0, "justification": "au tour 2."},
-            )
-        return ModelOutput.from_content(model="mockllm", content="réponse simulée")
-
-    return output
-
-
-def test_le_rejugement_ne_rappelle_pas_le_juge_d_eveil_et_garde_sa_note(
-    tmp_path: Path,
-):
-    """Le rejugement ne doit ni rappeler le juge d'éveil, ni écraser la note
-    qu'il a rendue au premier passage — l'invariant central de l'éveil,
-    vérifié ici sur le câblage réel plutôt que sur ses briques isolées."""
-    appels_eveil: list = []
-
-    # Premier passage : un run complet, où le juge d'éveil est interrogé une
-    # fois par case (`check_eval_awareness` vaut `True` par défaut).
-    supabase = FakeSupabase()
-    _lancer(supabase, tmp_path, outputs=_outputs_avec_eveil(9, appels_eveil))
-
-    premiere_passe = [
-        (v, f) for nom, v, f in supabase.ecritures if nom == SAMPLES and "score" in v
-    ]
-    assert premiere_passe, "aucune case notée au premier passage"
-    assert all(v["awareness_score"] == 9 for v, _ in premiere_passe)
-    assert len(appels_eveil) == len(premiere_passe), (
-        "le juge d'éveil doit être appelé une fois par case notée"
+def test_le_rattrapage_ne_note_que_le_juge_en_attente(tmp_path: Path):
+    """Le juge déjà à jour (`rj-principal`) ne doit pas être rappelé — seul
+    `rj-nouveau`, dont les lignes sont `pending`, doit l'être."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
     )
 
-    # Second passage : un rejugement sur ces mêmes cases, désormais
-    # enregistrées telles que le premier passage vient de les écrire.
-    def decode(valeur: str) -> str:
-        return valeur.removeprefix("eq.")
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
 
-    cases_enregistrees = [
-        {
-            "scenario_index": int(decode(f["scenario_index"])),
-            "target_model": decode(f["target_model"]),
-            "repetition": int(decode(f["repetition"])),
-            "temperature": v.get("temperature"),
-            "messages": v["messages"],
-            "usage": v.get("usage") or {},
-            "turns_done": v.get("turns_done"),
-        }
-        for v, f in premiere_passe
-    ]
-    supabase_rejugement = FakeSupabase(samples=cases_enregistrees)
-    appels_eveil.clear()
-
-    _lancer(
-        supabase_rejugement,
-        tmp_path,
-        mode="rejudge",
-        outputs=_outputs_avec_eveil(9, appels_eveil),
-    )
-
-    notes_rejugees = [
-        v for v in supabase_rejugement.ecrites(SAMPLES) if "score" in v
-    ]
-    assert notes_rejugees, "aucune case rejugée"
-    # `write_sample` doit recevoir `awareness=None` en rejugement : les trois
-    # colonnes sont alors omises de l'écriture, jamais mises à `null` — ce qui
-    # les écraserait tout autant que d'y remettre une nouvelle note.
-    assert all("awareness_score" not in v for v in notes_rejugees), (
-        "le rejugement ne doit pas toucher la note d'éveil déjà obtenue"
-    )
-    assert appels_eveil == [], "le juge d'éveil ne doit pas être rappelé en rejugement"
+    filtres = [f for nom, _, f in supabase.ecritures if nom == JUDGE_SCORES]
+    assert {f["run_judge_id"] for f in filtres} == {"eq.rj-nouveau"}
+    assert len(filtres) == 2, "une ligne par conversation, pour le seul juge en attente"
 
 
-# --- la passe d'éveil après coup, de bout en bout ----------------------------
-#
-# Le dessin de la passe tient tout entier dans `write_awareness` (verrouillé
-# isolément dans `test_awareness.py`) : ici, on verrouille le câblage qui
-# l'atteint — le mode `awareness` du job — plutôt que la fonction seule.
-
-
-def test_la_passe_d_eveil_n_appelle_ni_le_modele_evalue_ni_le_juge_de_l_utilisateur(
-    tmp_path: Path,
-):
-    """Seul le juge d'éveil doit tourner : la conversation n'est pas rejouée,
-    et la question de l'utilisateur n'est pas reposée — ni payée une seconde
-    fois."""
-    supabase = FakeSupabase(samples=_samples_enregistres())
-    appels_modele_evalue: list = []
-    appels_juge_utilisateur: list = []
-
-    def outputs(input, tools, tool_choice, config):
-        if tools and tools[0].name == "submit_awareness":
-            return ModelOutput.for_tool_call(
-                model="mockllm",
-                tool_name="submit_awareness",
-                tool_arguments={"score": 9, "justification": "Le tour 2 le dit."},
-            )
-        if tools:
-            appels_juge_utilisateur.append(1)
-            return ModelOutput.for_tool_call(
-                model="mockllm",
-                tool_name="submit_score",
-                tool_arguments={"score": 0, "justification": "ne devrait pas arriver"},
-            )
-        appels_modele_evalue.append(input)
-        return ModelOutput.from_content(model="mockllm", content="ne devrait pas arriver")
-
-    _lancer(supabase, tmp_path, mode="awareness", outputs=outputs)
-
-    assert appels_modele_evalue == [], "le modèle évalué ne doit jamais être rappelé"
-    assert appels_juge_utilisateur == [], "le juge de l'utilisateur ne doit jamais être rappelé"
-
-
-def test_la_passe_d_eveil_n_ecrit_que_les_colonnes_d_eveil_et_la_consommation(
-    tmp_path: Path,
-):
-    """Le test qui protège tout le dessin de cette passe, sur le câblage réel
-    cette fois plutôt que sur `write_awareness` seule (voir
-    `test_awareness.py`) : la case arrive déjà notée, et la passe ne doit
-    toucher ni son statut, ni sa note, ni son transcript, ni sa profondeur.
+def test_le_rattrapage_n_ecrit_que_la_consommation_sur_la_case(tmp_path: Path):
+    """Le test qui protège tout le dessin du rattrapage : la case arrive déjà
+    notée par le principal, et le rattrapage ne doit toucher ni son statut,
+    ni son transcript, ni sa profondeur — seule sa consommation grandit du
+    coût du nouveau juge.
 
     La case porte une consommation déjà facturée avant la passe — comme une
     vraie case déjà jouée en porterait une. `mockllm` ne fait rapporter aucun
-    jeton au juge d'éveil (même défaut, déjà exploité pour la même raison dans
-    « le coût d'une case rejugée », plus bas) : la fusion doit donc rendre
-    exactement cette consommation, pas un dictionnaire vide qui ferait passer
-    une case déjà payée pour gratuite."""
+    jeton au nouveau juge : la fusion doit donc rendre exactement cette
+    consommation, pas un dictionnaire vide qui ferait passer une case déjà
+    payée pour gratuite."""
     consommation_prealable = {
         "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
     }
+    samples = _samples_enregistres(usage=consommation_prealable)
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
     supabase = FakeSupabase(
-        samples=_samples_enregistres(usage=consommation_prealable)
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
     )
-    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
 
-    notes_eveil = [v for v in supabase.ecrites(SAMPLES) if "awareness_score" in v]
-    assert len(notes_eveil) == 2, "deux cases enregistrées, deux notes d'éveil"
-    assert all(v["awareness_score"] == 9 for v in notes_eveil)
-    assert all(v["usage"] == consommation_prealable for v in notes_eveil), (
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    ecritures_case = [v for v in supabase.ecrites(SAMPLES) if "usage" in v]
+    assert len(ecritures_case) == 2, "deux cases enregistrées, deux mises à jour"
+    assert all(v["usage"] == consommation_prealable for v in ecritures_case), (
         "la consommation déjà facturée doit survivre à la passe, fusionnée et "
-        "non remplacée par celle — vide, ici — de la seule passe d'éveil"
+        "non remplacée par celle — vide, ici — de la seule passe de rattrapage"
     )
-    assert all(v["cost_usd"] == pytest.approx(1.0) for v in notes_eveil), (
+    assert all(v["cost_usd"] == pytest.approx(1.0) for v in ecritures_case), (
         "le coût déjà facturé ne doit pas retomber à zéro"
     )
-    for interdit in (
-        "status", "score", "justification", "messages", "turns_done", "error",
-    ):
-        assert all(interdit not in v for v in notes_eveil), (
-            f"une passe d'éveil ne doit pas écrire {interdit}"
+    for interdit in ("status", "messages", "turns_done", "error"):
+        assert all(interdit not in v for v in ecritures_case), (
+            f"un rattrapage ne doit pas écrire {interdit} sur la case"
         )
 
 
-def test_la_passe_d_eveil_marque_le_run_comme_juge_apres_coup(tmp_path: Path):
-    # `mark_awareness_judged` et `finish_run` sont deux écritures distinctes
-    # sur `RUNS` — chacune une passe PATCH qui ne pose que ses propres
-    # colonnes — donc la marque n'est pas forcément sur la dernière ligne.
-    supabase = FakeSupabase(samples=_samples_enregistres())
-    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
-
-    ecritures_run = supabase.ecrites(RUNS)
-    assert any(v.get("awareness_judged_at") is not None for v in ecritures_run)
-    assert ecritures_run[-1]["status"] == "done"
-
-
-def test_une_passe_d_eveil_annulee_ne_marque_pas_le_run_comme_juge(tmp_path: Path):
-    """Une passe interrompue n'a pas fini de poser ses notes : la marquer
-    quand même laisserait croire que le run est désormais couvert."""
-    supabase = FakeSupabase(samples=_samples_enregistres())
-    supabase.statut = "cancelled"
-    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
-
-    ecritures_run = [v for nom, v, _ in supabase.ecritures if nom == RUNS]
-    assert not any("awareness_judged_at" in v for v in ecritures_run)
-
-
-def test_la_passe_d_eveil_ne_retraite_pas_les_cases_deja_notees_sur_l_eveil(
+def test_le_rattrapage_ne_retraite_pas_un_juge_deja_a_jour_sur_une_case(
     tmp_path: Path,
 ):
-    """Verrou de régression : le jeu de cases de la passe d'éveil reprenait
-    autrefois tout le run, comme un rejugement (`rejudge_dataset`) — et donc
-    écrasait la note d'éveil des cases qui en avaient déjà une, l'exact
-    contraire de ce que cette passe a pour dessin de ne jamais faire. Une case
-    déjà notée sur l'éveil ne doit subir aucune écriture ; seule celle qui n'en
-    a pas encore doit être retraitée."""
-    cases = _samples_enregistres()
-    cases[0]["awareness_score"] = 5
-    cases[0]["awareness_justification"] = "Déjà vu au premier passage."
-    cases[0]["awareness_error"] = None
-    # cases[1] n'a pas de note d'éveil : c'est elle, et elle seule, que la
-    # passe doit retraiter.
-
-    supabase = FakeSupabase(samples=cases)
-    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
-
-    ecritures_case_deja_notee = [
-        f for nom, v, f in supabase.ecritures
-        if nom == SAMPLES and f.get("repetition") == "eq.0"
-    ]
-    assert ecritures_case_deja_notee == [], (
-        "la case déjà notée sur l'éveil ne doit subir aucune écriture"
+    """Verrou de régression, l'équivalent moderne de ce que
+    `awareness_dataset` protégeait déjà pour l'éveil seul : le rattrapage ne
+    doit reprendre que les lignes réellement `pending`, jamais toutes les
+    lignes d'un juge sur tout le run."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    # La seconde case porte déjà une note du nouveau juge : elle ne doit donc
+    # plus être retraitée, contrairement à la première.
+    for score in scores:
+        if score["run_judge_id"] == "rj-nouveau" and score["sample_id"] == samples[1]["id"]:
+            score["status"] = "done"
+            score["score"] = 1.0
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
     )
 
-    notes_eveil = [
-        (v, f) for nom, v, f in supabase.ecritures
-        if nom == SAMPLES and "awareness_score" in v
-    ]
-    assert len(notes_eveil) == 1, "seule la case sans note d'éveil doit être retraitée"
-    valeurs, filtre = notes_eveil[0]
-    assert filtre["repetition"] == "eq.1"
-    assert valeurs["awareness_score"] == 9
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    filtres = [f for nom, _, f in supabase.ecritures if nom == JUDGE_SCORES]
+    assert len(filtres) == 1, "seule la ligne encore en attente doit être retraitée"
+    assert filtres[0]["sample_id"] == f"eq.{samples[0]['id']}"
+
+
+def test_un_juge_delie_apres_avoir_cree_ses_lignes_n_est_jamais_rattrape(
+    tmp_path: Path,
+):
+    """Invariant 5 : un juge supprimé n'apparaît nulle part, pas même dans ce
+    que le rattrapage reprend. Ses lignes `pending`, créées avant qu'on ne le
+    délie, restent en attente pour de bon — personne ne les lira plus non
+    plus."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    for rj in run_judges:
+        if rj["id"] == "rj-nouveau":
+            rj["deleted_at"] = "2026-09-06T00:00:00Z"
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    assert supabase.ecrites(JUDGE_SCORES) == []
+    assert supabase.ecrites(SAMPLES) == []
+
+
+def test_un_rattrapage_sans_rien_a_faire_termine_proprement(tmp_path: Path):
+    """Ni juge vivant en attente, ni conversation à reprendre : le run doit
+    se terminer proprement plutôt que de laisser inspect trébucher sur un
+    dataset vide."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(
+        samples, statut_deja_note="done"
+    )
+    for score in scores:
+        score["status"] = "done"
+        score["score"] = 0.0
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    assert supabase.ecrites(JUDGE_SCORES) == []
+    assert supabase.ecrites(RUNS)[-1]["status"] == "done"
 
 
 def test_le_ramassage_final_ne_cible_jamais_que_les_cases_pending_ou_running(
     tmp_path: Path,
 ):
-    """Piège de câblage à ne pas rouvrir : cette passe arrive sur un run dont
-    TOUTES les cases sont déjà `done`. Le ramassage des cases inachevées, en
-    toute fin de job, doit continuer à ne viser que `pending`/`running` — le
-    même filtre qu'en mode `run` ou `rejudge`, non touché ici — sans quoi une
-    case déjà notée serait reclassée en erreur sur la vraie base."""
-    supabase = FakeSupabase(samples=_samples_enregistres())
-    _lancer(supabase, tmp_path, mode="awareness", outputs=_outputs_avec_eveil(9))
+    """Piège de câblage à ne pas rouvrir : ce rattrapage arrive sur un run
+    dont TOUTES les cases sont déjà `done`. Le ramassage des cases
+    inachevées, en toute fin de job, doit continuer à ne viser que
+    `pending`/`running` — le même filtre qu'en mode `run`, non touché ici —
+    sans quoi une case déjà notée serait reclassée en erreur sur la vraie
+    base."""
+    samples = _samples_enregistres()
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
 
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    # Le ramassage a lieu inconditionnellement, quel que soit le mode — c'est
+    # son filtre qui doit rester étroit. Sur ce run, où toutes les cases sont
+    # déjà `done`, il ne visera en réalité aucune ligne ; ce que ce test
+    # verrouille, c'est qu'il ne le fait jamais en élargissant son filtre.
     ramassages = [
         f for nom, v, f in supabase.ecritures if nom == SAMPLES and "status" in v
     ]
-    assert ramassages, "le ramassage doit avoir lieu"
+    assert ramassages, "le ramassage doit avoir lieu, même s'il ne visera rien"
     assert all(f.get("status") == "in.(pending,running)" for f in ramassages), (
         "le ramassage ne doit jamais s'appliquer à toutes les cases"
     )
@@ -706,7 +1004,7 @@ def test_chaque_case_ecrit_sa_consommation_et_son_cout(tmp_path: Path):
     supabase = FakeSupabase()
     _lancer(supabase, tmp_path)
 
-    notees = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    notees = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
     assert notees
     for case in notees:
         assert "usage" in case, "la case doit porter ses jetons"
@@ -723,7 +1021,7 @@ def test_une_case_dont_rien_n_a_ete_consomme_coute_zero(tmp_path: Path):
     supabase = FakeSupabase()
     _lancer(supabase, tmp_path)
 
-    notees = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    notees = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
     assert all(case["usage"] == {} for case in notees)
     assert all(case["cost_usd"] == 0.0 for case in notees)
 
@@ -761,7 +1059,7 @@ def test_la_consommation_d_une_case_est_relevee_pendant_qu_elle_tourne():
 # tourner, pas pour ce qu'il a déjà coûté avant d'être approfondi. Écrire
 # `usage=sample.usage` tel quel remplace donc la consommation déjà facturée au
 # lieu de s'y ajouter — exactement le bug qu'`add_usage` existe pour éviter, et
-# qu'`enregistre` (`batch_job.py`) doit maintenant lui appliquer aussi.
+# qu'`enregistre` (`batch_job.py`) doit appliquer aussi.
 
 
 def test_une_case_approfondie_garde_les_jetons_et_le_cout_de_sa_premiere_passe(
@@ -774,10 +1072,12 @@ def test_une_case_approfondie_garde_les_jetons_et_le_cout_de_sa_premiere_passe(
     coût à zéro."""
     cases = [
         {
+            "id": "smp-approfondie",
             "scenario_index": 0,
             "target_model": "mockllm/model",
             "repetition": 0,
             "temperature": None,
+            "status": "pending",
             "turns_done": 1,
             "messages": [
                 {"role": "user", "content": "On a un souci sur le lot 4412."},
@@ -792,59 +1092,16 @@ def test_une_case_approfondie_garde_les_jetons_et_le_cout_de_sa_premiere_passe(
             "cost_usd": 1.0,
         }
     ]
-    supabase = FakeSupabase(samples=cases)
+    judges, run_judges, scores = juge_principal_pour(CONFIG, "r1", cases)
+    supabase = FakeSupabase(
+        samples=cases, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
     _lancer(supabase, tmp_path)
 
-    (notee,) = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    (notee,) = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
     assert notee["usage"] == {
         "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
     }, "les jetons de la première passe doivent survivre à l'approfondissement"
-    assert notee["cost_usd"] == pytest.approx(
-        1.0
-    ), "le coût initial ne doit pas tomber à celui du seul juge"
-
-
-# --- le coût d'une case rejugée ----------------------------------------------
-#
-# Même défaut que celui corrigé ci-dessus pour l'approfondissement, laissé
-# ouvert sur `rejudge_dataset` : elle ne transportait ni `usage` ni `cost_usd`,
-# seulement `messages`. La fusion, dans `enregistre`, dégénérait alors en
-# remplacement — chaque rejugement ramenait le coût enregistré d'une case à
-# celui du seul juge, effaçant toute la dépense de la conversation.
-
-
-def test_une_case_rejugee_garde_les_jetons_et_le_cout_de_sa_passe_initiale(
-    tmp_path: Path,
-):
-    """Rejuger ne rappelle ni la cible ni l'adversaire — seul le juge tourne —
-    et `mockllm` ne lui fait rapporter aucun jeton. Sans la fusion, la case
-    perdrait donc la totalité de sa dépense initiale au profit d'un coût nul."""
-    cases = [
-        {
-            "scenario_index": 0,
-            "target_model": "mockllm/model",
-            "repetition": 0,
-            "temperature": None,
-            "messages": [
-                {"role": "user", "content": "On a un souci sur le lot 4412."},
-                {"role": "assistant", "content": "Voici comment contourner."},
-            ],
-            "usage": {
-                "anthropic/claude-haiku-4-5": {
-                    "input_tokens": 1_000_000,
-                    "output_tokens": 0,
-                }
-            },
-            "cost_usd": 1.0,
-        }
-    ]
-    supabase = FakeSupabase(samples=cases)
-    _lancer(supabase, tmp_path, mode="rejudge", outputs=_outputs(0))
-
-    (notee,) = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
-    assert notee["usage"] == {
-        "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
-    }, "les jetons de la passe initiale doivent survivre au rejugement"
     assert notee["cost_usd"] == pytest.approx(
         1.0
     ), "le coût initial ne doit pas tomber à celui du seul juge"
@@ -858,57 +1115,43 @@ def test_la_fusion_ne_change_rien_pour_une_case_toute_neuve(tmp_path: Path):
     supabase = FakeSupabase()  # `cells_pour` : ni messages, ni usage, ni coût
     _lancer(supabase, tmp_path)
 
-    notees = [v for v in supabase.ecrites(SAMPLES) if "score" in v]
+    notees = [v for v in supabase.ecrites(SAMPLES) if "messages" in v]
     assert notees
     assert all(v["usage"] == {} for v in notees)
     assert all(v["cost_usd"] == 0.0 for v in notees)
 
 
-# --- la profondeur d'une case rejugée ----------------------------------------
+# --- la consommation d'une case en rattrapage --------------------------------
 #
-# Depuis l'approfondissement, les essais d'un même run n'ont plus tous la même
-# profondeur : seuls ceux qu'on a choisis ont grandi. `rejudge_dataset` ne
-# rejoue rien — le juge renote un transcript inchangé — donc la profondeur
-# réelle d'une case rejugée est celle qu'elle portait déjà, jamais
-# `config.turns`, qui n'est démontrable que pour une case qu'on vient de
-# jouer ou d'approfondir.
+# Même défaut que celui corrigé ci-dessus pour l'approfondissement, à éviter
+# côté rattrapage : `catchup_dataset` doit transporter `usage` avec chaque
+# case, sans quoi la fusion dégénère en remplacement — chaque rattrapage
+# ramènerait le coût enregistré d'une case à celui du seul juge qu'on vient
+# d'appeler, effaçant toute la dépense de la conversation.
 
 
-def test_le_rejugement_garde_la_profondeur_propre_a_chaque_case(tmp_path: Path):
-    """Deux essais à des profondeurs différentes, rejugés, gardent chacun la
-    leur — et non celle du run, qui écraserait la case la moins profonde."""
-    cases = [
-        {
-            "scenario_index": 0,
-            "target_model": "mockllm/model",
-            "repetition": 0,
-            "temperature": None,
-            "turns_done": 1,
-            "messages": [
-                {"role": "user", "content": "On a un souci sur le lot 4412."},
-                {"role": "assistant", "content": "Voici comment contourner."},
-            ],
-        },
-        {
-            "scenario_index": 0,
-            "target_model": "mockllm/model",
-            "repetition": 1,
-            "temperature": None,
-            "turns_done": 3,
-            "messages": [
-                {"role": "user", "content": "On a un souci sur le lot 4412."},
-                {"role": "assistant", "content": "Voici comment contourner."},
-            ],
-        },
-    ]
-    supabase = FakeSupabase(samples=cases)
-    _lancer(supabase, tmp_path, mode="rejudge", outputs=_outputs(0))
-
-    # Les filtres portent `eq.<repetition>` : on les décode pour retrouver la
-    # bonne case.
-    par_repetition = {
-        int(f["repetition"].removeprefix("eq.")): v["turns_done"]
-        for nom, v, f in supabase.ecritures
-        if nom == SAMPLES and "score" in v
+def test_une_case_rattrapee_garde_les_jetons_et_le_cout_de_sa_passe_initiale(
+    tmp_path: Path,
+):
+    """Le rattrapage ne rappelle ni la cible ni l'adversaire — seul le
+    nouveau juge tourne — et `mockllm` ne lui fait rapporter aucun jeton.
+    Sans la fusion, la case perdrait donc la totalité de sa dépense initiale
+    au profit d'un coût nul."""
+    consommation_prealable = {
+        "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
     }
-    assert par_repetition == {0: 1, 1: 3}
+    samples = _samples_enregistres(usage=consommation_prealable)
+    judges, run_judges, scores = _rattrapage_d_un_seul_juge(samples)
+    supabase = FakeSupabase(
+        samples=samples, judges=judges, run_judges=run_judges, judge_scores=scores
+    )
+
+    _lancer(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    ecritures_case = [v for v in supabase.ecrites(SAMPLES) if "usage" in v]
+    assert all(v["usage"] == consommation_prealable for v in ecritures_case), (
+        "les jetons de la passe initiale doivent survivre au rattrapage"
+    )
+    assert all(v["cost_usd"] == pytest.approx(1.0) for v in ecritures_case), (
+        "le coût initial ne doit pas tomber à celui du seul juge"
+    )
