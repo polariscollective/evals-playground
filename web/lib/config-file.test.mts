@@ -427,6 +427,28 @@ test("check_eval_awareness traverse l'aller-retour, y compris éteint", () => {
   assert.equal(reluAllume.check_eval_awareness, true);
 });
 
+test("une chaîne \"false\" entre guillemets est refusée, pas lue comme éteinte", () => {
+  // Le piège exact d'un agent qui croit éteindre le juge : `"false"` est une
+  // chaîne pour YAML, pas le booléen — un `!== false` la laisserait passer
+  // pour allumée en silence, et le juge tournerait quand même.
+  assert.throws(
+    () => readConfigFile(COMPLET + '\ncheck_eval_awareness: "false"\n'),
+    /check_eval_awareness must be true or false/,
+  );
+});
+
+test("check_eval_awareness d'un autre type que booléen est refusé", () => {
+  assert.match(
+    configProblem({ ...CONFIG_MINIMAL, check_eval_awareness: "false" }) ?? "",
+    /check_eval_awareness/,
+  );
+  assert.ok(configProblem({ ...CONFIG_MINIMAL, check_eval_awareness: 0 }));
+  assert.equal(
+    configProblem({ ...CONFIG_MINIMAL, check_eval_awareness: false }),
+    null,
+  );
+});
+
 // --- la longueur de sortie déclarée --------------------------------------
 
 test("average_output_tokens traverse l'aller-retour YAML", () => {

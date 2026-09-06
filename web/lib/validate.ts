@@ -177,6 +177,17 @@ export function configProblem(config: unknown): string | null {
   if (cap !== undefined && (!Number.isInteger(cap) || cap < 1 || cap > 20)) {
     return "consecutive tool calls per turn must be a whole number between 1 and 20";
   }
+
+  // Un booléen ou rien, jamais autre chose. Une chaîne "false" écrite par
+  // mégarde entre guillemets n'est pas égale au booléen `false` : la laisser
+  // passer ici la ferait lire plus loin comme l'interrupteur resté allumé,
+  // sans que personne ne le sache — un juge qu'on a explicitement demandé
+  // d'éteindre continuerait de tourner et d'être facturé.
+  const eveil = c.check_eval_awareness;
+  if (eveil !== undefined && typeof eveil !== "boolean") {
+    return "check_eval_awareness must be true or false";
+  }
+
   for (const scenario of c.scenarios) {
     const asked = scenarioToolsProblem(
       scenario.tools,

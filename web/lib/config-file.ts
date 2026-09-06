@@ -247,9 +247,17 @@ export function readConfigFile(text: string): ImportedConfig {
     adversary_prompt: asString(file.adversary_prompt),
     tools: readTools(file.tools),
     max_tool_calls_per_turn: asNumber(file.max_tool_calls_per_turn, 5),
-    // `!== false` et non `=== true` : un fichier écrit avant ce champ n'en
-    // porte pas, et son absence doit se lire comme l'interrupteur allumé.
-    check_eval_awareness: file.check_eval_awareness !== false,
+    // Seule l'absence — undefined ou null — se lit comme l'interrupteur
+    // allumé : un fichier écrit avant ce champ n'en porte pas, et ça doit
+    // rester lisible. Une valeur présente est transmise telle quelle, sans la
+    // réduire ici à un booléen : un `!== false` la réduirait déjà en écrasant
+    // toute autre forme que le booléen `false` en `true`, y compris une
+    // chaîne "false" mal entre guillemets — et `configProblem`, plus bas, ne
+    // pourrait alors plus jamais la voir pour la refuser.
+    check_eval_awareness:
+      file.check_eval_awareness === undefined || file.check_eval_awareness === null
+        ? true
+        : (file.check_eval_awareness as boolean),
     average_output_tokens:
       typeof file.average_output_tokens === "number"
         ? file.average_output_tokens
