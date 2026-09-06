@@ -4,6 +4,7 @@ import "server-only";
 // autrement — une médiane, une échelle repliée — et deux calculs de la même
 // chose finiraient par ne plus dire pareil.
 import { overallMean, progressOf } from "./matrix";
+import { awarenessMissing } from "./awareness";
 import {
   MCP_LAUNCHES,
   NOW,
@@ -133,7 +134,11 @@ export async function loadRuns(): Promise<RunSummary[]> {
  */
 export async function loadRun(
   runId: string,
-  options: { withTranscripts?: boolean; withSourceCsvFlag?: boolean } = {},
+  options: {
+    withTranscripts?: boolean;
+    withSourceCsvFlag?: boolean;
+    withAwarenessMissingFlag?: boolean;
+  } = {},
 ): Promise<RunDetail> {
   await failStaleRuns();
 
@@ -170,7 +175,38 @@ export async function loadRun(
     samples,
     progress: progressOf(samples),
     source_csv_available: sourceCsvAvailable,
+    awareness_missing: await awarenessMissingTotal(run, samples, options),
   };
+}
+
+/** Combien de conversations pourraient recevoir une note d'éveil et ne l'ont
+ *  pas — calculé ici, jamais par la page, qui devait sinon forcer son propre
+ *  chargement complet des transcripts pour le même résultat (voir l'ancien
+ *  effet de préchargement dans `app/eval/[runId]/page.tsx`).
+ *
+ * Trois cas : les transcripts demandés sont déjà en main (`samples` les porte
+ * déjà, rien à relire) ; le run tourne encore, auquel cas le nombre ne sert à
+ * rien puisque le bouton qui le lit exige `!running` — l'annoncer à zéro
+ * évite de relire les transcripts à chaque rafraîchissement de trois
+ * secondes, exactement ce que `SAMPLE_COLUMNS` existe pour éviter ; sinon une
+ * lecture dédiée, sur le modèle de `sourceCsv` — la seule colonne lourde dont
+ * `awarenessMissing` a besoin, ramenée à part pour ne jamais grossir la
+ * réponse envoyée au navigateur. */
+async function awarenessMissingTotal(
+  run: EvalRun,
+  samples: EvalSample[],
+  options: { withTranscripts?: boolean; withAwarenessMissingFlag?: boolean },
+): Promise<number> {
+  if (options.withAwarenessMissingFlag === false) return 0;
+  if (options.withTranscripts) return awarenessMissing(samples);
+  if (run.status === "triggered" || run.status === "running") return 0;
+
+  const rows = await select<Pick<EvalSample, "awareness_score" | "messages">>(
+    SAMPLES,
+    { run_id: `eq.${run.id}`, select: "awareness_score,messages" },
+  );
+  for (const row of rows) row.messages ??= [];
+  return awarenessMissing(rows);
 }
 
 /** Le CSV téléversé au lancement, ou null s'il n'y en a pas eu.
@@ -727,7 +763,14 @@ export async function loadPublicRun(
   runId: string,
   options: { withTranscripts?: boolean } = {},
 ): Promise<PublicRunDetail> {
-  const detail = await loadRun(runId, { ...options, withSourceCsvFlag: false });
+  // Même raison que `withSourceCsvFlag: false` juste à côté : le bouton qui
+  // lit ce nombre n'existe que sur la page privée, et l'inconnu qui lit une
+  // page publiée n'a rien à en faire.
+  const detail = await loadRun(runId, {
+    ...options,
+    withSourceCsvFlag: false,
+    withAwarenessMissingFlag: false,
+  });
   if (!detail.run.is_public) throw new NotFound(`Unknown run: ${runId}`);
   return withoutIdentity(detail);
 }

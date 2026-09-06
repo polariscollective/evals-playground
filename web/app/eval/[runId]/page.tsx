@@ -26,7 +26,6 @@ import {
   sourceCsvUrl,
   updateDraft,
 } from "@/lib/api";
-import { awarenessMissing } from "@/lib/awareness";
 import { extensionsOf } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW } from "@/lib/view";
@@ -246,7 +245,11 @@ function AwarenessButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  const missing = awarenessMissing(detail.samples);
+  // Compté par le serveur, sur les transcripts eux-mêmes (voir `loadRun`) :
+  // recompter ici depuis `detail.samples` demanderait de les avoir tous
+  // chargés, exactement le préchargement lourd que ce champ existe pour
+  // éviter.
+  const missing = detail.awareness_missing;
 
   const launch = async () => {
     setBusy(true);
@@ -420,36 +423,15 @@ export default function EvalRunPage({
     return () => clearInterval(timer);
   }, [running, load, transcripts]);
 
-  // `awarenessMissing` a besoin des transcripts pour distinguer une case
-  // notée d'une conversation vide — voir sa docstring. Un run qui tourne
-  // encore n'entre de toute façon jamais dans ce calcul (le bouton exige
-  // `!running`), donc ce chargement ne s'ajoute jamais au rafraîchissement de
-  // trois secondes ci-dessus : il n'a lieu qu'une fois, quand le run cesse de
-  // tourner — le même geste que celui qu'ouvrir une case déclenche déjà.
-  // Par un timer, même raison que plus haut : un setState synchrone dans le
-  // corps de l'effet est ce que react-hooks/set-state-in-effect interdit.
-  //
-  // Le garde-fou qui suit existe pour éviter de le déclencher quand il ne
-  // peut rien changer : si chaque case porte déjà une note d'éveil numérique,
-  // `awarenessMissing` vaudra zéro que les transcripts soient chargés ou non
-  // — plus rien ne peut lui faire dire autre chose — et le bouton restera cru
-  // sans eux. C'est le cas courant, le juge d'éveil étant allumé par défaut :
-  // sans ce garde-fou, ouvrir n'importe quel run déjà entièrement noté, ou un
-  // run où le juge n'a jamais tourné, ferait passer par le réseau tous les
-  // transcripts de la matrice — plusieurs kilo-octets par case, comme le dit
-  // déjà `SAMPLE_COLUMNS` dans `lib/runs.ts` — pour un bouton qui de toute
-  // façon ne s'affichera pas. L'enlever ne casserait rien d'observable, mais
-  // ferait payer ce coût réseau à chaque ouverture de la quasi-totalité des
-  // runs terminés.
-  useEffect(() => {
-    if (!detail || running || transcripts) return;
-    const allScored = detail.samples.every(
-      (sample) => typeof sample.awareness_score === "number",
-    );
-    if (allScored) return;
-    const timer = setTimeout(() => setTranscripts(true), 0);
-    return () => clearTimeout(timer);
-  }, [detail, running, transcripts]);
+  // Pas d'effet ici pour précharger les transcripts au nom du bouton d'éveil :
+  // `detail.awareness_missing` arrive déjà calculé par `loadRun`, qui a les
+  // transcripts en main sans jamais les envoyer au navigateur (voir
+  // `awarenessMissingTotal` dans `lib/runs.ts`). Un tel effet a existé, et son
+  // garde-fou ratait un run juge éteint ou une seule case vide ou en erreur —
+  // une fois déclenché, relancer la passe repassait le run en cours et le
+  // rafraîchissement de trois secondes ci-dessus rechargeait alors tous les
+  // transcripts en boucle pendant toute la passe, exactement ce que
+  // `SAMPLE_COLUMNS` existe pour éviter.
 
   // Les journaux ne montent qu'à la toute fin du job — d'où la relecture quand
   // le run cesse de tourner, et non au seul premier rendu.
@@ -973,7 +955,7 @@ export default function EvalRunPage({
         />
       )}
 
-      {!running && awarenessMissing(detail.samples) > 0 && (
+      {!running && detail.awareness_missing > 0 && (
         <AwarenessButton detail={detail} onLaunched={() => load(transcripts)} />
       )}
 

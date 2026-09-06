@@ -523,6 +523,13 @@ export interface RunDetail {
   samples: EvalSample[];
   progress: Progress;
   source_csv_available: boolean;
+  /** Combien de conversations pourraient recevoir une note d'éveil et ne
+   *  l'ont pas — voir `awarenessMissing`. Calculé côté serveur, sur les
+   *  transcripts eux-mêmes : eux seuls disent si un tour d'assistant a
+   *  vraiment répondu, ce que `samples` ne porte pas hors de l'ouverture
+   *  d'une case. La page le lit ici plutôt que de forcer son propre
+   *  chargement complet pour le même résultat. */
+  awareness_missing: number;
 }
 
 export interface ModelOption {

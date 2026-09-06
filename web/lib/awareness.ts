@@ -5,7 +5,7 @@
 // matrice est déjà dense, et ce signal est vide dans la quasi-totalité des
 // cases : doubler la charge de l'écran principal pour une colonne presque
 // toujours à 1 abîmerait ce qui marche. Quand le voyant sonne, on descend.
-import type { EvalSample } from "./types";
+import type { EvalSample, Message } from "./types";
 
 /** Ce qui allume le voyant du run.
  *
@@ -56,18 +56,35 @@ export function awarenessSummary(samples: EvalSample[]): AwarenessSummary {
  * Écrire « 0 sur 0 » se lirait comme un bon résultat alors que c'est une
  * absence de mesure, et c'est la confusion qu'on ne veut pas installer sur cet
  * écran. */
+/** Un tour d'assistant qui a vraiment répondu quelque chose.
+ *
+ * Reflète `blocking_reason`, côté moteur (`backend/playground/scoring.py`) :
+ * un fournisseur qui a bloqué la génération, ou un modèle jamais appelé,
+ * laisse un tour d'assistant sans contenu, et le juge refuse de noter une
+ * conversation pareille. Un chiffre qui ne suivrait pas cette règle
+ * promettrait au bouton une passe qui ne jugera en réalité rien. */
+function hasGradableContent(messages: Message[]): boolean {
+  return messages.some(
+    (message) => message.role === "assistant" && message.content.trim() !== "",
+  );
+}
+
 /** Combien de conversations pourraient recevoir une note d'éveil, et ne l'ont pas.
  *
  * Décide si le bouton a une raison d'exister, et ce qu'il annonce coûter. Une
- * conversation sans transcript n'en fait pas partie : la passe ne l'appellera
- * pas, et la compter promettrait une dépense qui n'aura pas lieu.
+ * conversation que le moteur refuserait de juger — jamais appelée, ou bloquée
+ * par le fournisseur sur chaque tour — n'en fait pas partie : la passe ne
+ * l'appellera pas, et la compter promettrait une dépense qui n'aura pas lieu.
  *
  * Une case dont le juge est tombé compte parmi les manquantes : réessayer est
  * exactement ce qu'on veut pouvoir faire. */
-export function awarenessMissing(samples: EvalSample[]): number {
+export function awarenessMissing(
+  samples: Pick<EvalSample, "messages" | "awareness_score">[],
+): number {
   return samples.filter(
     (sample) =>
-      sample.messages.length > 0 && typeof sample.awareness_score !== "number",
+      hasGradableContent(sample.messages) &&
+      typeof sample.awareness_score !== "number",
   ).length;
 }
 

@@ -83,19 +83,46 @@ test("le seuil d'alarme est strictement plus haut que celui de visibilité", () 
   assert.ok(AWARENESS_ALARM > AWARENESS_VISIBLE);
 });
 
+// Un tour d'assistant qui a vraiment répondu quelque chose — le format minimal
+// dont `hasGradableContent`, dans awareness.ts, a besoin pour trancher.
+const attempt = (awareness_score: number | null, assistantContents: string[]) => ({
+  awareness_score,
+  messages: assistantContents.map((content) => ({
+    role: "assistant" as const,
+    content,
+  })),
+});
+
 test("compte les conversations à qui il manque une note d'éveil", () => {
   // C'est ce nombre qui décide si le bouton a une raison d'exister, et ce
   // qu'il annonce coûter. Une conversation vide n'en fait pas partie : elle
   // n'a rien à lire, et la passe ne l'appellera pas.
-  const withMessages = (awareness_score: number | null, messages: number) =>
-    ({ awareness_score, awareness_error: null, messages: Array(messages).fill({}) }) as never;
-
   assert.equal(
-    awarenessMissing([withMessages(null, 4), withMessages(1, 4), withMessages(null, 4)]),
+    awarenessMissing([
+      attempt(null, ["hello"]),
+      attempt(1, ["hi"]),
+      attempt(null, ["hey"]),
+    ]),
     2,
   );
   // Déjà toutes notées : rien à proposer.
-  assert.equal(awarenessMissing([withMessages(3, 4), withMessages(1, 4)]), 0);
-  // Sans transcript, il n'y a rien à juger.
-  assert.equal(awarenessMissing([withMessages(null, 0)]), 0);
+  assert.equal(awarenessMissing([attempt(3, ["hi"]), attempt(1, ["hi"])]), 0);
+  // Le modèle évalué n'a jamais été appelé : rien à juger.
+  assert.equal(awarenessMissing([attempt(null, [])]), 0);
+});
+
+test("une conversation bloquée par le fournisseur ne compte pas comme manquante", () => {
+  // C'est le défaut B1 : l'ancienne règle ne regardait que la présence de
+  // tours, pas leur contenu. Un tour d'assistant vide — filtre de contenu du
+  // fournisseur, réponse vide — a un transcript non vide mais rien à juger ;
+  // le moteur (`blocking_reason`) refuse de le noter, et ce compte doit
+  // refuser de le promettre. Ce test échoue avec `messages.length > 0`.
+  assert.equal(awarenessMissing([attempt(null, [""])]), 0);
+  assert.equal(awarenessMissing([attempt(null, ["   "])]), 0);
+});
+
+test("un seul tour d'assistant non vide suffit à rendre une conversation jugeable", () => {
+  // Symétrique du test précédent : dès qu'un tour a répondu quelque chose,
+  // même au milieu d'autres tours vides, le moteur juge la conversation.
+  assert.equal(awarenessMissing([attempt(null, ["", "quelque chose", ""])]), 1);
 });
