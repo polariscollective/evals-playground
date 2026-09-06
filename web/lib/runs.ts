@@ -25,6 +25,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
+import { withLiveJudges } from "./live-config";
 import { measureRun, type MeasurableCell } from "./measured-length";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import type { NewCell } from "./cells";
@@ -412,24 +413,31 @@ async function attachJudges(
   }));
 }
 
-/** Combien de lignes de `judge_scores`, en attente sur une liaison vivante,
- *  portent sur une conversation déjà terminée — donc ce que le prochain
- *  rattrapage va réellement remplir. Généralise l'ancienne
+/** Combien de lignes de `judge_scores`, en attente OU en erreur sur une
+ *  liaison vivante, portent sur une conversation déjà terminée — donc ce que
+ *  le prochain rattrapage va réellement remplir. Généralise l'ancienne
  *  `awarenessMissingTotal` (jusqu'aux juges multiples, seule la liaison
  *  d'éveil pouvait porter des lignes en attente après coup) à n'importe quel
  *  juge vivant — voir la conception, section « Le rattrapage, généralisé ».
+ *
+ * `en attente OU en erreur` : le rattrapage reprend les deux, pas seulement
+ * les lignes jamais jugées — voir `catchup_dataset`,
+ * `backend/playground/batch_job.py`, qui filtre pareil (`status =
+ * "in.(pending,error)"`). Compter l'un sans l'autre ferait dire deux choses
+ * différentes au bouton et au moteur qu'il déclenche — déjà arrivé une fois
+ * sur ce chantier.
  *
  * Sur demande, jamais par défaut, même raison que l'ancienne version : la
  * quasi-totalité des appelants de `loadRun` ne l'utilisent jamais.
  *
  * LE PIÈGE, et il a déjà mordu ce chantier une fois sur l'éveil : une ligne
- * en attente sur une liaison vivante n'est pas forcément rattrapable — sa
- * conversation doit AUSSI être terminée (`status = 'done'`). Le moteur
- * (`catchup_dataset`, `backend/playground/batch_job.py`) applique ces trois
- * conditions ensemble et ne rattrape jamais une conversation qui ne l'est
- * pas ; un compte qui ignorerait la troisième annoncerait du travail que le
- * moteur ne fera jamais, et le bouton resterait allumé pour toujours. La
- * troisième condition est vérifiée ici par `catchupCandidateCount`
+ * en attente ou en erreur sur une liaison vivante n'est pas forcément
+ * rattrapable — sa conversation doit AUSSI être terminée (`status = 'done'`).
+ * Le moteur (`catchup_dataset`, `backend/playground/batch_job.py`) applique
+ * ces trois conditions ensemble et ne rattrape jamais une conversation qui ne
+ * l'est pas ; un compte qui ignorerait la troisième annoncerait du travail
+ * que le moteur ne fera jamais, et le bouton resterait allumé pour toujours.
+ * La troisième condition est vérifiée ici par `catchupCandidateCount`
  * (`catchup.ts`), qui documente ce piège en détail — jamais recomptée à la
  * main ailleurs : la route qui démarre un rattrapage
  * (`.../catchup/route.ts`) relit ce même champ plutôt que de refaire le
@@ -454,7 +462,9 @@ async function catchupMissingTotal(
   const pending = await select<{ sample_id: string }>(JUDGE_SCORES, {
     run_id: `eq.${run.id}`,
     run_judge_id: `in.(${live.map((liaison) => liaison.id).join(",")})`,
-    status: "eq.pending",
+    // En attente ET en erreur : le rattrapage reprend les deux (voir la
+    // docstring ci-dessus) — même filtre que `catchup_dataset` côté moteur.
+    status: "in.(pending,error)",
     select: "sample_id",
   });
   if (pending.length === 0) return 0;
@@ -1159,9 +1169,8 @@ export async function planExtension(
   // nombres ne contenant jamais `null` ; `not.is.null` fait ce travail pour
   // "all". Un run sans principal vivant (aucun juge, ou tous déliés) n'a rien
   // à approfondir : `principal` vaut alors `undefined`.
-  const principal = (await loadLiveRunJudges(runId)).find(
-    (judge) => judge.is_principal,
-  );
+  const liveJudges = await loadLiveRunJudges(runId);
+  const principal = liveJudges.find((judge) => judge.is_principal);
   const àContinuer =
     request.deepen === undefined || !principal
       ? []
@@ -1205,8 +1214,20 @@ export async function planExtension(
   // Le calcul lui-même est celui du panneau, à la lettre : `estimateExtension`
   // est appelée ici, et par le panneau côté client. Deux calculs séparés
   // avaient divergé d'un facteur trois sans que rien ne le dise.
+  //
+  // `config` reste la photo du lancement — elle peut nommer un juge délié
+  // depuis, taire un juge ajouté après coup, ou promettre un éveil qui n'a
+  // plus de liaison vivante sur un run migré depuis l'ancien monde. Or c'est
+  // les juges VIVANTS que l'extension va faire juger : chiffrer sur `config`
+  // sous-facture un juge ajouté, sur-facture un juge délié, et invente un
+  // éveil disparu. `withLiveJudges` répare déjà cet écart pour la lecture de
+  // configuration (`get_run_config`) et la duplication (`app/page.tsx`) —
+  // même correction ici, le devis étant ce qu'un outil MCP oppose aux
+  // plafonds de dépense de l'agent appelant : un devis sous-estimé le
+  // laisserait dépasser le sien.
+  const liveConfig = withLiveJudges(config, liveJudges);
   const estimate = estimateExtension(
-    config,
+    liveConfig,
     {
       scenarios: retenus,
       targets: request.targets,

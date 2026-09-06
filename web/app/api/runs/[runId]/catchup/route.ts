@@ -9,8 +9,8 @@ import {
 } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 
-/** Remplit les lignes de `judge_scores` encore en attente sur ce run, pour
- *  toute liaison vivante et toute conversation déjà terminée.
+/** Remplit les lignes de `judge_scores` encore en attente OU en erreur sur ce
+ *  run, pour toute liaison vivante et toute conversation déjà terminée.
  *
  * Généralise l'ancien bouton d'éveil à n'importe quel juge : un juge ajouté
  * après coup, un run étendu, un juge tombé sur quelques cases, un run
@@ -60,7 +60,7 @@ export async function POST(
       {
         error:
           "Nothing to catch up on this run — every live judge already has a " +
-          "grade or an error on every finished conversation.",
+          "grade on every finished conversation.",
       },
       { status: 409 },
     );

@@ -27,6 +27,8 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import { estimateExtension } from "@/lib/extend-estimate";
+import { withLiveJudges } from "@/lib/live-config";
+import type { JudgeForConfig } from "@/lib/live-config";
 import { measureRun } from "@/lib/measured-length";
 import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
@@ -109,6 +111,13 @@ function ColumnPicker({
 
 export function ExtendPanel({
   run,
+  /** Les juges VIVANTS de ce run — jamais `run.config.judges`, la photo du
+   *  lancement. Sert à dériver `config` (voir plus bas, `withLiveJudges`) :
+   *  un juge ajouté après coup doit peser sur le devis, un juge délié doit en
+   *  sortir, et un run migré depuis l'ancien monde ne doit pas facturer un
+   *  éveil dont la liaison n'existe plus. La page le passe depuis
+   *  `RunDetail.judges`, déjà chargé. */
+  liveJudges,
   /** Combien d'essais chaque couple porte déjà, du plus petit au plus grand. */
   repetitionRange,
   /** Les essais déjà joués par ce run, pour compter combien chaque palier de
@@ -150,6 +159,7 @@ export function ExtendPanel({
   onSaveDraft,
 }: {
   run: EvalRun;
+  liveJudges: JudgeForConfig[];
   repetitionRange: [number, number];
   samples?: ExtendPanelSample[];
   proposal?: ExtendRequest | null;
@@ -159,7 +169,14 @@ export function ExtendPanel({
   onSubmit: (request: ExtendRequest) => Promise<void>;
   onSaveDraft: (request: ExtendRequest) => Promise<{ forked: boolean }>;
 }) {
-  const config = run.config;
+  // Le juge, l'échelle et l'adversaire affichés plus bas — comme le devis
+  // qu'`estimateExtension` calcule ici — suivent les juges VIVANTS du run,
+  // jamais la photo prise au lancement : voir `withLiveJudges`
+  // (`lib/live-config.ts`) et le commentaire de `planExtension`
+  // (`lib/runs.ts`), qui dérive pareil côté serveur pour que les deux devis
+  // restent d'accord. Tout le reste — scénarios, tours, outils, modèles
+  // cibles — n'a pas de pendant dans les juges et traverse inchangé.
+  const config = withLiveJudges(run.config, liveJudges);
 
   // Tout ce qui suit part de la proposition quand il y en a une, et de l'état
   // ordinaire sinon. Les valeurs initiales seulement : une fois le panneau
