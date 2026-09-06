@@ -15,6 +15,7 @@ import type {
   EvalRunConfig,
   EvalScenario,
   ExpectedCsv,
+  JudgeSpec,
   RubricLevel,
   SeededTurn,
   ToolParamType,
@@ -167,22 +168,25 @@ function readTools(value: unknown): ToolSpec[] {
   });
 }
 
-function readRubric(value: unknown): RubricLevel[] {
+/** `where` situe l'erreur : `"rubric"` pour l'échelle du principal, au
+ *  premier niveau ; `"judge 2: rubric"` pour celle d'un juge secondaire —
+ *  voir `readJudges`. Les deux lisent la même forme, donc le même code. */
+function readRubric(value: unknown, where = "rubric"): RubricLevel[] {
   // Deux torts différents, deux messages : « missing » pour une échelle
   // absente, et ce qu'on attend pour une échelle présente mais mal formée —
   // une table de paliers, ou un autre nom de clé, disaient tous les deux
   // « missing », ce qui envoyait chercher au mauvais endroit.
   if (value === undefined || value === null) {
-    throw new ConfigFileError("rubric is missing.");
+    throw new ConfigFileError(`${where} is missing.`);
   }
   if (!Array.isArray(value)) {
     throw new ConfigFileError(
-      "rubric must be a list of grades, each with a `value` and a `meaning`.",
+      `${where} must be a list of grades, each with a \`value\` and a \`meaning\`.`,
     );
   }
   return value.map((entry, position) => {
     if (!entry || typeof entry !== "object") {
-      throw new ConfigFileError(`grade ${position} is not a mapping.`);
+      throw new ConfigFileError(`${where}: grade ${position} is not a mapping.`);
     }
     const row = entry as Record<string, unknown>;
     return {
@@ -191,6 +195,61 @@ function readRubric(value: unknown): RubricLevel[] {
       // Un palier « sans objet » : le juge peut le choisir, la moyenne
       // l'ignore.
       excluded: row.excluded === true,
+    };
+  });
+}
+
+/** La forme d'une échelle telle qu'on l'écrit dans le fichier : `excluded`
+ *  omis quand il vaut `false`, le défaut du lecteur — l'écrire partout
+ *  serait du bruit et enseignerait un champ là où il ne sert pas. Partagée
+ *  entre l'échelle du principal et celle de chaque juge secondaire : les
+ *  deux doivent s'écrire pareil, et un seul endroit le garantit. */
+function rubricDocument(rubric: RubricLevel[]): unknown[] {
+  return rubric.map((level) =>
+    level.excluded
+      ? { value: level.value, meaning: level.meaning, excluded: true }
+      : { value: level.value, meaning: level.meaning },
+  );
+}
+
+/** Les juges secondaires du run, en plus du principal — voir `JudgeSpec`
+ *  dans `types.ts`.
+ *
+ * Absent ou vide : la forme ancienne, celle de tous les fichiers déjà
+ * écrits — `criterion`/`rubric` au premier niveau restent le seul juge, et
+ * décrivent le principal. Chaque entrée ici en ajoute un de plus, toujours
+ * ordinaire : `JudgeSpec` ne porte ni type système ni marque de principal,
+ * donc aucune entrée ne peut se réclamer de l'un ou de l'autre — une clé
+ * comme `system_type` ou `is_principal`, glissée ici par erreur ou par un
+ * agent qui n'a pas compris le format, n'est simplement jamais lue, comme
+ * toute autre clé inconnue dans ce fichier.
+ *
+ * La validation sémantique (un critère non vide, une échelle qui tient,
+ * deux paliers comptés) est laissée à `configProblem`, appelé à la fin de
+ * `readConfigFile` — exactement comme pour le principal et pour les outils :
+ * ce qui est lu ici ne fait que donner une forme, jamais un jugement. */
+function readJudges(value: unknown): JudgeSpec[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new ConfigFileError("judges must be a list.");
+  }
+  return value.map((entry, position) => {
+    if (!entry || typeof entry !== "object") {
+      throw new ConfigFileError(`judge ${position + 1} is not a mapping.`);
+    }
+    const row = entry as Record<string, unknown>;
+    const model = row.model;
+    // Comme `check_eval_awareness` : un type qui n'est pas le bon ne se
+    // devine pas. `asString` effacerait silencieusement un nombre ou un
+    // booléen glissé ici en chaîne vide, et le juge tournerait avec le
+    // modèle par défaut du run sans que personne ne l'ait demandé.
+    if (model !== undefined && model !== null && typeof model !== "string") {
+      throw new ConfigFileError(`judge ${position + 1}: model must be text.`);
+    }
+    return {
+      criterion: asString(row.criterion),
+      rubric: readRubric(row.rubric, `judge ${position + 1}: rubric`),
+      ...(typeof model === "string" ? { model } : {}),
     };
   });
 }
@@ -235,6 +294,9 @@ export function readConfigFile(text: string): ImportedConfig {
     scenarios,
     criterion: asString(file.criterion),
     rubric: readRubric(file.rubric),
+    // Les juges secondaires, en plus du principal ci-dessus — voir
+    // `readJudges`. Absent ou vide, c'est la forme ancienne : un seul juge.
+    judges: readJudges(file.judges),
     turns: asNumber(file.turns, 1),
     repetitions: asNumber(file.repetitions, 1),
     models: {
@@ -319,11 +381,21 @@ export function writeConfigFile(config: EvalRunConfig): string {
     // `excluded: false` sur chaque palier serait du bruit : c'est le défaut du
     // lecteur, et un fichier qui l'écrit partout enseigne un champ là où il ne
     // sert pas.
-    rubric: config.rubric.map((level) =>
-      level.excluded
-        ? { value: level.value, meaning: level.meaning, excluded: true }
-        : { value: level.value, meaning: level.meaning },
-    ),
+    rubric: rubricDocument(config.rubric),
+    // Un bloc à soi, conditionné sur lui seul — jamais partagé avec celui d'un
+    // autre champ. C'est exactement ce piège-là (une clé posée à l'intérieur du
+    // bloc conditionnel d'une autre) qui a déjà fait perdre `max_tool_calls_per_turn`
+    // en silence sur un run sans outils : ici, un run sans juge secondaire ne
+    // doit rien pouvoir faire disparaître d'autre, et réciproquement.
+    ...(config.judges && config.judges.length > 0
+      ? {
+          judges: config.judges.map((judge) => ({
+            criterion: judge.criterion,
+            rubric: rubricDocument(judge.rubric),
+            ...(judge.model ? { model: judge.model } : {}),
+          })),
+        }
+      : {}),
     turns: config.turns,
     repetitions: config.repetitions,
     temperature: config.temperature ?? null,

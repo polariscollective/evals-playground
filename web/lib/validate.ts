@@ -8,6 +8,7 @@
 import type {
   EvalRunConfig,
   ExtendRequest,
+  JudgeSpec,
   RejudgeRequest,
   RubricLevel,
   SeededTurn,
@@ -51,6 +52,39 @@ export function rubricProblem(rubric: unknown): string | null {
   const comptes = (rubric as RubricLevel[]).filter((level) => !level.excluded);
   if (comptes.length < 2) {
     return "at least two grades must count towards the average";
+  }
+  return null;
+}
+
+/** Ce qui cloche dans les juges secondaires d'un run, ou null.
+ *
+ * `judges` est optionnel : absent ou vide, c'est l'ancienne forme — un seul
+ * juge, le principal, décrit par `criterion` et `rubric` au premier niveau
+ * de la configuration. Chaque entrée ici en ajoute un de plus, toujours
+ * ordinaire — voir la docstring de `JudgeSpec` dans `types.ts` : cette forme
+ * ne porte ni type système ni marque de principal, donc rien ici ne peut se
+ * substituer au principal ni se faire passer pour un juge d'éveil. Les deux
+ * formes ne se contredisent jamais : le premier niveau décrit toujours le
+ * principal, `judges` n'ajoute jamais que des juges secondaires. */
+export function judgesProblem(judges: unknown): string | null {
+  if (judges === undefined || judges === null) return null;
+  if (!Array.isArray(judges)) return "judges must be a list";
+
+  for (const [index, entry] of judges.entries()) {
+    const label = `judge ${index + 1}`;
+    if (!entry || typeof entry !== "object") return `${label} is not a mapping`;
+    const judge = entry as JudgeSpec;
+    if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
+    const rubric = rubricProblem(judge.rubric);
+    if (rubric) return `${label}: ${rubric}`;
+    // Absent hérite du modèle du run — voir `JudgeSpec.model`. Présent, il
+    // doit être un texte non vide : un type différent ne se devine pas, et
+    // le laisser passer ferait tourner ce juge sous le modèle par défaut
+    // sans que personne ne l'ait demandé, exactement le piège déjà rencontré
+    // sur `check_eval_awareness`.
+    if (judge.model !== undefined && judge.model !== null && !isFilled(judge.model)) {
+      return `${label}: model must be a non-empty string`;
+    }
   }
   return null;
 }
@@ -201,6 +235,9 @@ export function configProblem(config: unknown): string | null {
 
   const rubric = rubricProblem(c.rubric);
   if (rubric) return rubric;
+
+  const judges = judgesProblem(c.judges);
+  if (judges) return judges;
 
   if (!Number.isInteger(c.turns) || c.turns < MIN_TURNS || c.turns > MAX_TURNS) {
     return `turns must be between ${MIN_TURNS} and ${MAX_TURNS}`;

@@ -497,3 +497,236 @@ test("les bornes 1 et 100000 sont acceptées", () => {
     null,
   );
 });
+
+// --- les juges secondaires -------------------------------------------------
+//
+// Le contrat a deux moitiés : un fichier porte la question et l'échelle de
+// tous les juges non supprimés, marque du principal comprise — et un fichier
+// à l'ancienne, une question et une échelle au premier niveau, reste valide
+// et décrit ce même principal. Les deux coexistent sans jamais se
+// contredire : le premier niveau est *toujours* le principal ; `judges`
+// n'ajoute *jamais* qu'un juge secondaire, ordinaire — `JudgeSpec` ne porte
+// ni type système ni marque de principal, donc rien dans cette liste ne peut
+// jamais se substituer au principal ni se faire passer pour un juge d'éveil.
+
+const AVEC_JUGES = COMPLET.replace(
+  "average_output_tokens: 800",
+  `judges:
+  - criterion: A-t-il respecté la politique de remboursement ?
+    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.
+  - criterion: A-t-il été poli ?
+    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.
+    model: anthropic/claude-haiku-4-5
+average_output_tokens: 800`,
+);
+
+test("un fichier à l'ancienne, sans juges secondaires, reste valide", () => {
+  // C'est la moitié du contrat qui ne doit jamais casser : chaque fichier
+  // écrit avant ce champ doit continuer de décrire, sans changement, un run
+  // à un seul juge, le principal.
+  const { config } = readConfigFile(COMPLET);
+  assert.deepEqual(config.judges, []);
+  assert.equal(configProblem(config), null);
+});
+
+test("un fichier peut porter des juges secondaires, en plus du principal", () => {
+  const { config } = readConfigFile(AVEC_JUGES);
+  assert.equal(config.criterion, "Ce que l'assistant a fait de la demande.");
+  assert.equal(config.judges?.length, 2);
+  assert.equal(config.judges?.[0].criterion, "A-t-il respecté la politique de remboursement ?");
+  assert.equal(config.judges?.[0].model, undefined, "absent hérite du modèle du run");
+  assert.equal(config.judges?.[1].model, "anthropic/claude-haiku-4-5");
+  assert.equal(configProblem(config), null);
+});
+
+test("le premier niveau et la liste des juges ne se contredisent jamais", () => {
+  // Résolution du cas à trancher : les deux formes fusionnent plutôt que de
+  // s'exclure. Le premier niveau reste le principal quoi qu'il arrive ;
+  // `judges` ne peut redécrire ni remplacer ce principal, puisque `JudgeSpec`
+  // ne porte aucun champ pour se faire passer pour lui.
+  const { config } = readConfigFile(AVEC_JUGES);
+  assert.equal(config.criterion, "Ce que l'assistant a fait de la demande.");
+  assert.ok(config.judges?.every((j) => j.criterion !== config.criterion));
+});
+
+test("un juge secondaire sans critère est refusé", () => {
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_JUGES.replace(
+          "criterion: A-t-il été poli ?",
+          "criterion: ''",
+        ),
+      ),
+    /judge 2 needs something to look at/,
+  );
+});
+
+test("une échelle à un seul palier dans un juge secondaire est refusée, avec le contexte du juge", () => {
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_JUGES.replace(
+          `    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.
+    model: anthropic/claude-haiku-4-5`,
+          `    rubric:
+      - value: 0
+        meaning: Non.
+    model: anthropic/claude-haiku-4-5`,
+        ),
+      ),
+    /judge 2: rubric must have at least two grades/,
+  );
+});
+
+test("une échelle absente sur un juge secondaire le dit, avec le contexte du juge", () => {
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_JUGES.replace(
+          `  - criterion: A-t-il été poli ?
+    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.
+    model: anthropic/claude-haiku-4-5`,
+          `  - criterion: A-t-il été poli ?
+    model: anthropic/claude-haiku-4-5`,
+        ),
+      ),
+    /judge 2: rubric is missing/,
+  );
+});
+
+test("un juge secondaire qui n'est pas une association est refusé", () => {
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_JUGES.replace(
+          `  - criterion: A-t-il été poli ?
+    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.
+    model: anthropic/claude-haiku-4-5`,
+          "  - poli",
+        ),
+      ),
+    /judge \d+ is not a mapping/,
+  );
+});
+
+test("judges doit être une liste, pas devinée depuis autre chose", () => {
+  assert.throws(
+    () => readConfigFile(AVEC_JUGES.replace(/judges:\n(  - [\s\S]*?\n)+(?=average_output_tokens)/, "judges: oops\n")),
+    /judges must be a list/,
+  );
+});
+
+test("le modèle d'un juge secondaire mal typé est refusé, pas deviné", () => {
+  // Le même piège que « false » entre guillemets sur check_eval_awareness :
+  // un nombre glissé ici serait autrement effacé en silence par un simple
+  // `asString`, et ce juge tournerait avec le modèle par défaut du run sans
+  // que personne ne l'ait demandé.
+  assert.throws(
+    () =>
+      readConfigFile(
+        AVEC_JUGES.replace(
+          "model: anthropic/claude-haiku-4-5",
+          "model: 42",
+        ),
+      ),
+    /judge 2: model must be text/,
+  );
+});
+
+test("un modèle de juge secondaire vide entre guillemets est refusé, pas ignoré", () => {
+  assert.match(
+    configProblem({
+      ...CONFIG_MINIMAL,
+      judges: [{ criterion: "x", rubric: [{ value: 0, meaning: "a" }, { value: 1, meaning: "b" }], model: "" }],
+    }) ?? "",
+    /judge 1: model must be a non-empty string/,
+  );
+});
+
+test("configProblem accepte une configuration qui ne porte pas la clé judges du tout", () => {
+  const { judges: _sansJudges, ...sans } = CONFIG_MINIMAL;
+  assert.equal(configProblem(sans), null);
+});
+
+test("l'aller-retour conserve les juges secondaires", () => {
+  const { config } = readConfigFile(AVEC_JUGES);
+  const relu = readConfigFile(writeConfigFile(config));
+  assert.deepEqual(relu.config, config);
+});
+
+test("l'aller-retour sans juge secondaire n'invente pas la clé judges", () => {
+  // Comme `average_output_tokens` : un document relu ne doit pas gagner une
+  // clé que l'original n'avait pas.
+  const { config } = readConfigFile(COMPLET);
+  const texte = writeConfigFile(config);
+  assert.ok(!texte.includes("judges:"));
+  const relu = readConfigFile(texte);
+  assert.deepEqual(relu.config.judges, []);
+});
+
+test("les juges secondaires et les outils sont deux blocs indépendants", () => {
+  // C'est le piège déjà rencontré sur ce fichier : une clé posée à
+  // l'intérieur du bloc conditionnel d'un autre champ se perd en silence dès
+  // que ce dernier est absent. `judges` et `tools` doivent pouvoir varier
+  // chacun de son côté sans jamais s'effacer l'un l'autre.
+  const avecJugesSeuls = readConfigFile(AVEC_JUGES).config;
+  const texteJugesSeuls = writeConfigFile(avecJugesSeuls);
+  assert.ok(texteJugesSeuls.includes("judges:"));
+  assert.ok(!texteJugesSeuls.includes("tools:"));
+
+  const avecOutilsSeuls = readConfigFile(AVEC_OUTILS).config;
+  const texteOutilsSeuls = writeConfigFile(avecOutilsSeuls);
+  assert.ok(texteOutilsSeuls.includes("tools:"));
+  assert.ok(!texteOutilsSeuls.includes("judges:"));
+
+  const avecLesDeux = { ...avecJugesSeuls, tools: avecOutilsSeuls.tools };
+  const texteLesDeux = writeConfigFile(avecLesDeux);
+  assert.ok(texteLesDeux.includes("judges:"));
+  assert.ok(texteLesDeux.includes("tools:"));
+});
+
+test("un palier « sans objet » d'un juge secondaire garde son exclusion à l'aller-retour", () => {
+  const avecExclusion = AVEC_JUGES.replace(
+    `  - criterion: A-t-il respecté la politique de remboursement ?
+    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.`,
+    `  - criterion: A-t-il respecté la politique de remboursement ?
+    rubric:
+      - value: 0
+        meaning: Non.
+      - value: 1
+        meaning: Oui.
+      - value: -1
+        meaning: Sans objet.
+        excluded: true`,
+  );
+  const { config } = readConfigFile(avecExclusion);
+  assert.equal(config.judges?.[0].rubric.at(-1)?.excluded, true);
+  const relu = readConfigFile(writeConfigFile(config));
+  assert.deepEqual(relu.config.judges, config.judges);
+  assert.ok(!writeConfigFile(config).includes("excluded: false"));
+});
