@@ -24,7 +24,15 @@ export async function POST(
   try {
     // Avec les transcripts : c'est sur eux que porte la garde ci-dessous, et
     // sans eux `messages` serait vide partout, ce qui refuserait toute passe.
-    detail = await loadRun(runId, { withTranscripts: true });
+    // `withAwarenessMissingFlag: true` demande le compte que cette garde lit
+    // juste en dessous — sans lui, `awarenessMissingTotal` renverrait
+    // toujours zéro, calcul sur demande oblige (voir `lib/runs.ts`). La
+    // demande ne coûte rien de plus ici : les transcripts sont déjà en main,
+    // donc le compte se fait en mémoire plutôt que par une lecture à part.
+    detail = await loadRun(runId, {
+      withTranscripts: true,
+      withAwarenessMissingFlag: true,
+    });
   } catch (error) {
     if (error instanceof NotFound) {
       return NextResponse.json({ error: error.message }, { status: 404 });

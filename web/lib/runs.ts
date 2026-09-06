@@ -129,6 +129,14 @@ export async function loadRuns(): Promise<RunSummary[]> {
  * `withTranscripts` ne sert qu'à l'ouverture d'une case et aux exports : le
  * rafraîchissement d'un run en cours n'en a pas besoin.
  *
+ * `withAwarenessMissingFlag` est sur demande, pas par défaut — voir
+ * `awarenessMissingTotal` pour pourquoi. La quasi-totalité des appelants de
+ * `loadRun` ne l'utilisent jamais : une douzaine de routes n'appellent cette
+ * fonction que pour vérifier qu'un run existe, et les outils MCP demandent
+ * explicitement la version légère pour rester légers. Le laisser tourner par
+ * défaut pour eux a déjà traîné toute une matrice de conversations hors de la
+ * base pour une simple note ou une mise à la corbeille.
+ *
  * Throws:
  *   NotFound: si aucun run ne porte cet identifiant.
  */
@@ -184,20 +192,32 @@ export async function loadRun(
  *  chargement complet des transcripts pour le même résultat (voir l'ancien
  *  effet de préchargement dans `app/eval/[runId]/page.tsx`).
  *
- * Trois cas : les transcripts demandés sont déjà en main (`samples` les porte
- * déjà, rien à relire) ; le run tourne encore, auquel cas le nombre ne sert à
- * rien puisque le bouton qui le lit exige `!running` — l'annoncer à zéro
- * évite de relire les transcripts à chaque rafraîchissement de trois
- * secondes, exactement ce que `SAMPLE_COLUMNS` existe pour éviter ; sinon une
- * lecture dédiée, sur le modèle de `sourceCsv` — la seule colonne lourde dont
- * `awarenessMissing` a besoin, ramenée à part pour ne jamais grossir la
- * réponse envoyée au navigateur. */
+ * Sur demande, et non par défaut : quand `withTranscripts` ne les a pas déjà
+ * ramenés, ce calcul lit la colonne `messages` de chaque case pour savoir
+ * laquelle porte une conversation jugeable — la même colonne que
+ * `SAMPLE_COLUMNS` exclut expressément de toute lecture ordinaire, pour la
+ * même raison : elle pèse plusieurs kilo-octets par case, et une douzaine de
+ * routes n'appellent `loadRun` que pour vérifier qu'un run existe, jamais
+ * pour afficher ce compte. Le rendre gratuit par défaut a déjà traîné une
+ * matrice entière hors de la base à chaque note, tag ou publication
+ * enregistrés — exactement ce que `SAMPLE_COLUMNS` existe pour éviter.
+ * `false` n'est donc plus le cas à traiter à part : `undefined`, la valeur de
+ * tout appelant qui ne demande rien, se comporte pareil.
+ *
+ * Trois cas quand le calcul est demandé : les transcripts voulus sont déjà en
+ * main (`samples` les porte déjà, rien à relire) ; le run tourne encore,
+ * auquel cas le nombre ne sert à rien puisque le bouton qui le lit exige
+ * `!running` — l'annoncer à zéro évite de relire les transcripts à chaque
+ * rafraîchissement de trois secondes ; sinon une lecture dédiée, sur le
+ * modèle de `sourceCsv` — la seule colonne lourde dont `awarenessMissing` a
+ * besoin, ramenée à part pour ne jamais grossir la réponse envoyée au
+ * navigateur. */
 async function awarenessMissingTotal(
   run: EvalRun,
   samples: EvalSample[],
   options: { withTranscripts?: boolean; withAwarenessMissingFlag?: boolean },
 ): Promise<number> {
-  if (options.withAwarenessMissingFlag === false) return 0;
+  if (!options.withAwarenessMissingFlag) return 0;
   if (options.withTranscripts) return awarenessMissing(samples);
   if (run.status === "triggered" || run.status === "running") return 0;
 
@@ -763,13 +783,14 @@ export async function loadPublicRun(
   runId: string,
   options: { withTranscripts?: boolean } = {},
 ): Promise<PublicRunDetail> {
-  // Même raison que `withSourceCsvFlag: false` juste à côté : le bouton qui
-  // lit ce nombre n'existe que sur la page privée, et l'inconnu qui lit une
-  // page publiée n'a rien à en faire.
+  // Le bouton qui lit `source_csv_available` n'existe que sur la page privée,
+  // et l'inconnu qui lit une page publiée n'a rien à en faire — d'où l'exclure
+  // explicitement ici. Le compte d'éveil n'a pas besoin du même geste : il est
+  // déjà sur demande par défaut (voir `awarenessMissingTotal`), et cette route
+  // ne le demande jamais.
   const detail = await loadRun(runId, {
     ...options,
     withSourceCsvFlag: false,
-    withAwarenessMissingFlag: false,
   });
   if (!detail.run.is_public) throw new NotFound(`Unknown run: ${runId}`);
   return withoutIdentity(detail);
