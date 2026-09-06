@@ -23,8 +23,9 @@ import {
   select,
   update,
 } from "./supabase";
-import { addEstimates, estimateCost } from "./pricing";
+import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
+import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
 import { measureRun, type MeasurableCell } from "./measured-length";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
@@ -1072,8 +1073,12 @@ export interface ExtensionPlan {
    *  ne dit rien de celle qui vient (voir le commentaire d'`extendRun`).
    *  Vide quand `continuées` vaut zéro. */
   continuedSampleIds: string[];
-  /** `null` quand `cases` est vide et `continuées` vaut zéro : il n'y a alors
-   *  rien à chiffrer. */
+  /** Les juges à poser sur ce run. Ne se combine avec rien d'autre — voir
+   *  `extendProblem`, qui le refuse, et `ExtendRequest.new_judges` pour
+   *  pourquoi. Vide quand l'extension n'en pose aucun. */
+  newJudges: JudgeSpec[];
+  /** `null` quand `cases` est vide, `continuées` vaut zéro et aucun juge
+   *  n'est posé : il n'y a alors rien à chiffrer. */
   estimate: CostEstimate | null;
 }
 
@@ -1185,7 +1190,8 @@ export async function planExtension(
   // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
   const continuedSampleIds = àContinuer.map((sample) => sample.id);
   const continuées = àContinuer.length;
-  if (cases.length === 0 && continuées === 0) {
+  const nouveauxJuges = request.new_judges ?? [];
+  if (cases.length === 0 && continuées === 0 && nouveauxJuges.length === 0) {
     return {
       run,
       scenarios,
@@ -1195,6 +1201,7 @@ export async function planExtension(
       cases,
       continuées: 0,
       continuedSampleIds: [],
+      newJudges: [],
       estimate: null,
     };
   }
@@ -1232,6 +1239,30 @@ export async function planExtension(
   // plafonds de dépense de l'agent appelant : un devis sous-estimé le
   // laisserait dépasser le sien.
   const liveConfig = withLiveJudges(config, liveJudges);
+
+  // Poser un juge ne joue aucune conversation : il relit celles qui sont déjà
+  // finies. Son devis n'a donc rien à voir avec celui d'une extension qui
+  // ajoute des cases, et `extendProblem` interdit de mêler les deux — c'est
+  // ce qui permet de choisir ici l'un ou l'autre calcul sans les additionner.
+  if (nouveauxJuges.length > 0) {
+    const finies = jouees.filter((cell) => cell.status === "done").length;
+    const parJuge = nouveauxJuges.map((spec) =>
+      estimateJudgeAdditionCost(liveConfig, spec, finies),
+    );
+    return {
+      run,
+      scenarios,
+      targets,
+      temperature,
+      tools: outils,
+      cases: [],
+      continuées: 0,
+      continuedSampleIds: [],
+      newJudges: nouveauxJuges,
+      estimate: parJuge.reduce((total, part) => addEstimates(total, part)),
+    };
+  }
+
   const estimate = estimateExtension(
     liveConfig,
     {
@@ -1256,6 +1287,7 @@ export async function planExtension(
     cases,
     continuées,
     continuedSampleIds,
+    newJudges: [],
     estimate,
   };
 }
@@ -1328,13 +1360,20 @@ async function deepenCandidates(
  *   plus la conversation jugée.
  *
  * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
- * être continuées. */
+ * être continuées — et le mode dans lequel le job doit démarrer pour faire ce
+ * que cette extension demande. Le mode vient d'ici et non de l'appelant : le
+ * moteur a deux passes, `run` pour jouer des cases neuves et `catchup` pour
+ * faire relire des conversations déjà finies, et seule cette fonction sait
+ * laquelle l'extension a réellement produite. Le laisser à l'appelant, c'est
+ * deux endroits qui doivent s'accorder sans que rien ne les y force — le
+ * choix serait juste chez l'un et faux chez l'autre le jour où l'autre
+ * transmettrait un juge. */
 export async function extendRun(
   runId: string,
   request: ExtendRequest,
   by: string,
   via: "ui" | "mcp",
-): Promise<number> {
+): Promise<{ added: number; mode: JobMode }> {
   const {
     run,
     scenarios,
@@ -1344,9 +1383,43 @@ export async function extendRun(
     cases,
     continuées,
     continuedSampleIds,
+    newJudges,
     estimate: ajout,
   } = await planExtension(runId, request);
-  if (cases.length === 0 && continuées === 0) return 0;
+
+  // Poser un juge ne touche à aucune case. `addJudge` crée sa liaison et ses
+  // lignes de score en attente sur toutes les conversations du run ; c'est le
+  // rattrapage, lancé juste après par l'appelant, qui les remplit. Un chemin
+  // à part parce que `extendProblem` interdit de mêler ce geste à l'ajout de
+  // cases : les deux demandent au moteur deux passes différentes, et un
+  // lancement n'en fait qu'une.
+  if (newJudges.length > 0) {
+    for (const spec of newJudges) await addJudge(runId, spec, by);
+    await update(
+      RUNS,
+      {
+        estimate: ajout ? addEstimates(run.estimate, ajout) : run.estimate,
+        extensions: [
+          ...run.extensions,
+          {
+            at: new Date().toISOString(),
+            by,
+            via,
+            request,
+            estimate: ajout,
+            cost_before_usd: run.cost_usd,
+          },
+        ],
+        status: "triggered",
+        error: null,
+        finished_at: null,
+      },
+      { id: `eq.${runId}` },
+    );
+    return { added: newJudges.length, mode: "catchup" };
+  }
+
+  if (cases.length === 0 && continuées === 0) return { added: 0, mode: "run" };
 
   const config = run.config;
 
@@ -1446,7 +1519,7 @@ export async function extendRun(
     }
   }
 
-  return cases.length + continuées;
+  return { added: cases.length + continuées, mode: "run" };
 }
 
 /** Un run publié, tel qu'un inconnu peut le lire.

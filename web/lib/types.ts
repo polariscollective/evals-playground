@@ -457,6 +457,18 @@ export interface ExtendRequest {
    * Ajouter est permis, redéfinir non : un outil qui reprendrait un nom
    * existant ferait relire les cases déjà jouées comme ayant eu celui-ci. */
   new_tools?: ToolSpec[];
+  /** Des juges à poser sur ce run, en plus de ceux qu'il porte déjà.
+   *
+   * Toujours secondaires : devenir principal est un second geste, explicite.
+   * Chacun naît avec une ligne de score en attente sur toutes les
+   * conversations du run, que le rattrapage remplit ensuite.
+   *
+   * Ne se combine avec rien d'autre — ni scénario, ni modèle, ni
+   * approfondissement. Le moteur a deux passes distinctes : `run` joue les
+   * cases neuves, `catchup` remplit les verdicts manquants sur les
+   * conversations déjà finies, et un lancement n'en fait qu'une. Les mêler
+   * rendrait la moitié du travail payé et non fait — voir `extendProblem`. */
+  new_judges?: JudgeSpec[];
   /** Les scénarios existants qui n'avaient nommé aucun outil — donc « tous
    *  ceux du run » — héritent-ils des nouveaux ?
    *

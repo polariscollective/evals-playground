@@ -1110,13 +1110,17 @@ const handler = createMcpHandler((server) => {
         // un autre appel aurait comblé exactement la même extension entre les
         // deux lectures. Gardé quand même : le même filet que la route
         // humaine, pour la même raison.
-        const added = await extendRun(run.id, request, caller, "mcp");
+        // Le mode vient d'`extendRun`, jamais d'ici : c'est elle qui sait ce
+        // que cette extension a produit — des cases neuves à jouer, ou un juge
+        // à qui faire relire des conversations déjà finies. Voir sa
+        // documentation pour pourquoi ce choix ne se recopie pas.
+        const { added, mode } = await extendRun(run.id, request, caller, "mcp");
         if (added === 0) {
           return toolError("Nothing to add: that combination is already covered.");
         }
 
         try {
-          await recordStart(run.id, await startJob(run.id, "run"));
+          await recordStart(run.id, await startJob(run.id, mode));
         } catch (error) {
           const reason = `Could not start the job: ${(error as Error).message}`;
           await failToStart(run.id, reason);
@@ -1144,6 +1148,12 @@ const handler = createMcpHandler((server) => {
         }
         if (plan.continuées > 0) {
           parts.push(`${plan.continuées} attempt${plan.continuées > 1 ? "s" : ""} pushed deeper`);
+        }
+        if (plan.newJudges.length > 0) {
+          const n = plan.newJudges.length;
+          parts.push(
+            `${n} judge${n > 1 ? "s" : ""} added, now reading every conversation already played`,
+          );
         }
         return {
           content: [
@@ -1254,19 +1264,25 @@ const handler = createMcpHandler((server) => {
         "and optionally new_tools_for_existing — needing no model or depth of its own, but never the " +
         "only thing a call does: a call naming no scenario (scenario_indices or new_scenarios) and no " +
         "deepen is refused even when new_tools is filled in, since adding tools to a batch that adds " +
-        "nothing else is not enough on its own. Raise the run's depth on its own: turns — it only " +
-        "takes effect on scenarios or cells this same call adds, and leaves already-played attempts " +
-        "at the depth they were judged at unless they are also named in deepen. Deepen attempts " +
+        "nothing else is not enough on its own. Raise the run's depth for what this call adds: turns — " +
+        "never on its own, since a call adding no scenario and deepening nothing is refused; it " +
+        "takes effect on the scenarios or cells this same call adds, and leaves already-played " +
+        "attempts at the depth they were judged at unless they are also named in deepen. Add a " +
+        "judge to the run: new_judges, alone in its call — it re-reads every conversation already " +
+        "played, on its own question and its own scale, and every earlier verdict stays beside it. " +
+        "Deepen attempts " +
         "already played, chosen by the grade the run's PRINCIPAL judge gave them — never a secondary " +
         "or system judge, even when the run carries one: deepen, together with turns, since there " +
         "would otherwise be no new depth to push them to — needing no model and no repetitions, since " +
         "deepening resumes real conversations rather than adding cells. Call get_run_results first: it " +
         "already returns the principal judge's rubric, with each grade's meaning and how many attempts " +
         "carry it, which is what choosing deepen requires.\n\n" +
-        "Any of these can be combined in one call, each still asking only for its own parameters. What " +
-        "none of them ever touches, deepening included: any judge already linked to the run — the " +
-        "principal, an eval-awareness check, or a secondary one — nor its rubric or its criterion. A " +
-        "run exists to be compared against itself, and a second batch judged differently would not be. " +
+        "All of these but new_judges can be combined in one call, each still asking only for its own " +
+        "parameters. What none of them ever changes, deepening included: a judge already linked to " +
+        "the run — the principal, an eval-awareness check, or a secondary one — nor its rubric or " +
+        "its criterion. Adding one leaves every existing judge exactly as it was; nothing is ever " +
+        "rewritten or replaced. A run exists to be compared against itself, and a second batch " +
+        "judged differently would not be. " +
         "Turns only ever grow, for the run and for a deepened attempt alike: a request that would " +
         "lower either is refused — a played conversation is never shortened. An attempt pushed to a " +
         "new depth is re-judged from scratch on the whole conversation, never on the increment alone " +
@@ -1345,6 +1361,39 @@ const handler = createMcpHandler((server) => {
               "cells already run would be read as having had this one. Independent of everything else " +
               "in this call: no scenario, model or turns change is needed to add a tool.",
           ),
+        new_judges: z
+          .array(
+            z.object({
+              criterion: z.string().describe("What this judge looks for, in one question."),
+              rubric: z
+                .array(
+                  z.object({
+                    value: z.number(),
+                    meaning: z.string(),
+                    excluded: z
+                      .boolean()
+                      .optional()
+                      .describe("true keeps this grade out of the mean — see read_prompt."),
+                  }),
+                )
+                .describe("Its own scale, at least two grades, highest value the strongest form."),
+              model: z
+                .string()
+                .optional()
+                .describe("Defaults to the run's judge model. Same catalogue as everywhere else."),
+            }),
+          )
+          .optional()
+          .describe(
+            "Judges to add to this run, each grading its own question on its own scale, over every " +
+              "conversation the run has already played. Always secondary: making one principal is a " +
+              "separate, explicit gesture from the run's page. This is what re-judging became — the " +
+              "earlier verdicts are kept beside the new one instead of being overwritten, which is " +
+              "the whole point of asking twice. Nothing else may travel with it: a call carrying " +
+              "new_judges alongside scenarios, models, turns, tools or deepen is refused, because " +
+              "adding a judge re-reads conversations that are already played while the others play " +
+              "new ones, and one launch does one of the two. Send them as two calls.",
+          ),
         new_tools_for_existing: z
           .boolean()
           .optional()
@@ -1413,6 +1462,7 @@ const handler = createMcpHandler((server) => {
           : { new_tools_for_existing: input.new_tools_for_existing }),
         ...(input.turns === undefined ? {} : { turns: input.turns }),
         ...(input.deepen === undefined ? {} : { deepen: input.deepen }),
+        ...(input.new_judges === undefined ? {} : { new_judges: input.new_judges }),
       };
 
       // Les mêmes contrôles que la route d'extension, au dépôt plutôt qu'au
@@ -1453,7 +1503,7 @@ const handler = createMcpHandler((server) => {
       // Rien à ajouter ni à approfondir : `launch_draft` refuserait ce
       // brouillon pour cette seule raison, avant même de regarder le budget
       // — même refus, mot pour mot.
-      if (plan.cases.length === 0 && plan.continuées === 0) {
+      if (plan.cases.length === 0 && plan.continuées === 0 && plan.newJudges.length === 0) {
         return {
           content: [
             {
@@ -1473,6 +1523,12 @@ const handler = createMcpHandler((server) => {
       }
       if (plan.continuées > 0) {
         parts.push(`${plan.continuées} attempt${plan.continuées > 1 ? "s" : ""} to deepen`);
+      }
+      if (plan.newJudges.length > 0) {
+        const n = plan.newJudges.length;
+        parts.push(
+          `${n} judge${n > 1 ? "s" : ""} to add, each reading every conversation already played`,
+        );
       }
       const summary = parts.join(" and ");
       const quote = plan.estimate?.usd ?? 0;

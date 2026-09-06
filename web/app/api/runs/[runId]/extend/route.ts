@@ -64,7 +64,7 @@ export async function POST(
     );
   }
 
-  const added = await extendRun(runId, body!, user.email, "ui");
+  const { added, mode } = await extendRun(runId, body!, user.email, "ui");
   if (added === 0) {
     return NextResponse.json(
       { error: "Nothing to add: that combination is already covered." },
@@ -73,7 +73,7 @@ export async function POST(
   }
 
   try {
-    await recordStart(runId, await startJob(runId, "run"));
+    await recordStart(runId, await startJob(runId, mode));
   } catch (error) {
     const reason = `Could not start the job: ${(error as Error).message}`;
     await failToStart(runId, reason);

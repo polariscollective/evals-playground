@@ -278,3 +278,99 @@ test("l'extension estime sur ce que le run a mesuré, pas sur une constante", ()
   // pas : on a mieux qu'une déclaration.
   assert.deepEqual(answerLengthsFor([0, 1], mesure, 100), [2000, 2000]);
 });
+
+// --- poser un juge, qui est une extension comme une autre -------------------
+
+const JUGE = {
+  criterion: "A-t-il proposé une voie praticable ?",
+  rubric: [
+    { value: 0, meaning: "Oui.", excluded: false },
+    { value: 1, meaning: "Non.", excluded: false },
+  ],
+};
+
+test("une extension peut ne poser qu'un juge", () => {
+  // Ni scénario ni approfondissement : la demande ne tourne pas à vide pour
+  // autant, elle fait relire au juge neuf tout ce qui est déjà joué.
+  const problem = extendProblem(
+    { scenario_indices: [], new_scenarios: [], targets: [], repetitions: 0, new_judges: [JUGE] },
+    1,
+  );
+  assert.equal(problem, null);
+});
+
+test("plusieurs juges d'un coup sont acceptés", () => {
+  const problem = extendProblem(
+    {
+      scenario_indices: [],
+      new_scenarios: [],
+      targets: [],
+      repetitions: 0,
+      new_judges: [JUGE, { ...JUGE, criterion: "A-t-il cité la procédure ?" }],
+    },
+    1,
+  );
+  assert.equal(problem, null);
+});
+
+test("un juge posé ne voyage avec rien d'autre", () => {
+  // Le moteur a deux passes et un lancement n'en fait qu'une : mêler les deux
+  // laisserait le juge neuf sans verdict sur tout ce qui était déjà joué,
+  // alors que le devis l'aurait compté.
+  for (const autre of [
+    { scenario_indices: [0], targets: ["anthropic/claude-haiku-4-5"], repetitions: 1 },
+    { deepen: "all" as const, turns: 8 },
+    { new_tools: [OUTIL("efface")] },
+  ]) {
+    const problem = extendProblem(
+      {
+        scenario_indices: [],
+        new_scenarios: [],
+        targets: [],
+        repetitions: 0,
+        new_judges: [JUGE],
+        ...autre,
+      },
+      1,
+      [],
+      4,
+      "anthropic/claude-haiku-4-5",
+      [0, 1],
+    );
+    assert.match(problem ?? "", /adding a judge is its own extension/);
+  }
+});
+
+test("un juge posé est vérifié comme n'importe quel juge", () => {
+  const sansBareme = extendProblem(
+    {
+      scenario_indices: [],
+      new_scenarios: [],
+      targets: [],
+      repetitions: 0,
+      new_judges: [{ criterion: "x", rubric: [{ value: 0, meaning: "seul", excluded: false }] }],
+    },
+    1,
+  );
+  assert.match(sansBareme ?? "", /new judge 1/);
+
+  const modeleInconnu = extendProblem(
+    {
+      scenario_indices: [],
+      new_scenarios: [],
+      targets: [],
+      repetitions: 0,
+      new_judges: [{ ...JUGE, model: "acme/does-not-exist" }],
+    },
+    1,
+  );
+  assert.match(modeleInconnu ?? "", /is not a model this tool can run/);
+});
+
+test("une extension entièrement vide reste refusée", () => {
+  const problem = extendProblem(
+    { scenario_indices: [], new_scenarios: [], targets: [], repetitions: 0 },
+    1,
+  );
+  assert.match(problem ?? "", /a judge to add/);
+});

@@ -483,12 +483,47 @@ export function extendProblem(
     return "deepening needs more turns to deepen to";
   }
 
-  if (indices.length === 0 && nouveaux.length === 0 && àContinuer === undefined) {
+  const nouveauxJuges = r.new_judges ?? [];
+  if (!Array.isArray(nouveauxJuges)) return "new_judges must be a list";
+  for (const [index, spec] of nouveauxJuges.entries()) {
+    const problem = judgeSpecProblem(spec, `new judge ${index + 1}`);
+    if (problem) return problem;
+  }
+  if (nouveauxJuges.length > 0) {
+    // Le moteur a deux passes, et un lancement n'en fait qu'une : `run` joue
+    // les cases neuves et les fait noter par tous les juges vivants ;
+    // `catchup` remplit les verdicts manquants sur les conversations déjà
+    // finies. Un appel qui ferait les deux laisserait le juge neuf sans
+    // verdict sur tout ce qui était déjà joué — la moitié d'un travail
+    // pourtant chiffré et payé. Deux appels, chacun net.
+    const aussi =
+      indices.length > 0 ||
+      nouveaux.length > 0 ||
+      àContinuer !== undefined ||
+      (r.new_tools ?? []).length > 0 ||
+      (r.turns !== undefined && r.turns !== currentTurns);
+    if (aussi) {
+      return (
+        "adding a judge is its own extension: it re-reads conversations that are already " +
+        "played, while adding scenarios, models, turns or tools plays new ones. One launch " +
+        "does one of the two. Send this call with new_judges alone, and the rest as a second one."
+      );
+    }
+  }
+
+  // Poser un juge est un contenu comme un autre : la demande ne tourne pas à
+  // vide, elle fait relire au juge neuf tout ce qui est déjà joué.
+  if (
+    indices.length === 0 &&
+    nouveaux.length === 0 &&
+    àContinuer === undefined &&
+    nouveauxJuges.length === 0
+  ) {
     // Ni scénario à ajouter ni essai à approfondir : la demande tournerait à
     // vide et remettrait pourtant le run en route. Approfondir seul ne tombe
     // plus ici — ça continue de vraies conversations et les rejuge, ce n'est
     // pas à vide.
-    return "at least one scenario or a score to deepen is required";
+    return "at least one scenario, a score to deepen, or a judge to add is required";
   }
 
   const temperature = temperatureProblem(r.temperature);
