@@ -16,6 +16,7 @@ import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
 import { analysisReplaceAllowed } from "@/lib/analysis";
 import { AWAKE_TYPE, AWARENESS_ALARM, awarenessEnabled, awarenessSummary } from "@/lib/awareness";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
+import { withLiveJudges } from "@/lib/live-config";
 import {
   DraftNotFound,
   createDraft,
@@ -37,6 +38,7 @@ import {
   extendRun,
   failToStart,
   judgeVerdictsForSample,
+  loadLiveRunJudges,
   loadRun,
   loadRuns,
   loadSampleTranscript,
@@ -315,8 +317,8 @@ const handler = createMcpHandler((server) => {
         "this server's code rather than by a person: for those, `criterion` carries that fixed question " +
         "and `rubric` is null — read `scale` instead. None of this ever includes who added a judge, only " +
         "what it asks and how it's scored. `criterion` and `rubric` at the top level are the current " +
-        "principal's — this can differ from the criterion and rubric a fresh submit_draft_run would " +
-        "produce from this same run's YAML (get_run_config), if the principal changed since launch.\n\n" +
+        "principal's — the same ones get_run_config's YAML carries at its own top level, since that " +
+        "tool reads the same live judges rather than what launch happened to record.\n\n" +
         "`awareness` is a shorthand for the built-in eval-awareness judge specifically, in the same shape " +
         "as before multiple judges existed: whether the run's config asked for it at launch " +
         "(`awareness.enabled` — `true` or `false`, or `null` when the run predates this field and " +
@@ -667,23 +669,34 @@ const handler = createMcpHandler((server) => {
     {
       title: "Get a run's configuration",
       description:
-        "The run as it was launched, given back as the YAML document that would produce it again — " +
-        "every scenario written out, the scale, the models, the adversary prompt. No results and no " +
-        "transcripts: those are get_run_results and get_run_trajectory. This is what to read when the " +
-        "task is to change something about an existing run rather than write one from nothing: take " +
-        "this, edit it, and hand it to submit_draft_run. A run with many scenarios makes a long " +
-        "document.\n\n" +
-        "As launched, not as it stands today: a judge added to the run afterward (see " +
-        "get_run_metadata's `judges`) was never written back into this configuration and will not " +
-        "appear here, and the criterion, rubric and model shown for the principal are the ones from " +
-        "launch even if a different judge has since taken over as principal. Submitting this document " +
-        "as a new run reproduces what was launched, never a judge added to this one since.",
+        "The run as it stands right now, given back as the YAML document that would relaunch it as " +
+        "it's linked today — every scenario written out, the scale, the models, the adversary prompt. " +
+        "No results and no transcripts: those are get_run_results and get_run_trajectory. This is what " +
+        "to read when the task is to change something about an existing run rather than write one from " +
+        "nothing: take this, edit it, and hand it to submit_draft_run. A run with many scenarios makes " +
+        "a long document.\n\n" +
+        "The top-level `criterion`, `rubric` and `models.judge` are the current PRINCIPAL's — the same " +
+        "one get_run_metadata's `judges` marks as principal, even if that's not who launched the run. " +
+        "`judges` lists every other ordinary judge still linked (see get_run_metadata for what each one " +
+        "asks): one added to the run after launch (`addJudge`, from the web app or by an agent) appears " +
+        "here, one unlinked since does not, no matter which door either happened through. " +
+        "`check_eval_awareness` reflects whether the built-in eval-awareness judge is still linked now, " +
+        "not what launch asked for — the two can differ once that judge has been unlinked. Submitting " +
+        "this document as a new run reproduces the run as it's judged today, never as it was launched " +
+        "if a judge was added, unlinked, or handed the principal title since.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
       const result = await runOrError(run_id, { withTranscripts: false, withSourceCsvFlag: false });
       if ("error" in result) return result.error;
-      return { content: [{ type: "text", text: writeConfigFile(result.run.run.config) }] };
+      // Dérivé depuis les liaisons vivantes, jamais depuis `config.judges`
+      // recopié au lancement — voir `withLiveJudges` (`lib/live-config.ts`)
+      // pour pourquoi. `loadLiveRunJudges` seule, jamais `attachJudges` : ce
+      // document n'a besoin que de l'identité de chaque juge, pas de son
+      // verdict sur chaque conversation.
+      const live = await loadLiveRunJudges(run_id);
+      const config = withLiveJudges(result.run.run.config, live);
+      return { content: [{ type: "text", text: writeConfigFile(config) }] };
     },
   );
 

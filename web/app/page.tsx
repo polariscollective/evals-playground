@@ -39,6 +39,7 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
 import { configProblem } from "@/lib/validate";
+import { withLiveJudges } from "@/lib/live-config";
 import { SHARED_PRICING } from "@/lib/shared";
 import { RubricEditor } from "@/components/RubricEditor";
 import { ScenarioList } from "@/components/ScenarioList";
@@ -327,7 +328,7 @@ function EvaluateForm() {
     let cancelled = false;
 
     getRun(relaunchOf)
-      .then(async ({ run, source_csv_available }) => {
+      .then(async ({ run, judges, source_csv_available }) => {
         if (cancelled) return;
         // Le fichier d'origine s'il a été gardé ; sinon `fillFromConfig` le
         // reconstruit depuis les scénarios du run.
@@ -337,7 +338,17 @@ function EvaluateForm() {
             : null;
         if (cancelled) return;
 
-        fillFromConfig(run.config, run.label ?? "", text);
+        // Dérivé depuis les liaisons vivantes du run (`judges`, déjà
+        // ramenées par `getRun`), jamais depuis `run.config.judges` recopié
+        // au lancement — voir `withLiveJudges` (`lib/live-config.ts`). Un
+        // juge ajouté après coup rejoint donc le formulaire ; un juge délié
+        // en sort. `criterion`/`rubric`/le modèle du juge suivent le
+        // principal vivant, même s'il a changé depuis le lancement.
+        fillFromConfig(
+          withLiveJudges(run.config, judges ?? []),
+          run.label ?? "",
+          text,
+        );
 
         if (run.config.source?.kind === "csv" && text === null) {
           setRelaunchNote(
