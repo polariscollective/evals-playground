@@ -154,7 +154,10 @@ test("le prompt annonce le juge d'éveil et le conseil d'écriture", () => {
   // conseil qu'il ne va pas chercher.
   const prompt = agentPrompt(agentModels(), "https://example.test");
   assert.match(prompt, /check_eval_awareness/);
-  assert.match(prompt, /read_scenario_advice|\/scenarios/);
+  // Le canal MCP appelle un outil ; le canal HTTP ouvre la route publique
+  // dédiée — jamais `/scenarios`, la page privée qu'un agent sans session ne
+  // peut pas lire (voir `web/app/scenario-advice/route.ts`).
+  assert.match(prompt, /read_scenario_advice|\/scenario-advice/);
 });
 
 test("le prompt MCP ne dit plus qu'update_draft_run refuse le brouillon d'un autre", () => {

@@ -9,6 +9,7 @@ test("les chemins ouverts passent la porte sans session", () => {
   for (const path of [
     "/prompt",
     "/validate",
+    "/scenario-advice",
     "/shared/2f1c9e6a-0000-4000-8000-000000000000",
     "/api/auth/signin",
     "/favicon.ico",
@@ -35,6 +36,10 @@ test("leurs voisins de préfixe restent fermés", () => {
     "/validatex",
     "/sharedx",
     "/prompts-secrets",
+    "/scenario-advicex",
+    // La page privée qu'un humain lit reste fermée : seule la route dédiée,
+    // qui rend le défaut, est publique.
+    "/scenarios",
     "/favicon.icon",
     "/mcpx",
     "/mcp-secrets",

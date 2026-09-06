@@ -393,7 +393,7 @@ the cell empty for the scenarios that start from nothing, which is most of them.
 I upload the CSV separately, and the tool selects those columns for me. If I have
 not told you the column names, write \`scenarios: csv\` on its own and it will
 guess them.`,
-  advice: `Open {{ORIGIN}}/scenarios and read the text there, or ask me to paste it.`,
+  advice: `Open {{ORIGIN}}/scenario-advice and read the text there, or ask me to paste it.`,
   closing: `## The experiment I want
 
 REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
@@ -539,10 +539,11 @@ function fill(
  *
  * `origin` est laissé vide quand on ne le connaît pas : l'adresse devient
  * `/validate`, qu'un agent ayant lu `/prompt` résout de lui-même — même chose
- * pour `{{ORIGIN}}`, qui pointe vers `/scenarios`. Ceux qui le connaissent le
- * passent — la fenêtre le lit dans le navigateur, la route dans les en-têtes —
- * parce qu'un prompt copié-collé arrive chez un agent qui n'a plus aucun
- * contexte d'hôte. */
+ * pour `{{ORIGIN}}`, qui pointe vers `/scenario-advice` — la route publique,
+ * pas `/scenarios`, la page privée que lit un humain. Ceux qui le connaissent
+ * le passent — la fenêtre le lit dans le navigateur, la route dans les
+ * en-têtes — parce qu'un prompt copié-collé arrive chez un agent qui n'a plus
+ * aucun contexte d'hôte. */
 export function agentPrompt(
   models: { id: string; label: string }[],
   origin = "",

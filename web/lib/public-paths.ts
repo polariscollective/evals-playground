@@ -9,12 +9,15 @@
  *  simple préfixe laisserait passer un chemin voisin plus long.
  *
  * Ouvrir un chemin ici ne le rend pas sûr : ça enlève seulement la porte. Ce
- * qui reste derrière doit s'autoriser lui-même. `prompt` et `validate` ne
- * lisent rien — un texte fixe, un verdict sur ce que l'appelant envoie déjà.
- * `shared`, lui, lit la base : c'est `loadPublicRun` qui refuse un run non
- * publié, avec le même message qu'un run inconnu, et c'est lui qui fait
- * autorité — pas cette liste. Toute future entrée sous ce préfixe hérite de
- * cette obligation, silencieusement : rien ici ne la rappelle par fichier. */
+ * qui reste derrière doit s'autoriser lui-même. `prompt`, `validate` et
+ * `scenario-advice` ne lisent rien de privé — un texte fixe, un verdict sur ce
+ * que l'appelant envoie déjà, ou le conseil par défaut, jamais la surcharge
+ * qu'un profil aurait écrite : sans session, on ne sait pas qui demande, donc
+ * rien qui dépende de qui demande ne peut sortir ici. `shared`, lui, lit la
+ * base : c'est `loadPublicRun` qui refuse un run non publié, avec le même
+ * message qu'un run inconnu, et c'est lui qui fait autorité — pas cette
+ * liste. Toute future entrée sous ce préfixe hérite de cette obligation,
+ * silencieusement : rien ici ne la rappelle par fichier. */
 export const OPEN_PREFIXES = [
   // La connexion elle-même, sans quoi personne ne peut entrer.
   "api/auth",
@@ -22,6 +25,10 @@ export const OPEN_PREFIXES = [
   // pas de session et ne saurait pas en obtenir une.
   "prompt",
   "validate",
+  // Le conseil d'écriture de scénario, toujours sa version par défaut — voir
+  // le commentaire de tête. Même public que `prompt` et `validate` : un agent
+  // sans session, à qui le prompt donne cette adresse.
+  "scenario-advice",
   // Un run publié.
   "shared",
   // Le viewer d'Inspect et les journaux qu'il lit. Même obligation que
