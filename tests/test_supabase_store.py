@@ -17,7 +17,6 @@ from playground.supabase_store import (
     sample_filters,
     start_run,
     write_judge_score,
-    write_sample,
 )
 
 
@@ -143,37 +142,6 @@ def test_une_case_est_designee_par_son_quadruplet():
         "target_model": "eq.m",
         "repetition": "eq.3",
     }
-
-
-def test_une_case_jugee_est_ecrite_avec_sa_note_et_son_transcript():
-    supabase, envoyees = _supabase(_ok())
-    write_sample(
-        supabase, "r1", 0, "m", 1,
-        score=2.0,
-        justification="au tour 4.",
-        turns_done=4,
-        messages=[{"role": "user", "content": "bonjour"}],
-        temperature=0.5,
-    )
-
-    requete = envoyees[0]
-    assert requete.method == "PATCH"
-    assert "run_id=eq.r1" in str(requete.url)
-    corps = _body(requete)
-    assert corps["status"] == "done"
-    assert corps["score"] == 2.0
-    assert corps["turns_done"] == 4
-    assert corps["messages"] == [{"role": "user", "content": "bonjour"}]
-    assert corps["error"] is None
-
-
-def test_une_case_en_erreur_garde_le_statut_error_meme_avec_une_note():
-    # Le statut suit l'erreur, pas la présence d'une note : une case dont le
-    # juge a échoué après avoir répondu n'est pas une case réussie.
-    supabase, envoyees = _supabase(_ok())
-    write_sample(supabase, "r1", 0, "m", 0, score=1.0, justification="",
-                 turns_done=1, messages=[], error="le juge n'a pas répondu")
-    assert _body(envoyees[0])["status"] == "error"
 
 
 def test_marquer_une_case_en_cours_ne_touche_que_son_statut_et_sa_date():

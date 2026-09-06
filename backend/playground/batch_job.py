@@ -317,17 +317,16 @@ def run_batch_job(
         """Termine la case, une fois tous ses juges appelés : son transcript,
         sa profondeur, sa consommation totale.
 
-        `write_sample` (supabase_store.py) écrit encore, sans condition, dans
-        `eval_samples.score` et `.justification` — deux colonnes que la
-        migration `20260906093000_drop_eval_samples_score_columns.sql` a
-        supprimées, au profit de `judge_scores` où chaque juge écrit
-        désormais la sienne (voir `ecrire_juge`, plus haut). L'appeler
-        enverrait donc, à chaque case, un PATCH visant deux colonnes qui
-        n'existent plus, et échouerait contre la vraie base — hors du
-        périmètre de cette tâche de le corriger dans `supabase_store.py`
-        (limité à `scoring.py` et `batch_job.py`) : signalé dans le rapport
-        de tâche, pas réparé ici. On écrit donc directement, avec
-        `Supabase.update` et `sample_filters`, qui restent valides eux.
+        Écrit directement avec `Supabase.update` et `sample_filters`, sans
+        passer par une fonction dédiée de `supabase_store.py` : la note et sa
+        justification vivent désormais dans `judge_scores`, une ligne par
+        juge, écrite par `ecrire_juge` plus haut — cette case-ci n'a donc
+        plus qu'un statut, un transcript et une consommation à enregistrer.
+        L'ancien `write_sample` (`supabase_store.py`) écrivait tout cela d'un
+        coup, note comprise, dans `eval_samples.score` et `.justification` ;
+        ces deux colonnes ont disparu avec la migration
+        `20260906093000_drop_eval_samples_score_columns.sql`, et la fonction
+        avec elles — voir le ménage fait dans `supabase_store.py`.
         """
         cle = (sample.scenario_index, sample.target, sample.repetition)
         usage = add_usage(deja_facture.get(cle, {}), sample.usage)

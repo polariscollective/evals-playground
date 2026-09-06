@@ -310,99 +310,6 @@ def mark_sample_running(
     )
 
 
-def write_sample(
-    supabase: Supabase,
-    run_id: str,
-    scenario_index: int,
-    target_model: str,
-    repetition: int,
-    *,
-    score: float | None,
-    justification: str,
-    turns_done: int,
-    messages: list[dict],
-    temperature: float | None = None,
-    usage: dict[str, Any] | None = None,
-    cost_usd: float | None = None,
-    error: str | None = None,
-    awareness: tuple[int | None, str, str | None] | None = None,
-) -> None:
-    """Enregistre une case terminée.
-
-    Écrite dès qu'elle est jugée, sans attendre la fin du run : c'est ce qui
-    fait avancer la progression à l'écran, et ce qui laisse quelque chose
-    d'exploitable derrière un job qui meurt en cours de route.
-
-    `turns_done` reflète toujours une conversation qui est allée à son terme :
-    cette fonction n'est jamais atteinte pour une case dont le solver a
-    échoué ou a été annulée — celles-ci restent hors du juge, et donc hors
-    d'ici (voir `abandon_unfinished_samples` et `cancel_unfinished_samples`).
-
-    `awareness` porte la note d'éveil, sa justification et sa panne éventuelle.
-    `None` — le cas d'une passe de juge rejouée — **omet** les trois colonnes
-    de l'écriture au lieu de les mettre à `null` : la note d'éveil obtenue au
-    premier passage doit survivre à un rejugement, qui ne repose pas la
-    question. Trois paramètres à valeur par défaut n'auraient pas su distinguer
-    « pas de note » de « ne touche pas », et auraient effacé en silence.
-    """
-    values: dict[str, Any] = {
-        "status": "error" if error else "done",
-        "score": score,
-        "justification": justification,
-        "turns_done": turns_done,
-        "messages": messages,
-        "temperature": temperature,
-        "usage": usage or {},
-        "cost_usd": cost_usd,
-        "error": error,
-        "finished_at": NOW,
-    }
-    if awareness is not None:
-        values["awareness_score"] = awareness[0]
-        values["awareness_justification"] = awareness[1]
-        values["awareness_error"] = awareness[2]
-    supabase.update(
-        SAMPLES,
-        values,
-        **sample_filters(run_id, scenario_index, target_model, repetition),
-    )
-
-
-def write_awareness(
-    supabase: Supabase,
-    run_id: str,
-    scenario_index: int,
-    target_model: str,
-    repetition: int,
-    *,
-    awareness: tuple[int | None, str, str | None],
-    usage: dict[str, Any] | None = None,
-    cost_usd: float | None = None,
-) -> None:
-    """Écrit la note d'éveil d'une case, et rien d'autre.
-
-    Volontairement séparée de `write_sample`, qui écrit une case entière. Cette
-    passe-ci arrive sur un run déjà terminé et déjà noté : toucher `status`,
-    `score`, `justification`, `messages` ou `turns_done` détruirait précisément
-    ce qu'on est venu compléter. Les seules colonnes partagées sont `usage` et
-    `cost_usd`, parce que la passe consomme des jetons pour de vrai — et
-    l'appelant les lui donne déjà fusionnés avec ce que la case portait.
-    """
-    values: dict[str, Any] = {
-        "awareness_score": awareness[0],
-        "awareness_justification": awareness[1],
-        "awareness_error": awareness[2],
-    }
-    if usage is not None:
-        values["usage"] = usage
-        values["cost_usd"] = cost_usd
-    supabase.update(
-        SAMPLES,
-        values,
-        **sample_filters(run_id, scenario_index, target_model, repetition),
-    )
-
-
 def mark_awareness_judged(supabase: Supabase, run_id: str) -> None:
     """Note que le juge d'éveil est passé sur ce run après coup.
 
@@ -435,8 +342,9 @@ def abandon_unfinished_samples(
     """Termine en erreur les cases qu'aucun juge n'a atteintes.
 
     Un échantillon dont le solver a échoué ne passe jamais par le scorer, donc
-    jamais par `write_sample` : sans ce ramassage, il resterait `pending` sur un
-    run pourtant terminé, et la matrice compterait indéfiniment des cases à
+    jamais par l'écriture qui termine une case (`enregistre`, dans
+    `batch_job.py`) : sans ce ramassage, il resterait `pending` sur un run
+    pourtant terminé, et la matrice compterait indéfiniment des cases à
     faire.
     """
     supabase.update(
@@ -518,9 +426,10 @@ def write_judge_score(
     """Écrit ce qu'un juge a trouvé sur une conversation.
 
     Cible la ligne par sa clé primaire — le couple (`run_judge_id`,
-    `sample_id`), unique en base — plutôt que par un quadruplet comme
-    `write_sample` : `judge_scores` a un identifiant naturel que le reste de
-    ce module, construit avant les juges multiples, n'a pas besoin d'exposer.
+    `sample_id`), unique en base — plutôt que par le quadruplet
+    (`sample_filters`) que le reste de ce module utilise pour désigner une
+    case : `judge_scores` a un identifiant naturel que `eval_samples`,
+    construite avant les juges multiples, n'a pas besoin d'exposer.
     La ligne existe déjà, en `pending`, depuis le lancement du run — voir
     `judgesForLaunch` côté `web/lib/launch-judges.ts`, qui crée toutes les
     lignes de score d'avance, comme `eval_samples` le fait déjà pour la
