@@ -1287,7 +1287,10 @@ const handler = createMcpHandler((server) => {
         "lower either is refused — a played conversation is never shortened. An attempt pushed to a " +
         "new depth is re-judged from scratch on the whole conversation, never on the increment alone " +
         "— a verdict given at four turns says nothing about the same conversation at eight, and turns " +
-        "already played are neither replayed nor paid for again. Whatever this call proposes is saved " +
+        "already played are neither replayed nor paid for again. The quote rests on what this run has " +
+        "actually spent so far — its recorded token usage, per scenario and per model — not on an " +
+        "assumption about answer length, which is why this call takes no average_output_tokens of " +
+        "its own. Whatever this call proposes is saved " +
         "as a draft, nothing more, and the run stays exactly as it is until that draft is launched — " +
         "by a human from the run's page, or by you, its creator, with launch_draft under your own two " +
         "caps. The response says which is true for you right now. Restricted to the run's own creator " +
@@ -1295,11 +1298,13 @@ const handler = createMcpHandler((server) => {
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
         scenario_indices: z
-          .array(z.number().int().min(0))
+          .union([z.literal("all"), z.array(z.number().int().min(0))])
           .default([])
           .describe(
             "Scenarios already in the run to cover again, 0-based in scenario order. Use them to add " +
-              "models or repetitions to what is already there.",
+              "models or repetitions to what is already there. \"all\" for every scenario the run " +
+              "carries, which spares enumerating 0..n-1 on a run of a hundred; get_run_metadata gives " +
+              "that count.",
           ),
         new_scenarios: z
           .array(
@@ -1308,6 +1313,21 @@ const handler = createMcpHandler((server) => {
               system_prompt: z.string(),
               opening_message: z.string(),
               note: z.string().optional().describe("Why this scenario exists. Neither the model nor any judge sees it."),
+              history: z
+                .array(
+                  z.object({
+                    role: z.enum(["user", "assistant"]),
+                    content: z.string(),
+                  }),
+                )
+                .optional()
+                .describe(
+                  "Turns to place before the conversation starts, so the model is met mid-way " +
+                    "instead of at the beginning. Alternating, first one `user`, last one " +
+                    "`assistant` — the opening_message is the user turn that follows. The judge " +
+                    "sees them marked as given, and never grades them. Same field, same rules, as " +
+                    "in the YAML format; see read_prompt.",
+                ),
               tools: z
                 .array(z.string())
                 .nullable()
@@ -1451,8 +1471,14 @@ const handler = createMcpHandler((server) => {
       // mais `ExtendRequest` les veut présents : une demande qui n'ajoute
       // rien les porte donc vides, sans conséquence puisque
       // `cellsForExtension` ne les lit jamais dans ce cas.
+      // « all » est résolu ici, à la frontière, et jamais plus loin : le
+      // reste du code ne connaît que des index, et un raccourci qui
+      // voyagerait jusqu'à la base ferait deux façons de dire la même chose.
       const request = {
-        scenario_indices: input.scenario_indices,
+        scenario_indices:
+          input.scenario_indices === "all"
+            ? run.config.scenarios.map((_, index) => index)
+            : input.scenario_indices,
         new_scenarios: input.new_scenarios,
         targets: input.targets ?? [],
         repetitions: input.repetitions ?? 0,
