@@ -404,23 +404,25 @@ const handler = createMcpHandler((server) => {
       title: "Get run results",
       description:
         "The matrix: per scenario × model, the mean grade and the count of each grade given, plus " +
-        "judged/errored/pending counts and cost. This follows the run's PRINCIPAL judge only — the one " +
-        "the on-screen matrix follows too — even when the run carries others; `other_judges_count` says " +
-        "how many more are linked (0 when there are none), and get_run_metadata lists them by name, " +
-        "criterion and model, and get_run_trajectory reads what each one said on one conversation. " +
-        "Includes the principal's criterion and rubric, so the numbers can be read without a second " +
-        "call. Also includes, per scenario × model, how many attempts the built-in eval-awareness judge " +
-        "flagged — same threshold as the run's on-screen indicator and the matrix's per-cell marker, so " +
-        "the numbers add up to what get_run_metadata reports for the whole run — plus what that judge " +
-        "measures and its scale, so `awareness_flagged` reads without a second call either. That root " +
-        "`awareness` block also carries `enabled` and `judged`, in the same terms as get_run_metadata " +
-        "(`enabled` is `true`/`false` when the run says so, `null` when it predates the field), so a " +
-        "flagged count of 0 across every cell can be read for what it is: a clean run only when the " +
-        "check was on, still linked, and conversations were actually judged — not when it was off, not " +
-        "when it was unlinked since launch (get_run_metadata's `judges` says whether it still is), and " +
-        "not when the judge crashed on all of them instead of seeing nothing. No transcripts: every " +
-        "grade and count here comes from the run's stored per-judge rows, never from re-reading a " +
-        "conversation.",
+        "judged/errored/pending counts and cost. Reports EVERY judge still linked to the run, never " +
+        "one that was unlinked — `judges` lists each one's identity (criterion, rubric or, for a system " +
+        "judge, its fixed question and scale — same shape as get_run_metadata) plus its own overall " +
+        "mean, one marked `is_principal` (the one the on-screen matrix follows); each scenario × model " +
+        "cell then carries a `by_judge` entry per judge in `judges`, matched by `judge_id`, with that " +
+        "judge's own mean, grades and judged/excluded/errored/pending counts on that cell — a run with " +
+        "several judges can and does disagree with itself, and a caller who only ever saw the principal " +
+        "would not know that. `cost_usd` and `awareness_flagged` sit once per cell, not per judge: cost " +
+        "is the conversations', not any one judge's, and the eval-awareness flag already has its own " +
+        "entry in `judges`/`by_judge` like any other judge — this field is a shorthand kept for the " +
+        "threshold that root `awareness` names. That root `awareness` block carries what the built-in " +
+        "eval-awareness judge measures, its scale, the exact threshold `awareness_flagged` applies, and " +
+        "`enabled`/`judged`/`failed` in the same terms as get_run_metadata (`enabled` is `true`/`false` " +
+        "when the run says so, `null` when it predates the field) — so a flagged count of 0 across every " +
+        "cell can be read for what it is: a clean run only when the check was on, still linked, and " +
+        "conversations were actually judged, not when it was off, unlinked since launch, or crashed on " +
+        "all of them instead of seeing nothing. Follow up with get_run_trajectory to read what each " +
+        "judge said in full on one conversation. No transcripts: every grade and count here comes from " +
+        "the run's stored per-judge rows, never from re-reading a conversation.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
@@ -428,6 +430,15 @@ const handler = createMcpHandler((server) => {
         withTranscripts: false,
         withSourceCsvFlag: false,
         withJudges: true,
+        // Les verdicts COMPLETS de chaque juge vivant, pas seulement du
+        // principal et de l'éveil (le mode léger, celui d'un rafraîchissement
+        // d'écran) : cet outil rend désormais tous les juges, il lui faut
+        // donc leurs notes à tous. Découplé de `withTranscripts`, qui reste
+        // `false` juste au-dessus : plus de juges à lire n'est jamais plus de
+        // conversations à lire — voir la docstring de `loadRun` pour ce que
+        // ce découplage permet, et la description de cet outil pour la
+        // promesse qu'il tient.
+        withFullJudgeScores: true,
       });
       if ("error" in result) return result.error;
       const { run, samples } = result.run;
@@ -456,12 +467,28 @@ const handler = createMcpHandler((server) => {
       // chargées (`withTranscripts: false`) — aucune conversation à relire
       // pour savoir si le juge a tourné.
       const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
-      // Les juges vivants de ce run, ni le principal ni l'éveil : ceux que ce
-      // tableau ne montre pas — voir `get_run_metadata` pour leur identité et
-      // `get_run_trajectory` pour leur verdict sur une conversation.
-      const otherJudges = live.filter(
-        (judge) => !judge.is_principal && judge.system_type !== AWAKE_TYPE,
-      );
+      // La matrice de CHAQUE juge vivant, principal compris — `cellsOf` et
+      // `overallMean` (`matrix.ts`) ne savent lire qu'un verdict par
+      // conversation à la fois, d'où un passage par juge plutôt qu'un seul
+      // qui les mélangerait. `judgeRubric` vaut `undefined` pour un juge
+      // système (l'éveil) : `mapScore` (`view.ts`) laisse alors passer la
+      // note telle quelle, ce qui est exactement ce que sa propre échelle
+      // numérique demande.
+      const perJudge = live.map((judge) => {
+        const judgeRubric = judge.judge.rubric ?? undefined;
+        const ownSamples: MatrixSample[] = samples.map((sample) => ({
+          scenario_index: sample.scenario_index,
+          target_model: sample.target_model,
+          status: sample.status,
+          cost_usd: sample.cost_usd,
+          principal: judge.scores[sample.id] ?? { status: "pending", score: null },
+        }));
+        return {
+          judge,
+          cells: cellsOf(ownSamples, run.config.scenarios.length, judgeRubric),
+          overall_mean: overallMean(ownSamples, judgeRubric),
+        };
+      });
       const results = {
         // Ce que le juge devait regarder, et ce que vaut chaque note. Sans
         // eux, `grades` n'est qu'une suite de chiffres : savoir que 3 revient
@@ -476,7 +503,18 @@ const handler = createMcpHandler((server) => {
           excluded: level.excluded ?? false,
         })),
         overall_mean: overallMean(matrixSamples, rubric),
-        other_judges_count: otherJudges.length,
+        // Tous les juges vivants de ce run, principal compris et marqué —
+        // jamais un délié. Identité complète (`judgeIdentity`, la même
+        // forme que get_run_metadata et get_run_trajectory) plus la moyenne
+        // d'ensemble propre à CE juge : de quoi lire qui dit quoi sans un
+        // second appel. `scenarios[].by_model[].by_judge` référence chaque
+        // entrée par `judge_id` plutôt que de répéter son critère et son
+        // échelle à chaque case — un run à dix scénarios, cinq modèles et
+        // trois juges répéterait sinon un texte trente fois pour rien.
+        judges: perJudge.map(({ judge, overall_mean }) => ({
+          ...judgeIdentity(judge),
+          overall_mean,
+        })),
         // Le pendant de `criterion`/`rubric` ci-dessus, pour le juge d'éveil :
         // sans lui, `awareness_flagged` serait un chiffre sans unité — voir
         // la même remarque dans la description de l'outil.
@@ -503,20 +541,34 @@ const handler = createMcpHandler((server) => {
             const cell = cells[index]?.[model];
             return {
               model,
-              mean: cell?.mean ?? null,
-              // La moyenne ne distingue pas un consensus d'un partage : 1,8
-              // peut être quatre essais serrés autour de 2, ou trois refus
-              // francs et deux explications. Sur un scénario comportemental,
-              // c'est toute la question.
-              grades: cell?.grades ?? {},
-              judged: cell?.judged ?? 0,
-              excluded: cell?.excluded ?? 0,
-              errored: cell?.errored ?? 0,
-              pending: cell?.pending ?? 0,
+              // Celui des conversations, pas d'un juge en particulier : un
+              // juge de plus ne coûte rien de plus, ce n'est jamais lui qui
+              // paie. Un seul exemplaire par case, jamais un par juge.
               cost_usd: cell?.cost_usd ?? 0,
               // Où regarder : c'est le compte qui répond, case par case, au
-              // chiffre global de get_run_metadata.
+              // chiffre global de get_run_metadata. Raccourci gardé pour le
+              // même seuil que nomme `awareness` plus haut — l'éveil a par
+              // ailleurs sa propre entrée, comme n'importe quel juge, dans
+              // `judges` et `by_judge` ci-dessous.
               awareness_flagged: cell?.awareness_flagged ?? 0,
+              // Un par juge vivant, principal compris — voir `judges`
+              // ci-dessus pour son identité complète, jamais répétée ici.
+              // La moyenne ne distingue pas un consensus d'un partage : 1,8
+              // peut être quatre essais serrés autour de 2, ou trois refus
+              // francs et deux explications — et deux juges peuvent très
+              // bien ne pas être d'accord sur laquelle des deux c'est.
+              by_judge: perJudge.map(({ judge, cells: judgeCells }) => {
+                const judgeCell = judgeCells[index]?.[model];
+                return {
+                  judge_id: judge.judge.id,
+                  mean: judgeCell?.mean ?? null,
+                  grades: judgeCell?.grades ?? {},
+                  judged: judgeCell?.judged ?? 0,
+                  excluded: judgeCell?.excluded ?? 0,
+                  errored: judgeCell?.errored ?? 0,
+                  pending: judgeCell?.pending ?? 0,
+                };
+              }),
             };
           }),
         })),

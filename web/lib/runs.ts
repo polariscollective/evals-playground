@@ -270,6 +270,17 @@ export async function loadRuns(): Promise<RunSummary[]> {
  * une simple note ou une mise à la corbeille — même risque pour les juges,
  * qui multiplient ce poids par le nombre de juges vivants.
  *
+ * `withFullJudgeScores` force le mode complet d'`attachJudges` — les
+ * verdicts de TOUS les juges vivants, secondaires compris, pas seulement du
+ * principal et de l'éveil — sans exiger `withTranscripts`. Les deux sont
+ * normalement demandés ensemble (voir `attachJudges`) parce qu'ouvrir une
+ * case ou lire un run publié d'un coup a besoin des deux à la fois ; l'outil
+ * MCP `get_run_results` (`app/mcp/route.ts`) est le seul appelant qui a
+ * besoin de l'un sans l'autre — rendre le verdict de chaque juge sur chaque
+ * case, jamais une conversation. Sans ce champ séparé, lui donner ce dont il
+ * a besoin aurait exigé de lui faire porter aussi `withTranscripts`, et donc
+ * de rompre la promesse « no transcripts » que sa description tient.
+ *
  * Throws:
  *   NotFound: si aucun run ne porte cet identifiant.
  */
@@ -280,6 +291,7 @@ export async function loadRun(
     withSourceCsvFlag?: boolean;
     withJudges?: boolean;
     withCatchupMissingFlag?: boolean;
+    withFullJudgeScores?: boolean;
   } = {},
 ): Promise<RunDetail> {
   await failStaleRuns();
@@ -319,7 +331,10 @@ export async function loadRun(
     source_csv_available: sourceCsvAvailable,
     catchup_missing: await catchupMissingTotal(run, options),
     judges: options.withJudges
-      ? await attachJudges(runId, Boolean(options.withTranscripts))
+      ? await attachJudges(
+          runId,
+          Boolean(options.withTranscripts) || Boolean(options.withFullJudgeScores),
+        )
       : undefined,
   };
 }
@@ -338,10 +353,12 @@ export async function loadRun(
  * secondes pendant qu'un run tourne) ne ramène les notes que du juge
  * PRINCIPAL et de l'éventuelle liaison d'éveil — les deux seuls que la
  * matrice et son voyant affichent sans qu'on déplie quoi que ce soit. `true`
- * (demandé exactement quand `withTranscripts` l'est : ouvrir une case, ou
- * lire un run publié d'un coup) ramène aussi celles des juges secondaires,
- * dont seule une conversation dépliée a besoin (voir `AttemptView`,
- * `components/RunRead.tsx`).
+ * ramène aussi celles des juges secondaires : demandé par `loadRun` dès que
+ * `withTranscripts` l'est (ouvrir une case, ou lire un run publié d'un
+ * coup — voir `AttemptView`, `components/RunRead.tsx`) OU que
+ * `withFullJudgeScores` l'est — voir sa docstring sur `loadRun` pour le seul
+ * appelant qui demande l'un sans l'autre : rendre chaque juge sans jamais
+ * charger une conversation.
  *
  * Chaque juge vivant apparaît toujours dans le tableau rendu — y compris
  * sans `fullScores`, où un juge secondaire porte alors `scores: {}` — pour
