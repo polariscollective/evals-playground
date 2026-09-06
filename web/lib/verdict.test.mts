@@ -40,7 +40,7 @@ scenarios:
 test("un document complet passe, et rend la forme du run", () => {
   const { status, message } = verdictOf(AVEC_SCENARIO);
   assert.equal(status, 200);
-  assert.match(message, /^OK — 1 scenario, 2 target models, 3 grades \(2 counted\), 4 turns × 3 repetitions\.$/);
+  assert.match(message, /^OK — 1 scenario, 2 target models, 2 judges \(eval-awareness on\), 3 grades \(2 counted\), 4 turns × 3 repetitions\.$/);
 });
 
 test("un CSV annoncé mais absent est incomplet, pas refusé", () => {
@@ -56,7 +56,7 @@ test("l'incomplet garde le résumé de la forme, qui est bien vérifiée", () =>
   // La forme ne dépend pas du nombre de scénarios : c'est la partie du travail
   // que le validateur a réellement faite, et la taire serait la refaire faire.
   const { message } = verdictOf(`${RUN}\nscenarios: csv\n`);
-  assert.match(message, /2 target models, 3 grades \(2 counted\), 4 turns × 3 repetitions\.$/);
+  assert.match(message, /2 target models, 2 judges \(eval-awareness on\), 3 grades \(2 counted\), 4 turns × 3 repetitions\.$/);
 });
 
 test("les colonnes annoncées sont nommées, pour relire un alignement", () => {
@@ -107,4 +107,29 @@ test("sans chiffreur, le verdict tient quand même", () => {
   // La route en passe un ; un appelant qui n'en passe pas reçoit le verdict nu
   // plutôt qu'une erreur.
   assert.match(verdictOf(AVEC_SCENARIO).message, /^OK — 1 scenario, .*repetitions\.$/);
+});
+
+test("la ligne OK compte les juges, ce qui rend une clé mal écrite visible", () => {
+  // `judge:` au lieu de `judges:` est avalé comme n'importe quelle clé que ce
+  // format ne définit pas. Rien ne le disait : le document tournait avec un
+  // juge de moins, sans un mot. Le compte le montre.
+  const deuxJuges = verdictOf(AVEC_SCENARIO);
+  assert.match(deuxJuges.message, /2 judges \(eval-awareness on\)/);
+
+  const troisJuges = verdictOf(
+    `${AVEC_SCENARIO}\njudges:\n  - criterion: Autre chose\n    rubric:\n      - value: 0\n        meaning: oui\n      - value: 1\n        meaning: non\n`,
+  );
+  assert.match(troisJuges.message, /3 judges \(eval-awareness on\)/);
+
+  // La même chose écrite au singulier : la clé n'existe pas, le juge n'est
+  // jamais posé, et le compte ne bouge pas — voilà ce qu'on peut enfin voir.
+  const malEcrit = verdictOf(
+    `${AVEC_SCENARIO}\njudge:\n  - criterion: Autre chose\n    rubric:\n      - value: 0\n        meaning: oui\n      - value: 1\n        meaning: non\n`,
+  );
+  assert.match(malEcrit.message, /2 judges \(eval-awareness on\)/);
+});
+
+test("le juge d'éveil éteint se voit dans le compte", () => {
+  const { message } = verdictOf(`${AVEC_SCENARIO}\ncheck_eval_awareness: false\n`);
+  assert.match(message, /1 judge \(eval-awareness off\)/);
 });

@@ -44,8 +44,17 @@ function plural(count: number, word: string): string {
  *  donc aussi — c'est la partie de son travail qui, elle, est faite. */
 function shape(config: EvalRunConfig): string {
   const counted = config.rubric.filter((level) => !level.excluded).length;
+  // Le nombre de juges est rendu parce que c'est la seule façon de voir une
+  // clé mal orthographiée : `judge:` au lieu de `judges:` est avalé sans un
+  // mot — comme n'importe quelle clé que ce format ne définit pas — et le
+  // document tourne alors avec un juge de moins que ce qu'on croyait avoir
+  // écrit. Le compte inclut le principal et, s'il est allumé, le juge
+  // d'éveil : c'est le nombre d'appels de modèle par conversation qu'on paie.
+  const eveil = config.check_eval_awareness === false ? 0 : 1;
+  const juges = 1 + (config.judges?.length ?? 0) + eveil;
   return (
     `${plural(config.models.targets.length, "target model")}, ` +
+    `${plural(juges, "judge")} (eval-awareness ${eveil ? "on" : "off"}), ` +
     `${plural(config.rubric.length, "grade")} (${counted} counted), ` +
     `${plural(config.turns, "turn")} × ${plural(config.repetitions, "repetition")}.`
   );
