@@ -18,10 +18,22 @@
 /** `not_found` : l'identifiant visé (la liaison, ou son remplaçant) ne
  *  désigne rien de vivant sur ce run — introuvable, déjà délié, ou déjà
  *  délié pour le remplaçant. `principal_needs_replacement` : le refus
- *  spécifique du déclencheur différé, voir `unlinkJudge`. `invalid` :
- *  un couple d'arguments qui ne peut jamais réussir, quel que soit l'état de
- *  la base — remplaçant confondu avec la liaison qu'on délie. */
-export type RunJudgesRefusalKind = "not_found" | "principal_needs_replacement" | "invalid";
+ *  spécifique du déclencheur différé, voir `unlinkJudge`.
+ *  `last_ordinary_judge` : on déliait le dernier juge ordinaire, ce qui
+ *  laisserait le run sans principal possible. `system_judge_cannot_be_principal` :
+ *  on proposait un juge système comme principal ou comme remplaçant.
+ *  `invalid` : un couple d'arguments qui ne peut jamais réussir, quel que
+ *  soit l'état de la base — remplaçant confondu avec la liaison qu'on délie.
+ *
+ *  Les deux avant-derniers sont refusés par l'écran avant d'atteindre la
+ *  base ; ils sont traduits quand même, parce qu'un outil MCP ou un appel
+ *  direct n'a pas cet écran devant lui. */
+export type RunJudgesRefusalKind =
+  | "not_found"
+  | "principal_needs_replacement"
+  | "last_ordinary_judge"
+  | "system_judge_cannot_be_principal"
+  | "invalid";
 
 export interface RunJudgesRefusal {
   kind: RunJudgesRefusalKind;
@@ -45,8 +57,36 @@ export function classifyRunJudgesRefusal(rawMessage: string): RunJudgesRefusal |
       kind: "principal_needs_replacement",
       message:
         "This judge is the principal of this run, and other judges are still linked to it. " +
-        "Designate a replacement principal first (or pass one directly to unlinkJudge) before " +
-        "unlinking it — unless you mean to leave the run without any judge at all.",
+        "Designate a replacement principal first, then unlink this one.",
+    };
+  }
+
+  // Le déclencheur qui interdit qu'un run perde son dernier juge ordinaire.
+  // Un run sans juge ordinaire n'a plus de principal possible, donc plus de
+  // matrice : l'écran n'offre pas ce geste, et la base le refuse aussi pour
+  // que ça ne dépende pas d'un filtre d'interface qu'on oubliera.
+  if (/sans aucun juge ordinaire vivant/.test(rawMessage)) {
+    return {
+      kind: "last_ordinary_judge",
+      message:
+        "This is the last ordinary judge on this run, and a run needs at least one — " +
+        "its grades are what the matrix shows. Add another judge first, then unlink this one. " +
+        "(The eval-awareness judge does not count: it can be unlinked at any time.)",
+    };
+  }
+
+  // Les deux fonctions : un juge système proposé comme principal, ou comme
+  // remplaçant du principal. Sa question et son échelle ne sont pas en base —
+  // elles vivent dans le code — donc l'écran retomberait sur celles de
+  // l'utilisateur et afficherait sa question au-dessus de notes qui ne
+  // suivent pas son barème.
+  if (/est un juge système .* seul un juge ordinaire peut devenir principal/.test(rawMessage)) {
+    return {
+      kind: "system_judge_cannot_be_principal",
+      message:
+        "A system judge cannot be the principal: it asks its own fixed question on its own " +
+        "fixed scale, so the matrix would show grades that do not follow this run's rubric. " +
+        "Pick an ordinary judge instead.",
     };
   }
 

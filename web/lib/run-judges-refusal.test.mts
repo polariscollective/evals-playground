@@ -71,3 +71,42 @@ test("un message qui ne vient pas de ces fonctions n'est pas classé", () => {
   );
   assert.equal(classifyRunJudgesRefusal(""), null);
 });
+
+test("le dernier juge ordinaire ne se délie pas, et la phrase dit quoi faire", () => {
+  // L'écran refuse déjà ce geste, mais un outil MCP ou un appel direct n'a
+  // pas cet écran devant lui : le message doit tenir tout seul.
+  const refus = classifyRunJudgesRefusal(
+    "run 3f9 se retrouverait sans aucun juge ordinaire vivant",
+  );
+  assert.equal(refus?.kind, "last_ordinary_judge");
+  // Il dit l'ordre à suivre — ajouter puis délier — sinon on est bloqué sans
+  // savoir comment changer de juge.
+  assert.match(refus?.message ?? "", /Add another judge first/);
+  // Et il dit que l'éveil ne compte pas, sinon on croit ne plus jamais
+  // pouvoir le retirer.
+  assert.match(refus?.message ?? "", /eval-awareness judge does not count/);
+});
+
+test("un juge système ne peut pas devenir principal, et on dit pourquoi", () => {
+  const refus = classifyRunJudgesRefusal(
+    "run_judge 7c1 est un juge système (awake) ; seul un juge ordinaire peut devenir principal",
+  );
+  assert.equal(refus?.kind, "system_judge_cannot_be_principal");
+  // La raison compte autant que le refus : sa question et son échelle ne
+  // sont pas celles du run, donc la matrice mentirait.
+  assert.match(refus?.message ?? "", /own fixed question/);
+});
+
+test("aucun message rendu à l'appelant ne cite un nom de fonction interne", () => {
+  // Un message d'erreur qui dit « passe-le à unlinkJudge » parle d'un
+  // symbole que personne, hors de ce dépôt, ne peut voir.
+  const messages = [
+    "run 3f9 a encore des liaison(s) vivante(s) et aucune principale",
+    "run_judge 7c1 est déjà déliée",
+    "le remplaçant 9a2 n'appartient pas au run 3f9",
+    "run 3f9 se retrouverait sans aucun juge ordinaire vivant",
+  ].map((raw) => classifyRunJudgesRefusal(raw)?.message ?? "");
+  for (const message of messages) {
+    assert.doesNotMatch(message, /unlinkJudge|designatePrincipal|run_judges_/);
+  }
+});
