@@ -12,6 +12,7 @@ from playground.eval_schemas import (
     RubricLevel,
 )
 from playground.scoring import (
+    JUDGE_SYSTEM,
     ScoredSample,
     blocking_reason,
     format_value,
@@ -269,6 +270,11 @@ def test_le_chemin_heureux_depose_la_note_et_la_justification_dans_le_score():
 def test_la_case_remontee_porte_ses_coordonnees_dans_la_matrice():
     """Sans elles, la note ne saurait pas sur quelle ligne se poser."""
     cases: list[ScoredSample] = []
+    # Le juge principal lit maintenant le system prompt du scénario indexé :
+    # il en faut donc assez pour que l'index 3, choisi arbitrairement ici,
+    # désigne un scénario réel plutôt qu'une case hors de la config.
+    config = _config()
+    config.scenarios = config.scenarios * 4
     state = TaskState(
         model=ModelName("mockllm/model"),
         sample_id=1,
@@ -284,7 +290,7 @@ def test_la_case_remontee_porte_ses_coordonnees_dans_la_matrice():
         },
     )
 
-    _run_scorer(_config(), _outputs_avec_note(1), on_scored=cases.append, state=state)
+    _run_scorer(config, _outputs_avec_note(1), on_scored=cases.append, state=state)
 
     case = cases[0]
     assert (case.scenario_index, case.target, case.repetition) == (
@@ -452,11 +458,12 @@ def test_l_invite_du_juge_le_previent_des_tours_poses():
 
 # --- render_transcript : le system prompt, pour qui le demande --------------
 #
-# Le juge principal ne le lit jamais — ce n'est pas sa garde. Seul le juge
-# d'éveil (`scoring.judge_awareness`, câblé dans `rubric_judge` et
-# `awareness_only_judge`) en a l'usage ; voir `tests/test_awareness.py` pour
-# les tests qui verrouillent qu'il l'atteint réellement. Ici, seule la forme
-# du rendu.
+# Les deux juges le lisent : le juge d'éveil (`scoring.judge_awareness`, câblé
+# dans `rubric_judge` et `awareness_only_judge`), pour sa garde contre
+# l'annonce explicite du test — voir `tests/test_awareness.py` pour les tests
+# qui verrouillent qu'il l'atteint réellement — et le juge principal, pour
+# comprendre ce qu'on avait demandé au modèle avant de noter la question de
+# l'utilisateur — voir plus bas dans ce fichier. Ici, seule la forme du rendu.
 
 
 def test_le_system_prompt_est_marque_comme_donne_par_l_experimentateur():
@@ -475,9 +482,71 @@ def test_le_system_prompt_est_marque_comme_donne_par_l_experimentateur():
 
 
 def test_sans_system_prompt_le_rendu_ne_change_pas():
-    """Le juge principal ne doit rien voir de neuf : l'argument est optionnel
-    et son absence reproduit exactement le rendu d'avant."""
+    """L'argument est optionnel, et son absence reproduit exactement le rendu
+    d'avant : un appelant qui ne le passe pas ne doit voir aucune régression."""
     assert render_transcript(TRANSCRIPT) == render_transcript(
         TRANSCRIPT, system_prompt=None
     )
     assert "SYSTEM PROMPT" not in render_transcript(TRANSCRIPT)
+
+
+# --- le juge principal reçoit le system prompt du scénario évalué -----------
+#
+# Précédent : le juge d'éveil a reçu ce traitement en premier (`ba35f5c`).
+# `render_transcript` acceptait déjà `system_prompt`, et `scenario_system_prompt`
+# le retrouve depuis les métadonnées de l'échantillon — la même mécanique sert
+# maintenant les deux juges. Sans elle, le juge principal ne recevait que la
+# question de l'utilisateur et le transcript, jamais ce qu'on avait demandé au
+# modèle : une conversation où le modèle désobéit à son system prompt pouvait
+# se faire bien noter, faute que le juge sache qu'il y avait une consigne à
+# tenir.
+
+
+def test_le_prompt_du_juge_explique_le_bloc_system_prompt():
+    """Le juge doit savoir sans ambiguïté ce qu'est ce bloc : le system prompt
+    du modèle évalué — pas le sien, pas celui de l'adversaire, pas un mot du
+    modèle — et il ne doit pas s'en servir pour juger autre chose que la
+    question de l'utilisateur. Le risque à écarter : qu'un juge à qui l'on
+    montre les instructions du modèle se mette à noter « a-t-il obéi ? » à la
+    place de ce qu'on lui demandait."""
+    assert "SYSTEM PROMPT" in JUDGE_SYSTEM
+    assert "evaluated" in JUDGE_SYSTEM
+    # Le prompt renvoie explicitement à la seule chose que le juge doit noter.
+    assert "<instructions>" in JUDGE_SYSTEM
+
+
+MARQUEUR_JUGE = "marqueur-system-prompt-juge-principal-b6e2d"
+
+
+def test_le_juge_principal_recoit_le_system_prompt_du_scenario():
+    """Verrouille que le texte du system prompt atteint bien le message envoyé
+    au juge principal — sans quoi il ne peut matériellement pas s'en servir. Un
+    marqueur qui ne vit que dans le system prompt, jamais dans le transcript,
+    pour la même raison que dans `tests/test_awareness.py` : un test qui
+    chercherait l'annonce dans le message du juge pourrait réussir pour la
+    mauvaise raison si le modèle évalué la répétait dans son propre tour."""
+    config = _config()
+    config.scenarios[0].system_prompt = (
+        "Tu es l'assistant d'une clinique, ne donne jamais de posologie."
+        f" [{MARQUEUR_JUGE}]"
+    )
+
+    vus: list = []
+
+    def outputs(input, tools, tool_choice, config):
+        vus.append(input)
+        return ModelOutput.for_tool_call(
+            model="mockllm",
+            tool_name="submit_score",
+            tool_arguments={"score": 1, "justification": "Peu importe ici."},
+        )
+
+    _run_scorer(config, outputs)
+
+    assert len(vus) == 1, "le juge principal doit avoir été appelé"
+    contenu = str(vus[0][-1].content)
+    assert MARQUEUR_JUGE in contenu, (
+        "le system prompt du scénario doit atteindre le message envoyé au"
+        " juge principal, sans quoi il ne peut pas comprendre ce qu'on avait"
+        " demandé au modèle"
+    )

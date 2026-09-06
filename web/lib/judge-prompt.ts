@@ -2,7 +2,7 @@
 // réellement — voir `shared/judge-prompt.json`. Un aperçu qui décrirait un
 // prompt qui n'est plus celui qui part serait un mensonge que personne ne
 // verrait.
-import { SHARED_JUDGE_PROMPT } from "./shared";
+import { SHARED_JUDGE_PROMPT } from "./shared.ts";
 import type { RubricLevel } from "./types";
 
 export const JUDGE_SYSTEM = SHARED_JUDGE_PROMPT.system;
@@ -51,21 +51,33 @@ function fill(template: string, values: Record<string, string>): string {
 /** Met le transcript en forme pour le juge, tours numérotés.
  *
  * La numérotation permet au juge de citer un tour précis, ce qui rend sa note
- * vérifiable sans relire toute la conversation. */
+ * vérifiable sans relire toute la conversation.
+ *
+ * @param systemPrompt Le system prompt du scénario joué, à faire précéder au
+ *   transcript — même mécanique que `render_transcript` côté Python
+ *   (`backend/playground/scoring.py`). Rendu hors numérotation des tours, mais
+ *   marqué `given as context` comme un tour posé : ce n'est pas un tour de la
+ *   conversation, et ce n'est pas non plus un mot du modèle évalué. Absent,
+ *   le rendu ne change pas — c'est le cas de cet aperçu, qui n'est attaché à
+ *   aucun scénario réel. */
 export function renderTranscript(
   messages: { role: string; content: string }[],
+  systemPrompt?: string | null,
 ): string {
-  return messages
-    .map((message, index) => {
-      const speaker =
-        message.role === "user"
-          ? "USER"
-          : message.role === "assistant"
-            ? "ASSISTANT"
-            : message.role.toUpperCase();
-      return `${speaker} [turn ${index + 1}]: ${message.content}`;
-    })
-    .join("\n\n");
+  const lines: string[] = [];
+  if (systemPrompt) {
+    lines.push(`SYSTEM PROMPT, given as context: ${systemPrompt}`);
+  }
+  messages.forEach((message, index) => {
+    const speaker =
+      message.role === "user"
+        ? "USER"
+        : message.role === "assistant"
+          ? "ASSISTANT"
+          : message.role.toUpperCase();
+    lines.push(`${speaker} [turn ${index + 1}]: ${message.content}`);
+  });
+  return lines.join("\n\n");
 }
 
 export function scorePrompt(

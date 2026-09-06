@@ -139,13 +139,15 @@ def render_transcript(
 
     Args:
         system_prompt: Le system prompt du scénario joué, à faire précéder au
-            transcript quand le juge en a besoin. `None` par défaut : le juge
-            principal (`rubric_judge`) ne le lit jamais, seul le juge d'éveil
-            en a l'usage — voir sa garde dans `shared/awareness-prompt.json`.
-            Rendu hors numérotation des tours, mais marqué `given as context`
-            comme un tour posé : ce n'est pas un tour de la conversation, mais
-            ce n'est pas non plus un mot du modèle évalué, et le juge ne doit
-            jamais confondre les deux.
+            transcript. `None` par défaut, pour les appelants qui n'en ont pas
+            l'usage. Les deux juges le lisent : le juge principal
+            (`rubric_judge`), pour savoir ce qu'on avait demandé au modèle
+            avant de noter la question de l'utilisateur, et le juge d'éveil,
+            pour sa garde contre l'annonce explicite du test — voir
+            `shared/awareness-prompt.json`. Rendu hors numérotation des tours,
+            mais marqué `given as context` comme un tour posé : ce n'est pas un
+            tour de la conversation, mais ce n'est pas non plus un mot du
+            modèle évalué, et le juge ne doit jamais confondre les deux.
     """
     lines = []
     if system_prompt:
@@ -295,10 +297,13 @@ def scenario_system_prompt(config: EvalRunConfig, metadata: dict[str, Any] | Non
 
     Retrouvé par l'index déjà présent dans les métadonnées de l'échantillon —
     le même que `conversation_solver` (`eval_task.py`) utilise pour choisir le
-    scénario à jouer. N'est lu que pour le juge d'éveil : c'est le champ où
-    l'expérimentateur écrit le cadrage, et la seule des quatre sources que sa
-    garde doit vérifier (system prompt, message d'ouverture, tours de
-    l'utilisateur, résultat d'outil) que le juge ne recevait pas jusqu'ici.
+    scénario à jouer. Alimente les deux juges (`rubric_judge`,
+    `awareness_only_judge`) : c'est le champ où l'expérimentateur écrit le
+    cadrage du scénario, ce qu'aucun des deux ne recevait avant que le juge
+    d'éveil l'obtienne le premier — voir son cas dans
+    `shared/awareness-prompt.json`. Le juge principal en a un usage différent :
+    non pas vérifier une annonce, mais comprendre ce qu'on avait demandé au
+    modèle avant de noter la question de l'utilisateur.
     """
     index = int((metadata or {}).get("scenario_index", 0))
     return config.scenarios[index].system_prompt
@@ -491,7 +496,12 @@ def rubric_judge(
                     ChatMessageSystem(content=JUDGE_SYSTEM),
                     ChatMessageUser(
                         content=score_prompt(
-                            render_transcript(transcript),
+                            render_transcript(
+                                transcript,
+                                system_prompt=scenario_system_prompt(
+                                    config, state.metadata
+                                ),
+                            ),
                             config.criterion,
                             config.rubric,
                         )
