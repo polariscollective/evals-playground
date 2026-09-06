@@ -48,7 +48,17 @@ export async function GET(
     const valeur = amont.headers.get(nom);
     if (valeur) headers.set(nom, valeur);
   }
-  headers.set("Cache-Control", "private, no-store");
+  // `no-transform` interdit à un intermédiaire de recoder le corps. Sans lui,
+  // Vercel compresse la réponse en brotli dès que le navigateur l'accepte —
+  // ce que curl ne fait pas par défaut, d'où un défaut invisible en ligne de
+  // commande — et **retire alors `Content-Length`**. Le viewer, qui a besoin
+  // de la taille du ZIP pour savoir où lire son sommaire, s'arrête sur
+  // « Could not determine content length ». Les requêtes `Range` y
+  // échappaient, Vercel ne compressant pas un 206 : seule la toute première
+  // lecture tombait, donc le viewer ne s'ouvrait jamais.
+  //
+  // Un `.eval` est un ZIP : le recompresser ne gagnait rien de toute façon.
+  headers.set("Cache-Control", "private, no-store, no-transform");
 
   return new Response(amont.body, { status: amont.status, headers });
 }
