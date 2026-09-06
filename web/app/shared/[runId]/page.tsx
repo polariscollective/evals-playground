@@ -30,7 +30,9 @@ export default async function SharedRun({
   try {
     // Les trajectoires d'un coup : la fenêtre de détail les lit depuis ce qui
     // est déjà chargé, faute d'une route publique à interroger au clic.
-    detail = await loadPublicRun(runId, { withTranscripts: true });
+    // `withJudges: true` va avec, pour la même raison de poids qu'ils
+    // partagent — voir `attachJudges`, `lib/runs.ts`.
+    detail = await loadPublicRun(runId, { withTranscripts: true, withJudges: true });
   } catch (error) {
     if (error instanceof NotFound) notFound();
     throw error;

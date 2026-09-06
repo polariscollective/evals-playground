@@ -22,7 +22,15 @@ const JOB_NAME = process.env.EVAL_JOB_NAME || "evals-playground-runner";
  * `.env.example` donne la valeur habituelle. */
 const LOCAL_PYTHON = "EVAL_PYTHON";
 
-export type JobMode = "run" | "rejudge" | "awareness";
+/** `run` déroule les conversations puis les fait noter par tous les juges
+ *  vivants du run. `catchup` remplit, pour les conversations déjà jouées, les
+ *  lignes de `judge_scores` encore en attente — voir `run_batch_job`,
+ *  `backend/playground/batch_job.py`, l'unique et seule autorité sur ce que
+ *  le job accepte : lui faire jouer `rejudge` ou `awareness`, les deux
+ *  anciens modes qu'il ne connaît plus, échouerait au démarrage du job avec
+ *  une `ValueError` plutôt qu'à la compilation — c'est exactement le bug que
+ *  ce type fermé referme, voir `.superpowers/sdd/task-9-report.md`. */
+export type JobMode = "run" | "catchup";
 
 /** Où le job a tourné. Enregistré sur le run : le local et le déployé écrivent
  * dans la même base, et sans marqueur un essai jetable ressemble à un vrai

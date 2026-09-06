@@ -1,10 +1,11 @@
 // Lire et écrire les runs. Le seul endroit qui connaît la forme des deux tables.
 import "server-only";
+import { randomUUID } from "node:crypto";
 // La matrice se calcule là où on la regarde : l'écran laisse relire un run
 // autrement — une médiane, une échelle repliée — et deux calculs de la même
 // chose finiraient par ne plus dire pareil.
 import { overallMean, progressOf } from "./matrix";
-import { awarenessMissing } from "./awareness";
+import { catchupCandidateCount } from "./catchup";
 import {
   JUDGES,
   JUDGE_SCORES,
@@ -27,7 +28,11 @@ import { estimateExtension } from "./extend-estimate";
 import { measureRun, type MeasurableCell } from "./measured-length";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import type { NewCell } from "./cells";
-import { judgesForLaunch, judgeScoresForSamples } from "./launch-judges.ts";
+import {
+  judgeRowFromSpec,
+  judgesForLaunch,
+  judgeScoresForSamples,
+} from "./launch-judges.ts";
 import { classifyRunJudgesRefusal } from "./run-judges-refusal";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
@@ -48,8 +53,11 @@ import type {
   ExtendRequest,
   Judge,
   JudgeScore,
+  JudgeSpec,
+  JudgeVerdictEntry,
   RunDetail,
   RunJudge,
+  RunJudgeView,
   RunSummary,
   SampleStatus,
   TemperatureSpec,
@@ -246,16 +254,20 @@ export async function loadRuns(): Promise<RunSummary[]> {
 
 /** Un run et ses cases.
  *
- * `withTranscripts` ne sert qu'à l'ouverture d'une case et aux exports : le
+ * `withTranscripts` ne sert qu'à l'ouverture d'une case, aux exports, et à la
+ * lecture publique d'un coup (voir `app/shared/[runId]/page.tsx`) : le
  * rafraîchissement d'un run en cours n'en a pas besoin.
  *
- * `withAwarenessMissingFlag` est sur demande, pas par défaut — voir
- * `awarenessMissingTotal` pour pourquoi. La quasi-totalité des appelants de
- * `loadRun` ne l'utilisent jamais : une douzaine de routes n'appellent cette
- * fonction que pour vérifier qu'un run existe, et les outils MCP demandent
- * explicitement la version légère pour rester légers. Le laisser tourner par
- * défaut pour eux a déjà traîné toute une matrice de conversations hors de la
- * base pour une simple note ou une mise à la corbeille.
+ * `withJudges` attache les juges vivants du run et leurs verdicts (voir
+ * `attachJudges`) — sur demande, pas par défaut, pour la même raison que
+ * `withAwarenessMissingFlag` avant lui, généralisé ci-dessous en
+ * `withCatchupMissingFlag` : la quasi-totalité des appelants de `loadRun` ne
+ * l'utilisent jamais. Une douzaine de routes n'appellent cette fonction que
+ * pour vérifier qu'un run existe, et les outils MCP demandent explicitement
+ * la version légère pour rester légers. Le laisser tourner par défaut pour
+ * eux a déjà traîné toute une matrice de conversations hors de la base pour
+ * une simple note ou une mise à la corbeille — même risque pour les juges,
+ * qui multiplient ce poids par le nombre de juges vivants.
  *
  * Throws:
  *   NotFound: si aucun run ne porte cet identifiant.
@@ -265,7 +277,8 @@ export async function loadRun(
   options: {
     withTranscripts?: boolean;
     withSourceCsvFlag?: boolean;
-    withAwarenessMissingFlag?: boolean;
+    withJudges?: boolean;
+    withCatchupMissingFlag?: boolean;
   } = {},
 ): Promise<RunDetail> {
   await failStaleRuns();
@@ -303,55 +316,140 @@ export async function loadRun(
     samples,
     progress: progressOf(samples),
     source_csv_available: sourceCsvAvailable,
-    awareness_missing: await awarenessMissingTotal(run, options),
+    catchup_missing: await catchupMissingTotal(run, options),
+    judges: options.withJudges
+      ? await attachJudges(runId, Boolean(options.withTranscripts))
+      : undefined,
   };
 }
 
-/** Combien de conversations pourraient recevoir une note d'éveil et ne l'ont
- *  pas — calculé ici, jamais par la page, qui devait sinon forcer son propre
- *  chargement complet des transcripts pour le même résultat (voir l'ancien
- *  effet de préchargement dans `app/eval/[runId]/page.tsx`).
+/** Les juges vivants d'un run, avec leur verdict sur chaque conversation —
+ *  ce que `RunDetail.judges` porte à l'écran (voir `RunJudgeView`,
+ *  `types.ts`). Passe par `loadLiveRunJudges`, comme tout code qui a besoin
+ *  de savoir quels juges sont vivants sur un run : aucun filtre
+ *  `deleted_at` de plus n'est écrit ici.
  *
- * Sur demande, et non par défaut : quand ce n'est pas demandé, ce calcul lit
- * `judge_scores` pour compter ce qui reste `"pending"` sur la liaison
- * d'éveil du run — la même douzaine de routes qui n'appellent `loadRun` que
- * pour vérifier qu'un run existe n'a jamais besoin de cette lecture en plus.
- * `false` n'est donc plus le cas à traiter à part : `undefined`, la valeur de
- * tout appelant qui ne demande rien, se comporte pareil.
+ * `fullScores` décide du poids de cette jointure, sur le même principe que
+ * `SAMPLE_COLUMNS`/`withTranscripts` plus haut : les verdicts de N juges sur
+ * toutes les conversations d'un run pèsent, eux aussi, plusieurs juges ×
+ * plusieurs dizaines de conversations × une justification qui peut faire
+ * plusieurs phrases. `false` (le défaut, à chaque rafraîchissement de trois
+ * secondes pendant qu'un run tourne) ne ramène les notes que du juge
+ * PRINCIPAL et de l'éventuelle liaison d'éveil — les deux seuls que la
+ * matrice et son voyant affichent sans qu'on déplie quoi que ce soit. `true`
+ * (demandé exactement quand `withTranscripts` l'est : ouvrir une case, ou
+ * lire un run publié d'un coup) ramène aussi celles des juges secondaires,
+ * dont seule une conversation dépliée a besoin (voir `AttemptView`,
+ * `components/RunRead.tsx`).
  *
- * Depuis les juges multiples, `withTranscripts` ne change plus rien à ce
- * calcul : la question ne se lit plus sur les transcripts eux-mêmes
- * (l'ancienne heuristique `hasGradableContent`, qui pouvait diverger de celle
- * du moteur — voir `awarenessMissing` dans `awareness.ts`) mais sur le statut
- * des lignes de `judge_scores`, pré-créées en attente dès le lancement quel
- * que soit ce que `samples` porte déjà en mémoire. Cette fonction ignore donc
- * `samples` entièrement — son seul appelant (`loadRun`, juste au-dessus) n'a
- * plus besoin de le lui passer.
+ * Chaque juge vivant apparaît toujours dans le tableau rendu — y compris
+ * sans `fullScores`, où un juge secondaire porte alors `scores: {}` — pour
+ * que « Show N other judges » compte juste sans avoir à charger leurs notes. */
+async function attachJudges(
+  runId: string,
+  fullScores: boolean,
+): Promise<RunJudgeView[]> {
+  const live = await loadLiveRunJudges(runId);
+  if (live.length === 0) return [];
+
+  const wanted = fullScores
+    ? live
+    : live.filter(
+        (liaison) => liaison.is_principal || liaison.system_type === AWAKE_TYPE,
+      );
+
+  const rows =
+    wanted.length === 0
+      ? []
+      : await select<{
+          run_judge_id: string;
+          sample_id: string;
+          status: JudgeScore["status"];
+          score: number | null;
+          justification: string;
+          error: string | null;
+        }>(JUDGE_SCORES, {
+          run_judge_id: `in.(${wanted.map((liaison) => liaison.id).join(",")})`,
+          select: "run_judge_id,sample_id,status,score,justification,error",
+        });
+
+  const byJudge = new Map<string, Record<string, JudgeVerdictEntry>>();
+  for (const row of rows) {
+    const scores = byJudge.get(row.run_judge_id) ?? {};
+    scores[row.sample_id] = {
+      status: row.status,
+      score: row.score,
+      justification: row.justification,
+      error: row.error,
+    };
+    byJudge.set(row.run_judge_id, scores);
+  }
+
+  return live.map((liaison) => ({
+    run_judge_id: liaison.id,
+    judge: liaison.judge,
+    is_principal: liaison.is_principal,
+    system_type: liaison.system_type,
+    scores: byJudge.get(liaison.id) ?? {},
+  }));
+}
+
+/** Combien de lignes de `judge_scores`, en attente sur une liaison vivante,
+ *  portent sur une conversation déjà terminée — donc ce que le prochain
+ *  rattrapage va réellement remplir. Généralise l'ancienne
+ *  `awarenessMissingTotal` (jusqu'aux juges multiples, seule la liaison
+ *  d'éveil pouvait porter des lignes en attente après coup) à n'importe quel
+ *  juge vivant — voir la conception, section « Le rattrapage, généralisé ».
  *
- * Deux cas restent : le run tourne encore, auquel cas le nombre ne sert à
- * rien puisque le bouton qui le lit exige `!running` — l'annoncer à zéro
- * évite une lecture à chaque rafraîchissement de trois secondes ; sinon, on
- * retrouve la liaison d'éveil vivante du run (`loadLiveRunJudges` +
- * `AWAKE_TYPE`) et on compte ses lignes encore en attente. Aucune liaison
- * d'éveil vivante — juge d'éveil jamais demandé, ou délié depuis — rend zéro :
- * il n'y a alors rien qui puisse manquer. */
-async function awarenessMissingTotal(
+ * Sur demande, jamais par défaut, même raison que l'ancienne version : la
+ * quasi-totalité des appelants de `loadRun` ne l'utilisent jamais.
+ *
+ * LE PIÈGE, et il a déjà mordu ce chantier une fois sur l'éveil : une ligne
+ * en attente sur une liaison vivante n'est pas forcément rattrapable — sa
+ * conversation doit AUSSI être terminée (`status = 'done'`). Le moteur
+ * (`catchup_dataset`, `backend/playground/batch_job.py`) applique ces trois
+ * conditions ensemble et ne rattrape jamais une conversation qui ne l'est
+ * pas ; un compte qui ignorerait la troisième annoncerait du travail que le
+ * moteur ne fera jamais, et le bouton resterait allumé pour toujours. La
+ * troisième condition est vérifiée ici par `catchupCandidateCount`
+ * (`catchup.ts`), qui documente ce piège en détail — jamais recomptée à la
+ * main ailleurs : la route qui démarre un rattrapage
+ * (`.../catchup/route.ts`) relit ce même champ plutôt que de refaire le
+ * calcul de son côté, ce qui fait de cette fonction-ci le seul endroit du
+ * dépôt qui décide « combien reste-t-il à rattraper ».
+ *
+ * Deux cas déjà connus restent : le run tourne encore, auquel cas le nombre
+ * ne sert à rien puisque le bouton qui le lit exige `!running` — l'annoncer
+ * à zéro évite une lecture à chaque rafraîchissement de trois secondes ;
+ * aucune liaison vivante ne rend zéro aussi, faute de quoi que ce soit qui
+ * puisse manquer. */
+async function catchupMissingTotal(
   run: EvalRun,
-  options: { withAwarenessMissingFlag?: boolean },
+  options: { withCatchupMissingFlag?: boolean },
 ): Promise<number> {
-  if (!options.withAwarenessMissingFlag) return 0;
+  if (!options.withCatchupMissingFlag) return 0;
   if (run.status === "triggered" || run.status === "running") return 0;
 
-  const awake = (await loadLiveRunJudges(run.id)).find(
-    (judge) => judge.system_type === AWAKE_TYPE,
-  );
-  if (!awake) return 0;
+  const live = await loadLiveRunJudges(run.id);
+  if (live.length === 0) return 0;
 
-  const scores = await select<Pick<JudgeScore, "status">>(JUDGE_SCORES, {
-    run_judge_id: `eq.${awake.id}`,
-    select: "status",
+  const pending = await select<{ sample_id: string }>(JUDGE_SCORES, {
+    run_id: `eq.${run.id}`,
+    run_judge_id: `in.(${live.map((liaison) => liaison.id).join(",")})`,
+    status: "eq.pending",
+    select: "sample_id",
   });
-  return awarenessMissing(scores);
+  if (pending.length === 0) return 0;
+
+  const sampleIds = [...new Set(pending.map((row) => row.sample_id))];
+  const done = await select<{ id: string }>(SAMPLES, {
+    run_id: `eq.${run.id}`,
+    id: `in.(${sampleIds.join(",")})`,
+    status: "eq.done",
+    select: "id",
+  });
+
+  return catchupCandidateCount(pending, new Set(done.map((row) => row.id)));
 }
 
 /** Le CSV téléversé au lancement, ou null s'il n'y en a pas eu.
@@ -680,73 +778,98 @@ export async function recordLaunch(
   });
 }
 
-/** Prépare un run pour une nouvelle passe de juge.
+/** Ouvre une passe de rattrapage sur un run.
  *
- * Franchement destructif, et il le dit : le verdict du juge PRINCIPAL est
- * effacé partout avant que la passe ne commence — jamais celui d'un autre
- * juge vivant du run, que cette passe ne concerne pas : `config` ne porte de
- * quoi changer que `criterion`, `rubric` et `models.judge`, les trois champs
- * du principal (voir `RejudgeRequest`, `types.ts`). L'atomicité — une passe
- * ratée laisserait les anciennes notes — n'est pas atteignable avec
- * l'écriture au fil de l'eau : la première case recevrait sa nouvelle note
- * pendant que la cinquantième porterait encore l'ancienne. Entre un mélange
- * silencieux de deux échelles et des trous francs, ce sont les trous qui se
- * voient.
+ * Ne remet RIEN en attente, contrairement à `extendRun` : les lignes à
+ * remplir existent déjà, en `pending`, depuis le lancement, une extension,
+ * ou l'ajout d'un juge (`addJudge`, juste en dessous) — ce que ce rattrapage
+ * vient combler, pas refaire. Seul le run repasse en `running`, pour que
+ * l'écran montre qu'il se passe quelque chose.
  *
- * Depuis les juges multiples, la note vit dans `judge_scores` plutôt que sur
- * `eval_samples` (`score`, `justification` — colonnes supprimées par
- * `20260906093000_drop_eval_samples_score_columns.sql`, dépôt
- * polaris-supabase) : c'est là que ce nettoyage porte désormais, sur la seule
- * liaison principale. `eval_samples` ne perd que ce qui reste sien —
- * `status`/`error`/`finished_at` — pour que le moteur retraite la case
- * (solveur `stored_transcript`, côté `batch_job.py` : le transcript n'est pas
- * effacé, seulement rejoué tel quel devant le juge).
- *
- * DOUTE porté au rapport : cette fonction n'écrit que `config` sur le run —
- * un historique d'affichage — jamais `judges.criterion`/`rubric`/`model`, la
- * définition qui gouverne réellement ce que le moteur demande au principal
- * (voir le commentaire de `Judge` dans `types.ts`). Faire muter un `Judge`
- * après coup est une décision qui dépasse un simple renommage de colonnes ;
- * elle n'a pas été prise ici. */
-export async function resetForRejudge(
-  runId: string,
-  config: EvalRunConfig,
-): Promise<void> {
-  const principal = (await loadLiveRunJudges(runId)).find(
-    (judge) => judge.is_principal,
-  );
-
-  await update(
-    SAMPLES,
-    { status: "pending", error: null, finished_at: null },
-    { run_id: `eq.${runId}` },
-  );
-  if (principal) {
-    await update(
-      JUDGE_SCORES,
-      { status: "pending", score: null, justification: "", error: null },
-      { run_judge_id: `eq.${principal.id}` },
-    );
-  }
-  await update(
-    RUNS,
-    { config, status: "running", error: null, started_at: NOW, finished_at: null },
-    { id: `eq.${runId}` },
-  );
-}
-
-/** Ouvre une passe d'éveil sur un run terminé.
- *
- * Ne remet **rien** en attente, à la différence de `resetForRejudge` : les
- * notes, les transcripts et les statuts des cases sont ce que cette passe vient
- * compléter, pas ce qu'elle refait. Seul le run repasse en `running`, pour que
- * l'écran montre qu'il se passe quelque chose. */
-export async function startAwarenessPass(runId: string): Promise<void> {
+ * Remplace l'ancien `resetForRejudge` et l'ancien `startAwarenessPass` : le
+ * premier écrasait le verdict du principal avant de refaire — « rejuger »
+ * n'existe plus, voir `addJudge` pour ce que ce geste est devenu — et le
+ * second ne rattrapait que la liaison d'éveil. Un seul mode dans le job
+ * (`catchup`, voir `run_batch_job`, `backend/playground/batch_job.py`) pour
+ * les deux, généralisé à n'importe quel juge — voir
+ * `.superpowers/sdd/task-9-report.md`. */
+export async function startCatchupPass(runId: string): Promise<void> {
   await update(
     RUNS,
     { status: "running", error: null, started_at: NOW, finished_at: null },
     { id: `eq.${runId}` },
   );
+}
+
+/** Ajoute un juge secondaire à un run existant : le juge, sa liaison —
+ *  jamais principale — et une ligne de `judge_scores` en attente sur CHAQUE
+ *  conversation déjà posée pour ce run, jouée ou non.
+ *
+ * C'est ce que « rejuger » est devenu depuis les juges multiples : on
+ * n'écrase plus le verdict du principal, on ajoute un juge de plus, et
+ * l'ancien reste pour comparer — voir `.superpowers/sdd/task-9-report.md`.
+ *
+ * Sans ces lignes de `judge_scores`, `write_judge_score` (moteur,
+ * `supabase_store.py`) ne trouverait rien à mettre à jour : elle ne fait
+ * qu'un UPDATE ciblé sur (`run_judge_id`, `sample_id`), jamais un INSERT —
+ * voir le commentaire de `judgeScoresForSamples`. Ce défaut a déjà existé
+ * une fois, sur l'extension de run (`extendRun`), avant d'être corrigé ; il
+ * ne doit pas se répéter ici. `startCatchupPass`, plus haut, est ce qui
+ * remplit ensuite ces lignes pour les conversations déjà terminées — voir
+ * `catchupMissingTotal` pour comment ce qui reste à rattraper se compte.
+ *
+ * Toujours secondaire (`is_principal: false`) : désigner un juge principal
+ * dès sa création confondrait deux gestes distincts, voir `designatePrincipal`
+ * pour le second, séparé et explicite.
+ *
+ * `createdBy` vient de la session de l'appelant, jamais du corps de la
+ * requête — même règle que partout ailleurs dans ce fichier.
+ *
+ * Throws:
+ *   NotFound: si aucun run ne porte cet identifiant.
+ */
+export async function addJudge(
+  runId: string,
+  spec: JudgeSpec,
+  createdBy: string,
+): Promise<{ runJudgeId: string }> {
+  const runs = await select<{ id: string; config: EvalRunConfig }>(RUNS, {
+    id: `eq.${runId}`,
+    select: "id,config",
+    deleted_at: "is.null",
+    limit: 1,
+  });
+  if (runs.length === 0) throw new NotFound(`Unknown run: ${runId}`);
+  const run = runs[0];
+
+  // Toutes les conversations déjà posées, terminées ou non : une case encore
+  // `pending`/`running` recevra sa ligne de score comme les autres — voir la
+  // docstring pour pourquoi une ligne en attente doit exister d'avance,
+  // quel que soit l'état de la case qu'elle vise.
+  const samples = await select<{ id: string }>(SAMPLES, {
+    run_id: `eq.${runId}`,
+    select: "id",
+  });
+
+  const judge = judgeRowFromSpec(spec, run.config.models.judge, createdBy);
+  const runJudgeId = randomUUID();
+
+  await insert(JUDGES, judge);
+  await insert(RUN_JUDGES, {
+    id: runJudgeId,
+    run_id: runId,
+    judge_id: judge.id,
+    system_type: judge.system_type,
+    is_principal: false,
+  });
+  if (samples.length > 0) {
+    await insert(
+      JUDGE_SCORES,
+      judgeScoresForSamples(runId, [runJudgeId], samples.map((sample) => sample.id)),
+    );
+  }
+
+  return { runJudgeId };
 }
 
 /** Demande l'arrêt : le job le lit avant chaque case et se termine lui-même.
@@ -799,8 +922,8 @@ export async function failToStart(runId: string, reason: string): Promise<void> 
  * s'est trouée. Les transcripts partiels sont effacés — ce qui a échoué à
  * mi-conversation ne doit pas se mélanger à la nouvelle tentative.
  *
- * Ne touche jamais `judge_scores`, à la différence de `resetForRejudge` et de
- * l'approfondissement dans `extendRun` : une case en `error` a échoué à
+ * Ne touche jamais `judge_scores`, à la différence de l'approfondissement
+ * dans `extendRun` : une case en `error` a échoué à
  * l'*exécution*, avant qu'aucun juge n'ait pu la voir — voir la distinction
  * portée par `EvalSample.error` dans `types.ts`. Ses lignes de score
  * attendent donc toujours en `"pending"`, posées dès le lancement, jamais
@@ -1246,13 +1369,15 @@ export async function extendRun(
  */
 export async function loadPublicRun(
   runId: string,
-  options: { withTranscripts?: boolean } = {},
+  options: { withTranscripts?: boolean; withJudges?: boolean } = {},
 ): Promise<PublicRunDetail> {
   // Le bouton qui lit `source_csv_available` n'existe que sur la page privée,
   // et l'inconnu qui lit une page publiée n'a rien à en faire — d'où l'exclure
-  // explicitement ici. Le compte d'éveil n'a pas besoin du même geste : il est
-  // déjà sur demande par défaut (voir `awarenessMissingTotal`), et cette route
-  // ne le demande jamais.
+  // explicitement ici. Le compte de rattrapage n'a pas besoin du même geste :
+  // il est déjà sur demande par défaut (voir `catchupMissingTotal`), et cette
+  // route ne le demande jamais — il n'y a aucun bouton d'écriture ici.
+  // `withJudges` traverse tel quel : `withoutIdentity`, plus bas, retire
+  // `created_by` de chaque juge avant que ça ne sorte.
   const detail = await loadRun(runId, {
     ...options,
     withSourceCsvFlag: false,

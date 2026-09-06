@@ -13,26 +13,21 @@
 // `requireUser()` sur chaque route qui écrit, et `loadPublicRun` sur ce qui se
 // lit. Ce fichier ajoute une garantie de plus, tenue par le compilateur : ses
 // composants prennent un `PublicRunDetail`, dont le `run` n'a pas de
-// `user_email`. Rendre l'adresse de qui a lancé le run est une erreur de
-// compilation, pas une vigilance à tenir.
+// `user_email`, et dont les juges n'ont pas de `created_by` (voir
+// `PublicJudge`, `lib/public-run.ts`). Rendre l'une de ces deux adresses est
+// une erreur de compilation, pas une vigilance à tenir. `page.tsx` (privé)
+// passe un `RunDetail` complet à ces mêmes composants sans conversion : il en
+// porte structurellement plus que ce qu'ils exigent, ce que TypeScript
+// accepte déjà pour `run.user_email`.
 //
-// DEPUIS LES JUGES MULTIPLES — un doute porté au rapport de cette tâche, à
-// lire avant de toucher à `RunJudgeView` ci-dessous : ni `RunDetail` ni
-// `PublicRunDetail` (`lib/types.ts`, `lib/public-run.ts`) ne portent encore
-// les juges d'un run, et aucune route ne les lit — `loadRun` (`lib/runs.ts`)
-// n'attache que `progress`/`awareness_missing`, jamais les liaisons vivantes
-// ni leurs `judge_scores`. Cette tâche a pour mandat de ne toucher QUE ce
-// fichier et `app/eval/[runId]/page.tsx` ; elle ne peut donc pas poser cette
-// jointure elle-même, sur le modèle de `principalVerdictsByRun` dans
-// `runs.ts`, qui ne le fait que pour la liste des runs, jamais pour un run
-// ouvert. `RunJudgeView` ci-dessous est donc une extension LOCALE, purement
-// additive (`detail.judges?`) : tant que `RunDetail` ne la porte pas
-// réellement, `judges` vaut `undefined` partout et cet écran se comporte
-// exactement comme avant les juges multiples — le principal lu dans
-// `config`, aucun autre juge à montrer, aucune action à proposer. Le jour où
-// une route l'attache avec cette forme (`run_judge_id`, `judge`,
-// `is_principal`, `system_type`, `scores` par `sample_id`), tout ce fichier
-// s'anime sans qu'une ligne d'ici ne bouge.
+// DEPUIS LES JUGES MULTIPLES — `RunDetail.judges` (`lib/types.ts`) est
+// maintenant attaché pour de vrai par `loadRun`/`attachJudges`
+// (`lib/runs.ts`), sur demande (`withJudges`) : voir
+// `app/api/runs/[runId]/route.ts`, qui le demande toujours, et
+// `.superpowers/sdd/task-9-report.md` pour la plomberie complète. Ce fichier
+// n'a donc plus besoin de dégrader pour un `judges` toujours `undefined` —
+// seulement pour le cas, réel, d'un appelant qui ne l'a pas demandé (un run
+// encore en cours d'ouverture, ou un futur appelant plus léger).
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { ViewControls } from "@/components/ViewControls";
@@ -57,49 +52,22 @@ import {
   rubricBounds,
   sortedRubric,
 } from "@/lib/rubric";
-import type { PublicRun, PublicRunDetail } from "@/lib/public-run";
+import type { PublicJudge, PublicRun, PublicRunDetail, PublicRunJudgeView } from "@/lib/public-run";
 import type {
   EvalSample,
-  Judge,
-  JudgeScoreStatus,
-  JudgeSystemTypeColumn,
+  JudgeVerdictEntry,
   RubricLevel,
   SampleStatus,
 } from "@/lib/types";
 
-// --- Juges multiples : lecture, en attendant la jointure serveur -----------
-
-/** Le verdict d'UN juge sur UNE conversation, tel que cet écran voudrait le
- *  lire — un sous-ensemble de `JudgeScore` (`lib/types.ts`), sans
- *  `run_judge_id` ni `sample_id` : ceux-ci se déduisent déjà de où cette
- *  valeur est rangée (voir `RunJudgeView.scores`). */
-export interface JudgeVerdictEntry {
-  status: JudgeScoreStatus;
-  score: number | null;
-  justification: string;
-  error: string | null;
-}
-
-/** Un juge vivant d'un run, tel que cet écran le lit : son identité
- *  (`judge`), son rôle sur CE run (`is_principal`, `system_type` — copiés
- *  depuis `run_judges`, voir son commentaire dans `lib/types.ts`), et son
- *  verdict sur chaque conversation, par `sample_id`. Jamais un juge
- *  supprimé : voir l'en-tête de ce fichier — c'est à la fonction qui pose
- *  cette jointure, pas à celle-ci, de filtrer `deleted_at`. */
-export interface RunJudgeView {
-  run_judge_id: string;
-  judge: Judge;
-  is_principal: boolean;
-  system_type: JudgeSystemTypeColumn;
-  scores: Record<string, JudgeVerdictEntry>;
-}
-
-/** `PublicRunDetail`/`RunDetail`, augmenté de `judges` — voir l'en-tête de ce
- *  fichier pour pourquoi cette extension reste locale et optionnelle. Un
- *  `RunDetail` ordinaire (sans `judges`) satisfait ce type sans conversion :
- *  c'est ce qui garde `SharedRunView.tsx` et `app/shared/[runId]/page.tsx` —
- *  hors du périmètre de cette tâche — compatibles sans y toucher. */
-export type ReadDetail = PublicRunDetail & { judges?: RunJudgeView[] };
+// --- Juges multiples : lecture ----------------------------------------------
+//
+// Les composants ci-dessous sont partagés par la page privée (`RunDetail`,
+// juges complets) et la page publique (`PublicRunDetail`, `created_by`
+// retiré de chaque juge) : ils prennent donc le type le plus restreint des
+// deux, `PublicRunJudgeView`/`PublicJudge` — un `RunJudgeView` complet le
+// satisfait déjà par structure. `JudgeVerdictEntry` (`lib/types.ts`), lui, ne
+// distingue pas les deux : aucune de ses valeurs ne nomme personne.
 
 /** En attente : ni notée, ni tombée. Le même défaut que `loadRuns` rend déjà
  *  pour une conversation sans principal vivant (`principalVerdictsByRun`,
@@ -112,20 +80,22 @@ const PENDING_VERDICT: JudgeVerdictEntry = {
   error: null,
 };
 
-/** Le principal vivant de la liste, ou `undefined` — aucun juge encore
- *  attaché (voir l'en-tête de ce fichier), ou improbable liste sans
- *  principal. Au plus un principal vivant est garanti en base (invariant 1
- *  de la conception) : cette fonction n'a donc jamais à choisir entre
- *  plusieurs candidats. */
-export function principalJudge(judges: RunJudgeView[] | undefined): RunJudgeView | undefined {
+/** Le principal vivant de la liste, ou `undefined` — `judges` pas encore
+ *  chargé, ou improbable liste sans principal. Au plus un principal vivant
+ *  est garanti en base (invariant 1 de la conception) : cette fonction n'a
+ *  donc jamais à choisir entre plusieurs candidats. */
+export function principalJudge(
+  judges: PublicRunJudgeView[] | undefined,
+): PublicRunJudgeView | undefined {
   return judges?.find((judge) => judge.is_principal);
 }
 
 /** Le verdict de ce juge sur cette conversation, ou l'attente par défaut si
- *  le juge est absent (pas encore de jointure) ou n'a pas encore cette
- *  ligne. */
+ *  le juge est absent (`judges` pas chargé) ou n'a pas encore cette ligne —
+ *  y compris un juge secondaire dont seule l'identité a été ramenée, sans
+ *  ses notes (voir `attachJudges`, `lib/runs.ts`). */
 export function verdictOf(
-  judge: RunJudgeView | undefined,
+  judge: PublicRunJudgeView | undefined,
   sampleId: string,
 ): JudgeVerdictEntry {
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
@@ -136,7 +106,7 @@ export function verdictOf(
  * Un juge système ne porte ni critère ni échelle en base — voir la
  * conception, section « Les juges système » — son texte vit dans le code qui
  * le construit, jamais ici : `awake` est le seul aujourd'hui. */
-function judgeLabel(judge: Judge): string {
+function judgeLabel(judge: PublicJudge): string {
   if (judge.system_type === AWAKE_TYPE) return "Eval awareness (built-in, 1–10)";
   const text = (judge.criterion ?? "").trim();
   if (!text) return "(no criterion)";
@@ -456,7 +426,7 @@ function OtherJudgeRow({
   onUnlink,
   onDesignatePrincipal,
 }: {
-  judge: RunJudgeView;
+  judge: PublicRunJudgeView;
   onUnlink?: (runJudgeId: string) => Promise<void>;
   onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
 }) {
@@ -530,8 +500,8 @@ function PrincipalUnlink({
   others,
   onUnlink,
 }: {
-  principal: RunJudgeView;
-  others: RunJudgeView[];
+  principal: PublicRunJudgeView;
+  others: PublicRunJudgeView[];
   onUnlink: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -634,7 +604,7 @@ export function JudgeBlock({
   onUnlink,
   onDesignatePrincipal,
 }: {
-  detail: ReadDetail;
+  detail: PublicRunDetail;
   onUnlink?: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
   onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
 }) {
@@ -748,7 +718,7 @@ export function DetailModal({
   loading,
   onClose,
 }: {
-  detail: ReadDetail;
+  detail: PublicRunDetail;
   scenarioIndex: number;
   target: string;
   loading: boolean;
@@ -907,11 +877,11 @@ export function AttemptView({
 }: {
   attempt: EvalSample;
   /** Tous les juges vivants du run, avec leur verdict sur chaque
-   *  conversation — voir `RunJudgeView`. `undefined` tant qu'aucune route ne
-   *  les fournit encore (voir l'en-tête de ce fichier) : cette vue retombe
-   *  alors sur l'attente par défaut pour le principal, et ne montre aucun
-   *  autre juge. */
-  judges: RunJudgeView[] | undefined;
+   *  conversation — voir `RunJudgeView` (`lib/types.ts`). `undefined` quand
+   *  l'appelant n'a pas demandé cette jointure (voir `loadRun`'s
+   *  `withJudges`) : cette vue retombe alors sur l'attente par défaut pour
+   *  le principal, et ne montre aucun autre juge. */
+  judges: PublicRunJudgeView[] | undefined;
   rubric: RubricLevel[];
   /** La profondeur demandée par le run, pour ne signaler que les tentatives
    *  qui s'en écartent — voir le commentaire sur `turns_done` plus bas. */
@@ -1080,7 +1050,7 @@ export function RunMatrix({
   onOpenScenario,
   onOpenCell,
 }: {
-  detail: ReadDetail;
+  detail: PublicRunDetail;
   view: MatrixView;
   onViewChange: (next: MatrixView) => void;
   onOpenScenario: (index: number) => void;

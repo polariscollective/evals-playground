@@ -9,7 +9,6 @@ import type {
   EvalRunConfig,
   ExtendRequest,
   JudgeSpec,
-  RejudgeRequest,
   RubricLevel,
   SeededTurn,
   ToolSpec,
@@ -56,6 +55,30 @@ export function rubricProblem(rubric: unknown): string | null {
   return null;
 }
 
+/** Ce qui cloche dans UN `JudgeSpec`, ou null si elle tient — que ce soit une
+ *  entrée de `config.judges` au lancement (voir `judgesProblem`, juste en
+ *  dessous, qui l'appelle pour chacune) ou le corps posté à `.../judges` pour
+ *  ajouter un juge après coup (`app/api/runs/[runId]/judges/route.ts`).
+ *
+ * `label` nomme ce qui cloche dans le message rendu — « judge 2 », ou « the
+ * new judge » côté route d'ajout, qui n'a qu'une seule entrée à nommer. */
+export function judgeSpecProblem(spec: unknown, label: string): string | null {
+  if (!spec || typeof spec !== "object") return `${label} is not a mapping`;
+  const judge = spec as JudgeSpec;
+  if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
+  const rubric = rubricProblem(judge.rubric);
+  if (rubric) return `${label}: ${rubric}`;
+  // Absent hérite du modèle du run — voir `JudgeSpec.model`. Présent, il
+  // doit être un texte non vide : un type différent ne se devine pas, et le
+  // laisser passer ferait tourner ce juge sous le modèle par défaut sans que
+  // personne ne l'ait demandé, exactement le piège déjà rencontré sur
+  // `check_eval_awareness`.
+  if (judge.model !== undefined && judge.model !== null && !isFilled(judge.model)) {
+    return `${label}: model must be a non-empty string`;
+  }
+  return null;
+}
+
 /** Ce qui cloche dans les juges secondaires d'un run, ou null.
  *
  * `judges` est optionnel : absent ou vide, c'est l'ancienne forme — un seul
@@ -71,20 +94,8 @@ export function judgesProblem(judges: unknown): string | null {
   if (!Array.isArray(judges)) return "judges must be a list";
 
   for (const [index, entry] of judges.entries()) {
-    const label = `judge ${index + 1}`;
-    if (!entry || typeof entry !== "object") return `${label} is not a mapping`;
-    const judge = entry as JudgeSpec;
-    if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
-    const rubric = rubricProblem(judge.rubric);
-    if (rubric) return `${label}: ${rubric}`;
-    // Absent hérite du modèle du run — voir `JudgeSpec.model`. Présent, il
-    // doit être un texte non vide : un type différent ne se devine pas, et
-    // le laisser passer ferait tourner ce juge sous le modèle par défaut
-    // sans que personne ne l'ait demandé, exactement le piège déjà rencontré
-    // sur `check_eval_awareness`.
-    if (judge.model !== undefined && judge.model !== null && !isFilled(judge.model)) {
-      return `${label}: model must be a non-empty string`;
-    }
+    const problem = judgeSpecProblem(entry, `judge ${index + 1}`);
+    if (problem) return problem;
   }
   return null;
 }
@@ -291,17 +302,6 @@ export function configProblem(config: unknown): string | null {
     }
   }
 
-  return null;
-}
-
-/** Ce qui cloche dans une demande de repasse du juge, ou null. */
-export function rejudgeProblem(request: unknown): string | null {
-  if (!request || typeof request !== "object") return "body must be an object";
-  const r = request as RejudgeRequest;
-  if (!isFilled(r.criterion)) return "the judge needs something to look at";
-  const rubric = rubricProblem(r.rubric);
-  if (rubric) return rubric;
-  if (!isFilled(r.judge)) return "a judge model is required";
   return null;
 }
 

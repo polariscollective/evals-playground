@@ -4,7 +4,10 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  addRunJudge,
   cancelRun,
+  catchUp,
+  designateRunPrincipal,
   exportUrl,
   extendRun,
   getDraft,
@@ -14,16 +17,15 @@ import {
   hasInspectLogs,
   inspectViewUrl,
   getTags,
-  judgeAwareness,
   matrixCsvText,
   publishRun,
-  rejudgeRun,
   saveAnalysis,
   saveExtendDraft,
   retryFailedCells,
   saveNotes,
   setRunTags,
   sourceCsvUrl,
+  unlinkRunJudge,
   updateDraft,
 } from "@/lib/api";
 import { extensionsOf } from "@/lib/run-extensions";
@@ -45,7 +47,6 @@ import {
   repetitionRange,
   verdictOf,
 } from "@/components/RunRead";
-import type { RunJudgeView } from "@/components/RunRead";
 import { NotesField } from "@/components/NotesField";
 import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -56,45 +57,6 @@ import type {
   RunDetail,
   Tag,
 } from "@/lib/types";
-
-/** `RunDetail`, augmenté de `judges` — voir le commentaire de tête de
- *  `components/RunRead.tsx` : ni `RunDetail` ni la route
- *  `GET /api/runs/[runId]` ne portent encore les juges d'un run, donc ce
- *  champ vaut toujours `undefined` aujourd'hui. Le déclarer ici plutôt que de
- *  laisser `detail` en `RunDetail` nu est ce qui permet à cette page de
- *  construire `ExtendPanelSample[]` et de passer `onUnlink`/
- *  `onDesignatePrincipal` à `JudgeBlock` sans caster — et de s'animer sans
- *  qu'une ligne d'ici ne bouge le jour où `loadRun` l'attache réellement. */
-type RunDetailRead = RunDetail & { judges?: RunJudgeView[] };
-
-/** Les deux routes que `unlinkRunJudge`/`designatePrincipalJudge` appellent
- *  n'existent pas encore — voir le commentaire de `RunDetailRead` ci-dessus.
- *  Tant qu'aucune des deux n'existe, `detail.judges` reste `undefined` et
- *  `JudgeBlock` ne montre jamais le bouton qui les déclenche ; ces deux
- *  fonctions sont donc mortes à l'exécution pour l'instant, mais écrites sur
- *  le contrat qu'une future tâche doit poser :
- *    DELETE /api/runs/:runId/judges/:runJudgeId
- *      body { replacement_run_judge_id: string | null }
- *    POST   /api/runs/:runId/judges/:runJudgeId/principal
- *  Placées ici plutôt que dans `lib/api.ts`, hors du périmètre de cette
- *  tâche : les y déplacer appartient à qui posera ces deux routes. */
-async function callJudgesRoute(path: string, init: RequestInit): Promise<void> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-  });
-  if (!response.ok) {
-    const raw = await response.text();
-    let message = raw || `HTTP ${response.status}`;
-    try {
-      const parsed = JSON.parse(raw) as { error?: string };
-      if (typeof parsed.error === "string" && parsed.error.trim()) message = parsed.error;
-    } catch {
-      /* la réponse n'est pas du JSON : le corps brut fait l'affaire */
-    }
-    throw new Error(message);
-  }
-}
 
 /** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
  *  dollar — même repère que la ligne de coût du run, juste au-dessus. */
@@ -166,20 +128,28 @@ function ExtensionsHistory({ run }: { run: EvalRun }) {
   );
 }
 
-/** Repasser le juge sur un run terminé, avec une autre question. */
-function RejudgePanel({
+/** Ajoute un juge de plus à ce run, en plus du principal — jamais un
+ *  remplacement. Ce que « rejuger » est devenu depuis les juges multiples :
+ *  on n'écrase plus le verdict d'un juge, on en ajoute un, et l'ancien reste
+ *  pour comparer. Ses lignes de score naissent en attente sur toutes les
+ *  conversations déjà posées ; « Catch up », plus bas sur cette page, est ce
+ *  qui les remplit. */
+function AddJudgePanel({
   detail,
-  onLaunched,
+  onAdded,
   onClose,
 }: {
   detail: RunDetail;
-  onLaunched: () => void;
+  onAdded: () => void;
   onClose: () => void;
 }) {
   const { config } = detail.run;
-  const [criterion, setCriterion] = useState(config.criterion);
+  // Un point de départ, pas une contrainte : ce juge peut regarder toute
+  // autre chose que le principal, et son échelle n'a pas à lui ressembler.
+  // Reprendre celles du run évite juste un formulaire vide au premier clic.
+  const [criterion, setCriterion] = useState("");
   const [rubric, setRubric] = useState<RubricLevel[]>(config.rubric);
-  const [judge, setJudge] = useState(config.models.judge);
+  const [model, setModel] = useState(config.models.judge);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -193,12 +163,12 @@ function RejudgePanel({
     ) &&
     new Set(values).size === values.length;
 
-  const launch = async () => {
+  const add = async () => {
     setBusy(true);
     setFailed(null);
     try {
-      await rejudgeRun(detail.run.id, { criterion, rubric, judge });
-      onLaunched();
+      await addRunJudge(detail.run.id, { criterion, rubric, model });
+      onAdded();
     } catch (e) {
       setFailed((e as Error).message);
       setBusy(false);
@@ -209,12 +179,13 @@ function RejudgePanel({
     <section className="space-y-4 rounded border border-teal-400 bg-teal-50/40 p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="font-medium">Judge this run again</h2>
+          <h2 className="font-medium">Add a judge</h2>
           <p className="mt-1 text-sm text-zinc-700">
-            This <strong>erases every grade and justification</strong> in this
-            run before it starts. The transcripts are not touched, and the
-            evaluated models are not called again — only the judge is, so this
-            costs a fraction of the run.
+            This judge does not replace the principal, or any other judge
+            already on this run — it grades the same conversations alongside
+            them, so the two can be compared. Its grades start out pending;
+            use <strong>Catch up</strong>, below, to have it judge what has
+            already run.
           </p>
         </div>
         <button
@@ -227,7 +198,7 @@ function RejudgePanel({
 
       <label className="block space-y-1">
         <span className="text-sm font-medium">
-          What the judge should look at
+          What this judge should look at
         </span>
         <textarea
           value={criterion}
@@ -245,13 +216,13 @@ function RejudgePanel({
       <label className="block space-y-1">
         <span className="text-sm font-medium">Judge</span>
         <select
-          value={judge}
-          onChange={(e) => setJudge(e.target.value)}
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
           className="block rounded border border-zinc-300 bg-white p-2 text-sm"
         >
-          {models.map((model) => (
-            <option key={model} value={model}>
-              {model}
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
             </option>
           ))}
         </select>
@@ -264,22 +235,24 @@ function RejudgePanel({
       )}
 
       <button
-        onClick={launch}
+        onClick={add}
         disabled={!ready || busy}
         className="rounded bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-700 disabled:opacity-40 disabled:hover:bg-zinc-900"
       >
-        {busy ? "Starting…" : `Re-judge ${detail.samples.length} conversations`}
+        {busy ? "Adding…" : `Add this judge to ${detail.samples.length} conversations`}
       </button>
     </section>
   );
 }
 
-/** Ajoute la note d'éveil à un run qui ne l'avait pas.
+/** Remplit les lignes de score en attente de ce run — l'ancien bouton
+ *  d'éveil, généralisé à n'importe quel juge : un juge ajouté après coup, un
+ *  run étendu, un juge tombé sur quelques cases, un run interrompu s'y
+ *  couvrent tous du même geste.
  *
- * Un bouton et non un panneau : la question du juge d'éveil est fixe, son
- * échelle aussi, et le modèle est celui du juge du run. Il n'y a rien à
- * remplir, donc rien à ouvrir. */
-function AwarenessButton({
+ * Un bouton et non un panneau : il n'y a rien à choisir, le job retrouve
+ * lui-même ce qui reste à faire. */
+function CatchUpButton({
   detail,
   onLaunched,
 }: {
@@ -288,17 +261,17 @@ function AwarenessButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  // Compté par le serveur, sur les transcripts eux-mêmes (voir `loadRun`) :
-  // recompter ici depuis `detail.samples` demanderait de les avoir tous
-  // chargés, exactement le préchargement lourd que ce champ existe pour
-  // éviter.
-  const missing = detail.awareness_missing;
+  // Compté par le serveur (voir `catchupMissingTotal`, `lib/runs.ts`) :
+  // recompter ici depuis `detail.samples`/`detail.judges` referait le même
+  // calcul, avec le risque d'un jour diverger de celui qui décide vraiment
+  // ce qu'un rattrapage remplit.
+  const missing = detail.catchup_missing;
 
   const launch = async () => {
     setBusy(true);
     setFailed(null);
     try {
-      await judgeAwareness(detail.run.id);
+      await catchUp(detail.run.id);
       onLaunched();
     } catch (e) {
       setFailed((e as Error).message);
@@ -308,12 +281,15 @@ function AwarenessButton({
 
   return (
     <section className="space-y-2 rounded border border-zinc-300 p-4">
-      <h2 className="font-medium">Check whether the models noticed</h2>
+      <h2 className="font-medium">
+        Catch up on {missing} grade{missing > 1 ? "s" : ""}
+      </h2>
       <p className="text-sm text-zinc-700">
-        A judge reads the {missing} conversation{missing > 1 ? "s" : ""} without
-        a grade yet and says whether the evaluated model showed signs of knowing
-        it was being tested. <strong>No grade in this run is touched</strong> —
-        the transcripts are reread, and neither the evaluated models nor the
+        A judge on this run — added after the fact, crashed on a few cells,
+        or left behind by an extension or an interruption — still has{" "}
+        {missing} pending grade{missing > 1 ? "s" : ""} on conversations that
+        already finished. <strong>No existing grade is touched</strong> — the
+        transcripts are reread, and neither the evaluated models nor the
         adversary are called again.
       </p>
       <button
@@ -321,7 +297,7 @@ function AwarenessButton({
         disabled={busy}
         className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
       >
-        {busy ? "Starting…" : "Run the eval-awareness judge"}
+        {busy ? "Starting…" : "Catch up"}
       </button>
       {failed && <p className="text-sm text-red-700">{failed}</p>}
     </section>
@@ -336,11 +312,11 @@ export default function EvalRunPage({
   const { runId } = use(params);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [detail, setDetail] = useState<RunDetailRead | null>(null);
+  const [detail, setDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [analysis, setAnalysis] = useState("");
-  const [rejudging, setRejudging] = useState(false);
+  const [addingJudge, setAddingJudge] = useState(false);
   const [extending, setExtending] = useState(false);
   // Une extension proposée par un agent, ouverte depuis la liste des
   // brouillons. Elle ne préremplit que le panneau : rien n'est appliqué au run
@@ -466,10 +442,10 @@ export default function EvalRunPage({
     return () => clearInterval(timer);
   }, [running, load, transcripts]);
 
-  // Pas d'effet ici pour précharger les transcripts au nom du bouton d'éveil :
-  // `detail.awareness_missing` arrive déjà calculé par `loadRun`, qui a les
-  // transcripts en main sans jamais les envoyer au navigateur (voir
-  // `awarenessMissingTotal` dans `lib/runs.ts`). Un tel effet a existé, et son
+  // Pas d'effet ici pour précharger les transcripts au nom du bouton de
+  // rattrapage : `detail.catchup_missing` arrive déjà calculé par `loadRun`,
+  // qui a les transcripts en main sans jamais les envoyer au navigateur (voir
+  // `catchupMissingTotal` dans `lib/runs.ts`). Un tel effet a existé, et son
   // garde-fou ratait un run juge éteint ou une seule case vide ou en erreur —
   // une fois déclenché, relancer la passe repassait le run en cours et le
   // rafraîchissement de trois secondes ci-dessus rechargeait alors tous les
@@ -557,26 +533,16 @@ export default function EvalRunPage({
     if (!transcripts) setTranscripts(true);
   };
 
-  // Voir `callJudgesRoute` en tête de ce fichier : les deux routes qu'elles
-  // appellent n'existent pas encore, donc `detail.judges` ne les affiche
-  // jamais aujourd'hui — écrites pour le jour où elles le feront.
-  const unlinkRunJudge = async (
+  const handleUnlinkJudge = async (
     runJudgeId: string,
     replacementRunJudgeId?: string,
   ) => {
-    await callJudgesRoute(`/api/runs/${run.id}/judges/${runJudgeId}`, {
-      method: "DELETE",
-      body: JSON.stringify({
-        replacement_run_judge_id: replacementRunJudgeId ?? null,
-      }),
-    });
+    await unlinkRunJudge(run.id, runJudgeId, replacementRunJudgeId ?? null);
     await load(transcripts);
   };
 
-  const designatePrincipalJudge = async (runJudgeId: string) => {
-    await callJudgesRoute(`/api/runs/${run.id}/judges/${runJudgeId}/principal`, {
-      method: "POST",
-    });
+  const handleDesignatePrincipal = async (runJudgeId: string) => {
+    await designateRunPrincipal(run.id, runJudgeId);
     await load(transcripts);
   };
 
@@ -720,11 +686,11 @@ export default function EvalRunPage({
                   <MenuItem
                     onClick={() => {
                       close();
-                      setRejudging(true);
+                      setAddingJudge(true);
                     }}
-                    hint="A different question, same transcripts"
+                    hint="A different question, same transcripts, kept side by side"
                   >
-                    Re-judge
+                    Add a judge…
                   </MenuItem>
                 )}
                 <MenuSeparator />
@@ -1024,25 +990,25 @@ export default function EvalRunPage({
         />
       )}
 
-      {rejudging && !running && (
-        <RejudgePanel
+      {addingJudge && !running && (
+        <AddJudgePanel
           detail={detail}
-          onLaunched={() => {
-            setRejudging(false);
+          onAdded={() => {
+            setAddingJudge(false);
             load(transcripts);
           }}
-          onClose={() => setRejudging(false)}
+          onClose={() => setAddingJudge(false)}
         />
       )}
 
-      {!running && detail.awareness_missing > 0 && (
-        <AwarenessButton detail={detail} onLaunched={() => load(transcripts)} />
+      {!running && detail.catchup_missing > 0 && (
+        <CatchUpButton detail={detail} onLaunched={() => load(transcripts)} />
       )}
 
       <JudgeBlock
         detail={detail}
-        onUnlink={unlinkRunJudge}
-        onDesignatePrincipal={designatePrincipalJudge}
+        onUnlink={handleUnlinkJudge}
+        onDesignatePrincipal={handleDesignatePrincipal}
       />
 
       <ToolsBlock detail={detail} />

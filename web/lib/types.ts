@@ -259,6 +259,40 @@ export interface JudgeScore {
   created_at: string;
 }
 
+/** Le verdict d'UN juge sur UNE conversation, tel que l'écran le lit — un
+ *  sous-ensemble de `JudgeScore` sans `run_judge_id` ni `sample_id` : les
+ *  deux se déduisent déjà d'où cette valeur est rangée, voir
+ *  `RunJudgeView.scores`. */
+export interface JudgeVerdictEntry {
+  status: JudgeScoreStatus;
+  score: number | null;
+  justification: string;
+  error: string | null;
+}
+
+/** Un juge vivant d'un run, tel que l'écran le lit : son identité (`judge`),
+ *  son rôle sur CE run (`is_principal`, `system_type` — copiés depuis
+ *  `run_judges`, voir son commentaire plus haut), et son verdict sur chaque
+ *  conversation, par `sample_id`.
+ *
+ * Jamais un juge supprimé : voir `loadLiveRunJudges` (`runs.ts`), la seule
+ * fonction autorisée à filtrer `run_judges` sur `deleted_at` — c'est elle qui
+ * alimente `attachJudges`, qui construit ces vues, jamais une lecture
+ * séparée de `run_judges`. */
+export interface RunJudgeView {
+  run_judge_id: string;
+  judge: Judge;
+  is_principal: boolean;
+  system_type: JudgeSystemTypeColumn;
+  /** Le verdict de ce juge sur chaque conversation, par `sample_id` — vide
+   *  pour un juge dont l'écran n'a demandé que l'identité, pas la note :
+   *  voir `attachJudges` (`runs.ts`), qui ne ramène les verdicts complets de
+   *  tous les juges vivants que sur demande, pour la même raison de poids
+   *  que les transcripts. Une conversation absente d'ici se lit comme en
+   *  attente, jamais comme « pas de juge ». */
+  scores: Record<string, JudgeVerdictEntry>;
+}
+
 /** Un juge secondaire d'un run, en plus du principal — une entrée
  *  d'`EvalRunConfig.judges`.
  *
@@ -741,13 +775,19 @@ export interface RunDetail {
   samples: EvalSample[];
   progress: Progress;
   source_csv_available: boolean;
-  /** Combien de conversations pourraient recevoir une note d'éveil et ne
-   *  l'ont pas — voir `awarenessMissing`. Calculé côté serveur, sur les
-   *  transcripts eux-mêmes : eux seuls disent si un tour d'assistant a
-   *  vraiment répondu, ce que `samples` ne porte pas hors de l'ouverture
-   *  d'une case. La page le lit ici plutôt que de forcer son propre
-   *  chargement complet pour le même résultat. */
-  awareness_missing: number;
+  /** Combien de lignes de `judge_scores` restent à remplir sur ce run — pour
+   *  n'importe quel juge vivant, sur une conversation déjà terminée. Voir
+   *  `catchupMissingTotal`, `lib/runs.ts` : calculé sur demande seulement, et
+   *  jamais sans vérifier que la conversation visée est bien `done` — le
+   *  moteur (`catchup_dataset`, `backend/playground/batch_job.py`) ne
+   *  rattrape jamais une conversation qui ne l'est pas, et un compte qui
+   *  l'oublierait annoncerait du travail qu'un rattrapage ne ferait jamais. */
+  catchup_missing: number;
+  /** Les juges vivants du run, avec leur verdict sur chaque conversation —
+   *  voir `RunJudgeView`. `undefined` quand non demandé (voir `loadRun`'s
+   *  `withJudges`) : la quasi-totalité des appelants de `loadRun` ne
+   *  regardent jamais les juges, seulement l'existence du run. */
+  judges?: RunJudgeView[];
 }
 
 export interface ModelOption {
@@ -815,11 +855,4 @@ export interface Tag {
 export interface JudgePromptPreview {
   system_message: string;
   user_message: string;
-}
-
-/** Ce qu'on demande à une passe de juge rejouée. */
-export interface RejudgeRequest {
-  criterion: string;
-  rubric: RubricLevel[];
-  judge: string;
 }

@@ -9,10 +9,10 @@ import type {
   ExpectedCsv,
   JudgePromptPreview,
   ExtendRequest,
+  JudgeSpec,
   Profile,
   ProfileActivity,
   ProviderInfo,
-  RejudgeRequest,
   RubricLevel,
   RunDetail,
   RunSummary,
@@ -89,16 +89,39 @@ export const createRun = (
     body: JSON.stringify({ config, csv_text: csvText ?? null, draft_id: draftId ?? null }),
   });
 
-export const rejudgeRun = (runId: string, body: RejudgeRequest) =>
-  request<{ ok: true }>(`/api/runs/${runId}/rejudge`, {
+/** Ajoute un juge secondaire à un run — jamais principal. Ce que « rejuger »
+ *  est devenu depuis les juges multiples : on ajoute un juge de plus, on
+ *  n'écrase plus le verdict de l'ancien. */
+export const addRunJudge = (runId: string, spec: JudgeSpec) =>
+  request<{ ok: true; run_judge_id: string }>(`/api/runs/${runId}/judges`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(spec),
   });
 
-/** Passe le juge d'éveil sur un run qui ne l'avait pas. Sans corps : la
- *  question et l'échelle sont fixes, et le modèle est celui du juge du run. */
-export const judgeAwareness = (runId: string) =>
-  request<{ ok: true }>(`/api/runs/${runId}/awareness`, { method: "POST" });
+/** Délie un juge d'un run. `replacementRunJudgeId` : obligatoire pour délier
+ *  le principal tant qu'il reste d'autres juges vivants — la base le refuse
+ *  sinon (voir `PrincipalRequiresReplacement`, `lib/runs.ts`). */
+export const unlinkRunJudge = (
+  runId: string,
+  runJudgeId: string,
+  replacementRunJudgeId: string | null = null,
+) =>
+  request<{ ok: true }>(`/api/runs/${runId}/judges/${runJudgeId}`, {
+    method: "DELETE",
+    body: JSON.stringify({ replacement_run_judge_id: replacementRunJudgeId }),
+  });
+
+/** Désigne le principal d'un run : celui que la matrice affiche. */
+export const designateRunPrincipal = (runId: string, runJudgeId: string) =>
+  request<{ ok: true }>(`/api/runs/${runId}/judges/${runJudgeId}/principal`, {
+    method: "POST",
+  });
+
+/** Remplit les lignes de score en attente de ce run — l'ancien bouton
+ *  d'éveil, généralisé à n'importe quel juge. Sans corps : le job retrouve
+ *  lui-même ce qui reste. */
+export const catchUp = (runId: string) =>
+  request<{ ok: true }>(`/api/runs/${runId}/catchup`, { method: "POST" });
 
 export const cancelRun = (runId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/cancel`, { method: "POST" });

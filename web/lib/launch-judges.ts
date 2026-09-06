@@ -5,7 +5,12 @@
 // que des écritures Supabase — et `runs.ts` importe `server-only`, qui casse
 // l'import sous `node --test`. Voir le commentaire en tête de `cells.ts`.
 import { randomUUID } from "node:crypto";
-import type { EvalRunConfig, JudgeSystemTypeColumn, RubricLevel } from "./types";
+import type {
+  EvalRunConfig,
+  JudgeSpec,
+  JudgeSystemTypeColumn,
+  RubricLevel,
+} from "./types";
 
 /** Une ligne de `judges` telle qu'elle naît, avant insertion. */
 export interface NewJudgeRow {
@@ -44,6 +49,33 @@ export interface LaunchJudges {
   judges: NewJudgeRow[];
   runJudges: NewRunJudgeRow[];
   judgeScores: NewJudgeScoreRow[];
+}
+
+/** Un `JudgeSpec` — une entrée de `config.judges` au lancement, ou le corps
+ *  posté à `.../judges` pour ajouter un juge après coup (`addJudge`,
+ *  `runs.ts`) — réduit à une ligne de `judges` prête à insérer.
+ *
+ * Toujours ordinaire : un `JudgeSpec` ne porte jamais de type système, voir
+ * sa docstring. `defaultModel` reprend le modèle du run quand l'entrée n'en
+ * précise pas — voir `JudgeSpec.model`.
+ *
+ * Partagée par `judgesForLaunch`, plus bas, et par `addJudge` : les deux
+ * gestes créent le même genre de juge à partir de la même forme, et une
+ * définition dupliquée aurait pu diverger. */
+export function judgeRowFromSpec(
+  spec: JudgeSpec,
+  defaultModel: string,
+  createdBy: string,
+  newId: () => string = randomUUID,
+): NewJudgeRow {
+  return {
+    id: newId(),
+    criterion: spec.criterion,
+    rubric: spec.rubric,
+    model: spec.model ?? defaultModel,
+    system_type: "ordinary",
+    created_by: createdBy,
+  };
 }
 
 /** Les lignes des trois tables de juges à créer pour un run neuf.
@@ -113,17 +145,7 @@ export function judgesForLaunch(
   );
 
   for (const spec of config.judges ?? []) {
-    link(
-      {
-        id: newId(),
-        criterion: spec.criterion,
-        rubric: spec.rubric,
-        model: spec.model ?? config.models.judge,
-        system_type: "ordinary",
-        created_by: createdBy,
-      },
-      false,
-    );
+    link(judgeRowFromSpec(spec, config.models.judge, createdBy, newId), false);
   }
 
   if (config.check_eval_awareness !== false) {

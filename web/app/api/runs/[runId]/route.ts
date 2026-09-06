@@ -2,14 +2,23 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun } from "@/lib/runs";
 
-/** Un run et ses cases.
+/** Un run et ses cases, plus ses juges vivants et leurs verdicts.
  *
- * `?transcripts=1` ramène les conversations, qui pèsent lourd : le
- * rafraîchissement d'un run en cours s'en passe, l'ouverture d'une case non.
+ * `?transcripts=1` ramène les conversations ET les verdicts complets de TOUS
+ * les juges vivants — les deux pèsent pour la même raison et se demandent
+ * toujours ensemble : voir `attachJudges` dans `lib/runs.ts`. Sans ce
+ * paramètre, seuls les verdicts du juge PRINCIPAL et de l'éventuelle liaison
+ * d'éveil sont ramenés — ce que la matrice et son voyant affichent sans
+ * qu'on déplie rien ; le rafraîchissement d'un run en cours s'en contente.
  *
- * `withAwarenessMissingFlag: true` : c'est cette route qui alimente le bouton
- * d'éveil de la page — voir `awarenessMissingTotal` dans `lib/runs.ts` pour
- * pourquoi ce compte n'est demandé qu'ici et sur la route qui lance la passe. */
+ * `withJudges: true` : c'est elle qui fait exister `detail.judges` — voir
+ * `components/RunRead.tsx`, écrit contre ce contrat avant que cette route ne
+ * le pose réellement.
+ *
+ * `withCatchupMissingFlag: true` : c'est cette route qui alimente le bouton
+ * de rattrapage de la page — voir `catchupMissingTotal` dans `lib/runs.ts`
+ * pour pourquoi ce compte n'est demandé qu'ici et sur la route qui lance la
+ * passe. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -22,7 +31,11 @@ export async function GET(
     new URL(request.url).searchParams.get("transcripts") === "1";
   try {
     return NextResponse.json(
-      await loadRun(runId, { withTranscripts, withAwarenessMissingFlag: true }),
+      await loadRun(runId, {
+        withTranscripts,
+        withJudges: true,
+        withCatchupMissingFlag: true,
+      }),
     );
   } catch (error) {
     if (error instanceof NotFound) {
