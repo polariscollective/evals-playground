@@ -15,6 +15,7 @@ import { toolsFor } from "./tools.ts";
 import type {
   CostEstimate,
   EvalRunConfig,
+  JudgeSpec,
   LengthAssumption,
   ModelCost,
   RubricLevel,
@@ -410,6 +411,105 @@ export function estimateCost(
     output_tokens: outputTokens,
     per_model: costs,
     unpriced_models: unpriced,
+  };
+}
+
+/** Ce que coûte d'ajouter CE juge à des conversations déjà jouées — jamais de
+ *  les rejouer : le modèle évalué et l'adversaire ont déjà tourné, ce calcul
+ *  ne les compte pas une seconde fois. Un appel de modèle par conversation,
+ *  comme partout ailleurs dans ce fichier.
+ *
+ * Sert l'écran au moment même où on ajoute un juge à un run existant
+ * (`AddJudgePanel`, `app/eval/[runId]/page.tsx`) — avant même le rattrapage
+ * qui fera réellement l'appel : c'est le geste qui engage la dépense, c'est
+ * donc lui qui doit la dire, plutôt que de laisser découvrir le prix au
+ * moment de cliquer « Catch up ». C'est le piège que ce dépôt a déjà connu
+ * deux fois : le juge d'éveil dont le devis ne comptait pas les appels, et
+ * le rattrapage dont on ne voyait pas la dépense.
+ *
+ * L'hypothèse de longueur est la même que pour un run neuf — chaque scénario
+ * déroulé sur `config.turns` tours à la longueur déclarée
+ * (`average_output_tokens`) — moyennée sur les scénarios du run : cette
+ * fonction ne sait pas sur lesquels portent vraiment les `conversations`
+ * déjà jouées, seulement leur nombre, et traite donc chacun avec le même
+ * poids. `conversations` est un compte, jamais recalculé ici depuis
+ * `config` : c'est l'appelant qui sait combien de conversations sont
+ * réellement terminées et donc rattrapables. */
+export function estimateJudgeAdditionCost(
+  config: EvalRunConfig,
+  spec: JudgeSpec,
+  conversations: number,
+): CostEstimate {
+  if (conversations <= 0 || config.scenarios.length === 0) {
+    return estimateCost({ ...config, scenarios: [], repetitions: 0 }, null);
+  }
+
+  const model = spec.model || config.models.judge;
+  const question = tokens(spec.criterion) + rubricTokens(spec.rubric);
+  const adversaryModel = config.turns > 1 ? config.models.adversary : null;
+
+  /** Le nombre moyen de jetons que ce juge lirait, à une hypothèse de
+   *  longueur donnée — moyenné sur les scénarios du run, pour la raison
+   *  expliquée au-dessus. */
+  const averageInput = (lengths: LengthAssumption | number | null): number => {
+    const { perScenario, adversary: adversaryLength } = resolve(config, lengths);
+    const perScenarioTotals = config.scenarios.map((scenario, index) => {
+      const system = tokens(scenario.system_prompt);
+      const seeded = (scenario.history ?? []).reduce(
+        (sum, turn) => sum + tokens(turn.content),
+        0,
+      );
+      let history = seeded + tokens(scenario.opening_message);
+      for (let turn = 0; turn < config.turns; turn += 1) {
+        history += perScenario[index];
+        if (turn < config.turns - 1 && adversaryModel) history += adversaryLength;
+      }
+      return question + system + history + JUDGE_OVERHEAD_TOKENS;
+    });
+    return (
+      perScenarioTotals.reduce((sum, value) => sum + value, 0) /
+      perScenarioTotals.length
+    );
+  };
+
+  const outputTokens = S.judge_response_tokens * conversations;
+  const price = PRICES[model];
+
+  const costAt = (avgInput: number): number | null =>
+    price === undefined
+      ? null
+      : ((avgInput * conversations) / 1e6) * price.input_per_mtok +
+        (outputTokens / 1e6) * price.output_per_mtok;
+
+  const avgInput = averageInput(null);
+  const inputTokens = Math.round(avgInput * conversations);
+  const usd = costAt(avgInput);
+  const low = costAt(averageInput(S.short_response_tokens)) ?? 0;
+  const high = costAt(averageInput(S.long_response_tokens)) ?? 0;
+  const total = usd ?? 0;
+
+  return {
+    response_tokens: S.judge_response_tokens,
+    usd: round(total, 4),
+    eur: round(total * S.usd_to_eur, 4),
+    min_usd: round(low, 4),
+    max_usd: round(high, 4),
+    min_eur: round(low * S.usd_to_eur, 4),
+    max_eur: round(high * S.usd_to_eur, 4),
+    conversations,
+    model_calls: conversations,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    per_model: [
+      {
+        model,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        response_tokens: S.judge_response_tokens,
+        usd: usd === null ? null : round(usd, 4),
+      },
+    ],
+    unpriced_models: usd === null ? [model] : [],
   };
 }
 

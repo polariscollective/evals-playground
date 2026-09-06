@@ -28,6 +28,7 @@ import {
   unlinkRunJudge,
   updateDraft,
 } from "@/lib/api";
+import { amountDigits, estimateJudgeAdditionCost } from "@/lib/pricing";
 import { extensionsOf } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW } from "@/lib/view";
@@ -163,6 +164,17 @@ function AddJudgePanel({
     ) &&
     new Set(values).size === values.length;
 
+  // Ce que catcher ce juge coûterait, jamais ce qu'ajouter lui-même coûte —
+  // ajouter ne fait rien tourner, voir le paragraphe ci-dessous. Compté sur
+  // les conversations déjà terminées : ce sont les seules qu'un rattrapage
+  // remplira réellement, voir `catchupCandidateCount` (`lib/catchup.ts`).
+  const doneConversations = detail.samples.filter(
+    (sample) => sample.status === "done",
+  ).length;
+  const catchupEstimate = ready
+    ? estimateJudgeAdditionCost(config, { criterion, rubric, model }, doneConversations)
+    : null;
+
   const add = async () => {
     setBusy(true);
     setFailed(null);
@@ -227,6 +239,31 @@ function AddJudgePanel({
           ))}
         </select>
       </label>
+
+      {/* Le coût vit ici, au moment où on décide d'ajouter — pas seulement
+          au clic sur Catch up, en bas de page, qui est ce qui appelle
+          vraiment le modèle. C'est le piège que ce dépôt a déjà connu deux
+          fois : un devis qui ne comptait pas les appels, une dépense qu'on
+          ne voyait qu'après coup. */}
+      {catchupEstimate && (
+        <p className="text-sm text-zinc-700">
+          {doneConversations > 0 ? (
+            <>
+              Adding this judge only queues it — it grades nothing yet.{" "}
+              <strong>{doneConversations}</strong> of {detail.samples.length}{" "}
+              conversations have already finished; catching this judge up on
+              them, later, is about{" "}
+              <strong>${amountDigits(catchupEstimate.usd)}</strong> — one
+              model call each to {model}
+              {catchupEstimate.unpriced_models.length > 0 &&
+                " (no price on file for that model — the real cost is higher)"}
+              .
+            </>
+          ) : (
+            "No conversation has finished yet — adding this judge queues it, but there is nothing to catch up on until one does."
+          )}
+        </p>
+      )}
 
       {failed && (
         <p role="alert" className="text-sm text-red-700">

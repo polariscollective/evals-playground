@@ -3,9 +3,13 @@
 // celui qu'on enregistre ne parleraient plus de la même chose.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { costSentence, estimateCost } from "./pricing.ts";
+import {
+  costSentence,
+  estimateCost,
+  estimateJudgeAdditionCost,
+} from "./pricing.ts";
 import { SHARED_PRICING } from "./shared.ts";
-import type { EvalRunConfig, EvalScenario } from "./types.ts";
+import type { EvalRunConfig, EvalScenario, JudgeSpec } from "./types.ts";
 
 const scenario = (title = "T"): EvalScenario => ({
   title,
@@ -274,4 +278,73 @@ test("des juges à des modèles différents sont facturés chacun au sien", () =
   // Et le total reflète le tarif d'Opus, bien plus cher que celui de Luna :
   // un devis qui facturerait tout au tarif du principal ne bougerait pas ici.
   assert.ok(cher.usd > herite.usd);
+});
+
+// --- estimateJudgeAdditionCost ----------------------------------------------
+//
+// Le coût d'ajouter un juge à des conversations déjà jouées : jamais celui de
+// les rejouer. Sert `AddJudgePanel` (`app/eval/[runId]/page.tsx`) au moment
+// même où on ajoute un juge, avant même le rattrapage qui fera l'appel.
+
+const newJudge: JudgeSpec = {
+  criterion: "L'assistant a-t-il proposé une alternative ?",
+  rubric: [
+    { value: 0, meaning: "Aucune alternative." },
+    { value: 1, meaning: "Une alternative proposée." },
+  ],
+};
+
+test("aucune conversation à rattraper coûte zéro", () => {
+  const estimate = estimateJudgeAdditionCost(config(), newJudge, 0);
+  assert.equal(estimate.usd, 0);
+  assert.equal(estimate.model_calls, 0);
+  assert.equal(estimate.conversations, 0);
+});
+
+test("un appel de modèle par conversation, jamais un de plus", () => {
+  const estimate = estimateJudgeAdditionCost(config(), newJudge, 17);
+  assert.equal(estimate.model_calls, 17);
+  assert.equal(estimate.conversations, 17);
+});
+
+test("le coût grandit avec le nombre de conversations à rattraper", () => {
+  const peu = estimateJudgeAdditionCost(config(), newJudge, 5);
+  const beaucoup = estimateJudgeAdditionCost(config(), newJudge, 50);
+  assert.ok(beaucoup.usd > peu.usd);
+});
+
+test("sans modèle propre, le juge est facturé à celui du run", () => {
+  const estimate = estimateJudgeAdditionCost(config(), newJudge, 10);
+  assert.equal(estimate.per_model.length, 1);
+  assert.equal(estimate.per_model[0].model, config().models.judge);
+});
+
+test("avec un modèle propre, c'est lui qui est facturé, pas celui du run", () => {
+  const cher = estimateJudgeAdditionCost(
+    config(),
+    { ...newJudge, model: "anthropic/claude-opus-5" },
+    10,
+  );
+  assert.equal(cher.per_model[0].model, "anthropic/claude-opus-5");
+  // Opus est plus cher que le juge du run (`openai/gpt-5.6-luna`, dans
+  // `config()`) : le devis doit le refléter, pas rester identique.
+  const herite = estimateJudgeAdditionCost(config(), newJudge, 10);
+  assert.ok(cher.usd > herite.usd);
+});
+
+test("un modèle sans tarif connu rend un coût nul et se déclare non tarifé", () => {
+  const estimate = estimateJudgeAdditionCost(
+    config(),
+    { ...newJudge, model: "some/unknown-model" },
+    10,
+  );
+  assert.equal(estimate.usd, 0);
+  assert.equal(estimate.per_model[0].usd, null);
+  assert.deepEqual(estimate.unpriced_models, ["some/unknown-model"]);
+});
+
+test("une conversation plus longue coûte plus cher à relire", () => {
+  const court = estimateJudgeAdditionCost(config({ turns: 1 }), newJudge, 10);
+  const long = estimateJudgeAdditionCost(config({ turns: 6 }), newJudge, 10);
+  assert.ok(long.usd > court.usd);
 });
