@@ -427,7 +427,15 @@ export default function EvalRunPage({
   const load = useCallback(
     async (withTranscripts: boolean) => {
       try {
-        const loaded = await getRun(runId, withTranscripts);
+        // Un juge secondaire affiché a besoin de ses propres verdicts — le
+        // chargement léger ne ramène que ceux du principal et de l'éveil
+        // (voir `withFullJudgeScores` sur `getRun`/`loadRun`). Indépendant de
+        // `withTranscripts` : on ne veut pas payer le poids des conversations
+        // au seul motif d'avoir changé de juge affiché.
+        const loaded = await getRun(runId, {
+          withTranscripts,
+          withFullJudgeScores: displayedRunJudgeId !== undefined,
+        });
         // Même raison que sur la liste : un run terminé qu'on garde ouvert ne
         // doit pas faire clignoter sa matrice.
         setDetail((current) => keepIfUnchanged(current, loaded));
@@ -442,7 +450,7 @@ export default function EvalRunPage({
         setError((e as Error).message);
       }
     },
-    [runId],
+    [runId, displayedRunJudgeId],
   );
 
   // `?extend=<id>` : on vient de la liste des brouillons avec une proposition à

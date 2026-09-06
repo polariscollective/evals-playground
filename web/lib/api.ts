@@ -69,11 +69,24 @@ export const getRuns = () => request<RunSummary[]>("/api/runs");
  *
  * Sans `withTranscripts`, les conversations ne sont pas ramenées : c'est ce qui
  * rend supportable un rafraîchissement toutes les trois secondes pendant qu'un
- * run tourne. */
-export const getRun = (runId: string, withTranscripts = false) =>
-  request<RunDetail>(
-    `/api/runs/${runId}${withTranscripts ? "?transcripts=1" : ""}`,
-  );
+ * run tourne.
+ *
+ * `withFullJudgeScores`, indépendant de `withTranscripts` : ramène les
+ * verdicts de tous les juges vivants plutôt que seulement ceux du principal
+ * et de l'éveil, sans pour autant charger les conversations — nécessaire dès
+ * qu'on affiche un juge secondaire (voir `app/eval/[runId]/page.tsx`), sans
+ * quoi la matrice affiche « pending » partout pour un juge qui a pourtant
+ * tout noté. */
+export const getRun = (
+  runId: string,
+  options: { withTranscripts?: boolean; withFullJudgeScores?: boolean } = {},
+) => {
+  const params = new URLSearchParams();
+  if (options.withTranscripts) params.set("transcripts", "1");
+  if (options.withFullJudgeScores) params.set("full_judges", "1");
+  const query = params.toString();
+  return request<RunDetail>(`/api/runs/${runId}${query ? `?${query}` : ""}`);
+};
 
 /** Lance un run. Le CSV téléversé est conservé, pour le retélécharger et pour
  * relancer depuis la même source. */

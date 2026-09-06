@@ -11,6 +11,12 @@ import { NotFound, loadRun } from "@/lib/runs";
  * d'éveil sont ramenés — ce que la matrice et son voyant affichent sans
  * qu'on déplie rien ; le rafraîchissement d'un run en cours s'en contente.
  *
+ * `?full_judges=1` ramène, lui aussi, les verdicts complets de tous les juges
+ * vivants, mais sans les conversations : c'est ce que demande l'écran dès
+ * qu'on regarde un juge secondaire (voir `app/eval/[runId]/page.tsx`), pour
+ * ne pas payer le poids des transcripts au seul motif de changer de juge
+ * affiché — voir `withFullJudgeScores` sur `loadRun` (`lib/runs.ts`).
+ *
  * `withJudges: true` : c'est elle qui fait exister `detail.judges` — voir
  * `components/RunRead.tsx`, écrit contre ce contrat avant que cette route ne
  * le pose réellement.
@@ -27,14 +33,16 @@ export async function GET(
   if ("response" in user) return user.response;
 
   const { runId } = await params;
-  const withTranscripts =
-    new URL(request.url).searchParams.get("transcripts") === "1";
+  const searchParams = new URL(request.url).searchParams;
+  const withTranscripts = searchParams.get("transcripts") === "1";
+  const withFullJudgeScores = searchParams.get("full_judges") === "1";
   try {
     return NextResponse.json(
       await loadRun(runId, {
         withTranscripts,
         withJudges: true,
         withCatchupMissingFlag: true,
+        withFullJudgeScores,
       }),
     );
   } catch (error) {
