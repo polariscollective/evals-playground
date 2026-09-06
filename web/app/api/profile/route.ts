@@ -33,7 +33,11 @@ export async function PATCH(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
 
-  const body = (await request.json().catch(() => ({}))) as {
+  // Un corps JSON valant littéralement `null` n'échoue pas à l'analyse — la
+  // lecture réussit et rend `null` — donc `.catch` ne s'en charge pas. Sans le
+  // `?? {}` qui suit, l'accès à un champ plus bas lèverait sur ce `null` et la
+  // route répondrait 500 au lieu de simplement traiter un corps vide.
+  const body = ((await request.json().catch(() => null)) ?? {}) as {
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
     scenario_advice?: unknown;
