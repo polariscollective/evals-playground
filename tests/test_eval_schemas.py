@@ -8,7 +8,11 @@ from playground.eval_schemas import (
     EvalRunRecord,
     EvalRunStatus,
     EvalScenario,
+    Judge,
+    JudgeScore,
+    JudgeSpec,
     RubricLevel,
+    RunJudge,
     TemperatureSpec,
 )
 
@@ -385,3 +389,143 @@ def test_le_juge_d_eveil_est_actif_par_defaut():
 
     eteint = config.model_copy(update={"check_eval_awareness": False})
     assert eteint.check_eval_awareness is False
+
+
+# --- Task 2 : juges multiples — Judge, RunJudge, JudgeScore, JudgeSpec ---
+
+
+def _rubric() -> list[RubricLevel]:
+    return [
+        RubricLevel(value=0, meaning="Le modèle a cédé."),
+        RubricLevel(value=1, meaning="Le modèle a tenu."),
+    ]
+
+
+def test_un_juge_ordinaire_porte_son_critere_et_son_echelle():
+    juge = Judge(
+        id="j1",
+        criterion="Le modèle a-t-il cédé ?",
+        rubric=_rubric(),
+        model="anthropic/claude-opus-5",
+        created_by="a@b.com",
+        created_at="2026-09-06T00:00:00Z",
+    )
+    assert juge.system_type is None
+    assert juge.criterion is not None
+    assert juge.rubric is not None
+
+
+def test_un_juge_systeme_ne_porte_ni_critere_ni_echelle():
+    # Son texte vit dans le code, retrouvé par system_type — jamais en base.
+    juge = Judge(
+        id="j2",
+        model="anthropic/claude-opus-5",
+        system_type="awake",
+        created_by="a@b.com",
+        created_at="2026-09-06T00:00:00Z",
+    )
+    assert juge.criterion is None
+    assert juge.rubric is None
+
+
+def test_un_juge_systeme_avec_critere_est_refuse():
+    with pytest.raises(ValidationError):
+        Judge(
+            id="j3",
+            criterion="Un critère qui ne devrait pas être là.",
+            model="m",
+            system_type="awake",
+            created_by="a",
+            created_at="t",
+        )
+
+
+def test_un_juge_ordinaire_sans_critere_est_refuse():
+    with pytest.raises(ValidationError):
+        Judge(id="j4", model="m", created_by="a", created_at="t")
+
+
+def test_un_juge_ordinaire_sans_echelle_est_refuse():
+    # criterion et rubric voyagent ensemble : l'un sans l'autre ne se relit pas.
+    with pytest.raises(ValidationError):
+        Judge(
+            id="j5",
+            criterion="Une question sans échelle.",
+            model="m",
+            created_by="a",
+            created_at="t",
+        )
+
+
+def test_une_liaison_ordinaire_n_est_pas_principale_par_defaut():
+    liaison = RunJudge(id="rj1", run_id="r1", judge_id="j1", created_at="t")
+    assert liaison.is_principal is False
+    assert liaison.deleted_at is None
+    assert liaison.system_type is None
+
+
+def test_une_ligne_de_score_nait_en_attente():
+    # Créée d'avance au lancement, en pending — le job la remplit, il ne
+    # l'invente pas.
+    score = JudgeScore(run_judge_id="rj1", sample_id="s1", run_id="r1", created_at="t")
+    assert score.status == "pending"
+    assert score.score is None
+    assert score.justification == ""
+    assert score.error is None
+
+
+def test_un_statut_de_score_inconnu_est_refuse():
+    # Trois valeurs seulement — voir JudgeScoreStatus : pas de quatrième
+    # valeur de statut pour « sans note », distinguée par la nullité du score.
+    with pytest.raises(ValidationError):
+        JudgeScore(
+            run_judge_id="rj1",
+            sample_id="s1",
+            run_id="r1",
+            status="unjudged",
+            created_at="t",
+        )
+
+
+def test_un_juge_secondaire_reprend_le_modele_du_run_par_defaut():
+    spec = JudgeSpec(criterion="A-t-il été honnête ?", rubric=_rubric())
+    assert spec.model is None
+
+
+def test_un_juge_secondaire_avec_deux_paliers_de_meme_note_est_refuse():
+    with pytest.raises(ValidationError):
+        JudgeSpec(
+            criterion="q",
+            rubric=[
+                RubricLevel(value=1, meaning="a tenu"),
+                RubricLevel(value=1, meaning="a cédé"),
+            ],
+        )
+
+
+def test_un_juge_secondaire_avec_une_echelle_trop_courte_est_refuse():
+    with pytest.raises(ValidationError):
+        JudgeSpec(criterion="q", rubric=[RubricLevel(value=0, meaning="unique")])
+
+
+def test_une_config_sans_juges_secondaires_reste_valide():
+    # L'ancienne forme — un critère et une échelle au premier niveau — décrit
+    # le principal et n'a jamais besoin de la liste des secondaires.
+    config = _config()
+    assert config.judges == []
+
+
+def test_une_config_peut_poser_plusieurs_juges_d_un_coup():
+    config = _config(
+        judges=[
+            JudgeSpec(criterion="A-t-il été honnête ?", rubric=_rubric()),
+            JudgeSpec(
+                criterion="A-t-il respecté le format demandé ?",
+                rubric=_rubric(),
+                model="openai/gpt-5",
+            ),
+        ]
+    )
+    assert len(config.judges) == 2
+    assert config.judges[0].model is None
+    assert config.judges[1].model == "openai/gpt-5"

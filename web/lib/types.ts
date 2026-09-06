@@ -88,6 +88,169 @@ export interface EvalModels {
   judge: string;
 }
 
+// --- Juges multiples --------------------------------------------------------
+//
+// Trois tables en base, chacune son interface : `Judge` la configuration
+// d'un juge, `RunJudge` sa liaison à un run donné, `JudgeScore` ce qu'il a
+// trouvé sur une conversation. Miroir typé de la migration
+// `evals/supabase/migrations/20260906092100_create_judges_tables.sql` (dépôt
+// polaris-supabase) — voir docs/superpowers/specs/2026-09-06-juges-multiples.md
+// pour le raisonnement complet. `JudgeSpec`, en bas de cette section, n'est
+// pas un miroir de table : c'est ce qu'un run porte en configuration, avant
+// qu'aucune ligne n'existe.
+
+/** Les types de juge système existants aujourd'hui. Un seul : `"awake"`, le
+ *  contrôle d'éveil. Une union fermée plutôt que `string`, pour que
+ *  `Judge.system_type` et `RunJudge.system_type` — qui doivent toujours
+ *  s'accorder, voir `RunJudge.system_type` — acceptent exactement les mêmes
+ *  valeurs. D'autres types système viendront sans nouvelle migration ; ils
+ *  s'ajoutent ici. */
+export type JudgeSystemType = "awake";
+
+/** Une ligne de `judges` : la configuration d'un juge, indépendante des runs
+ *  qui l'utilisent — voir `RunJudge` pour la liaison à un run donné.
+ *
+ * Un juge ordinaire porte sa question et son échelle, écrites par
+ * l'utilisateur : `criterion` et `rubric` sont alors non nuls. Un juge
+ * système (`system_type` non nul) ne porte que son identité : sa question,
+ * son échelle et son prompt vivent dans le code, retrouvés par ce type —
+ * jamais en base. Les y mettre perdrait les trois garanties de git sur ce
+ * texte : le même partout, une relecture quand il change, un historique de
+ * qui l'a changé. Ces deux formes s'excluent — voir la contrainte
+ * `judges_ordinary_or_system_check` en base. */
+export interface Judge {
+  id: string;
+  /** La question posée au juge, telle que l'utilisateur l'a écrite. `null`
+   *  pour un juge système. */
+  criterion: string | null;
+  /** L'échelle du juge, telle que l'utilisateur l'a écrite. `null` pour un
+   *  juge système. */
+  rubric: RubricLevel[] | null;
+  model: string;
+  /** `null` pour un juge ordinaire. `"awake"` : le contrôle d'éveil — le
+   *  modèle évalué a-t-il montré qu'il se savait testé ? Sa question
+   *  n'appartient pas à l'utilisateur, son échelle est fixe de 1 à 10, et sa
+   *  panne ne coûte jamais sa note au juge principal — ces trois propriétés
+   *  vivent dans le code qui construit ce juge, pas ici. */
+  system_type: JudgeSystemType | null;
+  /** Qui a créé ce juge — l'adresse de la session, jamais ce que le client
+   *  prétend. */
+  created_by: string;
+  created_at: string;
+}
+
+/** Une ligne de `run_judges` : ce juge, dans ce run, à ce titre.
+ *
+ * La liaison existe avant la moindre conversation jugée — au lancement, ou
+ * le jour où on ajoute un juge à un run terminé. `is_principal` et
+ * `deleted_at` n'ont de sens que pour ce run : les poser sur `Judge` serait
+ * faux, puisque le même juge peut être principal ici et secondaire ailleurs.
+ *
+ * Le piège de ce dessin, et il est réel : le filtre « non supprimé »
+ * (`deleted_at === null`) doit vivre à un seul endroit, dans la fonction qui
+ * charge les juges d'un run. Le recopier dans deux lectures, c'est
+ * l'oublier dans une troisième — ce chantier a déjà produit deux exemples de
+ * cet oubli. */
+export interface RunJudge {
+  id: string;
+  run_id: string;
+  judge_id: string;
+  /** Copie de `Judge.system_type` au moment de la liaison, épinglée en base
+   *  par une clé étrangère composée `(judge_id, system_type) -> judges (id,
+   *  system_type)` qui interdit toute divergence entre les deux. N'existe
+   *  ici que parce qu'un index unique partiel ne peut pas lire une colonne
+   *  d'une autre table : l'invariant « au plus une liaison vivante d'un
+   *  system_type donné par run » porte sur cette table-ci, il lui faut donc
+   *  sa propre colonne. Ne jamais l'écrire indépendamment du juge réellement
+   *  lié — c'est à la couche qui crée la liaison de la recopier depuis le
+   *  `Judge` visé. */
+  system_type: JudgeSystemType | null;
+  /** Le juge que la matrice affiche. Exactement une liaison vivante
+   *  principale par run, garanti en base par un index unique partiel
+   *  (`run_judges_single_principal_idx`) — pas par le code appelant. */
+  is_principal: boolean;
+  /** `null` tant que la liaison est vivante. On supprime la liaison, jamais
+   *  le juge : la ligne reste, marquée, pour qu'on sache encore que ce run a
+   *  été jugé par celui-là, à un moment. Supprimer une liaison efface ses
+   *  scores en cascade sans toucher une ligne de `JudgeScore` : elles
+   *  disparaissent avec elle, le juge lui reste. */
+  deleted_at: string | null;
+  created_at: string;
+}
+
+/** Les trois valeurs brutes que porte `JudgeScore.status` en base — le CHECK
+ *  `judge_scores_status_check`. Elles distinguent quatre situations, pas
+ *  trois : `"pending"` avant que le job ne s'en occupe ; `"done"` recouvre à
+ *  la fois « noté » (`score` renseigné) et « sans note » (conversation
+ *  vide, ou note hors échelle), départagés par la nullité de
+ *  `JudgeScore.score` plutôt que par une quatrième valeur de statut ;
+ *  `"error"` si le juge est tombé, où `score` reste toujours `null`. C'est
+ *  la même distinction à trois que ce produit tient déjà pour une case de
+ *  la matrice, à laquelle s'ajoute l'attente : quatre situations réelles,
+ *  portées par trois valeurs de colonne plus la nullité de `score`. Ne pas
+ *  ajouter une quatrième valeur de statut pour « sans note » : la migration
+ *  n'en porte pas, et ce fichier suit la migration. */
+export type JudgeScoreStatus = "pending" | "done" | "error";
+
+/** Une ligne de `judge_scores` : ce qu'un juge a trouvé sur une
+ *  conversation.
+ *
+ * Une ligne par (liaison, conversation) — `(run_judge_id, sample_id)` est la
+ * clé primaire en base : un juge donne une note et une seule par
+ * conversation. C'est ce qui rend une reprise sans danger — elle réécrit la
+ * même ligne au lieu d'empiler des doublons.
+ *
+ * Toutes les lignes existent dès le lancement, en `"pending"` : le job les
+ * remplit, il ne les crée pas — exactement comme `EvalSample` le fait déjà
+ * pour la matrice elle-même, et pour la même raison la plus forte : cela
+ * rend « ce qui reste à juger » un statut à lire plutôt qu'un calcul refait
+ * à deux endroits, qui peuvent diverger. */
+export interface JudgeScore {
+  run_judge_id: string;
+  sample_id: string;
+  /** Recopié de `RunJudge.run_id` et d'`EvalSample.run_id`. Une ligne connaît
+   *  son run par deux chemins, sa liaison et sa conversation, et rien ne
+   *  garantit tout seul qu'ils s'accordent — c'est l'invariant que ce champ
+   *  protège. En base, deux clés étrangères composées forcent les trois
+   *  valeurs à coïncider ; ce champ n'existe ici que pour porter cette même
+   *  valeur, jamais à recalculer indépendamment des deux autres. */
+  run_id: string;
+  status: JudgeScoreStatus;
+  /** La note rendue par ce juge, une des valeurs de l'échelle du juge
+   *  (`Judge.rubric`). `null` quand rien n'a pu être noté — voir
+   *  `JudgeScoreStatus`. */
+  score: number | null;
+  justification: string;
+  /** Pourquoi ce juge n'a rien rendu sur cette conversation. Distinct d'un
+   *  score absent : ici il est tombé (`status === "error"`) ; là, il a
+   *  répondu mais n'a rien pu noter (`status === "done"`, `score` `null`). */
+  error: string | null;
+  created_at: string;
+}
+
+/** Un juge secondaire d'un run, en plus du principal — une entrée
+ *  d'`EvalRunConfig.judges`.
+ *
+ * Le juge principal reste décrit par les champs historiques du run —
+ * `EvalRunConfig.criterion`, `EvalRunConfig.rubric`, et `EvalModels.judge` —
+ * pour que chaque configuration déjà écrite continue de valider sans
+ * changement. C'est l'ancienne forme, et elle reste valide : voir
+ * `EvalRunConfig.judges`. Cette interface ne porte que ce qui s'ajoute : au
+ * lancement, chaque entrée devient un `Judge` et une `RunJudge` non
+ * principale, notant les mêmes conversations que le principal.
+ *
+ * Toujours un juge ordinaire, jamais système : le juge d'éveil est ajouté
+ * par le moteur lui-même depuis `EvalRunConfig.check_eval_awareness`, jamais
+ * écrit ici. */
+export interface JudgeSpec {
+  criterion: string;
+  rubric: RubricLevel[];
+  /** Le modèle qui juge, si différent de celui du run (`EvalModels.judge`).
+   *  Absent reprend celui-ci : poser un juge de plus ne devrait pas obliger à
+   *  répéter le même modèle quand c'est bien de lui qu'il s'agit. */
+  model?: string | null;
+}
+
 export interface TemperatureSpec {
   min: number;
   max?: number | null;
@@ -115,6 +278,18 @@ export interface EvalRunConfig {
   criterion: string;
   /** L'échelle sur laquelle le juge note. Au moins deux paliers. */
   rubric: RubricLevel[];
+  /** Les juges secondaires du run, en plus du principal décrit par
+   *  `criterion`, `rubric` et `models.judge` ci-dessus.
+   *
+   * Absent ou vide : une configuration qui ne porte que `criterion` et
+   * `rubric` — l'ancienne forme, celle de tous les fichiers déjà écrits —
+   * reste valide et décrit un run à un seul juge, le principal. Ajouter des
+   * entrées ici est ce qui permet à un agent de poser plusieurs juges d'un
+   * coup : au lancement, chacune devient un `Judge` et une `RunJudge` non
+   * principale, deux colonnes de notes sur la même matrice plutôt que deux
+   * runs qui ne joueraient pas les mêmes conversations et ne se
+   * compareraient donc pas. */
+  judges?: JudgeSpec[];
   turns: number;
   repetitions: number;
   models: EvalModels;
