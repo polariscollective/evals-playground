@@ -20,6 +20,8 @@ import {
   countsForSelection,
   samplesForSelection,
 } from "@/lib/deepen-counts";
+import type { DeepenSampleWithDepth } from "@/lib/deepen-counts";
+import type { MeasurableCell } from "@/lib/measured-length";
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
@@ -32,12 +34,23 @@ import { MAX_TURNS } from "@/lib/validate";
 import type {
   CostEstimate,
   EvalRun,
-  EvalSample,
   EvalScenario,
   ExtendRequest,
   ProviderInfo,
   ToolSpec,
 } from "@/lib/types";
+
+/** Un essai tel que ce panneau en a besoin : assez pour compter par palier de
+ *  l'échelle (`DeepenSampleWithDepth`, voir `deepen-counts.ts`) et pour
+ *  mesurer ce que le run a réellement dépensé (`MeasurableCell`, voir
+ *  `measured-length.ts`). Depuis les juges multiples, `EvalSample` seule ne
+ *  suffit plus : elle ne porte plus de note (voir son commentaire dans
+ *  `types.ts`), et ce panneau approfondit sur celle du juge PRINCIPAL — voir
+ *  `PrincipalVerdict` dans `deepen-counts.ts`. C'est à l'appelant (la page
+ *  d'un run) de joindre `EvalSample` et le verdict du principal depuis
+ *  `judge_scores` avant de passer ses essais ici, exactement comme
+ *  `matrix.ts` l'exige déjà pour la matrice elle-même. */
+export type ExtendPanelSample = DeepenSampleWithDepth & MeasurableCell;
 
 /** Un CSV reversé, avant qu'on ait dit quelles colonnes lire. */
 interface LoadedCsv {
@@ -99,7 +112,9 @@ export function ExtendPanel({
   /** Combien d'essais chaque couple porte déjà, du plus petit au plus grand. */
   repetitionRange,
   /** Les essais déjà joués par ce run, pour compter combien chaque palier de
-   *  l'échelle en porte et proposer de les approfondir.
+   *  l'échelle en porte et proposer de les approfondir — chacun déjà joint au
+   *  verdict du juge PRINCIPAL sur `judge_scores` (voir `ExtendPanelSample`) :
+   *  ce panneau ne lit ni ne rejoint cette table lui-même.
    *
    * Défaut à vide plutôt qu'obligatoire : sans essais, chaque palier s'affiche
    * à zéro et ne se coche pas — jamais une case à cocher qui approfondirait au
@@ -136,7 +151,7 @@ export function ExtendPanel({
 }: {
   run: EvalRun;
   repetitionRange: [number, number];
-  samples?: EvalSample[];
+  samples?: ExtendPanelSample[];
   proposal?: ExtendRequest | null;
   draftId?: string | null;
   draftMine?: boolean;

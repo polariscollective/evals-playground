@@ -27,10 +27,18 @@ import { estimateExtension } from "./extend-estimate";
 import { measureRun, type MeasurableCell } from "./measured-length";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import type { NewCell } from "./cells";
-import { judgesForLaunch } from "./launch-judges.ts";
+import { judgesForLaunch, judgeScoresForSamples } from "./launch-judges.ts";
 import { classifyRunJudgesRefusal } from "./run-judges-refusal";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
+// `AWAKE_TYPE` : la seule chose qu'on emprunte à `awareness.ts` pour trouver
+// la liaison d'éveil d'un run — jamais `findAwakeJudge`, dont la contrainte
+// générique (`T extends { system_type: JudgeSystemType | null }`) date d'avant
+// le sentinelle et n'accepte donc plus un vrai `RunJudge` (`system_type:
+// JudgeSystemTypeColumn`, qui inclut `"ordinary"`, non assignable à
+// `JudgeSystemType | null`). Corriger cette contrainte appartient à
+// `awareness.ts`, hors du périmètre de cette tâche — voir le rapport.
+import { AWAKE_TYPE, type JudgeVerdict } from "./awareness.ts";
 import type {
   CostEstimate,
   EvalRun,
@@ -39,9 +47,11 @@ import type {
   EvalScenario,
   ExtendRequest,
   Judge,
+  JudgeScore,
   RunDetail,
   RunJudge,
   RunSummary,
+  SampleStatus,
   TemperatureSpec,
   ToolSpec,
 } from "./types";
@@ -50,13 +60,20 @@ import type {
  *
  * Un transcript pèse plusieurs kilo-octets ; les ramener tous pour compter des
  * statuts ferait passer des mégaoctets par le réseau à chaque rafraîchissement,
- * toutes les trois secondes pendant qu'un run tourne. */
+ * toutes les trois secondes pendant qu'un run tourne.
+ *
+ * Depuis les juges multiples, cette liste ne nomme plus `score`,
+ * `justification`, `awareness_score`, `awareness_justification` ni
+ * `awareness_error` : la migration
+ * `20260906093000_drop_eval_samples_score_columns.sql` (dépôt
+ * polaris-supabase) les a supprimées d'`eval_samples` — ce que rendait un
+ * juge sur une conversation vit désormais dans `judge_scores`, voir
+ * `loadLiveRunJudges`, `awarenessMissingTotal` et `loadRuns` plus bas, qui le
+ * lisent à part. `error` reste une colonne de `eval_samples` : elle porte
+ * l'échec de l'*exécution* de la conversation, jamais celui d'un juge — voir
+ * `JudgeScore.error` pour ce second sens, distinct. */
 const SAMPLE_COLUMNS =
   "id,run_id,scenario_index,scenario_title,target_model,repetition,status," +
-  // Les trois colonnes du juge d'éveil. Petites — un entier, une phrase — et
-  // nécessaires dès la liste : c'est le voyant du run qui les additionne, et
-  // il doit s'allumer sans attendre qu'on ouvre une conversation.
-  "awareness_score,awareness_justification,awareness_error," +
   // `usage` porte les jetons facturés de la case. Petit — cinq compteurs par
   // modèle — et sans commune mesure avec les transcripts, qu'on continue de ne
   // ramener que sur demande. C'est ce qui permet au panneau d'annoncer sur quoi
@@ -67,8 +84,7 @@ const SAMPLE_COLUMNS =
   // approfondi porte des cases à des profondeurs différentes — sans cette
   // colonne, le panneau les regroupait toutes à la profondeur du run et la
   // mesure divisait chacune par elle.
-  "turns_done,temperature,score,justification,error,started_at," +
-  "finished_at,cost_usd,usage";
+  "turns_done,temperature,error,started_at,finished_at,cost_usd,usage";
 
 export class NotFound extends Error {}
 
@@ -92,8 +108,14 @@ export class PrincipalRequiresReplacement extends Error {}
  * Compté sur les cases plutôt que lu dans `config.repetitions`, qui ne dit que
  * ce qui avait été demandé au dernier lot : un run complété a des couples plus
  * fournis que d'autres, et une moyenne de case porte alors sur moins de
- * conversations que sa voisine. */
-function repetitionRange(samples: EvalSample[]): [number, number] {
+ * conversations que sa voisine.
+ *
+ * N'exige que deux colonnes — pas `EvalSample` en entier — pour rester
+ * satisfait aussi bien par les cases de `loadRuns` (déjà réduites, et
+ * augmentées du verdict du principal) que par une `EvalSample` complète. */
+function repetitionRange(
+  samples: Pick<EvalSample, "scenario_index" | "target_model">[],
+): [number, number] {
   const counts = new Map<string, number>();
   for (const sample of samples) {
     const key = coupleKey(sample.scenario_index, sample.target_model);
@@ -104,13 +126,76 @@ function repetitionRange(samples: EvalSample[]): [number, number] {
   return [Math.min(...values), Math.max(...values)];
 }
 
+/** Une case telle que `loadRuns` la voit : ses coordonnées et son statut
+ *  d'exécution, plus le verdict du juge PRINCIPAL — jamais un autre juge, même
+ *  règle que `matrix.ts` (voir `MatrixSample`) et pour la même raison :
+ *  c'est le juge que la matrice affiche, donc celui dont la moyenne de la
+ *  liste des runs doit rendre compte. Un sample sans principal vivant sur son
+ *  run (aucun juge, ou tous déliés) porte `{status: "pending", score: null}` :
+ *  une absence de juge n'est pas différente, pour cette moyenne, d'un juge qui
+ *  n'a pas encore noté. */
+interface RunListSample {
+  run_id: string;
+  status: SampleStatus;
+  scenario_index: number;
+  target_model: string;
+  principal: JudgeVerdict;
+}
+
+/** Le verdict du juge PRINCIPAL de chacun de ces runs, par identifiant de
+ *  conversation — ce qu'il faut à `overallMean` pour chiffrer la moyenne de
+ *  la liste des runs, en une poignée de requêtes plutôt qu'une par run comme
+ *  le ferait `loadLiveRunJudges` appelée une fois par run.
+ *
+ * Filtre `run_judges` sur `deleted_at` et `is_principal` directement, ce qui
+ * en fait la seule autre exception, avec `loadLiveRunJudges` elle-même, à la
+ * règle que documente cette dernière (« LA fonction... la seule autorisée à
+ * filtrer run_judges sur deleted_at »). L'exception est délibérée : cette
+ * fonction-là ne sait interroger qu'un run à la fois, et `loadRuns` doit
+ * rester quelques requêtes quel que soit le nombre de runs — exactement
+ * comme elle l'est déjà pour les cases (voir son commentaire). Le filtre
+ * `deleted_at: "is.null"` n'existe donc qu'à deux endroits dans tout le
+ * dépôt, à quelques dizaines de lignes l'un de l'autre dans ce même fichier :
+ * le risque que ce chantier signale — un oubli dans une troisième copie,
+ * ailleurs — reste contenu, il n'y a nulle part d'autre où le réécrire par
+ * erreur. */
+async function principalVerdictsByRun(
+  runIds: string[],
+): Promise<Map<string, JudgeVerdict>> {
+  if (runIds.length === 0) return new Map();
+
+  const principals = await select<{ id: string }>(RUN_JUDGES, {
+    run_id: `in.(${runIds.join(",")})`,
+    deleted_at: "is.null",
+    is_principal: "eq.true",
+    select: "id",
+  });
+  if (principals.length === 0) return new Map();
+
+  const scores = await select<{
+    sample_id: string;
+    status: JudgeScore["status"];
+    score: number | null;
+  }>(JUDGE_SCORES, {
+    run_judge_id: `in.(${principals.map((p) => p.id).join(",")})`,
+    select: "sample_id,status,score",
+  });
+
+  const bySample = new Map<string, JudgeVerdict>();
+  for (const row of scores) {
+    bySample.set(row.sample_id, { status: row.status, score: row.score });
+  }
+  return bySample;
+}
 
 /** Tous les runs, du plus récent au plus ancien, avec leur avancement.
  *
  * Les cases sont lues en une seule requête pour tous les runs, sans leurs
  * transcripts : les colonnes ramenées sont minuscules, et une requête par run
  * serait bien plus coûteuse. Si la table grossissait au point que ça pèse, une
- * vue d'agrégation en base serait le remède — pas une pagination des cases. */
+ * vue d'agrégation en base serait le remède — pas une pagination des cases.
+ * Même logique pour le verdict du principal de chaque run, ajouté par
+ * `principalVerdictsByRun` en deux requêtes de plus, jamais une par run. */
 export async function loadRuns(): Promise<RunSummary[]> {
   await failStaleRuns();
 
@@ -126,15 +211,26 @@ export async function loadRuns(): Promise<RunSummary[]> {
   // Les coordonnées de chaque case en plus des statuts : c'est par elles qu'on
   // voit qu'un run complété n'a plus le même nombre d'essais partout. Deux
   // petites colonnes de plus, à comparer aux transcripts qu'on ne ramène pas.
-  const samples = await select<EvalSample>(SAMPLES, {
-    select: "run_id,status,score,scenario_index,target_model",
+  const samples = await select<
+    Pick<EvalSample, "id" | "run_id" | "status" | "scenario_index" | "target_model">
+  >(SAMPLES, {
+    select: "id,run_id,status,scenario_index,target_model",
   });
 
-  const byRun = new Map<string, EvalSample[]>();
+  const principals = await principalVerdictsByRun(runs.map((run) => run.id));
+
+  const byRun = new Map<string, RunListSample[]>();
   for (const sample of samples) {
+    const enriched: RunListSample = {
+      run_id: sample.run_id,
+      status: sample.status,
+      scenario_index: sample.scenario_index,
+      target_model: sample.target_model,
+      principal: principals.get(sample.id) ?? { status: "pending", score: null },
+    };
     const list = byRun.get(sample.run_id);
-    if (list) list.push(sample);
-    else byRun.set(sample.run_id, [sample]);
+    if (list) list.push(enriched);
+    else byRun.set(sample.run_id, [enriched]);
   }
 
   return runs.map((run) => {
@@ -207,7 +303,7 @@ export async function loadRun(
     samples,
     progress: progressOf(samples),
     source_csv_available: sourceCsvAvailable,
-    awareness_missing: await awarenessMissingTotal(run, samples, options),
+    awareness_missing: await awarenessMissingTotal(run, options),
   };
 }
 
@@ -216,41 +312,46 @@ export async function loadRun(
  *  chargement complet des transcripts pour le même résultat (voir l'ancien
  *  effet de préchargement dans `app/eval/[runId]/page.tsx`).
  *
- * Sur demande, et non par défaut : quand `withTranscripts` ne les a pas déjà
- * ramenés, ce calcul lit la colonne `messages` de chaque case pour savoir
- * laquelle porte une conversation jugeable — la même colonne que
- * `SAMPLE_COLUMNS` exclut expressément de toute lecture ordinaire, pour la
- * même raison : elle pèse plusieurs kilo-octets par case, et une douzaine de
- * routes n'appellent `loadRun` que pour vérifier qu'un run existe, jamais
- * pour afficher ce compte. Le rendre gratuit par défaut a déjà traîné une
- * matrice entière hors de la base à chaque note, tag ou publication
- * enregistrés — exactement ce que `SAMPLE_COLUMNS` existe pour éviter.
+ * Sur demande, et non par défaut : quand ce n'est pas demandé, ce calcul lit
+ * `judge_scores` pour compter ce qui reste `"pending"` sur la liaison
+ * d'éveil du run — la même douzaine de routes qui n'appellent `loadRun` que
+ * pour vérifier qu'un run existe n'a jamais besoin de cette lecture en plus.
  * `false` n'est donc plus le cas à traiter à part : `undefined`, la valeur de
  * tout appelant qui ne demande rien, se comporte pareil.
  *
- * Trois cas quand le calcul est demandé : les transcripts voulus sont déjà en
- * main (`samples` les porte déjà, rien à relire) ; le run tourne encore,
- * auquel cas le nombre ne sert à rien puisque le bouton qui le lit exige
- * `!running` — l'annoncer à zéro évite de relire les transcripts à chaque
- * rafraîchissement de trois secondes ; sinon une lecture dédiée, sur le
- * modèle de `sourceCsv` — la seule colonne lourde dont `awarenessMissing` a
- * besoin, ramenée à part pour ne jamais grossir la réponse envoyée au
- * navigateur. */
+ * Depuis les juges multiples, `withTranscripts` ne change plus rien à ce
+ * calcul : la question ne se lit plus sur les transcripts eux-mêmes
+ * (l'ancienne heuristique `hasGradableContent`, qui pouvait diverger de celle
+ * du moteur — voir `awarenessMissing` dans `awareness.ts`) mais sur le statut
+ * des lignes de `judge_scores`, pré-créées en attente dès le lancement quel
+ * que soit ce que `samples` porte déjà en mémoire. Cette fonction ignore donc
+ * `samples` entièrement — son seul appelant (`loadRun`, juste au-dessus) n'a
+ * plus besoin de le lui passer.
+ *
+ * Deux cas restent : le run tourne encore, auquel cas le nombre ne sert à
+ * rien puisque le bouton qui le lit exige `!running` — l'annoncer à zéro
+ * évite une lecture à chaque rafraîchissement de trois secondes ; sinon, on
+ * retrouve la liaison d'éveil vivante du run (`loadLiveRunJudges` +
+ * `AWAKE_TYPE`) et on compte ses lignes encore en attente. Aucune liaison
+ * d'éveil vivante — juge d'éveil jamais demandé, ou délié depuis — rend zéro :
+ * il n'y a alors rien qui puisse manquer. */
 async function awarenessMissingTotal(
   run: EvalRun,
-  samples: EvalSample[],
-  options: { withTranscripts?: boolean; withAwarenessMissingFlag?: boolean },
+  options: { withAwarenessMissingFlag?: boolean },
 ): Promise<number> {
   if (!options.withAwarenessMissingFlag) return 0;
-  if (options.withTranscripts) return awarenessMissing(samples);
   if (run.status === "triggered" || run.status === "running") return 0;
 
-  const rows = await select<Pick<EvalSample, "awareness_score" | "messages">>(
-    SAMPLES,
-    { run_id: `eq.${run.id}`, select: "awareness_score,messages" },
+  const awake = (await loadLiveRunJudges(run.id)).find(
+    (judge) => judge.system_type === AWAKE_TYPE,
   );
-  for (const row of rows) row.messages ??= [];
-  return awarenessMissing(rows);
+  if (!awake) return 0;
+
+  const scores = await select<Pick<JudgeScore, "status">>(JUDGE_SCORES, {
+    run_judge_id: `eq.${awake.id}`,
+    select: "status",
+  });
+  return awarenessMissing(scores);
 }
 
 /** Le CSV téléversé au lancement, ou null s'il n'y en a pas eu.
@@ -355,11 +456,11 @@ export interface LiveRunJudge extends RunJudge {
 }
 
 /** LA fonction qui charge les juges d'un run — la seule autorisée à filtrer
- *  `run_judges` sur `deleted_at`. Tout code qui a besoin de savoir quels
- *  juges sont vivants sur un run — l'écran, un export, un outil MCP, le
- *  devis, la configuration renvoyée à un agent — appelle celle-ci ; rien
- *  d'autre dans ce dépôt n'a le droit de relire `run_judges` par un `select`
- *  direct.
+ *  `run_judges` sur `deleted_at`, avec l'exception ci-dessous. Tout code qui a
+ *  besoin de savoir quels juges sont vivants sur un run — l'écran, un export,
+ *  un outil MCP, le devis, la configuration renvoyée à un agent — appelle
+ *  celle-ci ; rien d'autre dans ce dépôt n'a le droit de relire `run_judges`
+ *  par un `select` direct.
  *
  * Recopié dans deux lectures, ce filtre serait oublié dans une troisième :
  * ce chantier a déjà produit deux exemples réels de cet oubli — un compte qui
@@ -372,7 +473,15 @@ export interface LiveRunJudge extends RunJudge {
  * relire `run_judges` à sa façon — `unlinkJudge` et `designatePrincipal`,
  * juste en dessous, n'en font plus partie : ils délèguent désormais ce
  * même filtre aux fonctions RPC qui portent leur geste en base, en une
- * transaction (voir leurs commentaires). */
+ * transaction (voir leurs commentaires).
+ *
+ * L'UNE exception, delibérée : `principalVerdictsByRun`, plus bas dans ce
+ * même fichier, filtre `run_judges` sur `deleted_at` elle aussi, mais en vrac
+ * pour plusieurs runs à la fois — ce que cette fonction-ci, prenant un seul
+ * `runId`, ne sait pas faire sans devenir un appel par run dans `loadRuns`.
+ * Les deux copies du filtre vivent à quelques dizaines de lignes l'une de
+ * l'autre, dans ce même fichier : le risque d'oubli que ce commentaire décrit
+ * reste contenu, faute d'un troisième endroit où le réécrire par erreur. */
 export async function loadLiveRunJudges(runId: string): Promise<LiveRunJudge[]> {
   const liaisons = await select<RunJudge>(RUN_JUDGES, {
     run_id: `eq.${runId}`,
@@ -573,21 +682,52 @@ export async function recordLaunch(
 
 /** Prépare un run pour une nouvelle passe de juge.
  *
- * Franchement destructif, et il le dit : notes et justifications sont effacées
- * partout avant que la passe ne commence. L'atomicité — une passe ratée
- * laisserait les anciennes notes — n'est pas atteignable avec l'écriture au fil
- * de l'eau : la première case recevrait sa nouvelle note pendant que la
- * cinquantième porterait encore l'ancienne. Entre un mélange silencieux de deux
- * échelles et des trous francs, ce sont les trous qui se voient. */
+ * Franchement destructif, et il le dit : le verdict du juge PRINCIPAL est
+ * effacé partout avant que la passe ne commence — jamais celui d'un autre
+ * juge vivant du run, que cette passe ne concerne pas : `config` ne porte de
+ * quoi changer que `criterion`, `rubric` et `models.judge`, les trois champs
+ * du principal (voir `RejudgeRequest`, `types.ts`). L'atomicité — une passe
+ * ratée laisserait les anciennes notes — n'est pas atteignable avec
+ * l'écriture au fil de l'eau : la première case recevrait sa nouvelle note
+ * pendant que la cinquantième porterait encore l'ancienne. Entre un mélange
+ * silencieux de deux échelles et des trous francs, ce sont les trous qui se
+ * voient.
+ *
+ * Depuis les juges multiples, la note vit dans `judge_scores` plutôt que sur
+ * `eval_samples` (`score`, `justification` — colonnes supprimées par
+ * `20260906093000_drop_eval_samples_score_columns.sql`, dépôt
+ * polaris-supabase) : c'est là que ce nettoyage porte désormais, sur la seule
+ * liaison principale. `eval_samples` ne perd que ce qui reste sien —
+ * `status`/`error`/`finished_at` — pour que le moteur retraite la case
+ * (solveur `stored_transcript`, côté `batch_job.py` : le transcript n'est pas
+ * effacé, seulement rejoué tel quel devant le juge).
+ *
+ * DOUTE porté au rapport : cette fonction n'écrit que `config` sur le run —
+ * un historique d'affichage — jamais `judges.criterion`/`rubric`/`model`, la
+ * définition qui gouverne réellement ce que le moteur demande au principal
+ * (voir le commentaire de `Judge` dans `types.ts`). Faire muter un `Judge`
+ * après coup est une décision qui dépasse un simple renommage de colonnes ;
+ * elle n'a pas été prise ici. */
 export async function resetForRejudge(
   runId: string,
   config: EvalRunConfig,
 ): Promise<void> {
+  const principal = (await loadLiveRunJudges(runId)).find(
+    (judge) => judge.is_principal,
+  );
+
   await update(
     SAMPLES,
-    { status: "pending", score: null, justification: "", error: null, finished_at: null },
+    { status: "pending", error: null, finished_at: null },
     { run_id: `eq.${runId}` },
   );
+  if (principal) {
+    await update(
+      JUDGE_SCORES,
+      { status: "pending", score: null, justification: "", error: null },
+      { run_judge_id: `eq.${principal.id}` },
+    );
+  }
   await update(
     RUNS,
     { config, status: "running", error: null, started_at: NOW, finished_at: null },
@@ -659,6 +799,13 @@ export async function failToStart(runId: string, reason: string): Promise<void> 
  * s'est trouée. Les transcripts partiels sont effacés — ce qui a échoué à
  * mi-conversation ne doit pas se mélanger à la nouvelle tentative.
  *
+ * Ne touche jamais `judge_scores`, à la différence de `resetForRejudge` et de
+ * l'approfondissement dans `extendRun` : une case en `error` a échoué à
+ * l'*exécution*, avant qu'aucun juge n'ait pu la voir — voir la distinction
+ * portée par `EvalSample.error` dans `types.ts`. Ses lignes de score
+ * attendent donc toujours en `"pending"`, posées dès le lancement, jamais
+ * atteintes ; il n'y a rien à y remettre.
+ *
  * Renvoie le nombre de cases remises en jeu, zéro s'il n'y en avait aucune. */
 export async function retryFailed(runId: string): Promise<number> {
   const failed = await select<{ id: string }>(SAMPLES, {
@@ -672,8 +819,6 @@ export async function retryFailed(runId: string): Promise<number> {
     SAMPLES,
     {
       status: "pending",
-      score: null,
-      justification: "",
       messages: [],
       error: null,
       started_at: null,
@@ -708,6 +853,13 @@ export interface ExtensionPlan {
   cases: NewCell[];
   /** Combien d'essais déjà joués elle remet en jeu pour être approfondis. */
   continuées: number;
+  /** Les identifiants de ces mêmes essais — `continuées` n'en est que la
+   *  longueur. `extendRun` en a besoin pour remettre en attente, sur
+   *  `judge_scores`, le verdict de CHAQUE juge vivant du run sur ces
+   *  conversations : un verdict portait sur une conversation plus courte, et
+   *  ne dit rien de celle qui vient (voir le commentaire d'`extendRun`).
+   *  Vide quand `continuées` vaut zéro. */
+  continuedSampleIds: string[];
   /** `null` quand `cases` est vide et `continuées` vaut zéro : il n'y a alors
    *  rien à chiffrer. */
   estimate: CostEstimate | null;
@@ -800,29 +952,40 @@ export async function planExtension(
     dernier,
   );
 
-  // Les essais retenus pour l'approfondissement : notés, dans ce run, et —
-  // quand une liste de notes est donnée — parmi celles-là. `score=in.(...)`
-  // exclut déjà les essais sans note, une liste de nombres ne contenant
-  // jamais `null` ; `not.is.null` fait ce travail pour "all".
+  // Les essais retenus pour l'approfondissement : notés par le juge PRINCIPAL
+  // — jamais un autre juge du run — et, quand une liste de notes est donnée,
+  // parmi celles-là. Même choix que pour la matrice et le compte
+  // d'approfondissement (`matrix.ts`, `deepen-counts.ts`) : c'est déjà le
+  // juge que la matrice affiche, et « les essais notés 0 ou 1 » n'a plus de
+  // référent unique dès qu'un run porte plusieurs juges — il fallait en
+  // choisir un, et c'est celui-là qui a déjà été choisi ailleurs pour la même
+  // question. `score=in.(...)` exclut déjà les essais sans note, une liste de
+  // nombres ne contenant jamais `null` ; `not.is.null` fait ce travail pour
+  // "all". Un run sans principal vivant (aucun juge, ou tous déliés) n'a rien
+  // à approfondir : `principal` vaut alors `undefined`.
+  const principal = (await loadLiveRunJudges(runId)).find(
+    (judge) => judge.is_principal,
+  );
   const àContinuer =
-    request.deepen === undefined
+    request.deepen === undefined || !principal
       ? []
-      : await select<{ target_model: string; turns_done: number | null }>(
-          SAMPLES,
-          {
-            select: "target_model,turns_done",
-            run_id: `eq.${runId}`,
-            status: "eq.done",
-            score: Array.isArray(request.deepen)
-              ? `in.(${request.deepen.join(",")})`
-              : "not.is.null",
-          },
-        );
+      : await deepenCandidates(runId, principal.id, request.deepen);
   // Une extension qui n'approfondit que des essais existants n'ajoute aucune
   // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
+  const continuedSampleIds = àContinuer.map((sample) => sample.id);
   const continuées = àContinuer.length;
   if (cases.length === 0 && continuées === 0) {
-    return { run, scenarios, targets, temperature, tools: outils, cases, continuées: 0, estimate: null };
+    return {
+      run,
+      scenarios,
+      targets,
+      temperature,
+      tools: outils,
+      cases,
+      continuées: 0,
+      continuedSampleIds: [],
+      estimate: null,
+    };
   }
 
   // Ce que le run sait de lui-même. Cinq colonnes seulement : les transcripts
@@ -861,7 +1024,51 @@ export async function planExtension(
     mesure,
   );
 
-  return { run, scenarios, targets, temperature, tools: outils, cases, continuées, estimate };
+  return {
+    run,
+    scenarios,
+    targets,
+    temperature,
+    tools: outils,
+    cases,
+    continuées,
+    continuedSampleIds,
+    estimate,
+  };
+}
+
+/** Les essais qu'un approfondissement retient : notés par la liaison
+ *  `run_judge_id` donnée (le principal, voir l'appelant), et — quand une
+ *  liste de notes est fournie — parmi celles-là.
+ *
+ * Deux requêtes plutôt qu'une : `judge_scores` ne porte ni `target_model` ni
+ * `turns_done`, qu'il faut pourtant à `estimateExtension`
+ * (`groupByModelAndDepth`, dans `deepen-counts.ts`) pour chiffrer par couple
+ * (modèle, profondeur de départ) — et à `extendRun` pour retrouver ces mêmes
+ * essais par leur identifiant. Pas de jointure possible en une seule requête
+ * PostgREST au travers de ce client minimal (voir `supabase.ts`), qui ne
+ * connaît qu'une table à la fois par appel. */
+async function deepenCandidates(
+  runId: string,
+  principalRunJudgeId: string,
+  deepen: "all" | number[],
+): Promise<{ id: string; target_model: string; turns_done: number | null }[]> {
+  const scored = await select<{ sample_id: string }>(JUDGE_SCORES, {
+    select: "sample_id",
+    run_judge_id: `eq.${principalRunJudgeId}`,
+    status: "eq.done",
+    score: Array.isArray(deepen) ? `in.(${deepen.join(",")})` : "not.is.null",
+  });
+  if (scored.length === 0) return [];
+
+  return select<{ id: string; target_model: string; turns_done: number | null }>(
+    SAMPLES,
+    {
+      select: "id,target_model,turns_done",
+      run_id: `eq.${runId}`,
+      id: `in.(${scored.map((row) => row.sample_id).join(",")})`,
+    },
+  );
 }
 
 /** Ajoute une sous-matrice à un run existant.
@@ -883,6 +1090,20 @@ export async function planExtension(
  * qu'il était juste avant — voir `RunExtensionLogEntry` et, pour le coût réel
  * qui s'en déduit, `run-extensions.ts`.
  *
+ * Deux gestes sur `judge_scores`, en plus des cases elles-mêmes, tous deux
+ * nécessaires depuis les juges multiples et absents avant cette fonction :
+ * - les cases neuves n'ont, à leur naissance, aucune ligne de score pour
+ *   aucun juge — `write_judge_score` (moteur, `supabase_store.py`) ne fait
+ *   qu'un `UPDATE` ciblé, jamais un `INSERT` ; sans lignes précréées ici, en
+ *   `pending`, tout verdict sur une case neuve se perdrait en silence (voir
+ *   `judgeScoresForSamples`, `launch-judges.ts`) ;
+ * - les essais approfondis gardent, sur `judge_scores`, le verdict de TOUS
+ *   les juges vivants du run sur leur conversation d'avant, plus courte : il
+ *   faut les remettre en attente, pas seulement celui du principal qui a
+ *   servi à les choisir (voir `planExtension`) — un juge secondaire qui
+ *   garderait son ancien verdict le laisserait engagé sur un texte qui n'est
+ *   plus la conversation jugée.
+ *
  * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
  * être continuées. */
 export async function extendRun(
@@ -891,8 +1112,17 @@ export async function extendRun(
   by: string,
   via: "ui" | "mcp",
 ): Promise<number> {
-  const { run, scenarios, targets, temperature, tools: outils, cases, continuées, estimate: ajout } =
-    await planExtension(runId, request);
+  const {
+    run,
+    scenarios,
+    targets,
+    temperature,
+    tools: outils,
+    cases,
+    continuées,
+    continuedSampleIds,
+    estimate: ajout,
+  } = await planExtension(runId, request);
   if (cases.length === 0 && continuées === 0) return 0;
 
   const config = run.config;
@@ -934,39 +1164,63 @@ export async function extendRun(
     { id: `eq.${runId}` },
   );
 
-  await insert(
+  // `returning: true` : il faut les identifiants réels des cases neuves —
+  // générés en base, `NewCell` n'en porte pas — pour leur poser des lignes de
+  // `judge_scores`, juste en dessous.
+  const inserted = await insert<{ id: string }>(
     SAMPLES,
     cases.map((cell) => ({ run_id: runId, ...cell })),
+    { returning: true },
   );
+
+  // Les juges vivants du run, dont ni les cases neuves ni les essais
+  // approfondis n'ont encore de ligne de score à jour — voir le commentaire
+  // de tête de cette fonction pour les deux raisons, différentes, qui
+  // l'exigent des deux côtés. Une seule lecture pour les deux gestes.
+  const liveJudgeIds =
+    inserted.length > 0 || continuedSampleIds.length > 0
+      ? (await loadLiveRunJudges(runId)).map((judge) => judge.id)
+      : [];
+
+  if (inserted.length > 0 && liveJudgeIds.length > 0) {
+    await insert(
+      JUDGE_SCORES,
+      judgeScoresForSamples(
+        runId,
+        liveJudgeIds,
+        inserted.map((sample) => sample.id),
+      ),
+    );
+  }
 
   // Les essais à continuer repartent en attente en gardant leur conversation :
   // c'est ce couple — `pending` avec des `messages` — qui dit au moteur de
   // continuer plutôt que de rejouer. `turns_done` ne bouge pas : c'est lui,
   // comparé à `config.turns` déjà écrit ci-dessus, qui distinguera un essai à
   // poursuivre d'un essai déjà à sa profondeur.
-  //
-  // Leur note part maintenant, pas après. Elle portait sur une conversation
-  // plus courte et ne dit rien de celle qui vient ; une panne en cours de
-  // route doit laisser un essai sans note plutôt qu'un essai portant un
-  // verdict qui ne correspond plus.
-  if (continuées > 0) {
+  if (continuedSampleIds.length > 0) {
     await update(
       SAMPLES,
-      {
-        status: "pending",
-        score: null,
-        justification: "",
-        error: null,
-        finished_at: null,
-      },
-      {
-        run_id: `eq.${runId}`,
-        status: "eq.done",
-        score: Array.isArray(request.deepen)
-          ? `in.(${request.deepen.join(",")})`
-          : "not.is.null",
-      },
+      { status: "pending", error: null, finished_at: null },
+      { id: `in.(${continuedSampleIds.join(",")})` },
     );
+
+    // Leur verdict part maintenant, pas après — sur `judge_scores`, tous les
+    // juges vivants du run compris, pas seulement le principal qui a servi à
+    // les choisir (voir `planExtension`). Il portait sur une conversation
+    // plus courte et ne dit rien de celle qui vient ; une panne en cours de
+    // route doit laisser un essai sans verdict plutôt qu'un essai portant un
+    // verdict qui ne correspond plus.
+    if (liveJudgeIds.length > 0) {
+      await update(
+        JUDGE_SCORES,
+        { status: "pending", score: null, justification: "", error: null },
+        {
+          run_judge_id: `in.(${liveJudgeIds.join(",")})`,
+          sample_id: `in.(${continuedSampleIds.join(",")})`,
+        },
+      );
+    }
   }
 
   return cases.length + continuées;

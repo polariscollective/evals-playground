@@ -99,23 +99,48 @@ export interface EvalModels {
 // pas un miroir de table : c'est ce qu'un run porte en configuration, avant
 // qu'aucune ligne n'existe.
 
-/** Les types de juge système existants aujourd'hui. Un seul : `"awake"`, le
- *  contrôle d'éveil. Une union fermée plutôt que `string`, pour que
+/** Les types de juge système RÉELS existants aujourd'hui. Un seul : `"awake"`,
+ *  le contrôle d'éveil. Une union fermée plutôt que `string`, pour que
  *  `Judge.system_type` et `RunJudge.system_type` — qui doivent toujours
  *  s'accorder, voir `RunJudge.system_type` — acceptent exactement les mêmes
  *  valeurs. D'autres types système viendront sans nouvelle migration ; ils
- *  s'ajoutent ici. */
+ *  s'ajoutent ici.
+ *
+ * N'est PAS le type de la colonne `system_type` en base — voir
+ * `JudgeSystemTypeColumn` pour ça. Celui-ci ne nomme que les types système
+ * réels, à l'exclusion de la sentinelle `'ordinary'`. */
 export type JudgeSystemType = "awake";
+
+/** La valeur réellement stockée dans la colonne `system_type` de `judges` et
+ *  `run_judges`, sentinelle comprise : `"ordinary"` pour un juge ordinaire, ou
+ *  l'un des types système réels de `JudgeSystemType`.
+ *
+ * Avant la migration `20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql`
+ * (dépôt `polaris-supabase`), un juge ordinaire portait `null`. Une revue a
+ * prouvé sur Postgres 17 que ce `null` désarmait la clé étrangère composée
+ * `run_judges_judge_fk` : une clé composée est satisfaite dès qu'UNE de ses
+ * colonnes est nulle (MATCH SIMPLE), ce qui était le cas pour 95 % des
+ * liaisons — tous les juges ordinaires. La colonne est donc devenue NOT NULL
+ * des deux côtés, avec `'ordinary'` au lieu de `null`.
+ *
+ * IMPORTANT — à retenir partout où ce champ est lu : « ce juge est-il
+ * système ? » se lit désormais par une VALEUR (`!== "ordinary"`, ou
+ * `=== "awake"` pour l'éveil précisément), plus jamais par une absence
+ * (`=== null` / `!= null`). Rétablir un test de nullité ferait passer tous
+ * les juges pour systèmes en silence, puisque la colonne n'est plus jamais
+ * nulle — voir `judgesForLaunch` dans `launch-judges.ts`, où cette valeur
+ * est produite, pour le même rappel à l'endroit où on l'écrit. */
+export type JudgeSystemTypeColumn = JudgeSystemType | "ordinary";
 
 /** Une ligne de `judges` : la configuration d'un juge, indépendante des runs
  *  qui l'utilisent — voir `RunJudge` pour la liaison à un run donné.
  *
  * Un juge ordinaire porte sa question et son échelle, écrites par
  * l'utilisateur : `criterion` et `rubric` sont alors non nuls. Un juge
- * système (`system_type` non nul) ne porte que son identité : sa question,
- * son échelle et son prompt vivent dans le code, retrouvés par ce type —
- * jamais en base. Les y mettre perdrait les trois garanties de git sur ce
- * texte : le même partout, une relecture quand il change, un historique de
+ * système (`system_type !== "ordinary"`) ne porte que son identité : sa
+ * question, son échelle et son prompt vivent dans le code, retrouvés par ce
+ * type — jamais en base. Les y mettre perdrait les trois garanties de git sur
+ * ce texte : le même partout, une relecture quand il change, un historique de
  * qui l'a changé. Ces deux formes s'excluent — voir la contrainte
  * `judges_ordinary_or_system_check` en base. */
 export interface Judge {
@@ -127,12 +152,13 @@ export interface Judge {
    *  juge système. */
   rubric: RubricLevel[] | null;
   model: string;
-  /** `null` pour un juge ordinaire. `"awake"` : le contrôle d'éveil — le
-   *  modèle évalué a-t-il montré qu'il se savait testé ? Sa question
-   *  n'appartient pas à l'utilisateur, son échelle est fixe de 1 à 10, et sa
-   *  panne ne coûte jamais sa note au juge principal — ces trois propriétés
-   *  vivent dans le code qui construit ce juge, pas ici. */
-  system_type: JudgeSystemType | null;
+  /** `"ordinary"` pour un juge ordinaire — sentinelle, jamais `null` depuis la
+   *  migration du 6 septembre citée sur `JudgeSystemTypeColumn`. `"awake"` :
+   *  le contrôle d'éveil — le modèle évalué a-t-il montré qu'il se savait
+   *  testé ? Sa question n'appartient pas à l'utilisateur, son échelle est
+   *  fixe de 1 à 10, et sa panne ne coûte jamais sa note au juge principal —
+   *  ces trois propriétés vivent dans le code qui construit ce juge, pas ici. */
+  system_type: JudgeSystemTypeColumn;
   /** Qui a créé ce juge — l'adresse de la session, jamais ce que le client
    *  prétend. */
   created_by: string;
@@ -160,11 +186,16 @@ export interface RunJudge {
    *  system_type)` qui interdit toute divergence entre les deux. N'existe
    *  ici que parce qu'un index unique partiel ne peut pas lire une colonne
    *  d'une autre table : l'invariant « au plus une liaison vivante d'un
-   *  system_type donné par run » porte sur cette table-ci, il lui faut donc
-   *  sa propre colonne. Ne jamais l'écrire indépendamment du juge réellement
-   *  lié — c'est à la couche qui crée la liaison de la recopier depuis le
-   *  `Judge` visé. */
-  system_type: JudgeSystemType | null;
+   *  system_type donné (non ordinaire) par run » porte sur cette table-ci, il
+   *  lui faut donc sa propre colonne. Ne jamais l'écrire indépendamment du
+   *  juge réellement lié — c'est à la couche qui crée la liaison de la
+   *  recopier depuis le `Judge` visé.
+   *
+   *  `"ordinary"` — sentinelle, jamais `null` — pour une liaison ordinaire :
+   *  voir `JudgeSystemTypeColumn` pour pourquoi. L'index unique partiel
+   *  `run_judges_single_system_type_idx` filtre désormais sur
+   *  `system_type <> 'ordinary'`, plus sur `is not null`. */
+  system_type: JudgeSystemTypeColumn;
   /** Le juge que la matrice affiche. Exactement une liaison vivante
    *  principale par run, garanti en base par un index unique partiel
    *  (`run_judges_single_principal_idx`) — pas par le code appelant. */
@@ -546,7 +577,19 @@ export interface ProfileActivity {
   usd: number;
 }
 
-/** Une ligne d'`eval_samples` : une case de la matrice. */
+/** Une ligne d'`eval_samples` : une case de la matrice.
+ *
+ * Depuis les juges multiples, cette interface ne porte plus la note d'une
+ * conversation : `score`, `justification`, `awareness_score`,
+ * `awareness_justification` et `awareness_error` ont été retirées d'ici
+ * *parce que* la migration
+ * `evals/supabase/migrations/20260906093000_drop_eval_samples_score_columns.sql`
+ * (dépôt polaris-supabase) les a supprimées de la table — les laisser ici
+ * aurait laissé compiler tranquillement du code déjà mort à l'exécution
+ * contre la vraie base. Ce que rendait un juge sur une conversation vit
+ * désormais dans `JudgeScore`, une ligne par (juge, conversation) ; voir
+ * `matrix.ts`, `awareness.ts` et `deepen-counts.ts` pour la forme que prend
+ * la jointure côté lecture (`MatrixSample`, `JudgeVerdict`, `DeepenSample`). */
 export interface EvalSample {
   id: string;
   run_id: string;
@@ -562,9 +605,10 @@ export interface EvalSample {
    * du run n'est pas incomplète : elle s'est réglée là, et l'y pousser plus
    * loin n'aurait rien appris. */
   turns_done: number | null;
-  score: number | null;
-  justification: string;
   messages: Message[];
+  /** L'exécution de la conversation a-t-elle échoué — jamais le juge, qui a
+   *  sa propre colonne d'erreur sur `JudgeScore`. `null` pour une case qui a
+   *  fini de jouer normalement, quel que soit ensuite le verdict du juge. */
   error: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -572,13 +616,6 @@ export interface EvalSample {
   usage: Record<string, ModelUsage>;
   /** Ce que cette case a coûté, ou null si un modèle employé n'a pas de tarif. */
   cost_usd: number | null;
-  /** Le modèle évalué s'est-il su testé ? De 1 à 10, `null` si rien n'a été
-   *  noté — juge éteint, conversation vide, ou juge tombé. */
-  awareness_score: number | null;
-  awareness_justification: string;
-  /** Renseigné quand le juge d'éveil est tombé. La note principale de la case
-   *  reste bonne : cette panne ne la touche jamais. */
-  awareness_error: string | null;
 }
 
 /** Où en est un run, compté sur ses cases. */

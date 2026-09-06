@@ -51,14 +51,18 @@ test("sans juges secondaires ni éveil, un seul juge : le principal", () => {
       { value: 1, meaning: "Oui." },
     ],
     model: "juge/1",
-    system_type: null,
+    // Sentinelle, jamais `null`, depuis la migration du 6 septembre qui a
+    // durci la colonne (voir `JudgeSystemTypeColumn`, `types.ts`) : un juge
+    // ordinaire ne se reconnaît plus à une absence de type mais à cette
+    // valeur précise.
+    system_type: "ordinary",
     created_by: "a@b.c",
   });
   assert.deepEqual(runJudges[0], {
     id: "id-1",
     run_id: "run-1",
     judge_id: "id-0",
-    system_type: null,
+    system_type: "ordinary",
     is_principal: true,
   });
   // Une ligne de score par conversation, pour cet unique juge.
@@ -169,7 +173,12 @@ test("check_eval_awareness à false n'ajoute aucun juge d'éveil", () => {
     ["s1"],
     counter(),
   );
-  assert.ok(judges.every((j) => j.system_type === null));
+  // « Ce juge est-il système ? » se lit par une VALEUR (`!== "ordinary"`),
+  // jamais par une absence (`!= null`) : la colonne ne peut plus être nulle
+  // depuis le sentinelle. Un test de nullité rétabli ici passerait tous les
+  // juges pour systèmes en silence, puisque aucun ne serait plus jamais
+  // `null` — et ce test-là ne le verrait pas.
+  assert.ok(judges.every((j) => j.system_type === "ordinary"));
 });
 
 test("un juge d'éveil n'est jamais lu depuis config.judges", () => {
@@ -194,8 +203,10 @@ test("un juge d'éveil n'est jamais lu depuis config.judges", () => {
     counter(),
   );
   // Le principal, le secondaire, puis l'éveil : trois juges, un seul système.
+  // Toujours une comparaison de valeur (`!== "ordinary"`), jamais de nullité —
+  // voir le rappel plus haut dans ce fichier.
   assert.equal(judges.length, 3);
-  assert.equal(judges.filter((j) => j.system_type !== null).length, 1);
+  assert.equal(judges.filter((j) => j.system_type !== "ordinary").length, 1);
 });
 
 // --- les lignes de score ------------------------------------------------------

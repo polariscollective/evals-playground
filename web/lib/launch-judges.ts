@@ -5,7 +5,7 @@
 // que des écritures Supabase — et `runs.ts` importe `server-only`, qui casse
 // l'import sous `node --test`. Voir le commentaire en tête de `cells.ts`.
 import { randomUUID } from "node:crypto";
-import type { EvalRunConfig, JudgeSystemType, RubricLevel } from "./types";
+import type { EvalRunConfig, JudgeSystemTypeColumn, RubricLevel } from "./types";
 
 /** Une ligne de `judges` telle qu'elle naît, avant insertion. */
 export interface NewJudgeRow {
@@ -13,7 +13,7 @@ export interface NewJudgeRow {
   criterion: string | null;
   rubric: RubricLevel[] | null;
   model: string;
-  system_type: JudgeSystemType | null;
+  system_type: JudgeSystemTypeColumn;
   created_by: string;
 }
 
@@ -27,7 +27,7 @@ export interface NewRunJudgeRow {
   id: string;
   run_id: string;
   judge_id: string;
-  system_type: JudgeSystemType | null;
+  system_type: JudgeSystemTypeColumn;
   is_principal: boolean;
 }
 
@@ -101,7 +101,12 @@ export function judgesForLaunch(
       criterion: config.criterion,
       rubric: config.rubric,
       model: config.models.judge,
-      system_type: null,
+      // Sentinelle, jamais `null` : voir `JudgeSystemTypeColumn` dans
+      // `types.ts`. « Ce juge est-il système ? » se lit désormais en
+      // comparant cette valeur à `"ordinary"`, plus jamais en testant une
+      // absence — un test de nullité rétabli ici ferait passer tous les
+      // juges pour systèmes, la colonne n'étant plus jamais nulle en base.
+      system_type: "ordinary",
       created_by: createdBy,
     },
     true,
@@ -114,7 +119,7 @@ export function judgesForLaunch(
         criterion: spec.criterion,
         rubric: spec.rubric,
         model: spec.model ?? config.models.judge,
-        system_type: null,
+        system_type: "ordinary",
         created_by: createdBy,
       },
       false,
@@ -135,16 +140,43 @@ export function judgesForLaunch(
     );
   }
 
+  const judgeScores = judgeScoresForSamples(
+    runId,
+    runJudges.map((runJudge) => runJudge.id),
+    sampleIds,
+  );
+
+  return { judges, runJudges, judgeScores };
+}
+
+/** Les lignes de `judge_scores` à créer pour des cases neuves qui rejoignent
+ *  un run déjà lancé — le même produit croisé (chaque juge vivant du run ×
+ *  chaque conversation) que `judgesForLaunch` construit ci-dessus pour un run
+ *  neuf, réduit au cas où les juges existent déjà et où seules les
+ *  conversations sont neuves.
+ *
+ * Utilisée par `extendRun` (`runs.ts`) pour les cases qu'une extension
+ * ajoute. Sans ces lignes, `write_judge_score` (moteur, côté
+ * `supabase_store.py`) ne trouverait rien à mettre à jour : elle ne fait
+ * qu'un `UPDATE` ciblé sur `(run_judge_id, sample_id)`, jamais un `INSERT` —
+ * la ligne est censée exister déjà, en `pending`, depuis que la conversation
+ * a été posée. Un verdict de juge sur une case neuve qu'on aurait oublié de
+ * précréer ici se perdrait donc en silence : l'écriture ne toucherait aucune
+ * ligne, sans lever d'erreur. */
+export function judgeScoresForSamples(
+  runId: string,
+  runJudgeIds: string[],
+  sampleIds: string[],
+): NewJudgeScoreRow[] {
   const judgeScores: NewJudgeScoreRow[] = [];
-  for (const runJudge of runJudges) {
+  for (const runJudgeId of runJudgeIds) {
     for (const sampleId of sampleIds) {
       judgeScores.push({
-        run_judge_id: runJudge.id,
+        run_judge_id: runJudgeId,
         sample_id: sampleId,
         run_id: runId,
       });
     }
   }
-
-  return { judges, runJudges, judgeScores };
+  return judgeScores;
 }
