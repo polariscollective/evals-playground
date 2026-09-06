@@ -57,8 +57,15 @@ export async function GET(
   // échappaient, Vercel ne compressant pas un 206 : seule la toute première
   // lecture tombait, donc le viewer ne s'ouvrait jamais.
   //
-  // Un `.eval` est un ZIP : le recompresser ne gagnait rien de toute façon.
+  // Un `.eval` est un ZIP : le recompresser ne gagne rien de toute façon.
+  //
+  // `no-transform` seul ne suffit pas — Vercel ne l'honore pas. Déclarer
+  // l'encodage du corps, si : un intermédiaire qui voit déjà un
+  // `Content-Encoding` ne le recode pas. Les deux sont posés, le second parce
+  // qu'il marche, le premier parce qu'il dit l'intention à qui lit le code ou
+  // met un cache devant.
   headers.set("Cache-Control", "private, no-store, no-transform");
+  headers.set("Content-Encoding", "identity");
 
   return new Response(amont.body, { status: amont.status, headers });
 }
