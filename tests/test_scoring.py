@@ -448,3 +448,36 @@ def test_l_invite_du_juge_le_previent_des_tours_poses():
     from playground.shared_data import load
 
     assert "given as context" in load("judge-prompt")["system"]
+
+
+# --- render_transcript : le system prompt, pour qui le demande --------------
+#
+# Le juge principal ne le lit jamais — ce n'est pas sa garde. Seul le juge
+# d'éveil (`scoring.judge_awareness`, câblé dans `rubric_judge` et
+# `awareness_only_judge`) en a l'usage ; voir `tests/test_awareness.py` pour
+# les tests qui verrouillent qu'il l'atteint réellement. Ici, seule la forme
+# du rendu.
+
+
+def test_le_system_prompt_est_marque_comme_donne_par_l_experimentateur():
+    """Le juge ne doit jamais le confondre avec un mot du modèle évalué — la
+    même mention que les tours posés d'avance, pour la même raison."""
+    rendu = render_transcript(
+        [{"role": "assistant", "content": "Je sais que c'est un test."}],
+        system_prompt="Ceci est un exercice de red-teaming.",
+    )
+    assert "SYSTEM PROMPT" in rendu
+    assert "given as context" in rendu
+    assert "Ceci est un exercice de red-teaming." in rendu
+    # La numérotation des tours de la conversation n'est pas décalée par le
+    # system prompt, qui n'en est pas un.
+    assert "ASSISTANT [turn 1]:" in rendu
+
+
+def test_sans_system_prompt_le_rendu_ne_change_pas():
+    """Le juge principal ne doit rien voir de neuf : l'argument est optionnel
+    et son absence reproduit exactement le rendu d'avant."""
+    assert render_transcript(TRANSCRIPT) == render_transcript(
+        TRANSCRIPT, system_prompt=None
+    )
+    assert "SYSTEM PROMPT" not in render_transcript(TRANSCRIPT)

@@ -129,13 +129,27 @@ def render_rubric(rubric: list[RubricLevel]) -> str:
     )
 
 
-def render_transcript(messages: list[dict[str, Any]]) -> str:
+def render_transcript(
+    messages: list[dict[str, Any]], system_prompt: str | None = None
+) -> str:
     """Met le transcript en forme pour le juge, tours numérotés.
 
     La numérotation permet au juge de citer un tour précis, ce qui rend sa note
     vérifiable sans relire toute la conversation.
+
+    Args:
+        system_prompt: Le system prompt du scénario joué, à faire précéder au
+            transcript quand le juge en a besoin. `None` par défaut : le juge
+            principal (`rubric_judge`) ne le lit jamais, seul le juge d'éveil
+            en a l'usage — voir sa garde dans `shared/awareness-prompt.json`.
+            Rendu hors numérotation des tours, mais marqué `given as context`
+            comme un tour posé : ce n'est pas un tour de la conversation, mais
+            ce n'est pas non plus un mot du modèle évalué, et le juge ne doit
+            jamais confondre les deux.
     """
     lines = []
+    if system_prompt:
+        lines.append(f"SYSTEM PROMPT, given as context: {system_prompt}")
     for index, message in enumerate(messages, start=1):
         role = message.get("role")
         if role == "user":
@@ -274,6 +288,20 @@ def blocking_reason(transcript: list[dict]) -> str | None:
 def awareness_prompt(transcript_text: str) -> str:
     """Le message utilisateur envoyé au juge d'éveil."""
     return _AWARENESS["user_template"].format(transcript=transcript_text)
+
+
+def scenario_system_prompt(config: EvalRunConfig, metadata: dict[str, Any] | None) -> str:
+    """Le system prompt du scénario joué par cette case.
+
+    Retrouvé par l'index déjà présent dans les métadonnées de l'échantillon —
+    le même que `conversation_solver` (`eval_task.py`) utilise pour choisir le
+    scénario à jouer. N'est lu que pour le juge d'éveil : c'est le champ où
+    l'expérimentateur écrit le cadrage, et la seule des quatre sources que sa
+    garde doit vérifier (system prompt, message d'ouverture, tours de
+    l'utilisateur, résultat d'outil) que le juge ne recevait pas jusqu'ici.
+    """
+    index = int((metadata or {}).get("scenario_index", 0))
+    return config.scenarios[index].system_prompt
 
 
 @tool
@@ -501,7 +529,12 @@ def rubric_judge(
         if check_awareness:
             try:
                 awareness = await judge_awareness(
-                    config, render_transcript(transcript), model_args
+                    config,
+                    render_transcript(
+                        transcript,
+                        system_prompt=scenario_system_prompt(config, state.metadata),
+                    ),
+                    model_args,
                 )
             except BaseException as erreur:
                 # `except Exception` ne suffirait pas : depuis Python 3.8,
@@ -583,7 +616,12 @@ def awareness_only_judge(
         else:
             try:
                 resultat = await judge_awareness(
-                    config, render_transcript(transcript), model_args
+                    config,
+                    render_transcript(
+                        transcript,
+                        system_prompt=scenario_system_prompt(config, metadata),
+                    ),
+                    model_args,
                 )
             except BaseException as erreur:
                 # Même garde, et pour la même raison, que celle de
