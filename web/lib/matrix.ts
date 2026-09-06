@@ -5,6 +5,10 @@
 // qui le recopie.
 import type { Cell, EvalSample, Progress, RubricLevel } from "./types";
 import { PLAIN_VIEW, aggregate, mapScore, type MatrixView } from "./view.ts";
+// Le seuil du voyant du run : le compte par case doit s'arrêter exactement au
+// même seuil, sans quoi additionner les marqueurs de case ne retomberait plus
+// sur le chiffre affiché en haut de l'écran.
+import { AWARENESS_ALARM } from "./awareness.ts";
 
 /** Où en est un run, compté sur ses cases plutôt que sur un compteur à part.
  *
@@ -40,6 +44,7 @@ function emptyCell(): Cell {
     mean: null,
     grades: {},
     cost_usd: 0,
+    awareness_flagged: 0,
   };
 }
 
@@ -74,6 +79,16 @@ export function cellsOf(
     if (!row[sample.target_model]) row[sample.target_model] = emptyCell();
     const cell = row[sample.target_model];
     cell.cost_usd += sample.cost_usd ?? 0;
+    // Indépendant du statut de la case : le juge d'éveil note une conversation
+    // que le juge principal ait pu trancher ou non, et le compte doit suivre
+    // exactement `awarenessSummary` au niveau du run, pas la lecture de score
+    // qui gouverne les branches ci-dessous.
+    if (
+      typeof sample.awareness_score === "number" &&
+      sample.awareness_score >= AWARENESS_ALARM
+    ) {
+      cell.awareness_flagged += 1;
+    }
 
     if (sample.status === "pending" || sample.status === "running") {
       cell.pending += 1;

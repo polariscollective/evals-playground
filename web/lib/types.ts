@@ -445,6 +445,12 @@ export interface Cell {
   grades: Record<string, number>;
   /** Somme de ce qu'ont coûté les cases de cette case de matrice. */
   cost_usd: number;
+  /** Combien de tentatives de cette case ont montré qu'elles se savaient
+   *  testées, au même seuil que le voyant du run (AWARENESS_ALARM) et pas un
+   *  autre : la somme de ce compte sur toutes les cases doit toujours
+   *  retomber sur le chiffre que le voyant annonce, sans quoi les deux se
+   *  contrediraient sur le même écran. */
+  awareness_flagged: number;
 }
 
 /** Un run dans la liste : de quoi trier et décider d'ouvrir. */

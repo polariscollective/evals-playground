@@ -676,6 +676,13 @@ export function RunMatrix({
       )
       .map((sample) => sample.score);
 
+  // Décide si la légende doit expliquer le marqueur d'éveil : il est absent de
+  // la quasi-totalité des runs, et une phrase qui parle d'un signe qu'on ne
+  // voit nulle part sur cet écran ne ferait que dérouter.
+  const anyFlagged = cells.some((row) =>
+    Object.values(row).some((cell) => cell.awareness_flagged > 0),
+  );
+
   if (cells.length === 0) return null;
 
   return (
@@ -735,31 +742,40 @@ export function RunMatrix({
                   const waiting = (cell?.pending ?? 0) > 0;
                   const nothingRan =
                     !!cell && cell.judged === 0 && cell.cancelled > 0;
+                  // Même seuil que le voyant du run (AWARENESS_ALARM, via
+                  // `cellsOf`) : c'est ce qui garantit que la somme de ces
+                  // marqueurs, toutes cases confondues, retombe sur le
+                  // chiffre que le voyant annonce.
+                  const flagged = cell?.awareness_flagged ?? 0;
+                  const baseTitle =
+                    cell?.mean != null
+                      ? `${distribution(scoresOf(index, target))} — average of ${cell.judged} of ${run.config.repetitions}` +
+                        (cell.excluded > 0
+                          ? ` · ${cell.excluded} not applicable`
+                          : "") +
+                        (cell.unjudged > 0
+                          ? ` · ${cell.unjudged} not judged`
+                          : "") +
+                        (cell.cancelled > 0
+                          ? ` · ${cell.cancelled} never ran`
+                          : "") +
+                        (cell.cost_usd > 0
+                          ? ` · $${cell.cost_usd.toFixed(4)}`
+                          : "")
+                      : waiting
+                        ? `${cell?.pending} still to run`
+                        : nothingRan
+                          ? "never ran — the run was stopped first"
+                          : "nothing judged";
                   return (
                     <td key={target} className="border-b border-zinc-200 p-1">
                       <button
                         onClick={() => onOpenCell(index, target)}
                         className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric)}`}
                         title={
-                          cell?.mean != null
-                            ? `${distribution(scoresOf(index, target))} — average of ${cell.judged} of ${run.config.repetitions}` +
-                              (cell.excluded > 0
-                                ? ` · ${cell.excluded} not applicable`
-                                : "") +
-                              (cell.unjudged > 0
-                                ? ` · ${cell.unjudged} not judged`
-                                : "") +
-                              (cell.cancelled > 0
-                                ? ` · ${cell.cancelled} never ran`
-                                : "") +
-                              (cell.cost_usd > 0
-                                ? ` · $${cell.cost_usd.toFixed(4)}`
-                                : "")
-                            : waiting
-                              ? `${cell?.pending} still to run`
-                              : nothingRan
-                                ? "never ran — the run was stopped first"
-                                : "nothing judged"
+                          flagged > 0
+                            ? `${baseTitle} · ${flagged} attempt${flagged > 1 ? "s" : ""} showed signs of knowing it was a test`
+                            : baseTitle
                         }
                       >
                         {cell?.mean != null ? (
@@ -781,6 +797,20 @@ export function RunMatrix({
                           "∅"
                         ) : (
                           "—"
+                        )}
+                        {flagged > 0 && (
+                          // Discret et absent par défaut : ce signal est vide
+                          // dans la quasi-totalité des cases, et une marque
+                          // partout noierait le seul cas qui compte. Un fond
+                          // propre plutôt qu'une simple couleur de texte, pour
+                          // rester lisible quel que soit le fond de la case —
+                          // du teal le plus clair à l'amber le plus foncé.
+                          // Le nombre est écrit, pas seulement une présence :
+                          // deux tentatives signalées sur cinq n'est pas une
+                          // seule.
+                          <span className="ml-1 rounded bg-white/85 px-1 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-700/50">
+                            ⚠{flagged}
+                          </span>
                         )}
                       </button>
                     </td>
@@ -807,6 +837,14 @@ export function RunMatrix({
         {formatValue(max)} scale. The top of the scale is the dark end. A
         hatched cell means nothing could be judged — which is not the same as{" "}
         {formatValue(min)}.
+        {anyFlagged && (
+          <>
+            {" "}A <strong>⚠</strong> followed by a number marks a cell where
+            that many attempts showed signs of knowing it was a test — the
+            same count, at the same threshold, as the run&apos;s eval-awareness
+            indicator above.
+          </>
+        )}
       </p>
     </section>
   );
