@@ -12,7 +12,13 @@ import {
   SHARED_PRICING as S,
 } from "./shared.ts";
 import { toolsFor } from "./tools.ts";
-import type { CostEstimate, EvalRunConfig, LengthAssumption, ModelCost } from "./types";
+import type {
+  CostEstimate,
+  EvalRunConfig,
+  LengthAssumption,
+  ModelCost,
+  RubricLevel,
+} from "./types";
 
 // Un tarif unique par modèle, sans palier — et ce n'est vrai qu'à peu près.
 //
@@ -84,8 +90,8 @@ function tokens(text: string): number {
   return Math.max(1, Math.floor(text.length / S.chars_per_token));
 }
 
-function rubricTokens(config: EvalRunConfig): number {
-  return config.rubric.reduce((sum, level) => sum + tokens(level.meaning) + 4, 0);
+function rubricTokens(rubric: RubricLevel[]): number {
+  return rubric.reduce((sum, level) => sum + tokens(level.meaning) + 4, 0);
 }
 
 /** Jetons d'un gabarit, une fois ses emplacements retirés : la part que le
@@ -95,9 +101,11 @@ function fixedTokens(text: string, ...placeholders: string[]): number {
   return tokens(text);
 }
 
-/** Ce que le juge reçoit à chaque appel en plus du run : son message système et
- * l'ossature de son message utilisateur. Les ignorer sous-estimait chaque appel,
- * d'autant plus que la matrice est grande.
+/** Ce que chaque juge ordinaire reçoit à chaque appel en plus du run : son
+ * message système et l'ossature de son message utilisateur — le principal
+ * comme chaque entrée de `config.judges`, qui partagent le même gabarit et ne
+ * diffèrent que par leur question, leur échelle et leur modèle. Les ignorer
+ * sous-estimait chaque appel, d'autant plus que la matrice est grande.
  *
  * Mesuré sur les gabarits plutôt qu'écrit en dur : une reformulation du prompt
  * se répercute alors sur le devis toute seule. */
@@ -161,11 +169,29 @@ export function estimateTokens(
     perModel.set(model, entry);
   };
 
-  const judge = config.models.judge;
   const adversary = config.turns > 1 ? config.models.adversary : null;
   const adversaryResponse = adversary ? adversaryLength : 0;
-  const question = tokens(config.criterion) + rubricTokens(config);
   const adversaryPrompt = tokens(config.adversary_prompt);
+
+  /** Les juges ordinaires à facturer : le principal, décrit par les champs
+   * historiques du run (`config.criterion`, `config.rubric`,
+   * `config.models.judge`), puis un par entrée de `config.judges` — voir la
+   * docstring de `JudgeSpec`. Chacun porte sa propre question et sa propre
+   * échelle, donc son propre volume de jetons ; un `model` absent reprend
+   * celui du run, exactement comme au lancement (`judgesForLaunch`) — jamais
+   * tous facturés au tarif du principal. Calculé une fois, hors de la boucle
+   * sur les scénarios : ni la question ni l'échelle d'un juge ne varient d'un
+   * scénario à l'autre. */
+  const ordinaryJudges: { model: string; question: number }[] = [
+    {
+      model: config.models.judge,
+      question: tokens(config.criterion) + rubricTokens(config.rubric),
+    },
+    ...(config.judges ?? []).map((spec) => ({
+      model: spec.model ?? config.models.judge,
+      question: tokens(spec.criterion) + rubricTokens(spec.rubric),
+    })),
+  ];
 
   config.scenarios.forEach((scenario, index) => {
     const system = tokens(scenario.system_prompt);
@@ -226,7 +252,6 @@ export function estimateTokens(
         }
       }
 
-      const judgeInput = question + system + history + JUDGE_OVERHEAD_TOKENS;
       const weight = config.repetitions;
 
       add(target, targetInput * weight, targetOutput * weight, targetResponse);
@@ -238,17 +263,25 @@ export function estimateTokens(
           adversaryResponse,
         );
       }
-      add(
-        judge,
-        judgeInput * weight,
-        S.judge_response_tokens * weight,
-        S.judge_response_tokens,
-      );
+      // Un appel de modèle par juge ordinaire non supprimé : chacun relit la
+      // même conversation, avec sa propre question, sa propre échelle et son
+      // propre modèle — trois juges, trois fois la dépense de jugement,
+      // jamais un seul appel facturé au tarif du principal pour les trois.
+      for (const { model, question } of ordinaryJudges) {
+        const judgeInput = question + system + history + JUDGE_OVERHEAD_TOKENS;
+        add(
+          model,
+          judgeInput * weight,
+          S.judge_response_tokens * weight,
+          S.judge_response_tokens,
+        );
+      }
       // Le juge d'éveil relit la même conversation, avec son propre gabarit à
-      // la place de la question et de l'échelle de l'utilisateur.
+      // la place de la question et de l'échelle de l'utilisateur — toujours
+      // au modèle du run, jamais personnalisable : voir `judgesForLaunch`.
       if (config.check_eval_awareness !== false) {
         add(
-          judge,
+          config.models.judge,
           (system + history + AWARENESS_OVERHEAD_TOKENS) * weight,
           S.judge_response_tokens * weight,
           S.judge_response_tokens,
@@ -261,9 +294,9 @@ export function estimateTokens(
     config.scenarios.length * config.models.targets.length * config.repetitions;
   // Les tours d'avant `billFrom` sont déroulés pour l'historique mais pas
   // facturés : seuls les tours facturés comptent dans les appels du modèle
-  // évalué et de l'adversaire. Le juge, lui, reste un appel unique dès qu'il y
-  // a au moins un tour facturé — il relit toute la conversation, jamais un
-  // fragment.
+  // évalué et de l'adversaire. Chaque juge, lui, reste un appel unique dès
+  // qu'il y a au moins un tour facturé — il relit toute la conversation,
+  // jamais un fragment.
   const facturés = Math.max(config.turns - billFrom, 0);
   // Une continuation (`billFrom > 0`) fait parler l'adversaire autant de fois
   // que la cible : la relance d'ouverture s'ajoute aux relances ordinaires.
@@ -271,12 +304,18 @@ export function estimateTokens(
   // relance n'a toujours pas lieu.
   const relancesAdversaire =
     facturés === 0 ? 0 : billFrom > 0 ? facturés : facturés - 1;
-  // Le juge d'éveil est un second appel de juge, compté de la même façon que
-  // le premier : une fois par conversation, dès qu'il y a au moins un tour
-  // facturé, jamais sinon.
+  // Un appel par juge ordinaire non supprimé — le principal, et chacune des
+  // entrées de `config.judges` — dès qu'il y a au moins un tour facturé,
+  // jamais sinon. C'est ici que le contrat se joue : trois juges valent trois
+  // fois cette part, jamais une seule, quel que soit leur modèle chacun.
+  const appelsDeJugesOrdinaires =
+    facturés > 0 ? 1 + (config.judges?.length ?? 0) : 0;
+  // Le juge d'éveil est un appel de juge de plus, compté de la même façon :
+  // une fois par conversation, dès qu'il y a au moins un tour facturé, jamais
+  // sinon.
   const appelDEveil = facturés > 0 && config.check_eval_awareness !== false ? 1 : 0;
   const callsPerConversation =
-    facturés + relancesAdversaire + (facturés > 0 ? 1 : 0) + appelDEveil;
+    facturés + relancesAdversaire + appelsDeJugesOrdinaires + appelDEveil;
 
   return {
     conversations,
