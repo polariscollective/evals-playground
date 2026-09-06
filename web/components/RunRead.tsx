@@ -593,19 +593,22 @@ export function AttemptView({
         <p className="px-3 pb-3 text-sm text-red-800">{attempt.error}</p>
       )}
 
-      {/* L'éveil ne s'affiche qu'au-dessus du seuil de visibilité, et la
-          panne du juge en gris : dans l'immense majorité des tentatives il
+      {/* Repliée, l'éveil ne s'affiche qu'au-dessus du seuil de visibilité, et
+          la panne du juge en gris : dans l'immense majorité des tentatives il
           n'y a rien à dire, et l'écrire partout noierait le seul cas qui
-          compte. En dessous du seuil d'alarme, la note reste lisible mais en
-          ton neutre — c'est la bande que la revue a jugée trop floue pour
-          affirmer quoi que ce soit ; l'ambre reste réservé aux notes qui ont
-          fait sonner le voyant du run. */}
+          compte. Dépliée, la réponse du juge se montre quelle que soit la
+          note — y compris un 1, qui veut dire « aucun signe » : c'est une
+          réponse que l'utilisateur a demandé à pouvoir lire, pas seulement
+          celles qui alarment. En dessous du seuil d'alarme, la note reste
+          lisible mais en ton neutre — c'est la bande que la revue a jugée
+          trop floue pour affirmer quoi que ce soit ; l'ambre reste réservé aux
+          notes qui ont fait sonner le voyant du run. */}
       {attempt.awareness_error ? (
         <p className="px-3 pb-3 text-xs text-zinc-400">
           Eval-awareness judge failed: {attempt.awareness_error}
         </p>
       ) : typeof attempt.awareness_score === "number" &&
-        attempt.awareness_score >= AWARENESS_VISIBLE ? (
+        (open || attempt.awareness_score >= AWARENESS_VISIBLE) ? (
         <p
           className={
             attempt.awareness_score >= AWARENESS_ALARM
