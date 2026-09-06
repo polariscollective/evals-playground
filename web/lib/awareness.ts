@@ -5,7 +5,61 @@
 // matrice est déjà dense, et ce signal est vide dans la quasi-totalité des
 // cases : doubler la charge de l'écran principal pour une colonne presque
 // toujours à 1 abîmerait ce qui marche. Quand le voyant sonne, on descend.
-import type { EvalSample, Message } from "./types";
+//
+// Depuis les juges multiples, l'éveil n'est plus une propriété tissée dans
+// `eval_samples` (`awareness_score`, `awareness_justification`,
+// `awareness_error` — trois colonnes que la migration
+// `20260906093000_drop_eval_samples_score_columns.sql`, dépôt
+// polaris-supabase, a supprimées) : c'est UN juge parmi d'autres, distingué
+// des juges ordinaires par `system_type === "awake"` sur sa liaison
+// (`run_judges`), et ses verdicts vivent dans `judge_scores`, une ligne par
+// conversation. Voir la conception,
+// docs/superpowers/specs/2026-09-06-juges-multiples.md, section « Les juges
+// système ».
+//
+// Ce fichier ne connaît donc plus « le juge d'éveil » comme une chose unique
+// posée sur la case : il connaît le TYPE `awake`, et traite le verdict de la
+// liaison qui le porte — que l'appelant lui a déjà isolée, exactement comme
+// `loadLiveRunJudges` (`runs.ts`) est la seule fonction autorisée à filtrer
+// `run_judges` sur `deleted_at`. Le jour où un second type système existe,
+// son propre traitement d'affichage suit le même moule sans réécrire celui-ci.
+import type { JudgeScore, JudgeSystemType } from "./types";
+
+/** Le seul type de juge système que ce fichier traite aujourd'hui. Isolé ici
+ *  plutôt qu'écrit en dur à chaque appel : c'est ce qui fait de ce fichier le
+ *  traitement d'affichage d'un TYPE, et non un cas particulier — voir
+ *  `findAwakeJudge`. `Ce qu'on ne fait pas` (conception) est clair : l'éveil
+ *  reste le seul type système à écrire aujourd'hui ; cette constante ne
+ *  prépare qu'à ne pas avoir à réécrire ce fichier le jour où un autre
+ *  arrivera. */
+export const AWAKE_TYPE: JudgeSystemType = "awake";
+
+/** Retrouve, parmi les juges vivants d'un run, la liaison de type `awake` —
+ *  `undefined` si le run n'en a pas (jamais demandée au lancement, ou déliée
+ *  depuis).
+ *
+ * Au plus une vivante peut exister, garanti en base par l'index unique
+ * partiel `run_judges_single_system_type_idx` (invariant 2 de la
+ * conception) : cette fonction n'a donc jamais à choisir entre plusieurs
+ * candidats, seulement à en trouver un ou aucun.
+ *
+ * Générique sur `T` pour accepter aussi bien un `RunJudge` complet qu'une
+ * projection réduite à `system_type` : tout ce dont cette fonction a
+ * réellement besoin, sur le modèle de `DeepenCell` dans
+ * `deepen-counts.ts`. */
+export function findAwakeJudge<T extends { system_type: JudgeSystemType | null }>(
+  liveJudges: T[],
+): T | undefined {
+  return liveJudges.find((judge) => judge.system_type === AWAKE_TYPE);
+}
+
+/** Le statut et la note d'un juge sur une conversation, réduits à ce dont ce
+ *  module — et `matrix.ts`, qui partage sa règle d'alarme pour tenir
+ *  l'invariant de somme — ont besoin. Une ligne de `judge_scores` porte plus
+ *  (`run_judge_id`, `sample_id`, `justification`, `error`...), mais le tri
+ *  par juge et par conversation est déjà fait avant d'arriver ici : ce
+ *  fichier ne lit jamais `judge_scores` lui-même. */
+export type JudgeVerdict = Pick<JudgeScore, "status" | "score">;
 
 /** Ce qui allume le voyant du run.
  *
@@ -62,62 +116,81 @@ export interface AwarenessSummary {
   failed: number;
 }
 
-export function awarenessSummary(samples: EvalSample[]): AwarenessSummary {
+/** Vrai si ce verdict allume le badge d'éveil d'une case de la matrice.
+ *
+ * Exportée pour que `matrix.ts` compte chaque case exactement comme
+ * `awarenessSummary` compte le run : c'est ce qui tient l'invariant de
+ * somme — partager `AWARENESS_ALARM` ne suffirait pas si les deux fichiers
+ * en refaisaient chacun la comparaison à leur façon, un `>=` devenu `>`
+ * quelque part romprait la somme sans qu'aucun test à seuil unique ne le
+ * voie. Un seul prédicat, appelé des deux côtés, ferme cette possibilité. */
+export function isAwarenessFlagged(verdict: JudgeVerdict): boolean {
+  return (
+    verdict.status === "done" &&
+    typeof verdict.score === "number" &&
+    verdict.score >= AWARENESS_ALARM
+  );
+}
+
+/** Le voyant du run : combien de verdicts du juge d'éveil sont notés, et
+ *  comment ils se répartissent.
+ *
+ * Prend directement les lignes de `judge_scores` de la liaison `awake` de ce
+ * run (voir `findAwakeJudge`), réduites à `status`/`score` — jamais plus
+ * `EvalSample[]`, dont les colonnes `awareness_*` ont disparu. `status`
+ * distingue les trois issues que `judge_scores.status` porte, plus
+ * l'attente : `"pending"` (le job n'y est pas encore passé) et `"done"` avec
+ * `score` nul (conversation vide, ou note hors échelle) ne comptent ni comme
+ * jugés ni comme tombés — exactement le silence que l'ancien code laissait
+ * déjà quand `awareness_score` valait `null` sans `awareness_error`. */
+export function awarenessSummary(scores: JudgeVerdict[]): AwarenessSummary {
   let judged = 0;
   let flagged = 0;
   let borderline = 0;
   let failed = 0;
-  for (const sample of samples) {
-    if (sample.awareness_error) {
+  for (const verdict of scores) {
+    if (verdict.status === "error") {
       failed += 1;
       continue;
     }
-    if (typeof sample.awareness_score !== "number") continue;
+    if (verdict.status === "pending" || verdict.score === null) continue;
     judged += 1;
-    if (sample.awareness_score >= AWARENESS_ALARM) flagged += 1;
-    else if (sample.awareness_score >= AWARENESS_VISIBLE) borderline += 1;
+    if (isAwarenessFlagged(verdict)) flagged += 1;
+    else if (verdict.score >= AWARENESS_VISIBLE) borderline += 1;
   }
   return { judged, flagged, borderline, failed };
 }
 
-/** Un tour d'assistant qui a vraiment répondu quelque chose.
+/** Combien de lignes de score du juge d'éveil restent à remplir sur ce run —
+ *  ce qui décide si le bouton de rattrapage a une raison d'exister, et ce
+ *  qu'il annonce coûter.
  *
- * Reflète `blocking_reason`, côté moteur (`backend/playground/scoring.py`) :
- * un fournisseur qui a bloqué la génération, ou un modèle jamais appelé,
- * laisse un tour d'assistant sans contenu, et le juge refuse de noter une
- * conversation pareille. Un chiffre qui ne suivrait pas cette règle
- * promettrait au bouton une passe qui ne jugera en réalité rien. */
-function hasGradableContent(messages: Message[]): boolean {
-  return messages.some(
-    (message) => message.role === "assistant" && message.content.trim() !== "",
-  );
-}
-
-/** Combien de conversations pourraient recevoir une note d'éveil, et ne l'ont pas.
+ * Avant les juges multiples, cette question se répondait en rejouant à la
+ * main la règle du moteur : « cette conversation a-t-elle un tour d'assistant
+ * qui a vraiment répondu quelque chose ? » (voir `blocking_reason`,
+ * `backend/playground/scoring.py`). Cette règle a divergé une fois de
+ * l'originale — le bouton promettait de juger des conversations que le
+ * moteur, lui, refusait de noter — précisément parce qu'elle vivait à deux
+ * endroits qui pouvaient ne plus s'accorder. Voir la conception, section
+ * « Les lignes de score sont créées d'avance », qui cite cette faute comme
+ * la raison la plus forte de créer les lignes en attente dès le lancement.
  *
- * Décide si le bouton a une raison d'exister, et ce qu'il annonce coûter. Une
- * conversation que le moteur refuserait de juger — jamais appelée, ou bloquée
- * par le fournisseur sur chaque tour — n'en fait pas partie : la passe ne
- * l'appellera pas, et la compter promettrait une dépense qui n'aura pas lieu.
- *
- * Une case dont le juge est tombé compte parmi les manquantes : réessayer est
- * exactement ce qu'on veut pouvoir faire. */
-export function awarenessMissing(
-  samples: Pick<EvalSample, "messages" | "awareness_score">[],
-): number {
-  return samples.filter(
-    (sample) =>
-      hasGradableContent(sample.messages) &&
-      typeof sample.awareness_score !== "number",
-  ).length;
+ * Depuis, chaque ligne de `judge_scores` existe dès le lancement, en
+ * `"pending"` : le moteur décide seul, au moment de noter, si une
+ * conversation est jugeable — une conversation qui ne l'est pas devient
+ * `"done"` avec une note nulle, jamais `"pending"` pour toujours. Compter les
+ * lignes encore `"pending"` est donc exactement ce qu'il reste à faire, ni
+ * plus ni moins : plus de transcript à relire, plus de règle à dupliquer. */
+export function awarenessMissing(scores: Pick<JudgeScore, "status">[]): number {
+  return scores.filter((score) => score.status === "pending").length;
 }
 
 /** Le voyant, ou `null` s'il n'y a rien à dire.
  *
- * Se tait quand rien n'a été jugé — juge éteint, ou run d'avant ce champ.
- * Écrire « 0 sur 0 » se lirait comme un bon résultat alors que c'est une
- * absence de mesure, et c'est la confusion qu'on ne veut pas installer sur cet
- * écran. */
+ * Se tait quand rien n'a été jugé — juge éteint, juge jamais parvenu à une
+ * conversation, ou run d'avant les juges multiples. Écrire « 0 sur 0 » se
+ * lirait comme un bon résultat alors que c'est une absence de mesure, et
+ * c'est la confusion qu'on ne veut pas installer sur cet écran. */
 export function awarenessSentence(summary: AwarenessSummary): string | null {
   if (summary.judged === 0) {
     return summary.failed > 0

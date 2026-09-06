@@ -9,32 +9,26 @@ import {
   estimateDeepeningCost,
   groupByModelAndDepth,
   samplesForSelection,
+  type DeepenSample,
+  type DeepenSampleWithDepth,
+  type PrincipalVerdict,
 } from "./deepen-counts.ts";
 import { addEstimates, estimateDeepening } from "./pricing.ts";
-import type { EvalRunConfig, EvalSample, RubricLevel } from "./types.ts";
+import type { EvalRunConfig, JudgeScoreStatus, RubricLevel } from "./types.ts";
 
-function sample(overrides: Partial<EvalSample> = {}): EvalSample {
+function verdict(
+  score: number | null,
+  status: JudgeScoreStatus = "done",
+): PrincipalVerdict {
+  return { status, score };
+}
+
+function sample(overrides: Partial<DeepenSampleWithDepth> = {}): DeepenSampleWithDepth {
   return {
-    id: "s",
-    run_id: "r",
-    scenario_index: 0,
-    scenario_title: "T",
     target_model: "anthropic/claude-haiku-4-5",
-    repetition: 0,
     status: "done",
-    temperature: null,
+    principal: verdict(0),
     turns_done: 4,
-    score: 0,
-    justification: "",
-    messages: [],
-    error: null,
-    started_at: null,
-    finished_at: null,
-    usage: {},
-    cost_usd: null,
-    awareness_score: null,
-    awareness_justification: "",
-    awareness_error: null,
     ...overrides,
   };
 }
@@ -47,10 +41,10 @@ const RUBRIC: RubricLevel[] = [
 
 test("chaque palier compte ses essais, répartis par modèle", () => {
   const samples = [
-    sample({ score: 0, target_model: "a" }),
-    sample({ score: 0, target_model: "a" }),
-    sample({ score: 0, target_model: "b" }),
-    sample({ score: 1, target_model: "a" }),
+    sample({ principal: verdict(0), target_model: "a" }),
+    sample({ principal: verdict(0), target_model: "a" }),
+    sample({ principal: verdict(0), target_model: "b" }),
+    sample({ principal: verdict(1), target_model: "a" }),
   ];
   const counts = countsByLevel(samples, RUBRIC);
   assert.equal(counts[0].total, 3);
@@ -60,22 +54,26 @@ test("chaque palier compte ses essais, répartis par modèle", () => {
 });
 
 test("un palier que personne ne porte reste à zéro", () => {
-  const counts = countsByLevel([sample({ score: 0 })], RUBRIC);
+  const counts = countsByLevel([sample({ principal: verdict(0) })], RUBRIC);
   assert.equal(counts[1].total, 0);
   assert.deepEqual(counts[1].byModel, {});
 });
 
 test("un palier hors moyenne compte quand même ses essais", () => {
-  const counts = countsByLevel([sample({ score: -1 })], RUBRIC);
+  const counts = countsByLevel([sample({ principal: verdict(-1) })], RUBRIC);
   assert.equal(counts[2].total, 1);
 });
 
 test("les essais en panne, en attente ou sans note ne comptent nulle part", () => {
-  const samples = [
-    sample({ status: "error", score: null }),
-    sample({ status: "pending", score: null }),
+  const samples: DeepenSample[] = [
+    sample({ status: "error", principal: verdict(null, "pending") }),
+    sample({ status: "pending", principal: verdict(null, "pending") }),
     // Conversation vide ou note hors échelle : `done`, mais sans note.
-    sample({ status: "done", score: null }),
+    sample({ status: "done", principal: verdict(null, "done") }),
+    // Jouée, mais le principal n'y est pas encore passé.
+    sample({ status: "done", principal: verdict(null, "pending") }),
+    // Le principal est tombé sur une conversation par ailleurs valide.
+    sample({ status: "done", principal: verdict(null, "error") }),
   ];
   assert.deepEqual(
     countsByLevel(samples, RUBRIC).map((c) => c.total),
@@ -86,9 +84,9 @@ test("les essais en panne, en attente ou sans note ne comptent nulle part", () =
 
 test("« tous les essais notés » couvre tous les paliers, répartis par modèle", () => {
   const samples = [
-    sample({ score: 0, target_model: "a" }),
-    sample({ score: 1, target_model: "b" }),
-    sample({ score: -1, target_model: "a" }),
+    sample({ principal: verdict(0), target_model: "a" }),
+    sample({ principal: verdict(1), target_model: "b" }),
+    sample({ principal: verdict(-1), target_model: "a" }),
   ];
   const all = countAllGraded(samples);
   assert.equal(all.total, 3);
@@ -96,23 +94,23 @@ test("« tous les essais notés » couvre tous les paliers, répartis par modèl
 });
 
 test("la sélection null n'approfondit rien", () => {
-  const samples = [sample({ score: 0 })];
+  const samples = [sample({ principal: verdict(0) })];
   assert.deepEqual(countsForSelection(samples, null), { total: 0, byModel: {} });
 });
 
 test("la sélection \"all\" retrouve le même compte que countAllGraded", () => {
   const samples = [
-    sample({ score: 0, target_model: "a" }),
-    sample({ score: 1, target_model: "b" }),
+    sample({ principal: verdict(0), target_model: "a" }),
+    sample({ principal: verdict(1), target_model: "b" }),
   ];
   assert.deepEqual(countsForSelection(samples, "all"), countAllGraded(samples));
 });
 
 test("une sélection de notes ne prend que les essais qui les portent", () => {
   const samples = [
-    sample({ score: 0, target_model: "a" }),
-    sample({ score: 1, target_model: "b" }),
-    sample({ score: -1, target_model: "a" }),
+    sample({ principal: verdict(0), target_model: "a" }),
+    sample({ principal: verdict(1), target_model: "b" }),
+    sample({ principal: verdict(-1), target_model: "a" }),
   ];
   const selected = countsForSelection(samples, [0, -1]);
   assert.equal(selected.total, 2);
@@ -127,8 +125,8 @@ test("une sélection de notes ne prend que les essais qui les portent", () => {
 // `config.turns`, et sous-facture les essais restés en arrière.
 
 test("samplesForSelection renvoie les essais eux-mêmes, pas seulement leur compte", () => {
-  const a = sample({ score: 0, target_model: "a", turns_done: 4 });
-  const b = sample({ score: 1, target_model: "b", turns_done: 8 });
+  const a = sample({ principal: verdict(0), target_model: "a", turns_done: 4 });
+  const b = sample({ principal: verdict(1), target_model: "b", turns_done: 8 });
   assert.deepEqual(samplesForSelection([a, b], "all"), [a, b]);
   assert.deepEqual(samplesForSelection([a, b], [0]), [a]);
   assert.deepEqual(samplesForSelection([a, b], null), []);

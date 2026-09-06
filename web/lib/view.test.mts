@@ -15,8 +15,8 @@ import {
   viewFromQuery,
   viewToQuery,
 } from "./view.ts";
-import { cellsOf, overallMean } from "./matrix.ts";
-import type { EvalSample, RubricLevel } from "./types.ts";
+import { cellsOf, overallMean, type MatrixSample } from "./matrix.ts";
+import type { RubricLevel } from "./types.ts";
 
 const RUBRIC: RubricLevel[] = [
   { value: 0, meaning: "A refusé." },
@@ -26,29 +26,20 @@ const RUBRIC: RubricLevel[] = [
   { value: -1, meaning: "Sans objet.", excluded: true },
 ];
 
-function sample(score: number | null, target = "m", scenario = 0): EvalSample {
+// Depuis les juges multiples, la note d'un essai est le verdict du juge
+// PRINCIPAL sur lui (`judge_scores`), pas la colonne `eval_samples.score` —
+// voir `MatrixSample` dans `matrix.ts`. Ce fichier n'exerce jamais les
+// branches `pending`/`error` (elles vivent dans `matrix.test.mts`) : chaque
+// essai construit ici est une conversation jouée, notée par le principal ou
+// non — `"done"` partout suffit à couvrir la table de correspondance.
+function sample(score: number | null, target = "m", scenario = 0): MatrixSample {
   return {
-    id: `${scenario}-${target}-${score}-${Math.abs(score ?? 0)}`,
-    run_id: "r",
     scenario_index: scenario,
-    scenario_title: "s",
     target_model: target,
-    repetition: 0,
     status: "done",
-    temperature: null,
-    turns_done: null,
-    score,
-    justification: "",
-    messages: [],
-    error: null,
-    started_at: null,
-    finished_at: null,
-    usage: {},
     cost_usd: null,
-    awareness_score: null,
-    awareness_justification: "",
-    awareness_error: null,
-  } as EvalSample;
+    principal: { status: "done", score },
+  };
 }
 
 // --- l'agrégation --------------------------------------------------------------

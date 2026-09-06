@@ -3,18 +3,35 @@
 // Portage de ce que faisait `backend/playground/matrix.py` : le calcul vit
 // désormais côté lecture, puisque c'est l'interface qui l'affiche et l'export
 // qui le recopie.
-import type { Cell, EvalSample, Progress, RubricLevel } from "./types";
+//
+// Depuis les juges multiples, la note d'une conversation n'est plus une
+// colonne d'`eval_samples` (`score`, `justification` — supprimées par la
+// migration `20260906093000_drop_eval_samples_score_columns.sql`, dépôt
+// polaris-supabase) : c'est une ligne de `judge_scores`, une par (juge,
+// conversation). **La matrice suit le juge principal** — voir la conception,
+// docs/superpowers/specs/2026-09-06-juges-multiples.md, section « L'écran » —
+// jamais un autre juge non supprimé : `cellsOf`/`overallMean` ne regardent
+// donc que le verdict du principal sur chaque conversation, que l'appelant
+// leur apporte déjà joint depuis `EvalSample` et `judge_scores`.
+import type { Cell, Progress, RubricLevel, SampleStatus } from "./types";
 import { PLAIN_VIEW, aggregate, mapScore, type MatrixView } from "./view.ts";
-// Le seuil du voyant du run : le compte par case doit s'arrêter exactement au
-// même seuil, sans quoi additionner les marqueurs de case ne retomberait plus
-// sur le chiffre affiché en haut de l'écran.
-import { AWARENESS_ALARM } from "./awareness.ts";
+// Le seuil et le prédicat du voyant du run : le compte par case doit
+// s'arrêter exactement à la même règle, sans quoi additionner les marqueurs
+// de case ne retomberait plus sur le chiffre affiché en haut de l'écran.
+import { isAwarenessFlagged, type JudgeVerdict } from "./awareness.ts";
 
 /** Où en est un run, compté sur ses cases plutôt que sur un compteur à part.
  *
  * `total` vient du nombre de lignes, toutes créées au lancement : la
- * progression est donc exacte avant même que le job ne démarre. */
-export function progressOf(samples: EvalSample[]): Progress {
+ * progression est donc exacte avant même que le job ne démarre.
+ *
+ * Ne regarde que le statut d'exécution de la conversation (`EvalSample.status`,
+ * une colonne que la migration des juges multiples n'a pas touchée) — jamais
+ * le verdict d'un juge, qui vit ailleurs désormais. Une conversation `done`
+ * compte comme faite ici même si aucun juge n'est encore passé dessus :
+ * `cellsOf`, plus bas, est l'endroit qui distingue « jouée, pas encore
+ * jugée » de « jugée ». */
+export function progressOf(samples: { status: SampleStatus }[]): Progress {
   const progress: Progress = {
     total: samples.length,
     done: 0,
@@ -48,6 +65,34 @@ function emptyCell(): Cell {
   };
 }
 
+/** Une conversation telle que la matrice la voit : ses coordonnées, le statut
+ *  de son *exécution* — indépendant de tout juge, c'est `EvalSample.status` —
+ *  et le verdict du juge PRINCIPAL, le seul que la matrice affiche.
+ *
+ * `awake` voyage à part de `principal` : ce sont deux juges différents sur la
+ * même conversation. Le badge d'éveil d'une case ne dépend en rien de ce que
+ * le principal a tranché — une case en panne, ou jamais jugée par le
+ * principal, garde son signal d'éveil si le juge d'éveil, lui, a répondu.
+ *
+ * L'appelant construit cette forme en joignant `EvalSample` — pour les
+ * quatre premiers champs — et les lignes de `judge_scores` du principal et,
+ * si le run en a un, de la liaison `awake` (voir `findAwakeJudge`,
+ * `awareness.ts`), filtrées par `sample_id`. Ce module ne lit ni
+ * `eval_samples` ni `judge_scores` lui-même. */
+export interface MatrixSample {
+  scenario_index: number;
+  target_model: string;
+  status: SampleStatus;
+  cost_usd: number | null;
+  principal: JudgeVerdict;
+  /** `undefined` : aucune liaison de type `awake` sur ce run — jamais
+   *  demandée au lancement, ou déliée depuis. Distinct d'un verdict
+   *  `"pending"` : « pas de juge d'éveil » et « juge d'éveil pas encore
+   *  passé » ne doivent pas se confondre, la première ne devenant jamais la
+   *  seconde. */
+  awake?: JudgeVerdict;
+}
+
 /** La matrice, une entrée par scénario.
  *
  * La liste garde toujours `scenarioCount` entrées, même vides : elle est
@@ -56,9 +101,20 @@ function emptyCell(): Cell {
  *
  * Une case sans note est comptée à part plutôt qu'ignorée — et une case en
  * panne encore à part. La moyenne ne dit rien de ce qu'elle n'a pas pu
- * mesurer, et « le modèle a obtenu zéro » n'est pas « on ne sait pas ». */
+ * mesurer, et « le modèle a obtenu zéro » n'est pas « on ne sait pas ».
+ *
+ * Deux statuts se combinent désormais pour placer une conversation : celui de
+ * son exécution (`sample.status`) d'abord — une conversation qui n'a pas
+ * fini de jouer, ou jamais commencée, ou tombée en cours de jeu, ne regarde
+ * même pas le juge. Ensuite seulement, pour une conversation `done`, celui du
+ * verdict du principal (`sample.principal.status`) : `"pending"` (le job n'y
+ * est pas encore passé) compte comme en attente au même titre qu'une
+ * conversation encore en cours, et `"error"` (le juge est tombé sur une
+ * conversation par ailleurs valide) compte comme en panne au même titre
+ * qu'une exécution qui a échoué — ce sont deux pannes différentes, mais la
+ * matrice ne les distingue pas plus qu'elle ne le faisait avant. */
 export function cellsOf(
-  samples: EvalSample[],
+  samples: MatrixSample[],
   scenarioCount: number,
   rubric?: RubricLevel[],
   view: MatrixView = PLAIN_VIEW,
@@ -79,14 +135,12 @@ export function cellsOf(
     if (!row[sample.target_model]) row[sample.target_model] = emptyCell();
     const cell = row[sample.target_model];
     cell.cost_usd += sample.cost_usd ?? 0;
-    // Indépendant du statut de la case : le juge d'éveil note une conversation
-    // que le juge principal ait pu trancher ou non, et le compte doit suivre
-    // exactement `awarenessSummary` au niveau du run, pas la lecture de score
-    // qui gouverne les branches ci-dessous.
-    if (
-      typeof sample.awareness_score === "number" &&
-      sample.awareness_score >= AWARENESS_ALARM
-    ) {
+    // Indépendant du statut d'exécution et du verdict du principal : le juge
+    // d'éveil note une conversation que le principal ait pu la trancher ou
+    // non. Même prédicat que `awarenessSummary` au niveau du run
+    // (`isAwarenessFlagged`) — pas seulement le même seuil — c'est ce qui
+    // tient l'invariant de somme.
+    if (sample.awake && isAwarenessFlagged(sample.awake)) {
       cell.awareness_flagged += 1;
     }
 
@@ -96,11 +150,18 @@ export function cellsOf(
       // Jamais commencée. Pas une panne : on a décidé de ne pas la faire.
       cell.cancelled += 1;
     } else if (sample.status === "error") {
+      // L'exécution elle-même a échoué : il n'y a rien à juger.
       cell.errored += 1;
-    } else if (sample.score === null) {
+    } else if (sample.principal.status === "pending") {
+      // Jouée, mais le principal n'y est pas encore passé.
+      cell.pending += 1;
+    } else if (sample.principal.status === "error") {
+      // Le principal est tombé sur une conversation par ailleurs valide.
+      cell.errored += 1;
+    } else if (sample.principal.score === null) {
       cell.unjudged += 1;
     } else {
-      const valeur = mapScore(sample.score, rubric, view);
+      const valeur = mapScore(sample.principal.score, rubric, view);
       if (valeur === null) {
         // Mise dehors, soit par l'échelle — le juge a tranché « sans objet » —
         // soit par la vue. C'est une réponse, pas une absence de réponse, mais
@@ -134,15 +195,22 @@ export function cellsOf(
  *
  * Calculé sur les notes et non sur les chiffres des cases : agréger des agrégats
  * donnerait le même poids à une case notée dix fois et à une case notée une
- * seule. */
+ * seule.
+ *
+ * Ne regarde que le verdict du juge PRINCIPAL, comme `cellsOf` : peu importe
+ * *pourquoi* il n'a pas noté (en attente, tombé, conversation vide, note hors
+ * échelle) — un score nul n'entre jamais dans la moyenne, exactement comme
+ * avant que la note ne vive dans sa propre table. */
 export function overallMean(
-  samples: EvalSample[],
+  samples: Pick<MatrixSample, "principal">[],
   rubric?: RubricLevel[],
   view: MatrixView = PLAIN_VIEW,
 ): number | null {
   const notes = samples
     .map((sample) =>
-      sample.score === null ? null : mapScore(sample.score, rubric, view),
+      sample.principal.score === null
+        ? null
+        : mapScore(sample.principal.score, rubric, view),
     )
     .filter((value): value is number => value !== null);
   return aggregate(notes, view.aggregate);
