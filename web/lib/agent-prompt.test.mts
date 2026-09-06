@@ -32,10 +32,10 @@ const CHANNELS = [
 function exampleFrom(prompt: string): string {
   const block = prompt.match(/```yaml\n([\s\S]*?)```/);
   assert.ok(block, "le prompt doit porter un exemple YAML");
-  return block[1]
-    .replace("targets: [ ... ]", "targets: [anthropic/claude-sonnet-5]")
-    .replace("adversary: ...", "adversary: openai/gpt-5.6-terra")
-    .replace("judge: ...", "judge: anthropic/claude-sonnet-5");
+  // Plus rien à combler : le gabarit porte désormais de vrais identifiants,
+  // tirés du catalogue. « accepté tel quel » est donc littéralement vrai — et
+  // c'est le seul état honnête, puisqu'un placeholder passait la validation.
+  return block[1];
 }
 
 for (const { name, prompt } of CHANNELS) {

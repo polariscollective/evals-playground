@@ -39,6 +39,18 @@ function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+/** Absent, le champ prend son défaut ; présent, il passe tel quel — même mal
+ *  typé — pour que `configProblem` puisse le refuser.
+ *
+ *  Coercer ici rendait la faute invisible : `turns: "4"`, un 4 mis entre
+ *  guillemets comme YAML y invite, retombait sur le défaut 1 et le document
+ *  passait, puisqu'à un seul tour l'adversaire n'est plus exigé. On recevait
+ *  un run à un tour en croyant en avoir commandé quatre. Même raisonnement
+ *  que pour `check_eval_awareness` plus bas : ce fichier lit, il ne juge pas. */
+function asGiven(value: unknown, fallback: number): number {
+  return value === undefined || value === null ? fallback : (value as number);
+}
+
 function scenarioOf(entry: unknown, position: number): EvalScenario {
   if (!entry || typeof entry !== "object") {
     throw new ConfigFileError(`scenario ${position} is not a mapping.`);
@@ -297,8 +309,8 @@ export function readConfigFile(text: string): ImportedConfig {
     // Les juges secondaires, en plus du principal ci-dessus — voir
     // `readJudges`. Absent ou vide, c'est la forme ancienne : un seul juge.
     judges: readJudges(file.judges),
-    turns: asNumber(file.turns, 1),
-    repetitions: asNumber(file.repetitions, 1),
+    turns: asGiven(file.turns, 1),
+    repetitions: asGiven(file.repetitions, 1),
     models: {
       targets: Array.isArray(models.targets)
         ? models.targets.map((target) => asString(target))
@@ -308,7 +320,7 @@ export function readConfigFile(text: string): ImportedConfig {
     },
     adversary_prompt: asString(file.adversary_prompt),
     tools: readTools(file.tools),
-    max_tool_calls_per_turn: asNumber(file.max_tool_calls_per_turn, 5),
+    max_tool_calls_per_turn: asGiven(file.max_tool_calls_per_turn, 5),
     // Seule l'absence — undefined ou null — se lit comme l'interrupteur
     // allumé : un fichier écrit avant ce champ n'en porte pas, et ça doit
     // rester lisible. Une valeur présente est transmise telle quelle, sans la
@@ -324,11 +336,14 @@ export function readConfigFile(text: string): ImportedConfig {
       typeof file.average_output_tokens === "number"
         ? file.average_output_tokens
         : undefined,
+    // Aucune borne n'est inventée ici. `min` valait 1 par défaut, un chiffre
+    // écrit nulle part : un fichier ne donnant que `max: 0.8` se voyait
+    // reprocher une borne basse qu'il n'avait jamais écrite. Et un `max` mal
+    // typé était réduit à `null`, c'est-à-dire silencieusement effacé.
     temperature: temperature
       ? {
-          min: asNumber(temperature.min, 1),
-          max:
-            typeof temperature.max === "number" ? temperature.max : null,
+          min: temperature.min as number,
+          max: (temperature.max ?? null) as number | null,
         }
       : null,
     label: asString(file.label) || null,

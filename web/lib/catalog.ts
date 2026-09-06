@@ -19,6 +19,19 @@ function canSeeProviderKeys(): boolean {
     .some((name) => Boolean(process.env[name]));
 }
 
+/** Les identifiants que ce produit sait lancer, à plat.
+ *
+ * Séparée de `catalog()`, qui fait en plus un travail d'écran — griser un
+ * fournisseur dont la clé manque — et lit pour ça l'environnement. Ici on ne
+ * répond qu'à « cet identifiant existe-t-il ? », ce qui rend la fonction
+ * testable et utilisable depuis la validation, où l'environnement du
+ * serveur web ne dit rien de ce dont dispose le job. */
+export function knownModelIds(): Set<string> {
+  return new Set(
+    SHARED_PRICING.providers.flatMap((provider) => provider.models.map((model) => model.id)),
+  );
+}
+
 export function catalog(): ProviderInfo[] {
   const informed = canSeeProviderKeys();
   return SHARED_PRICING.providers.map((provider) => ({

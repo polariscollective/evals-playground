@@ -5,6 +5,7 @@
 // n'est cru : une échelle à un seul palier, un scénario vide ou un multitours
 // sans adversaire produiraient un run qui ne mesure rien, et le job n'aurait
 // aucun moyen de s'en rendre compte.
+import { knownModelIds } from "./catalog.ts";
 import type {
   EvalRunConfig,
   ExtendRequest,
@@ -21,6 +22,57 @@ export const MAX_TURNS = 100;
 
 function isFilled(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
+}
+
+/** Ce qui cloche dans un identifiant de modèle, ou null.
+ *
+ * Vérifié ici pour la raison qui fait vérifier les noms d'outils juste en
+ * dessous : sinon l'erreur tombe au premier appel *facturé*, sous la forme
+ * illisible que rend le fournisseur. Un identifiant hors catalogue est en
+ * plus compté pour zéro jeton par l'estimation — le devis annoncé serait
+ * donc trop bas pour un run qui n'a aucune chance d'aboutir.
+ *
+ * Le catalogue est la seule liste qui existe : `/prompt` la publie en disant
+ * « Use these identifiers exactly. Anything else fails at the first call. »
+ * Ce refus ne fait qu'appliquer ce qui est déjà promis. */
+function modelProblem(id: unknown, where: string): string | null {
+  if (!isFilled(id)) return null;
+  if (knownModelIds().has(id)) return null;
+  return (
+    `${where}: "${id}" is not a model this tool can run. ` +
+    "Use one of the identifiers listed in /prompt, exactly as written."
+  );
+}
+
+/** Ce qui cloche dans une plage de températures, ou null.
+ *
+ * Une seule copie pour le lancement et pour l'extension : les deux la
+ * dupliquaient, avec la même faute des deux côtés — trois violations
+ * distinctes rendues sous le seul message « upper bound is below the lower
+ * bound », qui envoyait corriger `min` quand c'était `max` qui sortait de
+ * l'échelle. */
+function temperatureProblem(temperature: unknown): string | null {
+  if (!temperature) return null;
+  if (typeof temperature !== "object") return "temperature must be a min, or a min and a max";
+  const { min, max } = temperature as { min?: unknown; max?: unknown };
+
+  // `min` porte la température quand il n'y a pas de plage — voir le gabarit
+  // de `/prompt`, « omit max to use one fixed temperature ». L'exiger plutôt
+  // que de lui donner une valeur par défaut évite le piège d'un défaut caché :
+  // un fichier qui n'écrivait que `max` recevait « upper bound is below the
+  // lower bound » à propos d'une borne basse qu'il n'avait jamais écrite.
+  if (typeof min !== "number" || !Number.isFinite(min)) {
+    return "temperature needs a min: the fixed temperature, or the bottom of the range";
+  }
+  if (min < 0 || min > 2) return "temperature must be between 0 and 2";
+
+  if (max === undefined || max === null) return null;
+  if (typeof max !== "number" || !Number.isFinite(max)) {
+    return "the temperature upper bound must be a number";
+  }
+  if (max < 0 || max > 2) return "temperature must be between 0 and 2";
+  if (max < min) return "the temperature upper bound is below the lower bound";
+  return null;
 }
 
 /** Ce qui cloche dans une échelle, ou null si elle tient. */
@@ -76,6 +128,8 @@ export function judgeSpecProblem(spec: unknown, label: string): string | null {
   if (judge.model !== undefined && judge.model !== null && !isFilled(judge.model)) {
     return `${label}: model must be a non-empty string`;
   }
+  const model = modelProblem(judge.model, label);
+  if (model) return model;
   return null;
 }
 
@@ -291,16 +345,21 @@ export function configProblem(config: unknown): string | null {
     }
   }
 
-  const temperature = c.temperature;
-  if (temperature) {
-    const { min, max } = temperature;
-    if (typeof min !== "number" || min < 0 || min > 2) {
-      return "temperature must be between 0 and 2";
-    }
-    if (max != null && (max < 0 || max > 2 || max < min)) {
-      return "the temperature upper bound is below the lower bound";
-    }
+  // Après les règles de structure, et pas avant : un adversaire manquant ou
+  // un modèle en double sont des fautes de forme, qu'il vaut mieux annoncer
+  // avant d'aller lire un identifiant. Sinon un document à qui il manque
+  // l'adversaire s'entendrait reprocher le nom de son modèle évalué.
+  for (const target of targets) {
+    const problem = modelProblem(target, "evaluated model");
+    if (problem) return problem;
   }
+  const judgeModel = modelProblem(c.models?.judge, "judge model");
+  if (judgeModel) return judgeModel;
+  const adversaryModel = modelProblem(c.models?.adversary, "adversary model");
+  if (adversaryModel) return adversaryModel;
+
+  const temperature = temperatureProblem(c.temperature);
+  if (temperature) return temperature;
 
   return null;
 }
@@ -378,6 +437,10 @@ export function extendProblem(
     if (new Set(r.targets).size !== r.targets.length) {
       return "the same model appears more than once";
     }
+    for (const target of r.targets) {
+      const problem = modelProblem(target, "model");
+      if (problem) return problem;
+    }
 
     if (!Number.isInteger(r.repetitions) || r.repetitions < 1) {
       return "repetitions must be at least 1";
@@ -428,16 +491,8 @@ export function extendProblem(
     return "at least one scenario or a score to deepen is required";
   }
 
-  const temperature = r.temperature;
-  if (temperature) {
-    const { min, max } = temperature;
-    if (typeof min !== "number" || min < 0 || min > 2) {
-      return "temperature must be between 0 and 2";
-    }
-    if (max != null && (max < 0 || max > 2 || max < min)) {
-      return "the temperature upper bound is below the lower bound";
-    }
-  }
+  const temperature = temperatureProblem(r.temperature);
+  if (temperature) return temperature;
 
   return null;
 }

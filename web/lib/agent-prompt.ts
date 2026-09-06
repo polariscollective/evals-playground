@@ -67,17 +67,17 @@ judges:                 # optional — more graders on the same conversations; s
         meaning: What a 0 means for this judge
       - value: 1
         meaning: What a 1 means for this judge
-    model: ...           # optional — defaults to models.judge, same catalogue
-average_output_tokens: 800   # jetons de sortie d'une réponse, raisonnement compris
+    model: {{JUDGE}}   # optional — defaults to models.judge, same catalogue
+average_output_tokens: 800   # output tokens of one answer, reasoning included
 turns: 4                # 1 = a single question and answer
 repetitions: 5          # how many times each scenario × model is played
 temperature:
   min: 0.2
   max: 0.8              # omit max to use one fixed temperature
 models:
-  targets: [ ... ]      # the models being evaluated, one column each
-  adversary: ...        # plays the user, required as soon as turns > 1
-  judge: ...            # reads the transcripts and grades them
+  targets: [{{TARGET}}]   # the models being evaluated, one column each
+  adversary: {{ADVERSARY}}   # plays the user, required as soon as turns > 1
+  judge: {{JUDGE}}   # reads the transcripts and grades them
 adversary_prompt: |
   How the adversary should behave across the turns.
 tools:                   # optional — see below
@@ -386,10 +386,10 @@ GET \`{{VALIDATE}}?yaml=<url-encoded document>\` instead.
 It answers in plain text, and the first word is the verdict. Three answers:
 
     OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5
-    repetitions. About 480 model calls, roughly $12.34 for the document as sent
-    — $1.03 per scenario, so multiply by the size of the real batch. For
-    reference, the same document costs $2.10 at 200 output tokens per turn and
-    $48.00 at 6,000.
+    repetitions. About 1080 model calls, roughly $19.34 for the document as
+    sent — $1.61 per scenario, so multiply by the size of the real batch. For
+    reference, the same document costs $6.53 at 200 output tokens per turn and
+    $130.42 at 6,000.
 
     INCOMPLETE — the document names a CSV of scenarios but does not carry it
     (columns title / system_prompt / opening_message). It will load; upload the
@@ -474,10 +474,10 @@ Two answers, and only two:
 - **Accepted** — the shape of the run, its price, and the draft's address:
 
       OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5
-      repetitions. About 480 model calls, roughly $12.34 for the document as
-      sent — $1.03 per scenario, so multiply by the size of the real batch. For
-      reference, the same document costs $2.10 at 200 output tokens per turn
-      and $48.00 at 6,000.
+      repetitions. About 1080 model calls, roughly $19.34 for the document as
+      sent — $1.61 per scenario, so multiply by the size of the real batch. For
+      reference, the same document costs $6.53 at 200 output tokens per turn
+      and $130.42 at 6,000.
 
   Report the price and the address back to me: the price is what I decide on
   before pressing anything. That sentence offers to multiply by the size of the
@@ -578,7 +578,15 @@ function fill(
     ? `${formatUsd(caps.maxUsdPerRun)} per run and ${formatUsd(caps.maxUsdPerHour)} per rolling hour`
     : "not available right now — submit_draft_run or submit_draft_extension will report them " +
       "when you submit a draft, and launch_draft enforces them either way";
+  // Le gabarit porte de vrais identifiants, pas des points de suspension.
+  // Un document qui le recopie sans le remplir doit tourner ; il ne doit
+  // surtout pas passer la validation en portant un modèle qui n'existe pas,
+  // ce qui était le cas tant que le gabarit écrivait `adversary: ...`.
+  const example = (rank: number) => models[rank]?.id ?? models[0]?.id ?? "";
   return TEMPLATE.replace("{{MODELS}}", list)
+    .replaceAll("{{TARGET}}", example(1))
+    .replaceAll("{{ADVERSARY}}", example(2))
+    .replaceAll("{{JUDGE}}", example(0))
     .replace("{{CHECK}}", channel.check)
     .replace("{{SAMPLE}}", channel.sample)
     .replace("{{CSV}}", channel.csv)
