@@ -1,20 +1,29 @@
 // Exports CSV d'un run.
 //
 // Deux formats, pour deux usages qui ne se recouvrent pas : la matrice telle
-// qu'elle est affichée, pour recoller un tableau dans un rapport ; et le détail,
-// une ligne par case, pour ré-analyser un run hors de l'outil.
+// qu'elle est affichée à l'écran, pour recoller un tableau dans un rapport ;
+// et le détail, une ligne par case, pour ré-analyser un run hors de l'outil.
 //
 // Depuis les juges multiples, une case n'a plus une seule note posée dessus :
 // elle en a une par juge non supprimé du run, dans `judge_scores`. Cette
 // distinction avait déjà mordu ce dépôt une fois avant l'export : le badge
 // d'éveil existait à l'écran, mais aucun export ne le portait — une revue l'a
-// résumé « on savait, et on ne pouvait rien en faire ailleurs ». Les deux
+// résumé « on savait, et on ne pouvait rien en faire ailleurs ». Les trois
 // fonctions ci-dessous prennent donc désormais, en plus des cases,
 // `judges: RunJudgeView[]` — les juges vivants du run et leurs verdicts, tels
 // que `attachJudges` (`lib/runs.ts`) les joint déjà pour l'écran. Ce fichier
 // ne lit jamais `judge_scores` ni `run_judges` lui-même, et ne refait jamais
 // le filtre `deleted_at` : il fait confiance à ce qu'on lui passe, exactement
 // comme `matrix.ts` et `awareness.ts` le font déjà pour la même donnée.
+//
+// L'écran ne montre jamais qu'une seule matrice, celle du PRINCIPAL (voir le
+// commentaire de tête de `matrix.ts`) — mais un fichier qui quitte l'outil
+// n'a plus la contrainte de densité qui justifie ce choix à l'écran.
+// L'utilisateur a tranché : l'export doit porter tous les scores de tous les
+// juges, éveil compris. `matrixCsv` suivait encore, jusqu'à cette correction,
+// la même limite que l'écran — exactement le défaut déjà corrigé une fois
+// pour le badge d'éveil, revenu ici sous une autre forme. Voir sa docstring
+// pour la forme retenue et pourquoi.
 import {
   AWAKE_TYPE,
   AWARENESS_ALARM,
@@ -74,17 +83,61 @@ function verdictOf(judge: RunJudgeView | undefined, sampleId: string): JudgeVerd
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
 }
 
-/** La matrice telle qu'affichée : une ligne par scénario, une colonne par modèle.
+/** L'identité d'un juge, commune à la matrice et au détail — cinq colonnes,
+ *  jamais plus : une case de la matrice n'a pas de statut d'exécution ni de
+ *  justification propres, elle en agrège plusieurs (voir `JUDGE_COLUMNS`,
+ *  qui étend cette liste pour `detailsCsv`, à la maille de la conversation
+ *  individuelle). Un même nom de colonne dans les deux fichiers permet de
+ *  les recouper dans un tableur — trier, filtrer, VLOOKUP — sans redevinner
+ *  laquelle correspond à laquelle. */
+const JUDGE_IDENTITY_COLUMNS = [
+  "judge_is_principal",
+  "judge_system_type",
+  "judge_model",
+  "judge_criterion",
+  "judge_rubric",
+];
+
+/** La matrice telle qu'affichée à l'écran, mais déclinée pour chaque juge
+ *  vivant du run plutôt que pour le seul principal.
  *
  * Chaque case porte la moyenne des notes obtenues. Une case dont rien n'a pu
  * être noté reste vide plutôt que de valoir zéro : la distinction est la même
  * qu'à l'écran, et c'est la plus facile à perdre en passant par un tableur.
  *
- * Suit exclusivement le juge PRINCIPAL, comme la matrice à l'écran
- * (`RunMatrix`) — jamais un autre juge non supprimé : voir le commentaire de
- * tête de `matrix.ts`. Les autres juges n'ont pas leur place ici, une
- * colonne par modèle étant déjà prise ; c'est `detailsCsv` qui les porte
- * tous, un juge à la fois. */
+ * **Une ligne par (scénario, juge non supprimé)**, jamais une colonne par
+ * juge — même raison que `detailsCsv` : le nombre de juges varie d'un run à
+ * l'autre (0 aujourd'hui, 1, 3...), et un en-tête CSV est fixe. Une colonne
+ * par juge produirait un en-tête différent d'un export à l'autre : deux
+ * exports du même dépôt ne pourraient plus s'empiler dans le même tableur,
+ * et on ne saurait combien de colonnes ouvrir avant d'avoir déjà ouvert le
+ * fichier. Chaque ligne porte l'identité du juge qui l'a produite
+ * (`judge_is_principal`, `judge_model`, `judge_criterion`, `judge_rubric`) :
+ * un tableur peut filtrer « seulement le principal », ou trier par juge, ou
+ * par modèle de juge, sans deviner quelle colonne numérotée correspond à
+ * quel juge — exactement le choix déjà fait pour `detailsCsv`, prolongé ici
+ * à la maille de la matrice (scénario × modèle) plutôt qu'à celle de la
+ * conversation individuelle.
+ *
+ * `view` (agrégat + repli d'échelle, choisi à l'écran et transmis par la
+ * route d'export) est la lecture de la matrice du PRINCIPAL — la seule que
+ * l'écran montre, et son repli a été composé en regardant SA rubrique.
+ * L'appliquer tel quel à un autre juge, dont les notes n'ont aucune raison
+ * de tomber sur les mêmes valeurs, mentirait sur ce qu'elles deviennent.
+ * Seul l'agrégat (moyenne/médiane/pire/meilleure — un réducteur générique,
+ * indifférent à l'échelle qu'il réduit) est repris pour tout juge ; le repli
+ * de valeurs ne s'applique jamais qu'au principal. La colonne `cell_meaning`
+ * le dit sur chaque ligne, plutôt qu'une seule fois dans l'en-tête comme
+ * avant cette correction : un chiffre qui n'est plus « la moyenne des
+ * notes » doit se présenter, surtout une fois recopié dans un tableur où
+ * plus rien ne le rappelle — et cette phrase diffère maintenant d'une ligne
+ * à l'autre.
+ *
+ * Sans aucun juge vivant (liste non chargée par l'appelant, ou — improbable
+ * — aucune liaison vivante), chaque scénario garde tout de même sa ligne,
+ * colonnes de juge vides : même choix que `detailsCsv`, pour la même
+ * raison — un scénario ne doit jamais disparaître de l'export pour une
+ * cause qui ne le concerne pas. */
 export function matrixCsv(
   run: EvalRun,
   samples: EvalSample[],
@@ -92,34 +145,74 @@ export function matrixCsv(
   view: MatrixView = PLAIN_VIEW,
 ): string {
   const targets = run.config.models.targets;
-  const principal = principalOf(judges);
-  // La question et l'échelle réellement posées par le principal, quand on
-  // les connaît — même repli que `RunMatrix`/`get_run_results` (MCP) :
-  // `principal.judge.rubric` prime sur `run.config.rubric`, qui n'est que la
-  // valeur historique figée au lancement (voir `EvalRunConfig.rubric`).
-  const rubric = principal?.judge.rubric ?? run.config.rubric;
-  const matrixSamples: MatrixSample[] = samples.map((sample) => ({
-    scenario_index: sample.scenario_index,
-    target_model: sample.target_model,
-    status: sample.status,
-    cost_usd: sample.cost_usd,
-    principal: verdictOf(principal, sample.id),
-  }));
-  const cells = cellsOf(matrixSamples, run.config.scenarios.length, rubric, view);
+  const scenarioCount = run.config.scenarios.length;
 
-  return toCsv([
-    // L'en-tête dit ce que contiennent les cases. Un chiffre qui n'est plus la
-    // moyenne des notes doit se présenter, surtout une fois recopié dans un
-    // tableur où plus rien ne le rappelle.
-    [`Scenario — each cell is ${describeView(view, rubric)}`, ...targets],
-    ...run.config.scenarios.map((scenario, index) => [
-      scenario.title,
-      ...targets.map((target) => {
-        const mean = cells[index]?.[target]?.mean;
-        return mean == null ? "" : mean.toFixed(2);
-      }),
-    ]),
-  ]);
+  // Au moins une itération même sans juge vivant, pour que chaque scénario
+  // garde sa ligne — voir la docstring ci-dessus.
+  const liaisons: (RunJudgeView | undefined)[] = judges.length > 0 ? judges : [undefined];
+
+  // Le repli d'échelle de `view` ne vaut que pour le principal — voir la
+  // docstring. L'agrégat, générique, reste le même pour tout juge.
+  const readingFor = (isPrincipal: boolean): MatrixView =>
+    isPrincipal ? view : { aggregate: view.aggregate, remap: {} };
+
+  const rowsByScenario: string[][][] = Array.from({ length: scenarioCount }, () => []);
+
+  for (const liaison of liaisons) {
+    const rubric = liaison?.judge.rubric ?? undefined;
+    const judgeView = readingFor(liaison?.is_principal ?? false);
+    // Réutilise `cellsOf` (`matrix.ts`) pour CHAQUE juge, pas seulement le
+    // principal : son champ `MatrixSample.principal` porte ici le verdict du
+    // juge en cours d'itération, quel qu'il soit — `cellsOf` ne sait pas, et
+    // n'a pas à savoir, lequel des juges du run le lui apporte, c'est une
+    // fonction pure sur des verdicts déjà joints. Ça ne contredit pas
+    // l'invariant documenté en tête de `matrix.ts` (« la matrice suit le
+    // juge principal ») : celui-ci porte sur la matrice AFFICHÉE
+    // (`RunMatrix`), qui reste inchangée — jamais sur cette fonction
+    // générique, appelée ici plusieurs fois de suite avec un juge différent.
+    const matrixSamples: MatrixSample[] = samples.map((sample) => ({
+      scenario_index: sample.scenario_index,
+      target_model: sample.target_model,
+      status: sample.status,
+      cost_usd: sample.cost_usd,
+      principal: verdictOf(liaison, sample.id),
+    }));
+    const cells = cellsOf(matrixSamples, scenarioCount, rubric, judgeView);
+
+    // `judgeQuestionAndScale` couvre déjà le juge d'éveil (question et
+    // échelle fixes, jamais en base) — même fonction que `detailsCsv`,
+    // plutôt que de réécrire ce cas ici une seconde fois.
+    const qa = liaison ? judgeQuestionAndScale(liaison.judge) : { criterion: "", rubric: "" };
+    const identity = liaison
+      ? [
+          liaison.is_principal ? "true" : "false",
+          liaison.system_type,
+          liaison.judge.model,
+          qa.criterion,
+          qa.rubric,
+        ]
+      : ["", "", "", "", ""];
+    const cellMeaning = liaison ? describeView(judgeView, rubric) : "";
+
+    for (let index = 0; index < scenarioCount; index += 1) {
+      rowsByScenario[index].push([
+        ...identity,
+        cellMeaning,
+        run.config.scenarios[index].title,
+        ...targets.map((target) => {
+          const mean = cells[index]?.[target]?.mean;
+          return mean == null ? "" : mean.toFixed(2);
+        }),
+      ]);
+    }
+  }
+
+  const rows: string[][] = [
+    [...JUDGE_IDENTITY_COLUMNS, "cell_meaning", "scenario_title", ...targets],
+  ];
+  for (const scenarioRows of rowsByScenario) rows.push(...scenarioRows);
+
+  return toCsv(rows);
 }
 
 function transcript(messages: Message[]): string {
@@ -197,18 +290,16 @@ const SAMPLE_COLUMNS = [
 /** Les colonnes d'UNE ligne de juge sur cette case — voir `detailsCsv` pour
  *  pourquoi c'est une ligne par juge et non une colonne par juge.
  *
- * `judge_status`, `score`, `justification`, `judge_error` tiennent à eux
- * quatre les trois issues que ce produit ne confond jamais : noté
- * (`judge_status = done`, `score` renseigné), sans note (`done`, `score`
- * vide — conversation vide ou note hors échelle), et le juge tombé
- * (`judge_status = error`, `judge_error` renseigné, `score` toujours vide).
- * `pending` en plus, pour un juge pas encore passé sur cette case. */
+ * Étend `JUDGE_IDENTITY_COLUMNS` (partagée avec `matrixCsv`) de ce qui n'a de
+ * sens qu'à la maille de la conversation individuelle. `judge_status`,
+ * `score`, `justification`, `judge_error` tiennent à eux quatre les trois
+ * issues que ce produit ne confond jamais : noté (`judge_status = done`,
+ * `score` renseigné), sans note (`done`, `score` vide — conversation vide ou
+ * note hors échelle), et le juge tombé (`judge_status = error`, `judge_error`
+ * renseigné, `score` toujours vide). `pending` en plus, pour un juge pas
+ * encore passé sur cette case. */
 const JUDGE_COLUMNS = [
-  "judge_is_principal",
-  "judge_system_type",
-  "judge_model",
-  "judge_criterion",
-  "judge_rubric",
+  ...JUDGE_IDENTITY_COLUMNS,
   "judge_status",
   "score",
   "justification",

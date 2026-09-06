@@ -15,6 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AWAKE_TYPE, AWARENESS_ALARM } from "./awareness.ts";
+import { parseCsv } from "./csv.ts";
 import { detailsCsv, matrixCsv, runMarkdown } from "./exports.ts";
 import type {
   EvalRun,
@@ -245,31 +246,133 @@ test("sans aucun juge vivant, la case garde sa ligne, avec des colonnes de juge 
   assert.equal(row[header.indexOf("target_model")], "anthropic/claude-haiku-4-5");
 });
 
-test("le CSV de la matrice suit le juge principal, jamais un secondaire", () => {
-  const principal = runJudge({ id: "p" }, { isPrincipal: true, scores: { s: verdict({ score: 1 }) } });
-  const secondaire = runJudge({ id: "sec" }, { isPrincipal: false, scores: { s: verdict({ score: 0 }) } });
+// Le CSV de la matrice, du point de vue de la correction : avant elle,
+// `matrixCsv` recopiait fidèlement la limite de l'écran (« suit le
+// principal, jamais un secondaire ») dans un fichier qui n'a plus cette
+// contrainte de densité une fois téléchargé — exactement le défaut déjà
+// corrigé une fois pour le badge d'éveil. Les tests ci-dessous vérifient la
+// forme retenue : une ligne par (scénario, juge non supprimé).
+//
+// `parseCsv` (`lib/csv.ts`, déjà éprouvé sur le CSV des scénarios) plutôt
+// qu'un `split(",")` naïf : plusieurs colonnes de cette matrice contiennent
+// elles-mêmes une virgule entre guillemets (`judge_rubric` de l'éveil,
+// `cell_meaning` avec un repli) — un split naïf désaligne alors tout ce qui
+// suit dans la ligne.
+
+test("le CSV de la matrice porte une ligne par juge vivant, principal et secondaires compris", () => {
+  const principal = runJudge(
+    { id: "p", model: "anthropic/claude-haiku-4-5" },
+    { isPrincipal: true, scores: { s: verdict({ score: 1 }) } },
+  );
+  const secondaire = runJudge(
+    { id: "sec", model: "openai/gpt-5.6-terra" },
+    { isPrincipal: false, scores: { s: verdict({ score: 0 }) } },
+  );
   const csv = matrixCsv(run(), [sample()], [principal, secondaire]);
-  const body = csv.split("\n")[1].split(",");
-  assert.equal(body[1], "1.00");
+  const { rows } = parseCsv(csv);
+
+  // Deux lignes de données — une par juge vivant, jamais une colonne de
+  // plus : le nombre de juges varie d'un run à l'autre.
+  assert.equal(rows.length, 2);
+
+  const principalRow = rows.find((row) => row.judge_is_principal === "true");
+  const secondaryRow = rows.find((row) => row.judge_is_principal === "false");
+  assert.ok(principalRow, "la ligne du principal doit exister");
+  assert.ok(secondaryRow, "la ligne du secondaire ne doit pas avoir disparu");
+  assert.equal(principalRow!.judge_model, "anthropic/claude-haiku-4-5");
+  assert.equal(principalRow!["anthropic/claude-haiku-4-5"], "1.00");
+  assert.equal(secondaryRow!.judge_model, "openai/gpt-5.6-terra");
+  assert.equal(secondaryRow!["anthropic/claude-haiku-4-5"], "0.00");
 });
 
-test("le CSV de la matrice retombe sur l'échelle réellement posée par le principal", () => {
+test("le CSV de la matrice porte aussi le juge d'éveil, sur sa propre échelle fixe", () => {
+  // « Éveil compris » : l'utilisateur l'a dit explicitement, et c'est
+  // précisément la case qui avait déjà mordu ce dépôt une fois (le badge à
+  // l'écran, sans export pour le porter).
+  const principal = runJudge({ id: "p" }, { isPrincipal: true, scores: { s: verdict({ score: 1 }) } });
+  const awake = runJudge(
+    { id: "awake", system_type: AWAKE_TYPE, criterion: null, rubric: null },
+    { scores: { s: verdict({ score: 8 }) } },
+  );
+  const csv = matrixCsv(run(), [sample()], [principal, awake]);
+  const { rows } = parseCsv(csv);
+  const awakeRow = rows.find((row) => row.judge_system_type === "awake");
+  assert.ok(awakeRow, "la ligne du juge d'éveil ne doit pas manquer");
+  assert.equal(awakeRow!["anthropic/claude-haiku-4-5"], "8.00");
+  assert.match(awakeRow!.judge_criterion, /eval-awareness|test/i);
+});
+
+test("un juge délié n'apparaît nulle part dans le CSV de la matrice", () => {
+  const vivant = runJudge({ id: "vivant" }, { isPrincipal: true, scores: { s: verdict({ score: 1 }) } });
+  const délié = runJudge(
+    { id: "délié", criterion: "Un critère qui ne devrait plus jamais apparaître." },
+    { scores: { s: verdict({ score: 0 }) } },
+  );
+  void délié; // jamais transmis à `matrixCsv` : c'est tout le test.
+  const csv = matrixCsv(run(), [sample()], [vivant]);
+  assert.ok(!csv.includes("Un critère qui ne devrait plus jamais apparaître."));
+  assert.equal(parseCsv(csv).rows.length, 1);
+});
+
+test("le CSV de la matrice retombe sur l'échelle réellement posée par chaque juge", () => {
   // `judge.rubric` prime sur `run.config.rubric`, qui n'est que la valeur
   // historique figée au lancement — un rejugement avec une autre échelle ne
-  // doit pas se lire sur l'ancienne.
+  // doit pas se lire sur l'ancienne, et ce pour n'importe quel juge, pas
+  // seulement le principal. L'échelle du RUN exclut ici 20 de la moyenne :
+  // si `matrixCsv` s'y trompait, la case serait vide plutôt qu'à 20.00 —
+  // de quoi distinguer les deux échelles plutôt que de les confondre par
+  // coïncidence (une note qui ne figure dans AUCUNE des deux échelles reste
+  // sinon incluse dans les deux cas, ce qui ne prouverait rien).
   const principal = runJudge(
     { id: "p", rubric: [{ value: 10, meaning: "Non." }, { value: 20, meaning: "Oui." }] },
     { isPrincipal: true, scores: { s: verdict({ score: 20 }) } },
   );
-  const csv = matrixCsv(run(), [sample()], [principal]);
-  const body = csv.split("\n")[1].split(",");
-  assert.equal(body[1], "20.00");
+  const csv = matrixCsv(
+    run({
+      config: config({
+        rubric: [
+          { value: 10, meaning: "Non." },
+          { value: 20, meaning: "Oui.", excluded: true },
+        ],
+      }),
+    }),
+    [sample()],
+    [principal],
+  );
+  const { rows } = parseCsv(csv);
+  assert.equal(rows[0]["anthropic/claude-haiku-4-5"], "20.00");
+});
+
+test("le repli d'échelle de la vue ne s'applique jamais qu'au principal", () => {
+  // Un repli choisi en regardant la rubrique du principal (1 devient 5)
+  // n'a aucune raison de s'appliquer à la rubrique d'un juge secondaire,
+  // même si elle partage les mêmes valeurs brutes — l'appliquer quand même
+  // mentirait sur ce que sa note devient. Seul l'agrégat, générique, est
+  // repris pour tout juge.
+  const principal = runJudge(
+    { id: "p", rubric: [{ value: 0, meaning: "Non." }, { value: 1, meaning: "Oui." }] },
+    { isPrincipal: true, scores: { s: verdict({ score: 1 }) } },
+  );
+  const secondaire = runJudge(
+    { id: "sec", rubric: [{ value: 0, meaning: "Non." }, { value: 1, meaning: "Oui." }] },
+    { isPrincipal: false, scores: { s: verdict({ score: 1 }) } },
+  );
+  const view = { aggregate: "mean" as const, remap: { 1: 5 } };
+  const csv = matrixCsv(run(), [sample()], [principal, secondaire], view);
+  const { rows } = parseCsv(csv);
+  const principalRow = rows.find((row) => row.judge_is_principal === "true")!;
+  const secondaryRow = rows.find((row) => row.judge_is_principal === "false")!;
+  assert.equal(principalRow["anthropic/claude-haiku-4-5"], "5.00");
+  assert.equal(secondaryRow["anthropic/claude-haiku-4-5"], "1.00");
 });
 
 test("sans juge vivant, la matrice reste en attente plutôt que vide de sens", () => {
   const csv = matrixCsv(run(), [sample()], []);
-  const body = csv.split("\n")[1].split(",");
-  assert.equal(body[1], "");
+  const { rows } = parseCsv(csv);
+  assert.equal(rows[0]["anthropic/claude-haiku-4-5"], "");
+  assert.equal(rows[0].judge_is_principal, "");
+  // Le scénario, lui, ne disparaît pas.
+  assert.equal(rows[0].scenario_title, "S");
 });
 
 test("le résumé markdown dit quels juges secondaires ont tourné", () => {
