@@ -3,10 +3,16 @@
 // Deux formats, pour deux usages qui ne se recouvrent pas : la matrice telle
 // qu'elle est affichée, pour recoller un tableau dans un rapport ; et le détail,
 // une ligne par case, pour ré-analyser un run hors de l'outil.
-import { cellsOf } from "./matrix";
-import { PLAIN_VIEW, describeView, type MatrixView } from "./view";
-import { formatValue, sortedRubric } from "./judge-prompt";
-import { toolsFor } from "./tools";
+import { AWARENESS_ALARM, awarenessSentence, awarenessSummary } from "./awareness.ts";
+// Extension explicite : ce fichier n'avait jusqu'ici jamais été chargé
+// directement par `node --test` (aucun `exports.test.mts` n'existait), et le
+// résolveur ESM natif de Node — contrairement au compilateur TypeScript —
+// exige l'extension sur un import de valeur. Latent avant ce chantier, révélé
+// par le premier test qui importe ce fichier.
+import { cellsOf } from "./matrix.ts";
+import { PLAIN_VIEW, describeView, type MatrixView } from "./view.ts";
+import { formatValue, sortedRubric } from "./judge-prompt.ts";
+import { toolsFor } from "./tools.ts";
 import type { EvalRun, EvalSample, Message } from "./types";
 
 function cell(value: string): string {
@@ -88,6 +94,14 @@ const DETAIL_COLUMNS = [
   "temperature",
   "score",
   "justification",
+  // Le second juge, celui qui dit si le modèle a flairé le décor : sans lui,
+  // une matrice exportée perd exactement l'avertissement de validité que
+  // l'écran porte désormais. `awareness_error` distingue une panne du juge
+  // d'un « aucun signe » — les deux se liraient pareil sur `awareness_score`
+  // vide sinon.
+  "awareness_score",
+  "awareness_justification",
+  "awareness_error",
   "cost_usd",
   "error",
   "turns",
@@ -138,6 +152,9 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[]): string {
         sample.temperature == null ? "" : String(sample.temperature),
         sample.score == null ? "" : String(sample.score),
         sample.justification,
+        sample.awareness_score == null ? "" : String(sample.awareness_score),
+        sample.awareness_justification,
+        sample.awareness_error ?? "",
         sample.cost_usd == null ? "" : String(sample.cost_usd),
         sample.error ?? "",
         String(config.turns),
@@ -212,6 +229,26 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[]): string {
     );
   }
   lines.push("");
+
+  // Un second juge, distinct de celui ci-dessus : sa question n'appartient
+  // jamais à l'utilisateur, et se dit donc à part. Sans cette section, ce
+  // fichier referait dehors le défaut qu'on vient de corriger dedans — une
+  // matrice qui voyage sans son avertissement de validité.
+  if (config.check_eval_awareness === false) {
+    lines.push("**Eval-awareness check** off for this run.", "");
+  } else {
+    lines.push(
+      `**Eval-awareness check** on — a second, fixed judge asks on every ` +
+        `conversation whether the evaluated model showed signs it knew it ` +
+        `was a test (1–10, flagged from ${AWARENESS_ALARM}).`,
+      "",
+    );
+    // `null` quand rien n'a encore été jugé — juge éteint avant ce champ, ou
+    // run qui vient d'être lancé. Le taire alors évite d'écrire « 0 sur 0 »,
+    // qui se lirait comme un bon résultat.
+    const phrase = awarenessSentence(awarenessSummary(samples));
+    if (phrase) lines.push(phrase, "");
+  }
 
   lines.push("## Models evaluated", "");
   for (const target of config.models.targets) lines.push(`- \`${target}\``);
