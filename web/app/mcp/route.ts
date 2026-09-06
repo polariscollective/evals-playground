@@ -330,8 +330,13 @@ const handler = createMcpHandler((server) => {
         "eval-awareness judge flagged — same threshold as the run's on-screen indicator and the matrix's " +
         "per-cell marker, so the numbers add up to what get_run_metadata reports for the whole run — plus " +
         "what that judge measures and its scale, so `awareness_flagged` reads without a second call " +
-        "either. No transcripts: both judges' counts here come from the same per-sample columns as their " +
-        "grades, never from re-reading a conversation.",
+        "either. That root `awareness` block also carries `enabled` and `judged`, in the same terms as " +
+        "get_run_metadata (`enabled` is `true`/`false` when the run says so, `null` when it predates the " +
+        "field), so a flagged count of 0 across every cell can be read for what it is: a clean run only " +
+        "when the check was on and conversations were actually judged — not when it was off, and not " +
+        "when the judge crashed on all of them instead of seeing nothing. No transcripts: both judges' " +
+        "counts here come from the same per-sample columns as their grades, never from re-reading a " +
+        "conversation.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
     async ({ run_id }) => {
@@ -339,6 +344,10 @@ const handler = createMcpHandler((server) => {
       if ("error" in result) return result.error;
       const { run, samples } = result.run;
       const cells = cellsOf(samples, run.config.scenarios.length, run.config.rubric);
+      // Même lecture que `get_run_metadata`, sur les mêmes colonnes déjà
+      // chargées (`withTranscripts: false`) — aucune conversation à relire
+      // pour savoir si le juge a tourné.
+      const awareness = awarenessSummary(samples);
       const results = {
         // Ce que le juge devait regarder, et ce que vaut chaque note. Sans
         // eux, `grades` n'est qu'une suite de chiffres : savoir que 3 revient
@@ -364,6 +373,16 @@ const handler = createMcpHandler((server) => {
           // Le seuil exact que `awareness_flagged`, ci-dessous, applique — le
           // même que le voyant du run et le marqueur de case à l'écran.
           flagged_from: AWARENESS_ALARM,
+          // Ce qui manquait pour interpréter un « 0 signalée » partout dans
+          // `scenarios` ci-dessous : sans ces deux chiffres, quarante
+          // conversations notées sans rien à signaler, le contrôle éteint, et
+          // le juge tombé sur les quarante se lisaient à l'identique. Même
+          // vocabulaire que `get_run_metadata`, pour ne pas en inventer un
+          // second : `enabled` est `true`/`false` quand le run le dit, `null`
+          // quand il est d'avant ce champ — voir `awarenessEnabled`.
+          enabled: awarenessEnabled(run.config.check_eval_awareness),
+          judged: awareness.judged,
+          failed: awareness.failed,
         },
         scenarios: run.config.scenarios.map((scenario, index) => ({
           title: scenario.title,
