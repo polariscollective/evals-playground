@@ -475,16 +475,19 @@ l'écriture 25 % de plus que l'entrée normale ; OpenAI, xAI et Google ne
 facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
 formule reste juste pour eux.
 
-Une nuance propre à Google : les 10 % s'appliquent à son tarif d'entrée
-*standard*, et `PRICES` ne porte pas celui-là pour Gemini mais son tarif
-*promotionnel* — `gemini-3.8-flash` à 0.75 $/Mtok plutôt que le tarif standard
-de 1.50 $/Mtok, promotion courant jusqu'au 31 décembre 2026. Pendant la
-fenêtre promotionnelle, une lecture de cache sur Gemini coûte donc en réalité
-environ 20 % du tarif que porte cette table, et `actual_cost` sous-compte ce
-poste-là pour Google jusqu'à l'échéance de la promotion. L'écart reste minime
-et borné, et n'est pas corrigé ici : rien à changer dans le coefficient
-lui-même, 10 % reste juste pour les trois autres fournisseurs et redeviendra
-juste pour Google une fois la promotion terminée.
+Une nuance propre à Google, et seulement aux modèles que `PRICES` porte à leur
+tarif *promotionnel* plutôt qu'à son tarif d'entrée *standard*, sur lequel
+portent les 10 % : `gemini-3.8-flash`, `gemini-3.7-flash` et
+`gemini-3.6-flash` sont ici à 0.75 $/Mtok, promotion courant jusqu'au 31
+décembre 2026, plutôt que leur tarif standard de 1.50 $/Mtok. Pendant la
+fenêtre promotionnelle, une lecture de cache sur ces trois-là coûte donc en
+réalité environ 20 % du tarif que porte cette table, et `actual_cost` sous-
+compte ce poste-là pour eux jusqu'à l'échéance de la promotion.
+`gemini-3.5-flash`, au même tarif standard de 1.50 $/Mtok, n'a pas cette
+nuance : les 10 % y sont exacts. L'écart reste minime et borné, et n'est pas
+corrigé ici : rien à changer dans le coefficient lui-même, 10 % reste juste
+pour les trois autres fournisseurs et redeviendra juste pour ces trois
+modèles-là une fois leur promotion terminée.
 
 Sans ces coefficients, le coût réel serait faux dans les deux sens : inspect
 compte les jetons de cache séparément de `input_tokens`, si bien que les
