@@ -28,6 +28,7 @@ import {
 } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { budgetProblem, formatUsd } from "@/lib/mcp-budget";
+import { configFavouritesProblem, extendFavouritesProblem } from "@/lib/mcp-favorites";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { ensureProfile } from "@/lib/profiles";
@@ -939,6 +940,14 @@ const handler = createMcpHandler((server) => {
       }
       const { config } = readConfigFile(yaml);
       const caller = await callerEmail(ctx);
+      // Le seul endroit où un modèle hors favoris est interdit et non
+      // seulement caché : `read_prompt` ne lui en a pas parlé, et le refuser
+      // au dépôt lui épargne un brouillon qu'il ne pourrait pas lancer.
+      const outside = configFavouritesProblem(
+        config,
+        favoriteModels(await profileOf(caller)),
+      );
+      if (outside) return toolError(outside);
       const draftId = await createDraft(config, null, caller, "mcp");
       if (tags && tags.length > 0) {
         // Après la création, jamais avant : un document refusé n'écrit ni
@@ -1072,6 +1081,12 @@ const handler = createMcpHandler((server) => {
         );
         if (problem) return toolError(problem);
 
+        const outside = extendFavouritesProblem(
+          request,
+          favoriteModels(await profileOf(caller)),
+        );
+        if (outside) return toolError(outside);
+
         // Même refus que la route humaine, pour la même raison : le job a
         // déjà lu la liste des cases en attente à son démarrage, et des cases
         // ajoutées maintenant ne seraient jamais jouées.
@@ -1187,6 +1202,15 @@ const handler = createMcpHandler((server) => {
       // exemple.
       const problem = configProblem(draft.config);
       if (problem) return toolError(problem);
+
+      // Revérifié au lancement comme `configProblem` juste au-dessus, et pour
+      // la même raison : le brouillon était bon au dépôt, mais les favoris
+      // ont pu changer depuis.
+      const outside = configFavouritesProblem(
+        draft.config,
+        favoriteModels(await profileOf(caller)),
+      );
+      if (outside) return toolError(outside);
 
       // Le devis calculé ici, et nulle part repris : un brouillon ne porte
       // aucun devis à lire, seul un run en a un.
@@ -1521,6 +1545,12 @@ const handler = createMcpHandler((server) => {
       if (problem) {
         return { content: [{ type: "text", text: problem }], isError: true };
       }
+
+      const outside = extendFavouritesProblem(
+        request,
+        favoriteModels(await profileOf(caller)),
+      );
+      if (outside) return toolError(outside);
 
       // Le même devis que verrait `launch_draft` s'il lançait ce brouillon —
       // `planExtension`, la seule fonction qui construise la forme d'une
