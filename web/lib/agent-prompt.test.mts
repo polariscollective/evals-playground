@@ -6,7 +6,8 @@
 // lui-même et le font passer par le lecteur de fichiers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentModels, agentPrompt, mcpAgentPrompt } from "./agent-prompt.ts";
+import { agentModels, agentPrompt, catalogModelOptions, mcpAgentPrompt } from "./agent-prompt.ts";
+import { catalog, knownModelIds } from "./catalog.ts";
 import { readConfigFile } from "./config-file.ts";
 import { DEFAULT_FAVORITE_MODELS } from "./favorite-models.ts";
 
@@ -244,4 +245,29 @@ test("agentModels garde l'ordre du catalogue, pas celui des favoris", () => {
 test("agentModels étiquette le fournisseur avec le modèle", () => {
   const [only] = agentModels(["anthropic/claude-opus-5"]);
   assert.equal(only.label, "Anthropic Claude Opus 5");
+});
+
+// --- catalogModelOptions ------------------------------------------------------
+//
+// Partagée par `agentModels` et par `PromptGuide` : c'est elle qui décide de
+// l'étiquette et qui porte le favori de chaque modèle, pour que les deux
+// lecteurs ne puissent plus en filtrer un et pas l'autre sans s'en apercevoir.
+
+test("catalogModelOptions ne filtre rien : elle porte le catalogue entier", () => {
+  const options = catalogModelOptions(catalog(["anthropic/claude-opus-5"]));
+  assert.equal(options.length, knownModelIds().size);
+});
+
+test("catalogModelOptions étiquette chaque modèle avec son fournisseur", () => {
+  const options = catalogModelOptions(catalog([]));
+  const opus = options.find((m) => m.id === "anthropic/claude-opus-5");
+  assert.equal(opus?.label, "Anthropic Claude Opus 5");
+});
+
+test("catalogModelOptions porte le favori de chaque modèle, sans filtrer", () => {
+  const options = catalogModelOptions(catalog(["anthropic/claude-opus-5"]));
+  const opus = options.find((m) => m.id === "anthropic/claude-opus-5");
+  const other = options.find((m) => m.id !== "anthropic/claude-opus-5");
+  assert.equal(opus?.favorite, true);
+  assert.equal(other?.favorite, false);
 });

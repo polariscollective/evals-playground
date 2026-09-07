@@ -19,6 +19,7 @@
 // lancer aujourd'hui.
 import { catalog } from "./catalog.ts";
 import { formatUsd } from "./mcp-budget.ts";
+import type { ProviderInfo } from "./types";
 
 const TEMPLATE = `I need you to write the configuration for an evaluation I am about to run.
 
@@ -557,6 +558,27 @@ have not said it clearly enough for you to write the scale from it, ask me
 before writing anything.`,
 };
 
+/** Un catalogue de fournisseurs mis à plat, sous la forme `${provider.label}
+ *  ${model.label}` qu'affichent tous les lecteurs de la liste de modèles.
+ *
+ * Partagée entre `agentModels` (favoris de l'appelant, canaux `/prompt` et
+ * `read_prompt`) et `PromptGuide` (favoris de qui regarde l'écran) : les deux
+ * mettent en forme le même catalogue, et l'avoir écrit deux fois est
+ * justement ce qui a laissé `PromptGuide` publier les quarante et un modèles
+ * pendant que les autres canaux filtraient déjà. Un seul endroit qui sait
+ * fabriquer l'étiquette ne peut plus diverger en silence. */
+export function catalogModelOptions(
+  providers: readonly ProviderInfo[],
+): { id: string; label: string; favorite: boolean }[] {
+  return providers.flatMap((provider) =>
+    provider.models.map((model) => ({
+      id: model.id,
+      label: `${provider.label} ${model.label}`,
+      favorite: model.favorite,
+    })),
+  );
+}
+
 /** Les modèles que le prompt publie, sous la forme que lit `agentPrompt` —
  *  partagée entre `/prompt` et l'outil MCP `read_prompt`, pour qu'une seule
  *  liste existe.
@@ -571,14 +593,7 @@ before writing anything.`,
 export function agentModels(
   favorites: readonly string[],
 ): { id: string; label: string }[] {
-  return catalog(favorites)
-    .flatMap((provider) =>
-      provider.models.map((model) => ({
-        id: model.id,
-        label: `${provider.label} ${model.label}`,
-        favorite: model.favorite,
-      })),
-    )
+  return catalogModelOptions(catalog(favorites))
     .filter((model) => model.favorite)
     .map(({ id, label }) => ({ id, label }));
 }
