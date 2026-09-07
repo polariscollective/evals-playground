@@ -188,16 +188,18 @@ vide sur le run et de redemander la même chose. C'est un geste délibéré, et 
 laisse sa propre ligne dans l'historique. Ce qu'on ferme, c'est le geste
 *accidentel* : croire qu'on relit une proposition en attente.
 
-**Corriger `RunExtensionLogEntry.via`.** Le type dit `"ui" | "mcp"` et la prod
-porte au moins un `"script"` (run `0060e7c3`, 19:27), écrit hors application. La
-colonne s'affiche telle quelle, donc rien ne casse. Noté, pas traité.
+*(Ce dessin portait ici un troisième point — « corriger `RunExtensionLogEntry.via`,
+qui dit `"ui" | "mcp"` quand la prod porte un `"script"` ». C'était faux au
+moment où je l'écrivais : le type déclare `"ui" | "mcp" | "script"` depuis
+avant cette branche, avec le commentaire qui explique pourquoi la valeur est
+déclarée plutôt qu'interdite. Rien à faire, donc, et rien à différer.)*
 
 ## Comment on vérifie
 
 | ce qu'on fait | ce qu'on doit voir |
 |---|---|
 | déplier une extension qui ajoute des cases | les titres des scénarios, les modèles, et un compte de conversations égal à ce que le devis a chiffré |
-| déplier un approfondissement | les paliers visés, la profondeur d'avant et d'après, le nombre d'essais poussés |
+| déplier un approfondissement | les paliers visés, la profondeur **visée**, le nombre d'essais poussés — jamais la profondeur d'avant, qui n'est pas dans le registre |
 | déplier une pose de juge | son critère et son modèle, et le nombre de conversations relues |
 | déplier une entrée sans `estimate` | la forme, sans compte inventé |
 | ouvrir la liste des brouillons | une extension lancée dit « See what it did… » et pointe sur `#extensions` |

@@ -4,7 +4,7 @@
 
 **Goal:** Rendre lisible ce que chaque extension d'un run a fait, et fermer — écran, route HTTP et MCP — la réapplication d'un brouillon d'extension déjà lancé.
 
-**Architecture:** Deux modules purs dans `web/lib/` portent toute la règle : `extension-summary.ts` traduit une entrée du registre en phrases, `validate.ts` gagne les prédicats qui refusent un brouillon déjà servi. Les écrans et les routes ne font que les appeler. C'est le seul découpage que `node --test` sache couvrir : il ne regarde que `lib/`.
+**Architecture:** Trois modules purs de `web/lib/` portent toute la règle : `extension-summary.ts` (neuf) traduit une entrée du registre en phrases, `validate.ts` gagne les prédicats qui refusent un brouillon déjà servi, et `draft-row.ts` apprend qu'une extension lancée ne mène plus à son panneau. Les écrans et les routes ne font que les appeler. C'est le seul découpage que `node --test` sache couvrir : il ne regarde que `lib/`.
 
 **Tech Stack:** Next.js 16 (App Router), React 19, TypeScript, `node --test` sur des fichiers `.test.mts`, Tailwind, Supabase via PostgREST.
 
@@ -558,8 +558,8 @@ git commit -m "feat: le refus d'un brouillon d'extension déjà appliqué, en un
 
 **Files:**
 - Modify: `web/app/api/runs/[runId]/extend/route.ts`
-- Modify: `web/lib/api.ts:149-153`
-- Modify: `web/app/eval/[runId]/page.tsx:1013-1022` (le `onSubmit` d'`ExtendPanel`)
+- Modify: `web/lib/api.ts:156-160`
+- Modify: `web/app/eval/[runId]/page.tsx:1034-1043` (le `onSubmit` d'`ExtendPanel`)
 - Modify: `web/app/mcp/route.ts:1015` (branche `draft.kind === "extend"` de `launch_draft`)
 
 **Interfaces:**
@@ -621,7 +621,7 @@ Enfin, remplacer la fin de la fonction (après le `recordStart` réussi) par :
 
 - [ ] **Step 2: Faire passer l'identifiant du brouillon depuis le client**
 
-Dans `web/lib/api.ts`, remplacer `extendRun` (lignes 148-153) :
+Dans `web/lib/api.ts`, remplacer `extendRun` (lignes 156-160) :
 
 ```ts
 /** Ajoute une sous-matrice à un run : des scénarios, des modèles, des essais.
@@ -640,7 +640,7 @@ export const extendRun = (
   );
 ```
 
-Dans `web/app/eval/[runId]/page.tsx`, remplacer le corps du `onSubmit` d'`ExtendPanel` (lignes 1013-1022) :
+Dans `web/app/eval/[runId]/page.tsx`, remplacer le corps du `onSubmit` d'`ExtendPanel` (lignes 1034-1043) :
 
 ```tsx
           onSubmit={async (request) => {
@@ -718,7 +718,7 @@ git commit -m "fix: une extension déjà appliquée ne se réapplique plus, par 
 ### Task 4: L'historique des extensions se déplie
 
 **Files:**
-- Modify: `web/app/eval/[runId]/page.tsx:87-130` (`ExtensionsHistory`)
+- Modify: `web/app/eval/[runId]/page.tsx:88-131` (`ExtensionsHistory`)
 
 **Interfaces:**
 - Consumes: `summariseExtension`, `ExtensionSummary` (Task 1) ; `extensionsOf` et `RunExtension` de `@/lib/run-extensions` (existants) ; `stringify` de `yaml`.
@@ -739,7 +739,7 @@ import type { RunExtension } from "@/lib/run-extensions";
 
 `Fragment` rejoint l'import existant `import { use, useCallback, useEffect, useState } from "react";` (ligne 3).
 
-Et ajouter `EvalScenario` à l'import de types de la page (lignes 54-60), qui ne le porte pas encore :
+Et ajouter `EvalScenario` à l'import de types de la page (lignes 55-61), qui ne le porte pas encore :
 
 ```tsx
 import type {
@@ -808,7 +808,7 @@ function ExtensionDetail({
 
 - [ ] **Step 2: Brancher la chevrette sur le tableau**
 
-Remplacer le corps de `ExtensionsHistory` (lignes 87-130) par :
+Remplacer `ExtensionsHistory` en entier (lignes 88-131) par :
 
 ```tsx
 function ExtensionsHistory({ run }: { run: EvalRun }) {
@@ -917,48 +917,99 @@ git commit -m "feat: chaque extension dit ce qu'elle a fait, et montre la demand
 ### Task 5: « Lancé » devient terminal pour une extension
 
 **Files:**
-- Modify: `web/app/runs/page.tsx:246-258`
-- Modify: `web/app/eval/[runId]/page.tsx:456-478` (l'effet `?extend=`) et le rendu du panneau vers la ligne 999
+- Modify: `web/lib/draft-row.ts:93-101` (`draftDestination`)
+- Test: `web/lib/draft-row.test.mts` (ajout)
+- Modify: `web/components/DraftTable.tsx:303-314` (l'infobulle de la fusée)
+- Modify: `web/app/eval/[runId]/page.tsx:363` (un état), `:457-481` (l'effet `?extend=`), `:1021` (le bandeau)
 
 **Interfaces:**
 - Consumes: l'ancre `id="extensions"` posée en Task 4 ; `DraftRead.launched_at`, déjà rendu par `GET /api/runs/drafts/[draftId]`.
 - Produces: rien que d'autres tâches consomment.
 
-- [ ] **Step 1: Trois cas dans la liste des brouillons**
+`draftDestination` est déjà pur et déjà testé (`draft-row.test.mts`) : la règle s'y ajoute et se teste là, plutôt que dans le JSX.
 
-Dans `web/app/runs/page.tsx`, remplacer le `<Link>` et son libellé (lignes 246-258) :
+- [ ] **Step 1: Écrire le test qui échoue**
 
-```tsx
-              {/* Trois cas et non deux : le genre décidait seul, si bien qu'une
-                  extension lancée s'annonçait comme une extension en attente.
-                  Un brouillon de run lancé se relance — il produit un run de
-                  plus. Une extension lancée, non : elle a déjà écrit sur son
-                  run, et la rouvrir ne pouvait mener qu'à l'appliquer deux
-                  fois. Elle reste ici comme trace, et pointe sur ce qu'elle a
-                  fait. */}
-              <Link
-                href={
-                  draft.kind !== "extend"
-                    ? `/?draft=${draft.id}`
-                    : draft.launched_at
-                      ? `/eval/${draft.extends_run_id}#extensions`
-                      : `/eval/${draft.extends_run_id}?extend=${draft.id}`
-                }
-                className="rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700"
-              >
-                {draft.kind === "extend"
-                  ? draft.launched_at
-                    ? "See what it did…"
-                    : "Open the run…"
-                  : draft.launched_at
-                    ? "Launch again…"
-                    : "Launch…"}
-              </Link>
+Ajouter à la fin de `web/lib/draft-row.test.mts` :
+
+```ts
+test("une extension déjà appliquée mène à l'historique du run, pas à son panneau", () => {
+  // Réappliquer n'est pas idempotent : les répétitions s'empilent. Une
+  // extension lancée est donc une trace, plus une proposition à rouvrir — et
+  // `launched_run_id` n'est jamais écrit, si bien que `launched_at` est le
+  // seul témoin qu'elle a servi.
+  assert.equal(
+    draftDestination(extendDraft({ launched_at: "2026-09-06T16:33:42.873Z" })),
+    "/eval/r1#extensions",
+  );
+});
+
+test("une extension en attente mène toujours à son panneau", () => {
+  assert.equal(draftDestination(extendDraft()), "/eval/r1?extend=d1");
+});
 ```
 
-- [ ] **Step 2: Le panneau ne s'ouvre plus sur une extension appliquée**
+- [ ] **Step 2: Lancer le test pour vérifier qu'il échoue**
 
-Dans `web/app/eval/[runId]/page.tsx`, ajouter un état à côté de `proposalId` (là où `const [proposalId, setProposalId] = useState<string | null>(null);` est déclaré) :
+Run: `npm --prefix web test`
+Expected: FAIL sur le premier des deux — reçu `/eval/r1?extend=d1`, attendu `/eval/r1#extensions`. Le second passe déjà : il garde le cas qui ne doit pas bouger.
+
+- [ ] **Step 3: Ajouter le cas à `draftDestination`**
+
+Dans `web/lib/draft-row.ts`, remplacer `draftDestination` (lignes 93-101) :
+
+```ts
+export function draftDestination(draft: Draft): string {
+  if (draft.launched_run_id) return `/eval/${draft.launched_run_id}`;
+  if (draft.kind === "extend") {
+    // Une extension appliquée n'a plus de proposition à rouvrir : elle a écrit
+    // sur son run, et réappliquer n'est pas idempotent — `cellsForExtension`
+    // numérote les répétitions à partir de la dernière, si bien qu'une seconde
+    // application empile des essais au lieu de constater qu'il n'y a rien à
+    // faire. Elle mène donc à ce qu'elle a fait, pas à ce qu'elle proposait.
+    //
+    // Un brouillon de run lancé, lui, garde sa destination : le relancer
+    // produit un run de plus sans toucher au premier. C'est la même règle qui
+    // est bonne d'un côté et fausse de l'autre.
+    return draft.launched_at
+      ? `/eval/${draft.extends_run_id}#extensions`
+      : `/eval/${draft.extends_run_id}?extend=${draft.id}`;
+  }
+  return `/?draft=${draft.id}`;
+}
+```
+
+- [ ] **Step 4: Lancer les tests pour vérifier qu'ils passent**
+
+Run: `npm --prefix web test`
+Expected: PASS. Le test existant « un brouillon déjà lancé mène au run qu'il a produit » doit rester vert : il pose `launched_run_id: "r9"`, que la première ligne intercepte avant la branche neuve.
+
+- [ ] **Step 5: Dire à quoi mène la fusée**
+
+Dans `web/components/DraftTable.tsx`, remplacer le `title` et l'`aria-label` du `<Link>` de la fusée (lignes 303-314) :
+
+```tsx
+                      title={
+                        launched
+                          ? draft.kind === "extend"
+                            ? "Voir ce que cette extension a fait"
+                            : "Voir le run produit"
+                          : draft.kind === "extend"
+                            ? "Ouvrir le run pour appliquer cette extension"
+                            : "Ouvrir le formulaire pour le relire et le lancer"
+                      }
+                      aria-label={
+                        launched
+                          ? draft.kind === "extend"
+                            ? "See what this extension did"
+                            : "Show the produced run"
+                          : "Open to launch"
+                      }
+```
+
+- [ ] **Step 6: Le panneau ne s'ouvre plus sur une extension appliquée**
+
+Dans `web/app/eval/[runId]/page.tsx`, ajouter un état sous celui de `proposalId` (ligne 363) :
 
 ```tsx
   // Quand `?extend=` désigne une extension déjà appliquée : sa date, pour le
@@ -966,7 +1017,7 @@ Dans `web/app/eval/[runId]/page.tsx`, ajouter un état à côté de `proposalId`
   const [appliedAt, setAppliedAt] = useState<string | null>(null);
 ```
 
-Puis remplacer le corps de l'effet `?extend=` (lignes 456-478) :
+Puis remplacer l'effet `?extend=` en entier (lignes 457-481) :
 
 ```tsx
   // `?extend=<id>` : on vient de la liste des brouillons avec une proposition à
@@ -1003,9 +1054,9 @@ Puis remplacer le corps de l'effet `?extend=` (lignes 456-478) :
   }, [searchParams]);
 ```
 
-- [ ] **Step 3: Poser le bandeau**
+- [ ] **Step 7: Poser le bandeau**
 
-Dans le rendu de la page, juste avant `{extending && !running && (` (vers la ligne 999) :
+Dans le rendu de la page, juste avant `{extending && !running && (` (ligne 1021) :
 
 ```tsx
       {appliedAt && (
@@ -1021,32 +1072,32 @@ Dans le rendu de la page, juste avant `{extending && !running && (` (vers la lig
 
 Le bandeau donne la date sans prétendre savoir quelle ligne de l'historique lui correspond : le tableau a une colonne `When`, et le registre ne porte aucun lien vers le brouillon dont chaque extension est venue.
 
-- [ ] **Step 4: Vérifier le lint et le build**
+- [ ] **Step 8: Vérifier les tests, le lint et le build**
 
 ```bash
-npm --prefix web run lint && npm --prefix web run build
+npm --prefix web test && npm --prefix web run lint && npm --prefix web run build
 ```
 
-Expected: les deux passent.
+Expected: les trois passent.
 
-- [ ] **Step 5: Vérifier les deux chemins à l'écran**
+- [ ] **Step 9: Vérifier les deux chemins à l'écran**
 
 | ce qu'on fait | ce qu'on doit voir |
 |---|---|
-| `/runs`, « Show drafts » puis « Show launched » | `0a05ab0c…` (extension, lancée) dit **See what it did…** et pointe sur `/eval/0060e7c3…#extensions` |
-| la même liste | `eb87a317…` (extension, en attente) dit toujours **Open the run…** avec son `?extend=` |
-| la même liste | `1b597cfa…` (run, lancé) dit toujours **Launch again…** |
-| ouvrir `/eval/0060e7c3-2455-4ad4-8c72-5d46261ffb92?extend=0a05ab0c-a767-46b1-bf70-3e137d107482` | **aucun panneau d'extension**, le bandeau avec la date du 6 sept., et son lien qui fait défiler jusqu'au tableau des extensions |
+| `/runs`, montrer les brouillons puis les lancés | la fusée de `0a05ab0c…` (extension, lancée) pointe sur `/eval/0060e7c3…#extensions`, infobulle « Voir ce que cette extension a fait » |
+| la même liste | `eb87a317…` (extension, en attente) garde son `?extend=` et son infobulle d'origine |
+| la même liste | un brouillon de run lancé garde sa destination |
+| ouvrir `/eval/0060e7c3-2455-4ad4-8c72-5d46261ffb92?extend=0a05ab0c-a767-46b1-bf70-3e137d107482` | **aucun panneau d'extension**, le bandeau avec la date du 6 sept., et son lien qui mène au tableau des extensions |
 | ouvrir `/eval/9c9c6981-71a2-4e66-94f7-bfca5a205236?extend=eb87a317-d8b0-4994-8e66-8861ad04119b` | le panneau s'ouvre normalement, garni — une extension en attente n'a rien perdu |
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 10: Commit**
 
-```bash
-git add web/app/runs/page.tsx web/app/eval/\[runId\]/page.tsx
-git commit -m "fix: une extension lancée est une trace, plus une proposition à rouvrir"
-```
+Commiter les quatre fichiers touchés (`web/lib/draft-row.ts`, `web/lib/draft-row.test.mts`, `web/components/DraftTable.tsx`, `web/app/eval/[runId]/page.tsx`) sous le message :
+
+`fix: une extension lancée est une trace, plus une proposition à rouvrir`
 
 ---
+
 
 ## Ce que ce plan ne fait pas
 
@@ -1054,5 +1105,6 @@ Repris du spec, pour que l'implémenteur ne les prenne pas pour des oublis :
 
 - **Aucun `deleted_at` posé sur les brouillons existants.** Le dépôt distingue *jeté* de *lancé* ; marquer supprimé ce qui a servi confondrait les deux, et « Show launched » doit continuer de montrer la trace.
 - **Rien n'empêche de refaire la même extension** en composant à la main sur la page du run. C'est un geste délibéré qui laisse sa propre ligne dans l'historique ; ce plan ne ferme que le geste accidentel.
-- **`RunExtensionLogEntry.via` reste typé `"ui" | "mcp"`** alors que la prod porte au moins un `"script"` (run `0060e7c3`, 19:27, écrit hors application). La colonne s'affiche telle quelle, donc rien ne casse.
+- ~~**`RunExtensionLogEntry.via` reste typé `"ui" | "mcp"`**~~ — faux, et retiré. Le type déclare `"ui" | "mcp" | "script"` depuis avant cette branche (`types.ts`, à la base `4eb76c5`), avec le commentaire qui explique pourquoi la valeur est déclarée plutôt qu'interdite. Il n'y avait rien à différer.
 - **Aucun `draft_id` ajouté aux entrées du registre.** Il ne servirait qu'au lien du bandeau, ne vaudrait que pour l'avenir, et demanderait une PR dans `polaris-supabase` pour le commentaire de colonne.
+- **`Draft.launched_run_id` n'est écrit nulle part.** La colonne existe dans le type, et `draftDestination` teste sa première branche dessus, mais aucun code du dépôt ne la remplit — `markDraftLaunched` n'écrit que `launched_at`, et son commentaire dit pourquoi (une case unique ne peut pas tenir plusieurs runs). Cette branche est donc morte aujourd'hui, ce qui est précisément pourquoi la Task 5 accroche sa règle à `launched_at` et non à elle. Constaté en passant, pas traité : le corriger est un autre sujet que celui-ci.

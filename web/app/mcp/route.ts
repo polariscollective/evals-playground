@@ -63,7 +63,12 @@ import {
   tagsOfDraft,
 } from "@/lib/tags";
 import { startJob } from "@/lib/trigger";
-import { MAX_TURNS, configProblem, extendProblem } from "@/lib/validate";
+import {
+  MAX_TURNS,
+  alreadyAppliedProblem,
+  configProblem,
+  extendProblem,
+} from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
 import type { Draft, Judge, JudgeSystemTypeColumn, Profile, RunDetail } from "@/lib/types";
 
@@ -1013,6 +1018,15 @@ const handler = createMcpHandler((server) => {
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
 
       if (draft.kind === "extend") {
+        // Le même refus que la route humaine, pour la même raison : une
+        // extension déjà appliquée ne se réapplique pas, les répétitions
+        // s'empileraient. Vérifié avant même de charger le run — l'état du
+        // brouillon suffit à conclure, et l'agent doit lire ce refus-ci plutôt
+        // qu'un refus de propriété ou de budget qui l'enverrait corriger la
+        // mauvaise chose.
+        const applied = alreadyAppliedProblem(draft);
+        if (applied) return toolError(applied);
+
         const target = await runOrError(draft.extends_run_id, {
           withTranscripts: false,
           withSourceCsvFlag: false,
