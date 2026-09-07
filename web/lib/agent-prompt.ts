@@ -557,16 +557,30 @@ have not said it clearly enough for you to write the scale from it, ask me
 before writing anything.`,
 };
 
-/** Les modèles du catalogue, sous la forme que lit `agentPrompt` — partagée
- *  entre `/prompt` et l'outil MCP `read_prompt`, pour qu'une seule liste
- *  existe. */
-export function agentModels(): { id: string; label: string }[] {
-  return catalog().flatMap((provider) =>
-    provider.models.map((model) => ({
-      id: model.id,
-      label: `${provider.label} ${model.label}`,
-    })),
-  );
+/** Les modèles que le prompt publie, sous la forme que lit `agentPrompt` —
+ *  partagée entre `/prompt` et l'outil MCP `read_prompt`, pour qu'une seule
+ *  liste existe.
+ *
+ * Filtrée aux favoris de l'appelant : le prompt dit « Use these identifiers
+ * exactly », et un agent qui y lirait un modèle que `submit_draft_run`
+ * refuse ensuite aurait été envoyé dans le mur par le texte lui-même.
+ *
+ * L'ordre reste celui du catalogue, jamais celui des favoris : deux appels
+ * doivent rendre le même texte, et une liste réordonnée en base ferait
+ * varier un document qui ne change pas de sens. */
+export function agentModels(
+  favorites: readonly string[],
+): { id: string; label: string }[] {
+  return catalog(favorites)
+    .flatMap((provider) =>
+      provider.models.map((model) => ({
+        id: model.id,
+        label: `${provider.label} ${model.label}`,
+        favorite: model.favorite,
+      })),
+    )
+    .filter((model) => model.favorite)
+    .map(({ id, label }) => ({ id, label }));
 }
 
 /** Les deux plafonds d'un profil, tels que `mcpAgentPrompt` les reçoit —

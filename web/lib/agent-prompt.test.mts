@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentModels, agentPrompt, mcpAgentPrompt } from "./agent-prompt.ts";
 import { readConfigFile } from "./config-file.ts";
+import { DEFAULT_FAVORITE_MODELS } from "./favorite-models.ts";
 
 const MODELS = [
   { id: "anthropic/claude-sonnet-5", label: "Anthropic Claude Sonnet 5" },
@@ -152,7 +153,7 @@ test("le prompt MCP ne devine pas un plafond quand le profil n'a pas pu être lu
 test("le prompt annonce le juge d'éveil et le conseil d'écriture", () => {
   // Ce que le prompt omet devient un champ qu'un agent n'écrit jamais, ou un
   // conseil qu'il ne va pas chercher.
-  const prompt = agentPrompt(agentModels(), "https://example.test");
+  const prompt = agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
   assert.match(prompt, /check_eval_awareness/);
   // Le canal MCP appelle un outil ; le canal HTTP ouvre la route publique
   // dédiée — jamais `/scenarios`, la page privée qu'un agent sans session ne
@@ -215,4 +216,32 @@ test("le prompt annonce la section qui apprend à poser plusieurs juges", () => 
   // La règle du gabarit principal (les deux premières règles d'échelle)
   // s'applique aussi à chaque juge secondaire.
   assert.match(prompt, /Each entry in `judges`, if you add any, needs its own non-empty `criterion`/);
+});
+
+// --- agentModels -------------------------------------------------------------
+
+test("agentModels ne publie que les favoris qu'on lui passe", () => {
+  // Le prompt publie la liste entière à chaque appel : un agent ne doit y
+  // lire que ce qu'il a le droit de lancer, sans quoi il proposera un modèle
+  // que submit_draft_run refusera.
+  const models = agentModels(["grok/grok-4.6", "anthropic/claude-opus-5"]);
+  assert.deepEqual(
+    models.map((m) => m.id).sort(),
+    ["anthropic/claude-opus-5", "grok/grok-4.6"],
+  );
+});
+
+test("agentModels garde l'ordre du catalogue, pas celui des favoris", () => {
+  // Anthropic vient avant xAI dans le catalogue ; l'ordre des favoris ne
+  // doit pas faire varier un texte que deux appels doivent rendre identique.
+  const models = agentModels(["grok/grok-4.6", "anthropic/claude-opus-5"]);
+  assert.deepEqual(models.map((m) => m.id), [
+    "anthropic/claude-opus-5",
+    "grok/grok-4.6",
+  ]);
+});
+
+test("agentModels étiquette le fournisseur avec le modèle", () => {
+  const [only] = agentModels(["anthropic/claude-opus-5"]);
+  assert.equal(only.label, "Anthropic Claude Opus 5");
 });

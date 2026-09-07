@@ -16,6 +16,7 @@ import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
 import { analysisReplaceAllowed } from "@/lib/analysis";
 import { AWAKE_TYPE, AWARENESS_ALARM, awarenessEnabled, awarenessSummary } from "@/lib/awareness";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
+import { favoriteModels } from "@/lib/favorite-models";
 import { withLiveJudges } from "@/lib/live-config";
 import {
   DraftNotFound,
@@ -266,7 +267,18 @@ const handler = createMcpHandler((server) => {
       const caps = profile
         ? { maxUsdPerRun: profile.max_usd_per_run, maxUsdPerHour: profile.max_usd_per_hour }
         : null;
-      return { content: [{ type: "text", text: mcpAgentPrompt(agentModels(), caps) }] };
+      return {
+        content: [
+          {
+            type: "text",
+            // Les favoris de l'appelant, pas le défaut : c'est cette liste
+            // que `submit_draft_run` fera respecter quelques appels plus
+            // loin, et publier autre chose l'enverrait proposer un modèle
+            // qu'il se verra refuser.
+            text: mcpAgentPrompt(agentModels(favoriteModels(profile)), caps),
+          },
+        ],
+      };
     },
   );
 
