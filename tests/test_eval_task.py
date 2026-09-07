@@ -320,3 +320,62 @@ def test_reprendre_une_conversation_garde_l_appel_d_outil_et_reconstruit_son_id(
 # construite ici : la route d'API l'écrit en base au lancement, et le job ne fait
 # que dérouler les cases restées `pending`. Les vérifier côté Python
 # reviendrait à tester une responsabilité que ce module n'a plus.
+
+
+# --- le monde, et le rang du scénario qui va avec ------------------------
+#
+# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Un seul solver
+# sert toutes les cases du run, alors que le monde diffère par scénario : c'est
+# ici, et nulle part ailleurs, que le rang est refermé sur l'appel.
+
+
+def test_le_rang_du_scenario_accompagne_chaque_appel_d_outil():
+    """Sans lui, les outils d'un scénario serviraient le monde d'un autre — et
+    le cache rendrait l'erreur permanente."""
+    vus: list[tuple[int, str]] = []
+
+    async def servir(scenario_index, tool, arguments):
+        vus.append((scenario_index, tool.name))
+        return "contracts/2026-03.pdf"
+
+    config = _config(
+        scenarios=[_scenario("A"), _scenario("B")],
+        tools=[
+            {
+                "name": "search_files",
+                "description": "Searches the shared drive.",
+                "retrieval_rules": "Return at most twenty lines.",
+            }
+        ],
+        world="un lecteur partagé",
+    )
+    state = _task_state(config)
+    state.metadata["scenario_index"] = 1
+
+    asyncio.run(
+        conversation_solver(config, serve_tool=servir)(state, _unused_generate)
+    )
+
+    # `mockllm` ne décide aucun appel d'outil : ce qu'on vérifie ici est que la
+    # conversation se déroule sans exiger de fonction absente, et que le rang
+    # est bien celui de la case — la boucle, elle, est testée dans
+    # test_conversation.py.
+    assert all(rang == 1 for rang, _ in vus)
+
+
+def test_un_outil_servi_sans_fonction_fait_echouer_la_case():
+    """Plutôt qu'une case notée sur une conversation où l'outil n'a rien
+    rendu : le run coûte de l'argent, et une case qui ment est pire qu'une case
+    qui manque."""
+    config = _config(
+        tools=[
+            {
+                "name": "search_files",
+                "description": "Searches the shared drive.",
+                "retrieval_rules": "Return at most twenty lines.",
+            }
+        ],
+        world="un lecteur partagé",
+    )
+    with pytest.raises(ValueError, match="serve_tool"):
+        asyncio.run(conversation_solver(config)(_task_state(config), _unused_generate))

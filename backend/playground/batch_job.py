@@ -26,9 +26,10 @@ from typing import Any
 from inspect_ai import Task, eval as inspect_eval
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.log import EvalLog
+from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
-from playground.eval_schemas import EvalRunConfig
+from playground.eval_schemas import EvalRunConfig, ToolSpec
 from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
@@ -46,11 +47,14 @@ from playground.supabase_store import (
     load_live_run_judges,
     mark_sample_running,
     pending_samples,
+    read_tool_result,
     run_status,
     sample_filters,
     start_run,
     write_judge_score,
+    write_tool_result,
 )
+from playground.world import WORLD_MODEL, result_key, serve
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
@@ -303,6 +307,46 @@ def run_batch_job(
     # pour la conversation.
     deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
 
+    async def sert_outil(
+        scenario_index: int, tool: ToolSpec, arguments: dict[str, Any]
+    ) -> str:
+        """Ce qu'un outil servi depuis le monde rend pour cet appel.
+
+        Le cache d'abord, toujours : une réponse déjà écrite est resservie
+        sans qu'aucun modèle ne soit appelé. C'est ce qui rend deux répétitions
+        du même scénario comparables, et ce qui fait qu'une extension ne
+        repaie pas ce qui a déjà été demandé.
+
+        Un résultat vide est une réponse — celle d'une recherche sans
+        résultat — et non une absence : c'est `None` qui dit « jamais
+        demandé », et lui seul déclenche un appel.
+
+        Le modèle est construit à chaque appel plutôt que gardé : `get_model`
+        mémoïse déjà, et le tenir ici obligerait à le construire même sur les
+        runs où aucun outil n'est servi.
+        """
+        clé = result_key(tool.name, arguments)
+        déjà = read_tool_result(supabase, run_id, scenario_index, tool.name, clé)
+        if déjà is not None:
+            return déjà
+        rendu = await serve(
+            model=get_model(WORLD_MODEL, **(model_args or {})),
+            world=config.world,
+            scenario_world=config.scenarios[scenario_index].world,
+            tool=tool,
+            arguments=arguments,
+        )
+        return write_tool_result(
+            supabase,
+            run_id,
+            scenario_index,
+            tool.name,
+            clé,
+            arguments=arguments,
+            result=rendu,
+            model=WORLD_MODEL,
+        )
+
     def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:
         """Chaque juge écrit sa propre ligne, dès qu'il a rendu son verdict.
 
@@ -461,6 +505,7 @@ def run_batch_job(
                 model_args=model_args,
                 stopped=arret.stopped,
                 started=commence,
+                serve_tool=sert_outil,
             )
 
         logs = inspect_eval(
