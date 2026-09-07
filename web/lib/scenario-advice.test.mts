@@ -56,3 +56,22 @@ test("aucune ligne du défaut ne porte un préfixe de citation", () => {
   // servi tel quel à un modèle.
   assert.doesNotMatch(DEFAULT_SCENARIO_ADVICE, /^> /m);
 });
+
+test("le conseil traite un scénario comme quatre choses, outils compris", () => {
+  // Le document décrivait un scénario comme de la prose, les outils en annexe.
+  // Un décor irréprochable que le premier appel d'outil démolit est un scénario
+  // raté, pas un scénario réussi avec un défaut technique.
+  assert.match(DEFAULT_SCENARIO_ADVICE, /A scenario is four things/);
+  assert.match(DEFAULT_SCENARIO_ADVICE, /## A tool is fixed, or it is served/);
+  assert.match(DEFAULT_SCENARIO_ADVICE, /## Writing a world/);
+});
+
+test("les sections sur les outils ne sont plus reléguées en fin de document", () => {
+  // Leur place dit ce qu'on pense d'elles. Après « Planted information », qui
+  // parle déjà d'enfouir dans le monde, elles arriveraient trop tard.
+  const outils = DEFAULT_SCENARIO_ADVICE.indexOf("## A tool is fixed");
+  const enfoui = DEFAULT_SCENARIO_ADVICE.indexOf("## Planted information");
+  const ouverture = DEFAULT_SCENARIO_ADVICE.indexOf("## The opening message");
+  assert.ok(outils > 0 && outils < enfoui);
+  assert.ok(enfoui < ouverture);
+});

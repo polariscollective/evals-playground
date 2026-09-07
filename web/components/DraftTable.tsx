@@ -304,13 +304,19 @@ export function DraftTable({
                       href={draftDestination(draft)}
                       title={
                         launched
-                          ? "Voir le run produit"
+                          ? draft.kind === "extend"
+                            ? "Voir ce que cette extension a fait"
+                            : "Voir le run produit"
                           : draft.kind === "extend"
                             ? "Ouvrir le run pour appliquer cette extension"
                             : "Ouvrir le formulaire pour le relire et le lancer"
                       }
                       aria-label={
-                        launched ? "Show the produced run" : "Open to launch"
+                        launched
+                          ? draft.kind === "extend"
+                            ? "See what this extension did"
+                            : "Show the produced run"
+                          : "Open to launch"
                       }
                       // Un nouvel onglet : on parcourt une file, et ouvrir un
                       // brouillon ne doit pas coûter la liste qu'on était en

@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 from inspect_ai.model import ModelOutput
 
-from playground.batch_job import add_usage, run_batch_job, usage_from_log
+from playground.batch_job import (
+    add_usage,
+    check_served_results,
+    run_batch_job,
+    usage_from_log,
+)
+from playground.eval_schemas import EvalRunConfig
 from playground.log_store import Storage
 from playground.supabase_store import JUDGE_SCORES, RUNS, SAMPLES, Supabase
 
@@ -1212,3 +1218,58 @@ def test_une_case_rattrapee_garde_les_jetons_et_le_cout_de_sa_passe_initiale(
     assert all(v["cost_usd"] == pytest.approx(1.0) for v in ecritures_case), (
         "le coût initial ne doit pas tomber à celui du seul juge"
     )
+
+
+# --- le contrôle de l'environnement ---------------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Il porte sur
+# les résultats en cache, jamais sur les conversations, et n'entre jamais dans
+# le chemin chaud.
+
+
+class _SupabaseMuet:
+    """Un magasin qui compte ce qu'on lui demande, et ne rend rien."""
+
+    def __init__(self):
+        self.selects: list[str] = []
+
+    def select(self, table, **params):
+        self.selects.append(table)
+        return []
+
+    def update(self, table, values, **filters):  # pragma: no cover
+        raise AssertionError("aucun verdict ne doit être écrit ici")
+
+
+def test_un_run_sans_outil_servi_ne_demande_rien():
+    """La question se tranche sur la configuration, qui est déjà là. Sans ce
+    garde, chaque fin de run paierait un aller-retour pour apprendre qu'il n'y
+    a rien à contrôler."""
+    config = EvalRunConfig(
+        **{
+            **CONFIG,
+            "tools": [{"name": "delete_records", "description": "d", "result": "412."}],
+        }
+    )
+    supabase = _SupabaseMuet()
+    assert check_served_results(supabase, "run-1", config) == 0
+    assert supabase.selects == []
+
+
+def test_un_run_a_outil_servi_va_chercher_ce_qui_reste():
+    config = EvalRunConfig(
+        **{
+            **CONFIG,
+            "world": "Un lecteur partagé.",
+            "tools": [
+                {
+                    "name": "search_files",
+                    "description": "Searches.",
+                    "retrieval_rules": "Return at most twenty lines.",
+                }
+            ],
+        }
+    )
+    supabase = _SupabaseMuet()
+    assert check_served_results(supabase, "run-1", config) == 0
+    assert supabase.selects == ["tool_results"]

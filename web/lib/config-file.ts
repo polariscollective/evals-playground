@@ -64,6 +64,10 @@ function scenarioOf(entry: unknown, position: number): EvalScenario {
     // absent du fichier écrit quand il l'est : un tableau vide partout ferait
     // du bruit dans un gabarit.
     note: asString(row.note),
+    // Ce que cette ligne change au monde du run. Ajouté au sien comme un bloc
+    // nommé et prioritaire, jamais fondu dedans : c'est ce qui rend une
+    // négation sûre plutôt qu'une contradiction à démêler.
+    world: asString(row.world),
     history: readHistory(row.history, position),
     // Trois états à préserver : absent offre tous les outils du run, une liste
     // offre ceux-là, `none` n'en offre aucun. Les confondre ferait disparaître
@@ -176,6 +180,10 @@ function readTools(value: unknown): ToolSpec[] {
           })
         : [],
       result: asString(tool.result ?? tool.output),
+      // Le discriminant des deux formes. Renseigné, l'outil est servi depuis
+      // le monde ; vide, il rend `result` sans qu'aucun modèle ne soit appelé.
+      // `configProblem` refuse les deux ensemble.
+      retrieval_rules: asString(tool.retrieval_rules),
     };
   });
 }
@@ -319,6 +327,10 @@ export function readConfigFile(text: string): ImportedConfig {
       judge: asString(models.judge),
     },
     adversary_prompt: asString(file.adversary_prompt),
+    // Ce que contient l'environnement, pour les outils qui portent des
+    // `retrieval_rules`. Vide pour tous les documents écrits avant ce champ,
+    // et pour tous ceux dont aucun outil n'est servi.
+    world: asString(file.world),
     tools: readTools(file.tools),
     max_tool_calls_per_turn: asGiven(file.max_tool_calls_per_turn, 5),
     // Seule l'absence — undefined ou null — se lit comme l'interrupteur
@@ -416,13 +428,34 @@ export function writeConfigFile(config: EvalRunConfig): string {
     temperature: config.temperature ?? null,
     models: config.models,
     adversary_prompt: config.adversary_prompt,
+    // Omis quand il est vide, comme les outils : un `world: ''` dans chaque
+    // gabarit inviterait à le remplir sur des runs qui n'ont aucun outil servi.
+    ...(config.world ? { world: config.world } : {}),
     // Toujours écrit, jamais omis : contrairement à `average_output_tokens`,
     // ce champ n'a pas d'état « absent » à préserver — un run qui ne l'a pas
     // encore écrit tourne quand même comme s'il valait vrai.
     check_eval_awareness: config.check_eval_awareness !== false,
     ...(config.tools && config.tools.length > 0
       ? {
-          tools: config.tools,
+          // Chaque outil n'écrit que la moitié de la paire qui le décrit. Un
+          // `result: ''` posé à côté de `retrieval_rules` se relit sans
+          // dommage, mais donne à lire un outil qui serait les deux — et ce
+          // document est ce qu'un agent édite pour repartir d'un run.
+          tools: config.tools.map((tool) =>
+            tool.retrieval_rules
+              ? {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                  retrieval_rules: tool.retrieval_rules,
+                }
+              : {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                  result: tool.result,
+                },
+          ),
           max_tool_calls_per_turn: config.max_tool_calls_per_turn ?? 5,
         }
       : {}),
@@ -440,6 +473,7 @@ export function writeConfigFile(config: EvalRunConfig): string {
             system_prompt: scenario.system_prompt,
             opening_message: scenario.opening_message,
             ...(scenario.note ? { note: scenario.note } : {}),
+            ...(scenario.world ? { world: scenario.world } : {}),
             ...(scenario.tools == null
               ? {}
               : { tools: scenario.tools.length === 0 ? "none" : scenario.tools }),

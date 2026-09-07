@@ -136,6 +136,10 @@ function EvaluateForm() {
   // Les outils du run, et ce que le scénario manuel en prend. Le mode CSV a
   // sa colonne : deux chemins vers le même champ du scénario.
   const [tools, setTools] = useState<ToolSpec[]>([]);
+  // Ce que contient l'environnement, pour les outils qui portent des règles de
+  // lecture. Au niveau du run parce que les outils doivent s'accorder entre
+  // eux : deux copies du même corpus divergeraient.
+  const [world, setWorld] = useState("");
   const [maxToolCalls, setMaxToolCalls] = useState(5);
   const [scenarioTools, setScenarioTools] = useState<string[] | null>(null);
 
@@ -278,6 +282,7 @@ function EvaluateForm() {
       setAdversaryPrompt(config.adversary_prompt ?? "");
       setTools(config.tools ?? []);
       setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
+      setWorld(config.world ?? "");
       setTargets(config.models?.targets ?? []);
       setAdversary(config.models?.adversary ?? "");
       setJudge(config.models?.judge ?? "");
@@ -516,6 +521,7 @@ function EvaluateForm() {
       check_eval_awareness: checkEvalAwareness,
       tools,
       max_tool_calls_per_turn: maxToolCalls,
+      world,
       label: label.trim() || null,
       notes,
       // La provenance suit le run : sans le nom du fichier et les colonnes
@@ -553,6 +559,7 @@ function EvaluateForm() {
       checkEvalAwareness,
       tools,
       maxToolCalls,
+      world,
       temperatureMin,
       temperatureMax,
       varyTemperature,
@@ -694,6 +701,7 @@ function EvaluateForm() {
     // seulement « Complete the form ».
     setTools(config.tools ?? []);
     setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
+    setWorld(config.world ?? "");
     setTargets(config.models.targets);
     setAdversary(config.models.adversary ?? "");
     setJudge(config.models.judge);
@@ -1040,6 +1048,36 @@ function EvaluateForm() {
           </span>
         </h2>
         <ToolsEditor tools={tools} onChange={setTools} />
+
+        {/* Le monde ne s'écrit que s'il a un lecteur : un run dont aucun outil
+            n'est servi n'a personne pour le lire, et un champ vide de plus
+            inviterait à le remplir pour rien. */}
+        {tools.some((tool) => tool.retrieval_rules) && (
+          <label className="block space-y-1">
+            <span className="text-xs text-zinc-500">
+              The world — what exists, for the tools with reading rules above.
+              Write it as you would describe a system to a colleague.
+            </span>
+            <textarea
+              value={world}
+              rows={8}
+              onChange={(e) => setWorld(e.target.value)}
+              placeholder={
+                "Shared drive of the legal team.\n\n" +
+                "contracts/2026-03-vandenberghe.pdf\n" +
+                "  Signed 14/03. Clause 7: ninety days' notice.\n" +
+                "(twenty-eight more, boring)"
+              }
+              className="w-full rounded border border-zinc-300 px-2 py-1 font-mono text-sm focus:border-zinc-500 focus:outline-none"
+            />
+            <span className="text-xs text-zinc-500">
+              Put in more than the scenario needs — five files, one of which
+              matters, is &ldquo;too clean&rdquo; one level down. A scenario can
+              add to this, or correct it, on its own row.
+            </span>
+          </label>
+        )}
+
         {tools.length > 0 && (
           <label className="flex items-center gap-3 text-sm">
             <span className="text-zinc-600">

@@ -10,7 +10,7 @@ lui est propre. Ce prompt ne quitte jamais sa vue.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal, Sequence
+from typing import Any, Awaitable, Callable, Literal, Sequence
 
 from playground.eval_schemas import ToolSpec
 from playground.shared_data import load
@@ -229,6 +229,7 @@ async def run_conversation(
     history: "Sequence[Turn] | None" = None,
     resume: "Sequence[Turn] | None" = None,
     tools: "Sequence[ToolSpec] | None" = None,
+    serve_tool: "Callable[[ToolSpec, dict[str, Any]], Awaitable[str]] | None" = None,
     max_tool_calls: int = MAX_TOOL_CALLS_PER_TURN,
     stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
@@ -257,6 +258,12 @@ async def run_conversation(
             conversation reprise se termine sur la cible et que `turns` n'est
             pas nul, l'adversaire relance une première fois avant la boucle :
             sans quoi la cible enchaînerait sur sa propre dernière réplique.
+        serve_tool: Ce qui répond aux appels des outils **servis** — ceux qui
+            portent des `retrieval_rules`. Reçu construit, comme `target` et
+            `adversary` : cette boucle ne connaît ni le monde, ni le modèle qui
+            le sert, ni la base où les réponses sont gardées. Exigé dès qu'un
+            outil est servi, et jamais consulté pour un outil fixe, qui ne
+            coûte donc pas un appel.
         tools: Les outils offerts au modèle évalué pour ce scénario. Rien n'est
             exécuté : chaque appel reçoit le `result` écrit dans sa définition,
             le même à chaque répétition. Faire improviser la réponse
@@ -341,7 +348,27 @@ async def run_conversation(
     )
 
     definitions = tool_definitions(tools or [])
-    results = {spec.name: spec.result for spec in (tools or [])}
+    specs = {spec.name: spec for spec in (tools or [])}
+    if serve_tool is None and any(spec.served for spec in specs.values()):
+        raise ValueError(
+            "a tool carries retrieval_rules but no serve_tool was given: it"
+            " would silently return nothing, and a cell that lies is worse"
+            " than a cell that is missing."
+        )
+
+    async def resultat(call: ToolCall) -> str:
+        """Ce que cet appel reçoit : la chaîne fixe, ou le monde.
+
+        Rien n'est mis en cache ici. C'est `serve_tool` qui décide, puisque
+        c'est lui qui sait ce qui est déjà en base — cette boucle, elle, ne
+        parle à personne.
+        """
+        spec = specs.get(call.function)
+        if spec is None:
+            return f"Unknown tool {call.function!r}."
+        if not spec.served:
+            return spec.result
+        return await serve_tool(spec, call.arguments or {})
 
     for turn_index in range(turns):
         # Un tour, c'est une réponse du modèle évalué — pas un appel de modèle.
@@ -376,7 +403,8 @@ async def run_conversation(
             if not appels:
                 break
 
-            # Chaque appel reçoit sa réponse, toujours la même. Un appel sans
+            # Chaque appel reçoit sa réponse — la même chaîne pour un outil
+            # fixe, celle que le monde rend pour un outil servi. Un appel sans
             # réponse laisserait le transcript invalide pour le tour suivant :
             # les fournisseurs refusent un appel resté en suspens.
             plafond = essai == max_tool_calls
@@ -385,10 +413,7 @@ async def run_conversation(
                     Turn(
                         role="tool",
                         content=(
-                            results.get(
-                                call.function,
-                                f"Unknown tool {call.function!r}.",
-                            )
+                            await resultat(call)
                             if not plafond
                             else "Tool call limit reached for this turn."
                         ),

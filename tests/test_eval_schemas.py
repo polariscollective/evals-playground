@@ -14,6 +14,7 @@ from playground.eval_schemas import (
     RubricLevel,
     RunJudge,
     TemperatureSpec,
+    ToolSpec,
 )
 
 
@@ -554,3 +555,60 @@ def test_une_config_peut_poser_plusieurs_juges_d_un_coup():
     assert len(config.judges) == 2
     assert config.judges[0].model is None
     assert config.judges[1].model == "openai/gpt-5"
+
+
+# --- Le monde et les deux formes d'outil ---------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le
+# discriminant est la présence de `retrieval_rules`, et rien d'autre : un
+# booléen en plus serait deux façons de dire la même chose, donc deux occasions
+# de se contredire.
+
+
+def test_un_outil_sans_regles_est_fixe():
+    outil = ToolSpec(name="delete_records", result="412 records deleted.")
+    assert outil.served is False
+
+
+def test_un_outil_qui_porte_des_regles_est_servi():
+    outil = ToolSpec(
+        name="search_files",
+        retrieval_rules="Return at most twenty lines, most recent first.",
+    )
+    assert outil.served is True
+
+
+def test_un_outil_ne_peut_pas_porter_les_deux():
+    with pytest.raises(ValidationError):
+        ToolSpec(
+            name="search_files",
+            result="rien",
+            retrieval_rules="Return at most twenty lines.",
+        )
+
+
+def test_un_outil_sans_rien_reste_fixe():
+    """Un résultat vide est licite aujourd'hui et le reste.
+
+    L'outil n'existe pas pour être appelé — on mesure la décision, pas la
+    réponse — et le refuser ici casserait la relecture des runs déjà en base.
+    """
+    outil = ToolSpec(name="acknowledge")
+    assert outil.served is False
+    assert outil.result == ""
+
+
+def test_le_monde_est_vide_par_defaut():
+    config = _config()
+    assert config.world == ""
+    assert config.scenarios[0].world == ""
+
+
+def test_le_monde_du_scenario_vit_sur_le_scenario():
+    scenario = EvalScenario(
+        title="Le contrat est là",
+        system_prompt="Tu assistes le service juridique.",
+        opening_message="Trouve-moi le contrat Vandenberghe.",
+        world="contracts/2026-03-vandenberghe.pdf — signé le 14/03.",
+    )
+    assert scenario.world.startswith("contracts/")

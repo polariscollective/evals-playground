@@ -14,9 +14,13 @@ from playground.supabase_store import (
     finish_run,
     load_live_run_judges,
     mark_sample_running,
+    read_tool_result,
     sample_filters,
     start_run,
+    unchecked_tool_results,
     write_judge_score,
+    write_tool_result,
+    write_tool_verdict,
 )
 
 
@@ -341,3 +345,83 @@ def test_ecrire_la_panne_d_un_juge_donne_le_statut_error():
     assert corps["status"] == "error"
     assert corps["score"] is None
     assert corps["error"] == "le juge est tombé"
+
+
+# --- le cache des résultats d'outils -----------------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le job déroule
+# les conversations en parallèle : deux cases peuvent faire le même appel en
+# même temps, et c'est le premier arrivé qui gagne.
+
+
+def test_un_resultat_absent_du_cache_se_lit_comme_absent():
+    supabase, _ = _supabase(_ok([]))
+    assert (
+        read_tool_result(supabase, "run-1", 0, "search_files", "abc") is None
+    )
+
+
+def test_un_resultat_present_revient_tel_quel():
+    supabase, envoyees = _supabase(_ok([{"result": "contracts/2026-03.pdf"}]))
+    assert (
+        read_tool_result(supabase, "run-1", 2, "search_files", "abc")
+        == "contracts/2026-03.pdf"
+    )
+    params = dict(envoyees[0].url.params)
+    assert params["run_id"] == "eq.run-1"
+    assert params["scenario_index"] == "eq.2"
+    assert params["arguments_hash"] == "eq.abc"
+
+
+def test_ecrire_un_resultat_ignore_les_doublons():
+    """Sans quoi deux cases du même scénario repartiraient avec deux mondes."""
+    envoyees_par_appel = []
+
+    def handler(request):
+        envoyees_par_appel.append(request)
+        if request.method == "POST":
+            return httpx.Response(201, json=[])
+        return httpx.Response(200, json=[{"result": "le premier arrivé"}])
+
+    supabase, _ = _supabase(handler)
+    rendu = write_tool_result(
+        supabase,
+        "run-1",
+        0,
+        "search_files",
+        "abc",
+        arguments={"query": "X"},
+        result="le second arrivé",
+        model="openai/gpt-5.6-luna",
+    )
+    post = envoyees_par_appel[0]
+    assert post.method == "POST"
+    assert "ignore-duplicates" in post.headers["Prefer"]
+    assert dict(post.url.params)["on_conflict"] == (
+        "run_id,scenario_index,tool_name,arguments_hash"
+    )
+    # On relit toujours : c'est la relecture qui départage, pas la réponse du
+    # POST, qui ne dit pas si la ligne a été écrite ou ignorée.
+    assert rendu == "le premier arrivé"
+
+
+def test_les_lignes_a_controler_sont_celles_sans_verdict():
+    """`faithful is null` est ce que lit le rattrapage — comme
+    `judge_scores.status` le fait déjà pour les juges."""
+    supabase, envoyees = _supabase(_ok([]))
+    unchecked_tool_results(supabase, "run-1")
+    params = dict(envoyees[0].url.params)
+    assert params["run_id"] == "eq.run-1"
+    assert params["faithful"] == "is.null"
+
+
+def test_le_verdict_du_controle_vise_la_ligne_par_sa_cle():
+    supabase, envoyees = _supabase(_ok())
+    write_tool_verdict(
+        supabase, "run-1", 3, "search_files", "abc", faithful=False, fault="a inventé un fichier"
+    )
+    corps = _body(envoyees[0])
+    assert corps == {"faithful": False, "fault": "a inventé un fichier"}
+    params = dict(envoyees[0].url.params)
+    assert params["scenario_index"] == "eq.3"
+    assert params["tool_name"] == "eq.search_files"

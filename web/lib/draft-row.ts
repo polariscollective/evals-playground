@@ -93,7 +93,18 @@ export function draftBlocker(draft: Draft): string | null | undefined {
 export function draftDestination(draft: Draft): string {
   if (draft.launched_run_id) return `/eval/${draft.launched_run_id}`;
   if (draft.kind === "extend") {
-    return `/eval/${draft.extends_run_id}?extend=${draft.id}`;
+    // Une extension appliquée n'a plus de proposition à rouvrir : elle a écrit
+    // sur son run, et réappliquer n'est pas idempotent — `cellsForExtension`
+    // numérote les répétitions à partir de la dernière, si bien qu'une seconde
+    // application empile des essais au lieu de constater qu'il n'y a rien à
+    // faire. Elle mène donc à ce qu'elle a fait, pas à ce qu'elle proposait.
+    //
+    // Un brouillon de run lancé, lui, garde sa destination : le relancer
+    // produit un run de plus sans toucher au premier. C'est la même règle qui
+    // est bonne d'un côté et fausse de l'autre.
+    return draft.launched_at
+      ? `/eval/${draft.extends_run_id}#extensions`
+      : `/eval/${draft.extends_run_id}?extend=${draft.id}`;
   }
   return `/?draft=${draft.id}`;
 }

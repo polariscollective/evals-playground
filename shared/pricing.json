@@ -6,7 +6,7 @@
   "default_response_tokens": 1100,
   "short_response_tokens": 200,
   "long_response_tokens": 6000,
-  "judge_response_tokens": 200,
+  "judge_response_tokens": 200, "world_response_tokens": 400,
   "usd_to_eur": 0.92,
   "cache_read_multiplier": 0.1,
   "cache_write_multiplier": 1.25,

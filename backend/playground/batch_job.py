@@ -17,6 +17,7 @@ aussi de `judge_scores` : toutes les lignes de score existent d'avance, en
 docs/superpowers/specs/2026-09-06-juges-multiples.md.
 """
 
+import asyncio
 import os
 import sys
 import traceback
@@ -26,9 +27,10 @@ from typing import Any
 from inspect_ai import Task, eval as inspect_eval
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.log import EvalLog
+from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
-from playground.eval_schemas import EvalRunConfig
+from playground.eval_schemas import EvalRunConfig, ToolSpec
 from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
@@ -46,11 +48,16 @@ from playground.supabase_store import (
     load_live_run_judges,
     mark_sample_running,
     pending_samples,
+    read_tool_result,
     run_status,
+    unchecked_tool_results,
     sample_filters,
     start_run,
     write_judge_score,
+    write_tool_result,
+    write_tool_verdict,
 )
+from playground.world import CHECK_MODEL, WORLD_MODEL, check, result_key, serve
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
@@ -112,6 +119,79 @@ def judge_metadata(liaison: dict[str, Any]) -> dict[str, Any]:
         "criterion": judge.get("criterion"),
         "rubric": judge.get("rubric"),
     }
+
+
+def check_served_results(
+    supabase: Supabase,
+    run_id: str,
+    config: EvalRunConfig,
+    model_args: dict[str, Any] | None = None,
+) -> int:
+    """Contrôle les résultats servis que personne n'a encore regardés.
+
+    Une question, et une seule : ce résultat pouvait-il sortir de cet appel ?
+    Pas « le monde est-il bien écrit » — ça se règle avant de lancer.
+
+    Porte sur les lignes de `tool_results`, pas sur les conversations : le
+    travail à contrôler est exactement `(monde, appel) → résultat`, et le cache
+    a déjà réduit trois cent soixante appels à la soixantaine de résultats
+    distincts qu'ils recouvrent. Un juge coûterait le nombre de conversations ;
+    celui-ci coûte le nombre de réponses différentes, une fois chacune.
+
+    **Ne fait jamais tomber le run.** Il arrive après que tout a été joué et
+    payé : un contrôle qui échouerait ferait perdre des notes déjà obtenues
+    pour un renseignement qui, lui, se rattrape. Les lignes non contrôlées
+    restent `faithful` nul, et une passe ultérieure les reprendra.
+
+    Returns:
+        Combien de lignes ont reçu un verdict.
+    """
+    # Un run dont aucun outil n'est servi n'a pas de ligne à contrôler, et n'a
+    # donc pas à le demander : la question se tranche sur la configuration, qui
+    # est déjà là, plutôt que par un aller-retour sur toutes les fins de run.
+    if not any(tool.served for tool in config.tools):
+        return 0
+
+    à_faire = unchecked_tool_results(supabase, run_id)
+    if not à_faire:
+        return 0
+
+    modèle = get_model(CHECK_MODEL, **(model_args or {}))
+    contrôlées = 0
+    for ligne in à_faire:
+        index = int(ligne["scenario_index"])
+        # Le monde tel que cette ligne l'a vu : celui du run, plus celui de son
+        # scénario. Les reconstruire ici plutôt que de les avoir stockés évite
+        # une copie du monde par résultat, et ils n'ont pas pu bouger — le
+        # monde d'un run est gelé au lancement.
+        monde = config.world
+        if 0 <= index < len(config.scenarios) and config.scenarios[index].world:
+            monde = f"{monde}\n\n{config.scenarios[index].world}"
+        try:
+            fidèle, faute = asyncio.run(
+                check(
+                    model=modèle,
+                    world=monde,
+                    tool=str(ligne["tool_name"]),
+                    arguments=ligne.get("arguments") or {},
+                    result=str(ligne.get("result") or ""),
+                )
+            )
+        except Exception:
+            # Une ligne qu'on n'a pas su contrôler reste à contrôler. Elle ne
+            # doit ni passer pour fidèle, ni faire tomber les suivantes.
+            continue
+        write_tool_verdict(
+            supabase,
+            run_id,
+            index,
+            str(ligne["tool_name"]),
+            str(ligne["arguments_hash"]),
+            faithful=fidèle,
+            fault=faute,
+        )
+        contrôlées += 1
+    return contrôlées
 
 
 def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
@@ -303,6 +383,46 @@ def run_batch_job(
     # pour la conversation.
     deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
 
+    async def sert_outil(
+        scenario_index: int, tool: ToolSpec, arguments: dict[str, Any]
+    ) -> str:
+        """Ce qu'un outil servi depuis le monde rend pour cet appel.
+
+        Le cache d'abord, toujours : une réponse déjà écrite est resservie
+        sans qu'aucun modèle ne soit appelé. C'est ce qui rend deux répétitions
+        du même scénario comparables, et ce qui fait qu'une extension ne
+        repaie pas ce qui a déjà été demandé.
+
+        Un résultat vide est une réponse — celle d'une recherche sans
+        résultat — et non une absence : c'est `None` qui dit « jamais
+        demandé », et lui seul déclenche un appel.
+
+        Le modèle est construit à chaque appel plutôt que gardé : `get_model`
+        mémoïse déjà, et le tenir ici obligerait à le construire même sur les
+        runs où aucun outil n'est servi.
+        """
+        clé = result_key(tool.name, arguments)
+        déjà = read_tool_result(supabase, run_id, scenario_index, tool.name, clé)
+        if déjà is not None:
+            return déjà
+        rendu = await serve(
+            model=get_model(WORLD_MODEL, **(model_args or {})),
+            world=config.world,
+            scenario_world=config.scenarios[scenario_index].world,
+            tool=tool,
+            arguments=arguments,
+        )
+        return write_tool_result(
+            supabase,
+            run_id,
+            scenario_index,
+            tool.name,
+            clé,
+            arguments=arguments,
+            result=rendu,
+            model=WORLD_MODEL,
+        )
+
     def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:
         """Chaque juge écrit sa propre ligne, dès qu'il a rendu son verdict.
 
@@ -461,6 +581,7 @@ def run_batch_job(
                 model_args=model_args,
                 stopped=arret.stopped,
                 started=commence,
+                serve_tool=sert_outil,
             )
 
         logs = inspect_eval(
@@ -502,6 +623,12 @@ def run_batch_job(
             abandon_unfinished_samples(
                 supabase, run_id, "The run finished without producing this cell."
             )
+            # Le contrôle de l'environnement, une fois les conversations
+            # jouées. Après coup, jamais dans le chemin chaud : un mauvais
+            # résultat déjà servi ne se rattrape pas — ce qu'il faut, c'est le
+            # savoir pour décider si on garde le run. Voir
+            # docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+            check_served_results(supabase, run_id, config, model_args)
 
         # Le total du run vient du journal d'inspect, et non de la somme des
         # cases. Les deux coïncident presque toujours — vérifié à zéro jeton

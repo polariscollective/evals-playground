@@ -103,11 +103,17 @@ def conversation_solver(
     model_args: dict[str, Any] | None = None,
     stopped: Callable[[], bool] | None = None,
     started: Callable[[TaskState], None] | None = None,
+    serve_tool: Callable[..., Any] | None = None,
 ) -> Solver:
     """Déroule une conversation complète pour une répétition.
 
     Args:
         config: La configuration du run, pour les modèles cible et adversaire.
+        serve_tool: Ce qui répond aux outils servis depuis le monde, reçu de
+            l'appelant qui tient la base — signature
+            `(scenario_index, tool, arguments)`. Le rang du scénario est
+            passé ici et non capturé par l'appelant : le monde diffère par
+            scénario, et un solver sert toutes les cases du run.
         stopped: Transmis à la boucle de conversation, qui le consulte avant
             chaque appel de modèle. Le contrôler ici ne servirait à rien :
             inspect démarre tous les échantillons d'un coup, et ils franchiraient
@@ -184,6 +190,18 @@ def conversation_solver(
                 else None
             ),
             tools=tools_for(config, scenario),
+            # Le rang du scénario est refermé ici, au seul endroit qui le
+            # connaisse : la boucle de conversation ne sait pas quelle case
+            # elle joue, et n'a pas à l'apprendre pour ça.
+            serve_tool=(
+                None
+                if serve_tool is None
+                else (
+                    lambda tool, arguments: serve_tool(
+                        int(state.metadata.get("scenario_index", 0)), tool, arguments
+                    )
+                )
+            ),
             max_tool_calls=config.max_tool_calls_per_turn,
             stopped=stopped,
         )

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from playground.eval_schemas import EvalRunConfig, tools_for, ModelUsage
 from playground.shared_data import load
+from playground.world import WORLD_MODEL
 
 _SHARED = load("pricing")
 """Tarifs, calibrations et catalogue, partagés avec TypeScript.
@@ -59,6 +60,14 @@ sa longueur, une extension la mesure.
 
 JUDGE_RESPONSE_TOKENS = _SHARED["judge_response_tokens"]
 """Le juge rend une note et une phrase : sa sortie est courte et prévisible."""
+
+WORLD_RESPONSE_TOKENS = _SHARED["world_response_tokens"]
+"""Ce qu'un outil servi depuis le monde rend, en gros.
+
+Une vingtaine de lignes de données brutes. Moins prévisible que la sortie d'un
+juge — un `read_file` rend plus qu'un `search` — mais du même ordre, et
+l'ignorer serait pire que l'approcher.
+"""
 
 USD_TO_EUR = _SHARED["usd_to_eur"]
 """Taux de conversion indicatif. Une estimation, pas une conversion comptable."""
@@ -256,6 +265,37 @@ l'objectif — d'où le facteur deux, qui n'est pas une faute de frappe.
 """
 
 
+WORLD_OVERHEAD_TOKENS = _fixed_tokens(
+    load("world-prompt")["system"]
+    + load("world-prompt")["world_block"]
+    + load("world-prompt")["scenario_block"]
+    + load("world-prompt")["call_block"]
+    + load("world-prompt")["rules_block"],
+    "{world}", "{scenario_world}", "{tool}", "{arguments}", "{rules}",
+)
+"""Ce que l'environnement reçoit en plus du monde, à chaque appel.
+
+Mesuré sur les gabarits plutôt qu'écrit en dur, comme pour le juge et
+l'adversaire : une reformulation du prompt se répercute alors sur le devis toute
+seule.
+"""
+
+
+def served_calls_per_conversation(config: EvalRunConfig) -> int:
+    """Combien d'appels d'outils servis une conversation fait, en gros.
+
+    **Le milieu de zéro et du plafond**, et c'est la seule hypothèse qu'on
+    puisse défendre : aucune configuration ne déclare combien de fois un modèle
+    appellera ses outils, et les deux seules bornes connues sont « jamais » et
+    `max_tool_calls_per_turn` à chaque tour. Prendre leur milieu est un choix
+    assumé, que la phrase du devis nomme plutôt que de le taire.
+
+    Zéro quand aucun outil n'est servi — le cas de tous les runs écrits jusqu'à
+    présent, qui ne doivent pas voir leur devis bouger d'un centime.
+    """
+    return (config.turns * config.max_tool_calls_per_turn) // 2
+
+
 def _add(
     per_model: dict[str, ModelTokens],
     model: str,
@@ -302,6 +342,17 @@ def estimate_tokens(
     adversary_response = adversary_response_all if adversary else 0
     question = _tokens(config.criterion) + _rubric_tokens(config)
     adversary_prompt = _tokens(config.adversary_prompt)
+    # Le monde repart en entier à chaque appel d'environnement. Il n'est pas
+    # compté au tarif du cache, alors que le fournisseur le mettra
+    # vraisemblablement en cache : la remise n'est garantie par personne — elle
+    # dépend du fournisseur, de la longueur du préfixe et de l'écart entre deux
+    # appels — et un devis qui la suppose sous-estime chaque fois qu'elle ne
+    # joue pas. Or c'est sur ce chiffre que se prend la décision de lancer.
+    # `actual_cost` lit les vrais compteurs de cache et facture juste ; seule
+    # la prévision est prudente.
+    world = _tokens(config.world)
+    served_calls = served_calls_per_conversation(config)
+    served_conversations = 0
 
     for index, scenario in enumerate(config.scenarios):
         system = _tokens(scenario.system_prompt)
@@ -321,6 +372,22 @@ def estimate_tokens(
                 for p in tool.parameters
             )
             for tool in tools_for(config, scenario)
+        )
+        # Un scénario qui n'offre aucun outil servi ne paie pas l'environnement.
+        # `tools: none` sur une ligne est souvent toute la comparaison qu'on
+        # cherche : elle ne doit pas porter le coût d'un monde qu'elle
+        # n'interroge jamais.
+        servis = [tool for tool in tools_for(config, scenario) if tool.served]
+        monde = (
+            world
+            + _tokens(scenario.world)
+            + WORLD_OVERHEAD_TOKENS
+            # Les règles de lecture de l'outil appelé. On ne sait pas lequel :
+            # la moyenne des outils servis de ce scénario est la seule valeur
+            # qui ne privilégie aucun d'eux.
+            + sum(_tokens(tool.retrieval_rules) for tool in servis) // max(len(servis), 1)
+            if servis
+            else 0
         )
 
         for target in config.models.targets:
@@ -368,6 +435,15 @@ def estimate_tokens(
                 JUDGE_RESPONSE_TOKENS * weight,
                 JUDGE_RESPONSE_TOKENS,
             )
+            if servis and served_calls:
+                served_conversations += weight
+                _add(
+                    per_model,
+                    WORLD_MODEL,
+                    monde * served_calls * weight,
+                    WORLD_RESPONSE_TOKENS * served_calls * weight,
+                    WORLD_RESPONSE_TOKENS,
+                )
 
     conversations = (
         len(config.scenarios) * len(config.models.targets) * config.repetitions
@@ -376,7 +452,10 @@ def estimate_tokens(
 
     return TokenEstimate(
         conversations=conversations,
-        model_calls=conversations * calls_per_conversation,
+        model_calls=(
+            conversations * calls_per_conversation
+            + served_conversations * served_calls
+        ),
         per_model=per_model,
     )
 

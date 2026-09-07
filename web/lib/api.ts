@@ -152,12 +152,20 @@ export const retryFailedCells = (runId: string) =>
     method: "POST",
   });
 
-/** Ajoute une sous-matrice à un run : des scénarios, des modèles, des essais. */
-export const extendRun = (runId: string, body: ExtendRequest) =>
-  request<{ ok: true; added: number }>(`/api/runs/${runId}/extend`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+/** Ajoute une sous-matrice à un run : des scénarios, des modèles, des essais.
+ *
+ * `draftId` quand cette extension applique un brouillon : la route s'en sert
+ * pour refuser un brouillon déjà appliqué, et pour le marquer lancé elle-même
+ * une fois l'extension partie. */
+export const extendRun = (
+  runId: string,
+  body: ExtendRequest,
+  draftId?: string | null,
+) =>
+  request<{ ok: true; added: number }>(
+    `/api/runs/${runId}/extend${draftId ? `?draft=${encodeURIComponent(draftId)}` : ""}`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
 
 /** Met de côté une extension composée à la main, sans l'appliquer au run —
  *  le même geste que « Save as draft » sur le formulaire de composition, pour

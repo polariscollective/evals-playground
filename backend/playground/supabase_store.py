@@ -26,6 +26,15 @@ SAMPLES = "eval_samples"
 JUDGES = "judges"
 RUN_JUDGES = "run_judges"
 JUDGE_SCORES = "judge_scores"
+TOOL_RESULTS = "tool_results"
+
+TOOL_RESULT_KEY = "run_id,scenario_index,tool_name,arguments_hash"
+"""La clé primaire de `tool_results`, telle que PostgREST veut l'entendre.
+
+Écrite une fois : elle sert à l'insertion qui ignore les doublons, et doit
+désigner exactement la contrainte que la migration a posée — sans quoi
+PostgREST rejette l'écriture au lieu de la dédoublonner.
+"""
 
 NOW = "now()"
 """Horodatage confié à la base plutôt qu'à l'horloge du job.
@@ -105,13 +114,33 @@ class Supabase:
     def select(self, table: str, **params: Any) -> list[dict]:
         return self._request("GET", f"/rest/v1/{table}", params=params) or []
 
-    def insert(self, table: str, rows: Any, *, returning: bool = False) -> list[dict]:
+    def insert(
+        self,
+        table: str,
+        rows: Any,
+        *,
+        returning: bool = False,
+        on_conflict: str | None = None,
+    ) -> list[dict]:
+        """Insère, en laissant éventuellement passer les doublons.
+
+        `on_conflict` nomme les colonnes de la contrainte à ignorer. Avec lui,
+        une ligne déjà présente n'est plus une erreur : elle est simplement
+        laissée telle quelle. C'est ce qui permet à deux écrivains concurrents
+        de viser la même clé sans que le second fasse tomber le job — mais la
+        réponse ne dit alors pas laquelle des deux lignes vit, d'où la
+        relecture systématique chez les appelants (voir `write_tool_result`).
+        """
+        prefer = "return=representation" if returning else "return=minimal"
+        if on_conflict is not None:
+            prefer = f"resolution=ignore-duplicates,{prefer}"
         return (
             self._request(
                 "POST",
                 f"/rest/v1/{table}",
+                params={"on_conflict": on_conflict} if on_conflict else None,
                 json=rows,
-                prefer="return=representation" if returning else "return=minimal",
+                prefer=prefer,
             )
             or []
         )
@@ -450,4 +479,135 @@ def write_judge_score(
         },
         run_judge_id=f"eq.{run_judge_id}",
         sample_id=f"eq.{sample_id}",
+    )
+
+
+# --- le cache des résultats d'outils -----------------------------------------
+#
+# Ce qui rend déterministe un outil servi depuis le monde : même scénario, même
+# outil, mêmes arguments, même réponse — pour toute la vie du run, extensions
+# comprises. Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+
+
+def _tool_filters(
+    run_id: str, scenario_index: int, tool_name: str, arguments_hash: str
+) -> dict[str, str]:
+    """La clé primaire d'une ligne, en filtres PostgREST.
+
+    Écrite une fois plutôt qu'à chaque appel : quatre colonnes recopiées à
+    trois endroits, c'est la troisième qui en oublie une, et un filtre
+    incomplet ici viserait la ligne d'un autre scénario.
+    """
+    return {
+        "run_id": f"eq.{run_id}",
+        "scenario_index": f"eq.{scenario_index}",
+        "tool_name": f"eq.{tool_name}",
+        "arguments_hash": f"eq.{arguments_hash}",
+    }
+
+
+def read_tool_result(
+    supabase: Supabase, run_id: str, scenario_index: int, tool_name: str,
+    arguments_hash: str,
+) -> str | None:
+    """Ce que cet appel a déjà rendu, ou `None` s'il n'a jamais été fait.
+
+    `None` déclenche un appel au modèle d'environnement chez l'appelant. Un
+    résultat vide, lui, est une réponse — celle d'une recherche sans résultat —
+    et ne doit surtout pas être confondu avec l'absence de ligne.
+    """
+    lignes = supabase.select(
+        TOOL_RESULTS,
+        select="result",
+        limit=1,
+        **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
+    )
+    return lignes[0]["result"] if lignes else None
+
+
+def write_tool_result(
+    supabase: Supabase,
+    run_id: str,
+    scenario_index: int,
+    tool_name: str,
+    arguments_hash: str,
+    *,
+    arguments: dict[str, Any],
+    result: str,
+    model: str,
+) -> str:
+    """Garde ce résultat, et rend celui qui fait foi.
+
+    **Le premier arrivé gagne.** Le job déroule plusieurs conversations en
+    parallèle : deux cases du même scénario peuvent faire le même appel en même
+    temps, et toutes deux écrire. L'insertion ignore donc le doublon plutôt que
+    de tomber, et la relecture qui suit départage — sans elle, chacune
+    repartirait avec sa propre réponse, et deux répétitions censées voir le
+    même monde en verraient deux.
+
+    La relecture est systématique, y compris quand on croit avoir gagné : la
+    réponse d'une insertion qui ignore les doublons ne dit pas laquelle des
+    deux lignes vit.
+
+    Returns:
+        Le résultat qui fait foi — le sien, ou celui qui était déjà là.
+    """
+    supabase.insert(
+        TOOL_RESULTS,
+        {
+            "run_id": run_id,
+            "scenario_index": scenario_index,
+            "tool_name": tool_name,
+            "arguments_hash": arguments_hash,
+            "arguments": arguments,
+            "result": result,
+            "model": model,
+        },
+        on_conflict=TOOL_RESULT_KEY,
+    )
+    gardé = read_tool_result(
+        supabase, run_id, scenario_index, tool_name, arguments_hash
+    )
+    # `None` ne peut arriver que si la ligne a disparu entre l'écriture et la
+    # relecture, ce que rien ne fait : personne ne supprime dans cette table.
+    # Servir le sien plutôt que de tomber garde la conversation en vie.
+    return result if gardé is None else gardé
+
+
+def unchecked_tool_results(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
+    """Les résultats de ce run qui n'ont pas encore été contrôlés.
+
+    `faithful is null` est ce qui reste à faire, lu plutôt que recalculé —
+    exactement comme `judge_scores.status` porte déjà « ce qui reste à juger ».
+    Deux règles écrites à deux endroits pour la même question finissent par
+    diverger, et ce dépôt en a déjà payé le prix une fois.
+    """
+    return supabase.select(
+        TOOL_RESULTS,
+        select="scenario_index,tool_name,arguments_hash,arguments,result",
+        run_id=f"eq.{run_id}",
+        faithful="is.null",
+    )
+
+
+def write_tool_verdict(
+    supabase: Supabase,
+    run_id: str,
+    scenario_index: int,
+    tool_name: str,
+    arguments_hash: str,
+    *,
+    faithful: bool,
+    fault: str,
+) -> None:
+    """Ce que le contrôle a trouvé sur ce résultat.
+
+    Il ne réécrit jamais `result` : ce qui a été servi est ce qu'une
+    conversation a réellement vu, et le corriger après coup rendrait son
+    transcript inexplicable.
+    """
+    supabase.update(
+        TOOL_RESULTS,
+        {"faithful": faithful, "fault": fault},
+        **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
     )

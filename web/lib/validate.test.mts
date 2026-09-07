@@ -9,9 +9,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readConfigFile } from "./config-file.ts";
-import { configProblem, extendProblem } from "./validate.ts";
+import { alreadyAppliedProblem, configProblem, extendProblem, extensionDraftProblem } from "./validate.ts";
 import { knownModelIds } from "./catalog.ts";
-import type { EvalRunConfig, ExtendRequest } from "./types.ts";
+import type { Draft, EvalRunConfig, ExtendDraft, ExtendRequest } from "./types.ts";
 
 const VALIDE = `
 label: Pression sur la procédure
@@ -229,4 +229,127 @@ test("la même règle de température vaut pour une extension", () => {
     1,
   );
   assert.match(problem ?? "", /temperature must be between 0 and 2/);
+});
+
+// --- les deux formes d'outil -----------------------------------------------
+//
+// Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. La présence de
+// `retrieval_rules` est le discriminant, et le seul.
+
+test("un outil fixe passe, comme avant", () => {
+  const config = avec((c) => {
+    c.tools = [
+      { name: "delete_records", description: "Deletes.", parameters: [], result: "412." },
+    ];
+  });
+  assert.equal(configProblem(config), null);
+});
+
+test("un outil servi depuis le monde passe", () => {
+  const config = avec((c) => {
+    c.world = "Un lecteur partagé, trente fichiers.";
+    c.tools = [
+      {
+        name: "search_files",
+        description: "Searches the shared drive.",
+        parameters: [],
+        result: "",
+        retrieval_rules: "Return at most twenty lines.",
+      },
+    ];
+  });
+  assert.equal(configProblem(config), null);
+});
+
+test("un outil qui porte result et retrieval_rules est refusé", () => {
+  const config = avec((c) => {
+    c.tools = [
+      {
+        name: "search_files",
+        description: "Searches.",
+        parameters: [],
+        result: "toujours la même chose",
+        retrieval_rules: "Return at most twenty lines.",
+      },
+    ];
+  });
+  assert.match(
+    configProblem(config) ?? "",
+    /fixed or served from the world, never both/,
+  );
+});
+
+test("un outil sans result ni règles reste licite", () => {
+  // `result` vaut `""` par défaut depuis toujours, et des runs en base en
+  // portent peut-être : leur configuration doit continuer à se relire.
+  const config = avec((c) => {
+    c.tools = [
+      { name: "acknowledge", description: "Acknowledges.", parameters: [], result: "" },
+    ];
+  });
+  assert.equal(configProblem(config), null);
+});
+
+test("un monde sans aucun outil servi n'est pas une erreur", () => {
+  // Du texte que personne ne lit. Le refuser embêterait quelqu'un en train
+  // d'écrire, et ne protégerait de rien.
+  const config = avec((c) => {
+    c.world = "Un lecteur partagé.";
+  });
+  assert.equal(configProblem(config), null);
+});
+
+// --- les brouillons d'extension -------------------------------------------
+
+// Un brouillon d'extension lancé est une trace, plus une proposition :
+// réappliquer n'est pas idempotent, les répétitions s'empilent.
+const EXTEND_DRAFT = (extra: Partial<ExtendDraft> = {}): ExtendDraft =>
+  ({
+    id: "0a05ab0c-a767-46b1-bf70-3e137d107482",
+    kind: "extend",
+    extends_run_id: "0060e7c3-2455-4ad4-8c72-5d46261ffb92",
+    config: { scenario_indices: [0], new_scenarios: [], targets: [], repetitions: 1 },
+    csv_text: null,
+    created_by: "sam@polaris.example",
+    created_at: "2026-09-06T16:33:00.000Z",
+    origin: "mcp",
+    deleted_at: null,
+    launched_at: null,
+    launched_run_id: null,
+    ...extra,
+  }) as unknown as ExtendDraft;
+
+test("un brouillon d'extension en attente peut servir", () => {
+  const draft = EXTEND_DRAFT();
+  assert.equal(alreadyAppliedProblem(draft), null);
+  assert.equal(extensionDraftProblem(draft, draft.extends_run_id), null);
+});
+
+test("un brouillon d'extension déjà lancé est refusé, et le refus dit quand", () => {
+  const draft = EXTEND_DRAFT({ launched_at: "2026-09-06T16:33:42.873Z" });
+  const problem = alreadyAppliedProblem(draft);
+  assert.ok(problem);
+  assert.ok(problem.includes("already applied"));
+  assert.ok(problem.includes("2026-09-06T16:33:42.873Z"));
+  // La route HTTP refuse pour la même raison, par le même message.
+  assert.equal(extensionDraftProblem(draft, draft.extends_run_id), problem);
+});
+
+test("un brouillon de run n'est pas une extension", () => {
+  const draft = { id: "abc", kind: "run" } as unknown as Draft;
+  const problem = extensionDraftProblem(draft, "0060e7c3");
+  assert.ok(problem?.includes("not an extension"));
+});
+
+test("un brouillon qui vise un autre run est refusé, quel que soit son état", () => {
+  const draft = EXTEND_DRAFT();
+  const problem = extensionDraftProblem(draft, "97b8d12c-0a82-4ae5-b226-3509e307629d");
+  assert.ok(problem?.includes("extends run 0060e7c3-2455-4ad4-8c72-5d46261ffb92"));
+
+  // Même un brouillon déjà lancé : le mauvais run se refuse avant que son
+  // état ne soit seulement regardé.
+  const lancé = EXTEND_DRAFT({ launched_at: "2026-09-06T16:33:42.873Z" });
+  const problemLancé = extensionDraftProblem(lancé, "97b8d12c-0a82-4ae5-b226-3509e307629d");
+  assert.ok(problemLancé?.includes("extends run 0060e7c3-2455-4ad4-8c72-5d46261ffb92"));
+  assert.ok(!problemLancé?.includes("already applied"));
 });
