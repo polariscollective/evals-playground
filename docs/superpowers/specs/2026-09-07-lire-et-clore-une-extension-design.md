@@ -70,9 +70,12 @@ d'affirmer :
 | combien d'essais approfondis | `estimate.conversations` moins les cases | oui — vérifié : `estimateDeepening` chiffre `repetitions: cells` sur un scénario et un modèle, donc `conversations` vaut le nombre d'essais |
 | combien de relectures par un juge posé | `estimate.conversations` | oui — `estimateJudgeAdditionCost` reçoit ce compte et le recopie, et `addEstimates` les somme quand plusieurs juges sont posés |
 | **quels** essais ont été approfondis | nulle part | non — les identifiants ne sont pas gardés |
+| **depuis quelle** profondeur ils ont été poussés | nulle part | non — l'entrée porte `turns`, la profondeur visée, jamais celle d'avant |
 
-Le dernier cas est le seul que l'écran taira. Tout le reste est du fait, pas de
-la reconstitution.
+Ces deux-là sont les seuls que l'écran taira. La phrase d'approfondissement dit
+donc « poussés **à** 4 tours », jamais « de 3 à 4 » : le point de départ n'est
+pas dans le registre, et l'inventer serait précisément ce qu'on cherche à ne
+pas faire. Tout le reste est du fait, pas de la reconstitution.
 
 ## 1 · Lire une extension
 
@@ -89,7 +92,7 @@ Il rend une **phrase de tête** et des **lignes étiquetées**. Quatre formes :
 | ce que la demande porte | la phrase |
 |---|---|
 | des cases | `1 essai ajouté sur 2 scénarios × 1 modèle — 2 conversations.` |
-| un approfondissement | `9 essais notés 0 poussés de 3 à 4 tours.` |
+| un approfondissement | `9 essais notés 0 poussés à 4 tours.` |
 | les deux | les deux phrases, dans cet ordre |
 | un juge | `1 juge ajouté — relu sur 6 conversations déjà jouées.` |
 
@@ -201,7 +204,7 @@ colonne s'affiche telle quelle, donc rien ne casse. Noté, pas traité.
 | ouvrir `?extend=<lancé>` à la main | pas de panneau, le bandeau et sa date |
 | `POST /extend?draft=<lancé>` | 409, et le run inchangé |
 | `launch_draft` sur une extension lancée | refus par le MCP, dans les mêmes termes |
-| étendre depuis le panneau et couper le réseau au marquage | l'extension et le marquage tombent ensemble, ou passent ensemble |
+| le marquage échoue après une extension réussie | l'erreur remonte à l'appelant au lieu d'être avalée — l'extension a bien eu lieu, et le dire est le seul moyen de rattraper le brouillon resté en attente |
 
 `summariseExtension` et `launchedExtensionProblem` sont purs : ils se testent
 dans `lib/`, par `extension-summary.test.mts` et un ajout à
