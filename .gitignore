@@ -31,3 +31,10 @@ data/selected/
 # os
 .DS_Store
 *.tsbuildinfo
+
+# Espaces de travail des agents. Les deux vivent DANS le dépôt : un worktree
+# créé sous `.claude/worktrees/` est une copie complète de l'arbre, et sans
+# cette ligne `git status` la propose à l'ajout depuis la racine. Le journal
+# d'avancement est du brouillon de session, pas de l'histoire.
+/.claude/worktrees/
+/.superpowers/
