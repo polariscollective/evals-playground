@@ -352,12 +352,57 @@ class ToolSpec(BaseModel):
     parameters: list[ToolParam] = Field(default_factory=list)
 
     result: str = ""
-    """Ce que l'outil renvoie, toujours la même chose.
+    """Ce que l'outil renvoie, toujours la même chose — la forme **fixe**.
 
     Fixe, et c'est un choix : faire improviser la réponse par un modèle
     ramènerait dans chaque case la variance qu'un run cherche justement à
     isoler. Un échec se simule en écrivant le message d'erreur ici.
+
+    Reste la bonne forme pour la plupart des outils, et le défaut. Elle ne
+    tient plus que lorsque la sortie ne dépend pas légitimement de l'entrée —
+    voir `retrieval_rules` pour l'autre cas.
     """
+
+    retrieval_rules: str = ""
+    """Comment cet outil lit le monde du run — la forme **servie**.
+
+    Sa présence est le discriminant, et le seul : renseigné, l'outil est servi
+    par le modèle d'environnement depuis `EvalRunConfig.world` ; vide, l'outil
+    rend `result` sans qu'aucun modèle ne soit appelé. Un booléen en plus
+    (`served_by_world`) serait deux façons de dire la même chose, donc deux
+    occasions de se contredire — et il laisserait exister un outil servi dont
+    personne n'a écrit comment il lit le monde.
+
+    On y écrit une interface, pas un résumé : combien de lignes au maximum,
+    dans quel ordre, la forme d'une erreur, celle d'un résultat vide. Le nom
+    dit le cas dominant sans le couvrir tout entier — « fais la
+    multiplication », « renvoie 404 si l'id est inconnu » s'y écrivent aussi.
+    """
+
+    @property
+    def served(self) -> bool:
+        """L'outil passe-t-il par le modèle d'environnement ?
+
+        Le discriminant vit ici et nulle part ailleurs. Le recopier sur chaque
+        site d'appel, c'est l'oublier sur le troisième — la leçon que
+        `deleted_at` a déjà coûtée à ce dépôt (voir `RunJudge`).
+        """
+        return bool(self.retrieval_rules)
+
+    @model_validator(mode="after")
+    def _fixe_ou_servi(self) -> "ToolSpec":
+        """Un outil ne peut pas être les deux à la fois.
+
+        L'absence des deux reste licite, et décrit un outil fixe au résultat
+        vide : on mesure la décision d'appeler, pas ce que l'outil rend, et le
+        refuser ici casserait la relecture des runs déjà en base.
+        """
+        if self.result and self.retrieval_rules:
+            raise ValueError(
+                f"tool {self.name!r} carries both result and retrieval_rules:"
+                " a tool is fixed or served from the world, never both."
+            )
+        return self
 
     @field_validator("name")
     @classmethod
@@ -390,6 +435,21 @@ class EvalScenario(BaseModel):
     Ni le modèle ni le juge ne la voient : c'est une note de laboratoire, pas
     une consigne. Six mois plus tard, « pourquoi cette ligne » est la question
     qu'on se pose devant une matrice, et le titre seul n'y répond pas.
+    """
+
+    world: str = ""
+    """Ce que cette ligne de la matrice change au monde du run.
+
+    N'est pas concaténé à l'aveugle : les deux textes arrivent au modèle
+    d'environnement comme deux blocs nommés, celui du scénario déclaré
+    prioritaire sur celui du run. C'est ce qui rend la négation possible — « le
+    contrat n'est pas sur ce lecteur » devient une correction à appliquer, et
+    non une contradiction à démêler.
+
+    L'ajout reste la forme normale : dans le run ce que toutes les lignes
+    partagent, ici ce qui fait la différence de celle-ci. Une ligne qui se
+    décrit par ce qu'elle ajoute se relit six mois plus tard ; une ligne qui se
+    décrit par ce qu'elle retire, beaucoup moins.
     """
 
     tools: list[str] | None = None
@@ -589,6 +649,24 @@ class EvalRunConfig(BaseModel):
     Vrai par défaut y compris pour les runs enregistrés avant ce champ : ils
     n'ont pas de note d'éveil, et c'est leur absence en base qui le dit, pas
     cette valeur.
+    """
+
+    world: str = ""
+    """Ce que contient l'environnement, écrit par l'expérimentateur.
+
+    Un bloc de texte libre, et il doit le rester : le jour où quelqu'un veut
+    simuler une base, une boîte mail ou un système de tickets, il l'écrit comme
+    il l'écrirait à un collègue. Imposer un schéma reviendrait à décider
+    d'avance quels environnements ont le droit d'exister. Il porte aussi bien
+    des données que des règles — « id inconnu, renvoie 404 ».
+
+    Au niveau du run parce que les outils doivent s'accorder entre eux :
+    `search_files` et `read_file` racontent le même lecteur partagé, et deux
+    copies divergeraient. C'est déjà la raison pour laquelle `tools` vit ici.
+
+    Vide sur les runs enregistrés avant ce champ, et vide sur tout run dont
+    aucun outil n'est servi — auquel cas personne ne le lit, ce qui n'est pas
+    une erreur.
     """
 
     tools: list[ToolSpec] = Field(default_factory=list)

@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest
 from inspect_ai.model import ChatMessageSystem, ModelOutput, get_model
 
 from playground.conversation import (
@@ -748,3 +749,102 @@ def test_la_consigne_de_l_adversaire_porte_les_trois_regles_de_realisme():
     assert "refus" in CONFIDENTIALITY_NOTICE
     # La consigne encadre l'objectif : elle doit apparaître deux fois.
     assert system.count(CONFIDENTIALITY_NOTICE) == 2
+
+
+# --- les outils servis depuis le monde -----------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. La boucle ne
+# connaît ni le monde ni le modèle qui le sert : elle reçoit une fonction, à
+# l'image de `target` et `adversary`, qu'elle reçoit déjà construits.
+
+
+def _outil_servi(name="search_files"):
+    return ToolSpec(
+        name=name,
+        description="Searches the shared drive.",
+        parameters=[
+            {"name": "query", "type": "string", "description": "quoi", "required": True}
+        ],
+        retrieval_rules="Return at most twenty lines.",
+    )
+
+
+def test_un_outil_servi_passe_par_la_fonction():
+    vus = []
+
+    async def servir(tool, arguments):
+        vus.append((tool.name, arguments))
+        return "contracts/2026-03.pdf"
+
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Cherche le contrat.",
+            turns=1,
+            target=ModeleQuiAppelle(combien=1, nom="search_files"),
+            tools=[_outil_servi()],
+            serve_tool=servir,
+        )
+    )
+    assert transcript[2].content == "contracts/2026-03.pdf"
+    assert vus == [("search_files", {"scope": "all"})]
+
+
+def test_un_outil_fixe_ne_passe_jamais_par_la_fonction():
+    """Il ne coûte pas un appel, et c'est la moitié de l'intérêt du défaut."""
+    appels = []
+
+    async def servir(tool, arguments):
+        appels.append(tool.name)
+        return "jamais"
+
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Supprime tout.",
+            turns=1,
+            target=ModeleQuiAppelle(combien=1),
+            tools=[_outil()],
+            serve_tool=servir,
+        )
+    )
+    assert transcript[2].content == "412 enregistrements supprimés."
+    assert appels == []
+
+
+def test_un_outil_servi_sans_fonction_refuse_de_partir():
+    """Plutôt qu'un résultat vide servi en silence : le run coûte de l'argent,
+    et une case qui ment est pire qu'une case qui manque."""
+    with pytest.raises(ValueError, match="serve_tool"):
+        asyncio.run(
+            run_conversation(
+                system_prompt="s",
+                opening_message="Cherche.",
+                turns=1,
+                target=ModeleQuiAppelle(combien=1, nom="search_files"),
+                tools=[_outil_servi()],
+            )
+        )
+
+
+def test_le_meme_appel_est_redemande_a_la_fonction():
+    """La boucle ne met rien en cache : c'est la fonction qui décide, puisque
+    c'est elle qui sait ce qui est déjà en base."""
+    appels = []
+
+    async def servir(tool, arguments):
+        appels.append(arguments)
+        return "toujours pareil"
+
+    asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Cherche.",
+            turns=1,
+            target=ModeleQuiAppelle(combien=2, nom="search_files"),
+            tools=[_outil_servi()],
+            serve_tool=servir,
+            max_tool_calls=5,
+        )
+    )
+    assert len(appels) == 2
