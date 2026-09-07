@@ -419,3 +419,11 @@ export const updateScenarioAdvice = (advice: string | null) =>
     method: "PATCH",
     body: JSON.stringify({ scenario_advice: advice }),
   });
+
+/** Écrit les favoris de qui est connecté. Envoyés seuls : la route applique
+ *  un réglage à la fois — voir `profilePatchProblem`. */
+export const updateProfileFavorites = (favorite_models: string[]) =>
+  request<{ profile: Profile }>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ favorite_models }),
+  });

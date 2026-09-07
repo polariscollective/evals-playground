@@ -20,6 +20,13 @@ nôtres.
 
 Rien de ce qui fait foi ne vit sur disque.
 
+La table `profiles` porte aussi les **favoris de modèles** : `favorite_models`,
+`NULL` valant « le défaut du code » (`web/lib/favorite-models.ts`). Ils décident
+de tout ce qui *propose* — écrans, prompt de l'agent, outils MCP — et de rien
+de ce qui *existe* : `configProblem` valide contre le catalogue entier, pour
+qu'un run déjà lancé s'affiche et qu'une relance humaine reste lançable. Seuls
+les outils MCP refusent un modèle hors favoris.
+
 ## L'architecture
 
 ```
@@ -60,5 +67,5 @@ scripts/dev.sh          # backend et front ensemble
 pytest                  # le moteur
 ```
 
-Le `.env` porte les clés des trois fournisseurs, celles de Supabase, et le
+Le `.env` porte les clés des quatre fournisseurs, celles de Supabase, et le
 secret du déclencheur. `.env.example` en donne la liste, valeurs vides.

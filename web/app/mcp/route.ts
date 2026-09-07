@@ -16,6 +16,7 @@ import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
 import { analysisReplaceAllowed } from "@/lib/analysis";
 import { AWAKE_TYPE, AWARENESS_ALARM, awarenessEnabled, awarenessSummary } from "@/lib/awareness";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
+import { favoriteModels } from "@/lib/favorite-models";
 import { withLiveJudges } from "@/lib/live-config";
 import {
   DraftNotFound,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/drafts";
 import { verifyAccessToken } from "@/lib/mcp-auth";
 import { budgetProblem, formatUsd } from "@/lib/mcp-budget";
+import { configFavouritesProblem, extendFavouritesProblem } from "@/lib/mcp-favorites";
 import { cellsOf, overallMean } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { ensureProfile } from "@/lib/profiles";
@@ -271,7 +273,18 @@ const handler = createMcpHandler((server) => {
       const caps = profile
         ? { maxUsdPerRun: profile.max_usd_per_run, maxUsdPerHour: profile.max_usd_per_hour }
         : null;
-      return { content: [{ type: "text", text: mcpAgentPrompt(agentModels(), caps) }] };
+      return {
+        content: [
+          {
+            type: "text",
+            // Les favoris de l'appelant, pas le défaut : c'est cette liste
+            // que `submit_draft_run` fera respecter quelques appels plus
+            // loin, et publier autre chose l'enverrait proposer un modèle
+            // qu'il se verra refuser.
+            text: mcpAgentPrompt(agentModels(favoriteModels(profile)), caps),
+          },
+        ],
+      };
     },
   );
 
@@ -867,6 +880,17 @@ const handler = createMcpHandler((server) => {
         return documentRefusal(verdict.message);
       }
       const { config } = readConfigFile(yaml);
+
+      // Le même refus qu'au dépôt, pour la même raison : `submit_draft_run`
+      // refuse au dépôt un modèle hors favoris pour épargner à l'appelant un
+      // brouillon qu'il ne pourrait pas lancer, et cet outil-ci promet la
+      // même chose — sans ce contrôle, il écrirait le modèle refusé dans le
+      // brouillon en le disant lançable, pour que launch_draft le refuse
+      // ensuite avec la même raison, un aller-retour plus tard.
+      const profile = await profileOf(caller);
+      const outside = configFavouritesProblem(config, favoriteModels(profile));
+      if (outside) return toolError(outside);
+
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
 
       // `csv_text` part avec l'ancienne configuration, dans les deux branches :
@@ -932,6 +956,15 @@ const handler = createMcpHandler((server) => {
       }
       const { config } = readConfigFile(yaml);
       const caller = await callerEmail(ctx);
+      // Un seul appel pour les favoris ci-dessous et l'aperçu de budget plus
+      // bas : relire deux fois n'aurait pu que désaccorder les deux si le
+      // profil changeait entre les deux lectures.
+      const profile = await profileOf(caller);
+      // Le seul endroit où un modèle hors favoris est interdit et non
+      // seulement caché : `read_prompt` ne lui en a pas parlé, et le refuser
+      // au dépôt lui épargne un brouillon qu'il ne pourrait pas lancer.
+      const outside = configFavouritesProblem(config, favoriteModels(profile));
+      if (outside) return toolError(outside);
       const draftId = await createDraft(config, null, caller, "mcp");
       if (tags && tags.length > 0) {
         // Après la création, jamais avant : un document refusé n'écrit ni
@@ -950,7 +983,6 @@ const handler = createMcpHandler((server) => {
       // que de deviner — l'aperçu le dit, mais rien n'est refusé pour ça, le
       // brouillon est déjà déposé au-dessus. `launch_draft`, lui, refusera
       // vraiment le lancement s'il ne peut toujours pas lire de profil.
-      const profile = await profileOf(caller);
       const overBudget = profile
         ? budgetProblem(quote.usd, spentLastHour, profile.max_usd_per_run, profile.max_usd_per_hour)
         : "your spending profile could not be read just now, so whether you can launch this could " +
@@ -983,7 +1015,7 @@ const handler = createMcpHandler((server) => {
       title: "Launch a run draft",
       description:
         "Unlike every other tool in this server, calling this one spends real money: it launches the " +
-        "draft — as a new run, or as an extension of one that already exists — which calls three " +
+        "draft — as a new run, or as an extension of one that already exists — which calls four " +
         "model providers. Two caps of your own bound every launch, read from your profile rather " +
         "than from this code: a per-run cap refuses a draft quoted above it on its own; a per-hour " +
         "cap refuses one that would push what you have personally spent by MCP in the last rolling " +
@@ -1074,6 +1106,24 @@ const handler = createMcpHandler((server) => {
         );
         if (problem) return toolError(problem);
 
+        // Un seul appel pour les favoris ci-dessous et le budget plus bas, et
+        // son refus posé ici, avant les favoris plutôt qu'après : un profil
+        // introuvable ne se lit jamais deux fois, et surtout ne doit jamais
+        // laisser les favoris retomber sur le défaut du code puis reprocher
+        // à un profil par ailleurs correct de ne pas contenir le modèle — la
+        // vraie raison, un plafond illisible, prime sur celle-là.
+        const profile = await profileOf(caller);
+        if (!profile) {
+          return toolError(
+            "Your spending profile could not be found or created right now, so this launch is " +
+              "refused: a cap that cannot be read is never assumed to allow anything. Try again in " +
+              "a moment, or ask a human to launch it from the web app, where no cap applies.",
+          );
+        }
+
+        const outside = extendFavouritesProblem(request, favoriteModels(profile));
+        if (outside) return toolError(outside);
+
         // Même refus que la route humaine, pour la même raison : le job a
         // déjà lu la liste des cases en attente à son démarrage, et des cases
         // ajoutées maintenant ne seraient jamais jouées.
@@ -1099,17 +1149,6 @@ const handler = createMcpHandler((server) => {
         }
         const quote = plan.estimate?.usd ?? 0;
         const spentLastHour = await mcpSpendLastHour(caller);
-        // Pas de profil, pas de dépense : un plafond qu'on ne trouve pas ne
-        // se devine jamais vers le haut, donc ce lancement se refuse plutôt
-        // que de retomber sur une valeur codée en dur.
-        const profile = await profileOf(caller);
-        if (!profile) {
-          return toolError(
-            "Your spending profile could not be found or created right now, so this launch is " +
-              "refused: a cap that cannot be read is never assumed to allow anything. Try again in " +
-              "a moment, or ask a human to launch it from the web app, where no cap applies.",
-          );
-        }
         const overBudget = budgetProblem(
           quote,
           spentLastHour,
@@ -1190,12 +1229,9 @@ const handler = createMcpHandler((server) => {
       const problem = configProblem(draft.config);
       if (problem) return toolError(problem);
 
-      // Le devis calculé ici, et nulle part repris : un brouillon ne porte
-      // aucun devis à lire, seul un run en a un.
-      const quote = estimateCost(draft.config);
-      const spentLastHour = await mcpSpendLastHour(caller);
-      // Pas de profil, pas de dépense : voir le même refus dans la branche
-      // d'extension ci-dessus.
+      // Un seul appel pour les favoris ci-dessous et le budget plus bas, et
+      // son refus posé avant les favoris : voir le même commentaire dans la
+      // branche d'extension ci-dessus.
       const profile = await profileOf(caller);
       if (!profile) {
         return toolError(
@@ -1204,6 +1240,17 @@ const handler = createMcpHandler((server) => {
             "moment, or ask a human to launch it from the web app, where no cap applies.",
         );
       }
+
+      // Revérifié au lancement comme `configProblem` juste au-dessus, et pour
+      // la même raison : le brouillon était bon au dépôt, mais les favoris
+      // ont pu changer depuis.
+      const outside = configFavouritesProblem(draft.config, favoriteModels(profile));
+      if (outside) return toolError(outside);
+
+      // Le devis calculé ici, et nulle part repris : un brouillon ne porte
+      // aucun devis à lire, seul un run en a un.
+      const quote = estimateCost(draft.config);
+      const spentLastHour = await mcpSpendLastHour(caller);
       const overBudget = budgetProblem(
         quote.usd,
         spentLastHour,
@@ -1524,6 +1571,13 @@ const handler = createMcpHandler((server) => {
         return { content: [{ type: "text", text: problem }], isError: true };
       }
 
+      // Un seul appel pour les favoris ci-dessous et l'aperçu de budget plus
+      // bas : relire deux fois n'aurait pu que désaccorder les deux si le
+      // profil changeait entre les deux lectures.
+      const profile = await profileOf(caller);
+      const outside = extendFavouritesProblem(request, favoriteModels(profile));
+      if (outside) return toolError(outside);
+
       // Le même devis que verrait `launch_draft` s'il lançait ce brouillon —
       // `planExtension`, la seule fonction qui construise la forme d'une
       // extension et son prix ; voir sa documentation dans `runs.ts` sur
@@ -1582,7 +1636,6 @@ const handler = createMcpHandler((server) => {
       // profil illisible ne fait pas échouer le dépôt du brouillon, seulement
       // cet aperçu-ci — `launch_draft` refusera vraiment s'il ne peut
       // toujours pas en lire un.
-      const profile = await profileOf(caller);
       const overBudget = profile
         ? budgetProblem(quote, spentLastHour, profile.max_usd_per_run, profile.max_usd_per_hour)
         : "your spending profile could not be read just now, so whether you can launch this could " +

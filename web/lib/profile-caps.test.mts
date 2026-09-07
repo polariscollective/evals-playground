@@ -77,3 +77,23 @@ test("un corps vide passe : rien à croiser", () => {
   // conflit — c'est ce que reçoit la route quand le JSON envoyé ne parse pas.
   assert.equal(profilePatchProblem({}), null);
 });
+
+test("favorite_models ne voyage pas avec les plafonds", () => {
+  // Même raison que le conseil de scénario : la route applique une chose ou
+  // l'autre, et choisir laquelle écraser serait arbitraire pour qui envoie.
+  assert.notEqual(
+    profilePatchProblem({ favorite_models: ["grok/grok-4.6"], max_usd_per_run: 2 }),
+    null,
+  );
+});
+
+test("favorite_models ne voyage pas avec le conseil de scénario", () => {
+  assert.notEqual(
+    profilePatchProblem({ favorite_models: ["grok/grok-4.6"], scenario_advice: "x" }),
+    null,
+  );
+});
+
+test("favorite_models seul passe", () => {
+  assert.equal(profilePatchProblem({ favorite_models: ["grok/grok-4.6"] }), null);
+});

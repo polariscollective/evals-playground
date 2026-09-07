@@ -34,6 +34,18 @@ class ModelOption(BaseModel):
     donc lui qui pèse le plus sur la facture d'un run.
     """
 
+    honours_temperature: bool = True
+    """Le fournisseur tient-il compte de la température qu'on lui envoie ?
+
+    `False` ne dit pas que l'appel échoue : Claude 4.7 et au-delà tournent en
+    adaptive thinking et refusent le paramètre, `inspect_ai` le retire et
+    l'appel passe sans lui. L'écran s'en sert pour prévenir qu'un balayage de
+    température sur ces modèles ne mesurerait que du bruit.
+
+    Le défaut est `True` parce que le fichier partagé ne marque que
+    l'exception — sept modèles sur quarante et un.
+    """
+
 
 class ProviderInfo(BaseModel):
     """Un provider et l'état courant de sa clé d'API."""

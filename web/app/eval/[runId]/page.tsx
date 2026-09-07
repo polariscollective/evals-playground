@@ -11,6 +11,7 @@ import {
   designateRunPrincipal,
   exportUrl,
   extendRun,
+  getCatalog,
   getDraft,
   getRun,
   getRunTags,
@@ -29,6 +30,7 @@ import {
   updateDraft,
 } from "@/lib/api";
 import { summariseExtension } from "@/lib/extension-summary";
+import { withLiveJudges } from "@/lib/live-config";
 import { amountDigits, estimateJudgeAdditionCost } from "@/lib/pricing";
 import { extensionsOf } from "@/lib/run-extensions";
 import type { RunExtension } from "@/lib/run-extensions";
@@ -58,6 +60,7 @@ import type {
   EvalRun,
   EvalScenario,
   ExtendRequest,
+  ProviderInfo,
   RubricLevel,
   RunDetail,
   Tag,
@@ -235,7 +238,35 @@ function AddJudgePanel({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const models = [...new Set([...config.models.targets, config.models.judge])];
+  // Le catalogue, pour ne pas enfermer un juge dans les modèles du run : on
+  // ajoute un juge précisément pour regarder autrement, et le meilleur
+  // modèle pour ça n'est pas forcément une des colonnes déjà jouées.
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  useEffect(() => {
+    getCatalog().then(setProviders).catch(() => setProviders([]));
+  }, []);
+
+  // Les favoris, plus les modèles du run : ceux-ci restent proposables même
+  // s'ils ont quitté les favoris depuis, sans quoi on ne pourrait plus
+  // ajouter un juge tournant sur le même modèle que le principal. Les juges
+  // secondaires déjà posés en font partie aussi : chacun peut porter son
+  // propre modèle (absent, il suit celui du run, déjà dans l'ensemble) —
+  // même raison que `chosen` dans `app/page.tsx` (commit 1a991da).
+  //
+  // Dérivé des juges VIVANTS (`detail.judges`), jamais de `config.judges` —
+  // la photo du lancement : voir `withLiveJudges` (`lib/live-config.ts`) et
+  // son en-tête. Sans ça, un juge ajouté depuis ce panneau lui-même dont le
+  // modèle a quitté les favoris depuis ne serait plus proposable, tandis
+  // qu'un juge délié y resterait.
+  const liveConfig = withLiveJudges(config, detail.judges ?? []);
+  const models = [
+    ...new Set([
+      ...providers.flatMap((p) => p.models.filter((m) => m.favorite).map((m) => m.id)),
+      ...liveConfig.models.targets,
+      liveConfig.models.judge,
+      ...(liveConfig.judges ?? []).map((j) => j.model).filter((m): m is string => Boolean(m)),
+    ]),
+  ];
   const values = rubric.map((level) => level.value);
   const ready =
     criterion.trim() !== "" &&

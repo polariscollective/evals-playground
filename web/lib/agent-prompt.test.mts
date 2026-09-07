@@ -6,8 +6,10 @@
 // lui-même et le font passer par le lecteur de fichiers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentModels, agentPrompt, mcpAgentPrompt } from "./agent-prompt.ts";
+import { agentModels, agentPrompt, catalogModelOptions, mcpAgentPrompt } from "./agent-prompt.ts";
+import { catalog, knownModelIds } from "./catalog.ts";
 import { readConfigFile } from "./config-file.ts";
+import { DEFAULT_FAVORITE_MODELS } from "./favorite-models.ts";
 
 const MODELS = [
   { id: "anthropic/claude-sonnet-5", label: "Anthropic Claude Sonnet 5" },
@@ -152,7 +154,7 @@ test("le prompt MCP ne devine pas un plafond quand le profil n'a pas pu être lu
 test("le prompt annonce le juge d'éveil et le conseil d'écriture", () => {
   // Ce que le prompt omet devient un champ qu'un agent n'écrit jamais, ou un
   // conseil qu'il ne va pas chercher.
-  const prompt = agentPrompt(agentModels(), "https://example.test");
+  const prompt = agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
   assert.match(prompt, /check_eval_awareness/);
   // Le canal MCP appelle un outil ; le canal HTTP ouvre la route publique
   // dédiée — jamais `/scenarios`, la page privée qu'un agent sans session ne
@@ -165,8 +167,8 @@ test("le prompt annonce les deux formes d'outil et le monde", () => {
   // dont la réponse ignore les arguments, ce que le juge d'éveil rapportera
   // une fois le run payé.
   for (const prompt of [
-    agentPrompt(agentModels(), "https://example.test"),
-    mcpAgentPrompt(agentModels(), null),
+    agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    mcpAgentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /retrieval_rules/);
     assert.match(prompt, /## Writing the world/);
@@ -233,4 +235,57 @@ test("le prompt annonce la section qui apprend à poser plusieurs juges", () => 
   // La règle du gabarit principal (les deux premières règles d'échelle)
   // s'applique aussi à chaque juge secondaire.
   assert.match(prompt, /Each entry in `judges`, if you add any, needs its own non-empty `criterion`/);
+});
+
+// --- agentModels -------------------------------------------------------------
+
+test("agentModels ne publie que les favoris qu'on lui passe", () => {
+  // Le prompt publie la liste entière à chaque appel : un agent ne doit y
+  // lire que ce qu'il a le droit de lancer, sans quoi il proposera un modèle
+  // que submit_draft_run refusera.
+  const models = agentModels(["grok/grok-4.6", "anthropic/claude-opus-5"]);
+  assert.deepEqual(
+    models.map((m) => m.id).sort(),
+    ["anthropic/claude-opus-5", "grok/grok-4.6"],
+  );
+});
+
+test("agentModels garde l'ordre du catalogue, pas celui des favoris", () => {
+  // Anthropic vient avant xAI dans le catalogue ; l'ordre des favoris ne
+  // doit pas faire varier un texte que deux appels doivent rendre identique.
+  const models = agentModels(["grok/grok-4.6", "anthropic/claude-opus-5"]);
+  assert.deepEqual(models.map((m) => m.id), [
+    "anthropic/claude-opus-5",
+    "grok/grok-4.6",
+  ]);
+});
+
+test("agentModels étiquette le fournisseur avec le modèle", () => {
+  const [only] = agentModels(["anthropic/claude-opus-5"]);
+  assert.equal(only.label, "Anthropic Claude Opus 5");
+});
+
+// --- catalogModelOptions ------------------------------------------------------
+//
+// Partagée par `agentModels` et par `PromptGuide` : c'est elle qui décide de
+// l'étiquette et qui porte le favori de chaque modèle, pour que les deux
+// lecteurs ne puissent plus en filtrer un et pas l'autre sans s'en apercevoir.
+
+test("catalogModelOptions ne filtre rien : elle porte le catalogue entier", () => {
+  const options = catalogModelOptions(catalog(["anthropic/claude-opus-5"]));
+  assert.equal(options.length, knownModelIds().size);
+});
+
+test("catalogModelOptions étiquette chaque modèle avec son fournisseur", () => {
+  const options = catalogModelOptions(catalog([]));
+  const opus = options.find((m) => m.id === "anthropic/claude-opus-5");
+  assert.equal(opus?.label, "Anthropic Claude Opus 5");
+});
+
+test("catalogModelOptions porte le favori de chaque modèle, sans filtrer", () => {
+  const options = catalogModelOptions(catalog(["anthropic/claude-opus-5"]));
+  const opus = options.find((m) => m.id === "anthropic/claude-opus-5");
+  const other = options.find((m) => m.id !== "anthropic/claude-opus-5");
+  assert.equal(opus?.favorite, true);
+  assert.equal(other?.favorite, false);
 });

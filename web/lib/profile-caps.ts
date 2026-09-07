@@ -39,20 +39,30 @@ export function capProblem(value: unknown): string | null {
  *  qui cloche.
  *
  * La route applique soit les plafonds, soit le conseil d'écriture de
- * scénario, jamais les deux — sans quoi il faudrait choisir lequel des deux
- * un corps portant les deux à la fois écrase, et ce choix serait arbitraire
+ * scénario, soit les favoris de modèles — jamais deux à la fois. Choisir
+ * lequel des réglages portés par un même corps écraser serait arbitraire
  * pour qui l'a envoyé. Ne valide que cette exclusion mutuelle : la forme de
  * chaque champ (un plafond via `capProblem`, une chaîne ou `null` pour le
- * conseil) reste à la charge de la route, qui seule sait quoi faire du corps
- * une fois admis. */
+ * conseil, un tableau via `favoritesProblem` pour les favoris) reste à la
+ * charge de la route, qui seule sait quoi faire du corps une fois admis. */
 export function profilePatchProblem(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
-  const b = body as { scenario_advice?: unknown; max_usd_per_run?: unknown; max_usd_per_hour?: unknown };
-  if (
-    b.scenario_advice !== undefined &&
-    (b.max_usd_per_run !== undefined || b.max_usd_per_hour !== undefined)
-  ) {
-    return "Send the spending caps and the scenario advice in separate requests — this route applies one or the other, and silently dropping half of what you sent would be worse than refusing it.";
+  const b = body as {
+    scenario_advice?: unknown;
+    favorite_models?: unknown;
+    max_usd_per_run?: unknown;
+    max_usd_per_hour?: unknown;
+  };
+  // Trois réglages indépendants, une seule route : chacun arrive de son
+  // propre écran et aucun n'a à connaître les autres. Un corps qui en porte
+  // deux est refusé plutôt que d'en dédouaner un en silence.
+  const sent = [
+    b.scenario_advice !== undefined,
+    b.favorite_models !== undefined,
+    b.max_usd_per_run !== undefined || b.max_usd_per_hour !== undefined,
+  ].filter(Boolean).length;
+  if (sent > 1) {
+    return "Send the spending caps, the scenario advice and the favourite models in separate requests — this route applies one of the three, and silently dropping the rest of what you sent would be worse than refusing it.";
   }
   return null;
 }

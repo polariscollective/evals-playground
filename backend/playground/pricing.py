@@ -6,7 +6,7 @@ réponses — et comme chaque tour renvoie tout l'historique au modèle suivant,
 une réponse longue enfle le coût de tous les tours qui la suivent. D'où une
 fourchette, dont les bornes viennent d'hypothèses sur cette longueur.
 
-Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des trois
+Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des quatre
 fournisseurs. Ils changent : ce fichier est le seul endroit à mettre à jour.
 """
 
@@ -547,10 +547,26 @@ CACHE_READ_MULTIPLIER = _SHARED["cache_read_multiplier"]
 CACHE_WRITE_MULTIPLIER = _SHARED["cache_write_multiplier"]
 """Tarifs relatifs des jetons d'entrée mis en cache.
 
-Les trois fournisseurs facturent une lecture de cache à 10 % du tarif d'entrée.
-Anthropic facture l'écriture 25 % de plus que l'entrée normale ; OpenAI et xAI
-ne facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
+Les quatre fournisseurs facturent une lecture de cache à 10 % du tarif
+d'entrée — vérifié aussi pour Google, qui n'a rejoint le catalogue qu'après
+que cette note ait été écrite pour les trois autres. Anthropic facture
+l'écriture 25 % de plus que l'entrée normale ; OpenAI, xAI et Google ne
+facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
 formule reste juste pour eux.
+
+Une nuance propre à Google, et seulement aux modèles que `PRICES` porte à leur
+tarif *promotionnel* plutôt qu'à son tarif d'entrée *standard*, sur lequel
+portent les 10 % : `gemini-3.8-flash`, `gemini-3.7-flash` et
+`gemini-3.6-flash` sont ici à 0.75 $/Mtok, promotion courant jusqu'au 31
+décembre 2026, plutôt que leur tarif standard de 1.50 $/Mtok. Pendant la
+fenêtre promotionnelle, une lecture de cache sur ces trois-là coûte donc en
+réalité environ 20 % du tarif que porte cette table, et `actual_cost` sous-
+compte ce poste-là pour eux jusqu'à l'échéance de la promotion.
+`gemini-3.5-flash`, au même tarif standard de 1.50 $/Mtok, n'a pas cette
+nuance : les 10 % y sont exacts. L'écart reste minime et borné, et n'est pas
+corrigé ici : rien à changer dans le coefficient lui-même, 10 % reste juste
+pour les trois autres fournisseurs et redeviendra juste pour ces trois
+modèles-là une fois leur promotion terminée.
 
 Sans ces coefficients, le coût réel serait faux dans les deux sens : inspect
 compte les jetons de cache séparément de `input_tokens`, si bien que les

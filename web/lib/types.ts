@@ -683,6 +683,14 @@ export interface Profile {
    * personne, chacun traînant la version du jour de son inscription. Revenir
    * au défaut, c'est remettre `null`. */
   scenario_advice: string | null;
+  /** Les modèles que cette personne veut voir proposés.
+   *
+   * `null` — le cas courant — veut dire « utilise le défaut du code », par
+   * `favoriteModels` dans `favorite-models.ts`. Le défaut n'est jamais
+   * recopié ici, pour la même raison que `scenario_advice` : l'enrichir
+   * n'atteindrait plus personne. Ne borne que ce qui est PROPOSÉ ; la
+   * validation d'un run, elle, accepte tout le catalogue. */
+  favorite_models: string[] | null;
 }
 
 /** Ce que `mcp_launches` dit de la dernière heure, pour une personne : combien
@@ -939,6 +947,20 @@ export interface ModelOption {
   /** Prix en dollars par million de jetons, ou null si le modèle n'est pas tarifé. */
   input_per_mtok: number | null;
   output_per_mtok: number | null;
+  /** Le fournisseur tient-il compte de la température qu'on lui envoie ?
+   *
+   * `false` ne veut pas dire que l'appel échoue : Claude 4.7 et au-delà
+   * tournent en adaptive thinking et refusent le paramètre, `inspect_ai` le
+   * retire et l'appel réussit sans lui. C'est ce qui rend le piège traître —
+   * un balayage de température sur ces modèles ne mesure que du bruit, et
+   * rien dans la réponse ne le dit. */
+  honours_temperature: boolean;
+  /** Ce modèle est-il dans les favoris de qui regarde ?
+   *
+   * Posé par `catalog()` à partir de la liste qu'on lui passe, jamais lu
+   * dans le fichier partagé : les favoris sont propres à une personne, le
+   * catalogue est commun à tout le monde. */
+  favorite: boolean;
 }
 
 export interface ProviderInfo {

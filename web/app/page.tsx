@@ -40,6 +40,7 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
 import { configProblem } from "@/lib/validate";
+import { DEFAULT_RUN_MODEL } from "@/lib/favorite-models";
 import { withLiveJudges } from "@/lib/live-config";
 import { SHARED_PRICING } from "@/lib/shared";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -178,6 +179,15 @@ function EvaluateForm() {
   // reste porté par `criterion`/`rubric`/`judge` ci-dessus : rien ici ne peut
   // se déclarer principal, la forme de `JudgeSpec` ne le permet pas.
   const [secondaryJudges, setSecondaryJudges] = useState<JudgeSpec[]>([]);
+  // Les modèles qu'une reprise ou un brouillon apportait à l'ouverture,
+  // hors favoris ou non — posés une fois par `fillFromConfig` et jamais
+  // recalculés ensuite. `chosen`, plus bas, les ajoute à la sélection vivante
+  // plutôt que de les y remplacer : recalculer ce sous-ensemble depuis
+  // `targets`/`adversary`/`judge`/`secondaryJudges` à chaque rendu ferait
+  // disparaître un modèle carried dès qu'on le désélectionne, empêchant de le
+  // reposer ensuite sans recharger la page — exactement l'usage que ce
+  // mécanisme sert.
+  const [carriedModels, setCarriedModels] = useState<Set<string>>(new Set());
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
@@ -220,9 +230,27 @@ function EvaluateForm() {
         // Un relaunch apporte ses propres modèles : les défauts du catalogue
         // les écraseraient selon l'ordre d'arrivée des deux requêtes.
         if (available && !relaunchOf) {
-          setTargets([available.models[0].id]);
-          setAdversary(available.models[0].id);
-          setJudge(available.models[0].id);
+          // Le défaut est nommé (`DEFAULT_RUN_MODEL`), pas déduit d'un ordre :
+          // tant qu'il l'était, élargir ou réordonner le catalogue déplaçait
+          // l'ouverture d'une page vierge — et le devis avec.
+          //
+          // Les deux replis servent le cas où ce modèle-là n'est pas offert à
+          // cette personne : elle l'a retiré de ses favoris, ou la clé de son
+          // fournisseur manque. On prend alors son premier favori disponible,
+          // puis, s'il n'en reste aucun, le premier modèle venu — préremplir
+          // un modèle que le catalogue filtré n'affichera pas serait la même
+          // faute que celle réparée plus bas, mais laisser les trois champs
+          // vides serait pire.
+          const offered = catalog
+            .filter((p) => p.key_present)
+            .flatMap((p) => p.models);
+          const preselected =
+            offered.find((m) => m.id === DEFAULT_RUN_MODEL && m.favorite)?.id ??
+            offered.find((m) => m.favorite)?.id ??
+            available.models[0].id;
+          setTargets([preselected]);
+          setAdversary(preselected);
+          setJudge(preselected);
         }
       })
       .catch((e: Error) => setError(e.message));
@@ -258,6 +286,18 @@ function EvaluateForm() {
       setTargets(config.models?.targets ?? []);
       setAdversary(config.models?.adversary ?? "");
       setJudge(config.models?.judge ?? "");
+      // Ce que cette configuration nomme, gardé à part de l'état vivant —
+      // voir le commentaire de `carriedModels` plus haut sur pourquoi.
+      setCarriedModels(
+        new Set(
+          [
+            ...(config.models?.targets ?? []),
+            config.models?.adversary,
+            config.models?.judge,
+            ...(config.judges ?? []).map((j) => j.model),
+          ].filter((m): m is string => Boolean(m)),
+        ),
+      );
       setTemperatureMin(config.temperature?.min ?? 1);
       setVaryTemperature(config.temperature?.max != null);
       setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
@@ -665,6 +705,21 @@ function EvaluateForm() {
     setTargets(config.models.targets);
     setAdversary(config.models.adversary ?? "");
     setJudge(config.models.judge);
+    // Ce que ce document nomme, gardé à part de l'état vivant — voir le
+    // commentaire de `carriedModels` plus haut sur pourquoi. Posé (et non
+    // ajouté) à chaque import : un document chargé après une reprise remplace
+    // les modèles de l'ancien run plutôt que de les offrir indéfiniment à
+    // côté des siens.
+    setCarriedModels(
+      new Set(
+        [
+          ...config.models.targets,
+          config.models.adversary,
+          config.models.judge,
+          ...(config.judges ?? []).map((j) => j.model),
+        ].filter((m): m is string => Boolean(m)),
+      ),
+    );
     setTemperatureMin(config.temperature?.min ?? 1);
     setVaryTemperature(config.temperature?.max != null);
     setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
@@ -828,17 +883,42 @@ function EvaluateForm() {
     }
   };
 
+  // Les favoris seulement — plus, s'il y a lieu, les modèles que ce
+  // formulaire porte déjà. Une relance pré-remplie peut nommer un modèle
+  // qui a quitté les favoris depuis : le retirer du menu rendrait le
+  // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
+  // Les juges secondaires en font partie : chacun peut porter son propre
+  // modèle (absent, il suit celui du run, déjà dans l'ensemble).
+  //
+  // `carriedModels` s'ajoute à la sélection vivante plutôt que de s'y
+  // substituer : un modèle carried qu'on désélectionne (par exemple, un
+  // juge changé pour un favori puis reposé sur l'ancien modèle) doit rester
+  // proposable, alors qu'il aurait disparu d'un ensemble recalculé seulement
+  // depuis l'état courant.
+  const chosen = new Set(
+    [
+      ...targets,
+      adversary,
+      judge,
+      ...secondaryJudges.map((j) => j.model),
+      ...carriedModels,
+    ].filter(Boolean),
+  );
   const modelRows = providers.flatMap((provider) =>
-    provider.models.map((model) => ({
-      id: model.id,
-      label: `${provider.label} — ${model.label}`,
-      available: provider.key_present,
-      missing: provider.env_vars.join(" or "),
-      price:
-        model.input_per_mtok === null || model.output_per_mtok === null
-          ? null
-          : `in $${model.input_per_mtok.toFixed(2)} · out $${model.output_per_mtok.toFixed(2)} /Mtok`,
-    })),
+    provider.models
+      .filter((model) => model.favorite || chosen.has(model.id))
+      .map((model) => ({
+        id: model.id,
+        label: `${provider.label} — ${model.label}`,
+        available: provider.key_present,
+        missing: provider.env_vars.join(" or "),
+        outsideFavourites: !model.favorite,
+        honoursTemperature: model.honours_temperature,
+        price:
+          model.input_per_mtok === null || model.output_per_mtok === null
+            ? null
+            : `in $${model.input_per_mtok.toFixed(2)} · out $${model.output_per_mtok.toFixed(2)} /Mtok`,
+      })),
   );
 
   const single = (
@@ -861,6 +941,7 @@ function EvaluateForm() {
           <option key={m.id} value={m.id} disabled={!m.available}>
             {m.label}
             {m.price ? ` — ${m.price}` : ""}
+            {m.outsideFavourites ? " — not in your favourites" : ""}
             {m.available ? "" : ` (${m.missing} missing)`}
           </option>
         ))}
@@ -1412,6 +1493,13 @@ function EvaluateForm() {
           <span className="text-sm font-medium">
             Evaluated models — one column per model in the results
           </span>
+          <p className="text-sm text-zinc-600">
+            Only your favourite models are listed.{" "}
+            <a href="/profile" className="underline hover:text-zinc-900">
+              Change which models you see
+            </a>
+            .
+          </p>
           <div className="grid grid-cols-2 gap-1 rounded border border-zinc-300 p-2">
             {modelRows.map((m) => (
               <label
@@ -1432,6 +1520,7 @@ function EvaluateForm() {
                 />
                 <span className="flex-1">
                   {m.label}
+                  {m.outsideFavourites ? " — not in your favourites" : ""}
                   {m.available ? "" : ` (${m.missing} missing)`}
                 </span>
                 {m.price && (
@@ -1485,6 +1574,25 @@ function EvaluateForm() {
         {temperatureError && (
           <p className="text-sm text-red-700">{temperatureError}</p>
         )}
+        {(() => {
+          // Ces modèles acceptent l'appel et jettent le paramètre : Claude 4.7
+          // et au-delà tournent en adaptive thinking et le refusent, inspect le
+          // retire, et rien dans la réponse ne le dit. Un balayage sur eux ne
+          // mesure que du bruit — on le dit ici plutôt que de griser le
+          // réglage, parce qu'une température fixe sur eux reste légitime.
+          const deaf = modelRows.filter(
+            (m) => targets.includes(m.id) && !m.honoursTemperature,
+          );
+          if (deaf.length === 0) return null;
+          return (
+            <p className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+              {deaf.map((m) => m.label).join(", ")}
+              {deaf.length > 1 ? " ignore" : " ignores"} temperature — the
+              provider runs them at its own setting. Their answers will still
+              vary between repetitions, but not because of this control.
+            </p>
+          );
+        })()}
         <p className="text-sm text-zinc-600">
           The adversary and the judge keep their provider default: varying them
           too would make any difference impossible to attribute.

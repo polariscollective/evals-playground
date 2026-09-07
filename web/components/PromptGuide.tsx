@@ -8,7 +8,7 @@
 // des configs refusées.
 import { useState } from "react";
 import { Dialog } from "./Dialog";
-import { agentPrompt } from "@/lib/agent-prompt";
+import { agentPrompt, catalogModelOptions } from "@/lib/agent-prompt";
 import type { ProviderInfo } from "@/lib/types";
 
 export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
@@ -24,12 +24,12 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
   // et le linter le refuse à juste titre.
   const text = open
     ? agentPrompt(
-        providers.flatMap((provider) =>
-          provider.models.map((model) => ({
-            id: model.id,
-            label: `${provider.label} ${model.label}`,
-          })),
-        ),
+        // Filtré aux favoris de qui regarde : ce dialogue promet « the model
+        // identifiers currently available », et un identifiant qu'on n'a pas
+        // coché n'est pas disponible — `submit_draft_run` le refuserait.
+        catalogModelOptions(providers)
+          .filter((model) => model.favorite)
+          .map(({ id, label }) => ({ id, label })),
         window.location.origin,
       )
     : "";
