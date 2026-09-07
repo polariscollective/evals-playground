@@ -177,6 +177,16 @@ export function toolsProblem(tools: unknown): string | null {
     if (seen.has(tool.name)) return `two tools are both named "${tool.name}"`;
     seen.add(tool.name);
 
+    // Un outil est fixe ou servi depuis le monde, jamais les deux. Ni l'un ni
+    // l'autre reste licite et décrit un outil fixe au résultat vide : `result`
+    // vaut `""` par défaut depuis toujours, et casser la relecture des runs
+    // déjà en base pour une règle qui n'ajoute rien serait cher payé.
+    if (isFilled(tool.result) && isFilled(tool.retrieval_rules)) {
+      return (
+        `tool "${tool.name}" carries both result and retrieval_rules: ` +
+        "a tool is fixed or served from the world, never both"
+      );
+    }
     if (!isFilled(tool.description)) {
       // Un outil sans description est un outil que le modèle n'appellera
       // jamais, ou appellera au hasard : dans les deux cas la case ne mesure

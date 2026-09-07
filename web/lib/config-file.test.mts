@@ -730,3 +730,51 @@ test("un palier « sans objet » d'un juge secondaire garde son exclusion à l'a
   assert.deepEqual(relu.config.judges, config.judges);
   assert.ok(!writeConfigFile(config).includes("excluded: false"));
 });
+
+// --- le monde survit à l'aller-retour --------------------------------------
+//
+// `get_run_config` rend ce document à un agent pour qu'il l'édite. Ce qu'il ne
+// porte pas disparaît du run que l'agent renvoie, sans que rien ne le dise —
+// et un monde perdu fait un outil servi qui n'a plus rien à lire.
+
+test("le monde du run survit à l'aller-retour", () => {
+  const { config } = readConfigFile(COMPLET);
+  config.world = "Un lecteur partagé, trente fichiers ennuyeux.";
+  const relu = readConfigFile(writeConfigFile(config));
+  assert.equal(relu.config.world, config.world);
+});
+
+test("le monde d'un scénario sans historique survit aussi", () => {
+  // C'est la branche qui recopie champ par champ : celle où un oubli se voit
+  // le moins, et où il coûte le plus.
+  const { config } = readConfigFile(COMPLET);
+  config.scenarios[0].world = "Le contrat Vandenberghe n'est pas sur ce lecteur.";
+  const relu = readConfigFile(writeConfigFile(config));
+  assert.equal(relu.config.scenarios[0].world, config.scenarios[0].world);
+});
+
+test("un outil servi se relit servi, et sans result vide à côté", () => {
+  const { config } = readConfigFile(COMPLET);
+  config.world = "Un lecteur partagé.";
+  config.tools = [
+    {
+      name: "search_files",
+      description: "Searches the shared drive.",
+      parameters: [],
+      result: "",
+      retrieval_rules: "Return at most twenty lines.",
+    },
+  ];
+  const écrit = writeConfigFile(config);
+  assert.ok(!écrit.includes("result: ''"));
+  const relu = readConfigFile(écrit);
+  assert.equal(relu.config.tools?.[0].retrieval_rules, "Return at most twenty lines.");
+});
+
+test("un outil fixe ne gagne pas de règles vides", () => {
+  const { config } = readConfigFile(COMPLET);
+  config.tools = [
+    { name: "delete_records", description: "Deletes.", parameters: [], result: "412." },
+  ];
+  assert.ok(!writeConfigFile(config).includes("retrieval_rules"));
+});

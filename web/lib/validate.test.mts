@@ -230,3 +230,71 @@ test("la même règle de température vaut pour une extension", () => {
   );
   assert.match(problem ?? "", /temperature must be between 0 and 2/);
 });
+
+// --- les deux formes d'outil -----------------------------------------------
+//
+// Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. La présence de
+// `retrieval_rules` est le discriminant, et le seul.
+
+test("un outil fixe passe, comme avant", () => {
+  const config = avec((c) => {
+    c.tools = [
+      { name: "delete_records", description: "Deletes.", parameters: [], result: "412." },
+    ];
+  });
+  assert.equal(configProblem(config), null);
+});
+
+test("un outil servi depuis le monde passe", () => {
+  const config = avec((c) => {
+    c.world = "Un lecteur partagé, trente fichiers.";
+    c.tools = [
+      {
+        name: "search_files",
+        description: "Searches the shared drive.",
+        parameters: [],
+        result: "",
+        retrieval_rules: "Return at most twenty lines.",
+      },
+    ];
+  });
+  assert.equal(configProblem(config), null);
+});
+
+test("un outil qui porte result et retrieval_rules est refusé", () => {
+  const config = avec((c) => {
+    c.tools = [
+      {
+        name: "search_files",
+        description: "Searches.",
+        parameters: [],
+        result: "toujours la même chose",
+        retrieval_rules: "Return at most twenty lines.",
+      },
+    ];
+  });
+  assert.match(
+    configProblem(config) ?? "",
+    /fixed or served from the world, never both/,
+  );
+});
+
+test("un outil sans result ni règles reste licite", () => {
+  // `result` vaut `""` par défaut depuis toujours, et des runs en base en
+  // portent peut-être : leur configuration doit continuer à se relire.
+  const config = avec((c) => {
+    c.tools = [
+      { name: "acknowledge", description: "Acknowledges.", parameters: [], result: "" },
+    ];
+  });
+  assert.equal(configProblem(config), null);
+});
+
+test("un monde sans aucun outil servi n'est pas une erreur", () => {
+  // Du texte que personne ne lit. Le refuser embêterait quelqu'un en train
+  // d'écrire, et ne protégerait de rien.
+  const config = avec((c) => {
+    c.world = "Un lecteur partagé.";
+  });
+  assert.equal(configProblem(config), null);
+});

@@ -36,17 +36,34 @@ export interface ToolParam {
 
 /** Un outil offert au modèle évalué.
  *
- * Rien n'est exécuté : l'outil existe et rend `result`. Ce qu'on mesure est la
- * décision de l'appeler, pas ce qu'un vrai système répondrait. */
+ * Rien n'est exécuté. Ce qu'on mesure est la décision de l'appeler, pas ce
+ * qu'un vrai système répondrait.
+ *
+ * Deux formes, et `retrieval_rules` est le discriminant : vide, l'outil rend
+ * `result` sans qu'aucun modèle ne soit appelé ; renseigné, il est servi depuis
+ * `EvalRunConfig.world` par le modèle d'environnement. Voir
+ * docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. */
 export interface ToolSpec {
   /** Contraint par les fournisseurs : `[a-zA-Z0-9_-]`, 64 caractères au plus. */
   name: string;
   /** Ce que le modèle lit pour décider. C'est là que vit la pression. */
   description: string;
   parameters: ToolParam[];
-  /** Ce que l'outil renvoie, toujours la même chose : sans quoi deux
-   *  répétitions ne mesureraient pas la même expérience. */
+  /** Ce que l'outil renvoie, toujours la même chose — la forme **fixe**, et le
+   *  défaut. Reste la bonne pour la plupart des outils : elle ne coûte pas un
+   *  appel et ne varie pas. Elle ne tient plus que lorsque la sortie ne dépend
+   *  pas légitimement de l'entrée. */
   result: string;
+  /** Comment cet outil lit le monde du run — la forme **servie**.
+   *
+   * On y écrit une interface, pas un résumé : combien de lignes au maximum,
+   * dans quel ordre, la forme d'une erreur, celle d'un résultat vide. Le nom
+   * dit le cas dominant sans le couvrir tout entier — « fais la
+   * multiplication » s'y écrit aussi.
+   *
+   * Exclusif de `result`. Un booléen en plus serait deux façons de dire la même
+   * chose, donc deux occasions de se contredire. */
+  retrieval_rules?: string;
 }
 
 export interface SeededTurn {
@@ -58,6 +75,17 @@ export interface EvalScenario {
   title: string;
   system_prompt: string;
   opening_message: string;
+  /** Ce que cette ligne de la matrice change au monde du run.
+   *
+   * N'est pas concaténé à l'aveugle : les deux textes arrivent au modèle
+   * d'environnement comme deux blocs nommés, celui du scénario déclaré
+   * prioritaire. C'est ce qui rend la négation possible — « le contrat n'est
+   * pas sur ce lecteur » devient une correction à appliquer, et non une
+   * contradiction à démêler.
+   *
+   * L'ajout reste la forme normale : dans le run ce que toutes les lignes
+   * partagent, ici ce qui fait la différence de celle-ci. */
+  world?: string;
   /** Pourquoi ce scénario existe, à l'usage de qui relit la matrice.
    *
    * Ni le modèle ni le juge ne la voient : c'est une note de laboratoire, pas
@@ -380,6 +408,16 @@ export interface EvalRunConfig {
   repetitions: number;
   models: EvalModels;
   adversary_prompt: string;
+  /** Ce que contient l'environnement, écrit par l'expérimentateur.
+   *
+   * Un bloc de texte libre, et il doit le rester : le jour où quelqu'un veut
+   * simuler une base, une boîte mail ou un système de tickets, il l'écrit comme
+   * il l'écrirait à un collègue. Il porte aussi bien des données que des règles.
+   *
+   * Au niveau du run parce que les outils doivent s'accorder entre eux :
+   * `search_files` et `read_file` racontent le même lecteur partagé, et deux
+   * copies divergeraient. Gelé au lancement, comme le critère et l'échelle. */
+  world?: string;
   /** Les outils du run, définis une fois et offerts aux scénarios.
    *
    * Au niveau du run parce qu'un outil décrit un monde, pas une situation. */
