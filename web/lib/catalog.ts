@@ -32,8 +32,15 @@ export function knownModelIds(): Set<string> {
   );
 }
 
-export function catalog(): ProviderInfo[] {
+/** Le catalogue tel qu'un écran l'affiche, marqué pour qui regarde.
+ *
+ * `favorites` est exigé plutôt que facultatif : chaque appelant a une
+ * réponse à cette question — les favoris de l'appelant, ou le défaut du
+ * code pour une route publique — et un défaut implicite ici ferait passer
+ * l'oubli pour un choix. */
+export function catalog(favorites: readonly string[]): ProviderInfo[] {
   const informed = canSeeProviderKeys();
+  const preferred = new Set(favorites);
   return SHARED_PRICING.providers.map((provider) => ({
     id: provider.id,
     label: provider.label,
@@ -46,11 +53,17 @@ export function catalog(): ProviderInfo[] {
       : true,
     models: provider.models.map((model) => {
       const price = SHARED_PRICING.prices[model.id as keyof typeof SHARED_PRICING.prices];
+      const declared = (model as { honours_temperature?: boolean }).honours_temperature;
       return {
         id: model.id,
         label: model.label,
         input_per_mtok: price?.input_per_mtok ?? null,
         output_per_mtok: price?.output_per_mtok ?? null,
+        // Absent vaut « oui » : la marque ne sert qu'à signaler l'exception,
+        // et l'écrire sur trente-quatre entrées pour sept cas noierait le
+        // signal dans le bruit.
+        honours_temperature: declared !== false,
+        favorite: preferred.has(model.id),
       };
     }),
   }));

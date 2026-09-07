@@ -895,6 +895,20 @@ export interface ModelOption {
   /** Prix en dollars par million de jetons, ou null si le modèle n'est pas tarifé. */
   input_per_mtok: number | null;
   output_per_mtok: number | null;
+  /** Le fournisseur tient-il compte de la température qu'on lui envoie ?
+   *
+   * `false` ne veut pas dire que l'appel échoue : Claude 4.7 et au-delà
+   * tournent en adaptive thinking et refusent le paramètre, `inspect_ai` le
+   * retire et l'appel réussit sans lui. C'est ce qui rend le piège traître —
+   * un balayage de température sur ces modèles ne mesure que du bruit, et
+   * rien dans la réponse ne le dit. */
+  honours_temperature: boolean;
+  /** Ce modèle est-il dans les favoris de qui regarde ?
+   *
+   * Posé par `catalog()` à partir de la liste qu'on lui passe, jamais lu
+   * dans le fichier partagé : les favoris sont propres à une personne, le
+   * catalogue est commun à tout le monde. */
+  favorite: boolean;
 }
 
 export interface ProviderInfo {
