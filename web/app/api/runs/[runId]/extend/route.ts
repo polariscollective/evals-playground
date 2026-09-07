@@ -111,6 +111,13 @@ export async function POST(
   // laissaient en silence un brouillon lancé qui se croyait en attente — l'état
   // exact qu'on ferme ici. Awaité sans filet, comme le fait déjà la route de
   // lancement d'un brouillon de run : si ça tombe, l'appelant doit l'apprendre.
+  //
+  // Une fenêtre reste connue et volontairement ouverte : entre le refus plus
+  // haut et ce marquage, deux requêtes concurrentes portant le même `?draft=`
+  // peuvent toutes deux passer le refus avant que l'une ou l'autre ne marque.
+  // Réclamer le brouillon avant d'étendre fermerait cette fenêtre en en
+  // ouvrant une pire : un marquage « lancé » qui mentirait sur une extension
+  // ensuite tombée. Entre les deux, c'est celle-ci qui a été choisie.
   if (draftId) await markDraftLaunched(draftId);
 
   return NextResponse.json({ ok: true, added });

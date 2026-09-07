@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readConfigFile } from "./config-file.ts";
 import { alreadyAppliedProblem, configProblem, extendProblem, extensionDraftProblem } from "./validate.ts";
 import { knownModelIds } from "./catalog.ts";
-import type { Draft, ExtendDraft, EvalRunConfig, ExtendRequest } from "./types";
+import type { Draft, EvalRunConfig, ExtendDraft, ExtendRequest } from "./types.ts";
 
 const VALIDE = `
 label: Pression sur la procédure
@@ -277,4 +277,11 @@ test("un brouillon qui vise un autre run est refusé, quel que soit son état", 
   const draft = EXTEND_DRAFT();
   const problem = extensionDraftProblem(draft, "97b8d12c-0a82-4ae5-b226-3509e307629d");
   assert.ok(problem?.includes("extends run 0060e7c3-2455-4ad4-8c72-5d46261ffb92"));
+
+  // Même un brouillon déjà lancé : le mauvais run se refuse avant que son
+  // état ne soit seulement regardé.
+  const lancé = EXTEND_DRAFT({ launched_at: "2026-09-06T16:33:42.873Z" });
+  const problemLancé = extensionDraftProblem(lancé, "97b8d12c-0a82-4ae5-b226-3509e307629d");
+  assert.ok(problemLancé?.includes("extends run 0060e7c3-2455-4ad4-8c72-5d46261ffb92"));
+  assert.ok(!problemLancé?.includes("already applied"));
 });

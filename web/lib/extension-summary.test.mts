@@ -155,8 +155,62 @@ test("outils, température et profondeur seule apparaissent en lignes", () => {
     }),
     ESTIMATE(2),
   );
-  const labels = summariseExtension(entry, DEUX).lines.map((line) => line.label);
-  assert.deepEqual(labels, ["Scénarios", "Modèles", "Outils", "Température", "Profondeur"]);
+  const { lines } = summariseExtension(entry, DEUX);
+  assert.deepEqual(lines.map((line) => line.label), ["Scénarios", "Modèles", "Outils", "Température", "Profondeur"]);
+  // Le nom de l'outil, pas sa description ni ses paramètres.
+  assert.deepEqual(lines.find((line) => line.label === "Outils")?.values, ["search_files"]);
+  // Deux bornes distinctes s'écrivent en plage, séparées par un tiret demi-cadratin.
+  assert.deepEqual(lines.find((line) => line.label === "Température")?.values, ["0.2 – 0.8"]);
+});
+
+test("température : la plage s'efface en une seule valeur sans max, ou quand max vaut min", () => {
+  const sansMax = summariseExtension(
+    ENTRY(
+      REQUEST({ scenario_indices: [0], targets: ["m"], repetitions: 1, temperature: { min: 0.5 } }),
+      ESTIMATE(1),
+    ),
+    DEUX,
+  );
+  assert.deepEqual(
+    sansMax.lines.find((line) => line.label === "Température")?.values,
+    ["0.5"],
+  );
+
+  const maxÉgal = summariseExtension(
+    ENTRY(
+      REQUEST({
+        scenario_indices: [0],
+        targets: ["m"],
+        repetitions: 1,
+        temperature: { min: 0.5, max: 0.5 },
+      }),
+      ESTIMATE(1),
+    ),
+    DEUX,
+  );
+  assert.deepEqual(
+    maxÉgal.lines.find((line) => line.label === "Température")?.values,
+    ["0.5"],
+  );
+});
+
+test("le compte de cases est le produit scénarios × modèles × répétitions — la seule formule, tenue ici et par cellsForExtension", () => {
+  // La forme que construirait `planExtension` : plusieurs index, plusieurs
+  // cibles, des répétitions au-delà de 1 — pour que le produit ne puisse pas
+  // passer par un facteur valant 1 sans le dire.
+  const entry = ENTRY(
+    REQUEST({
+      scenario_indices: [0, 1],
+      targets: ["m1", "m2", "m3"],
+      repetitions: 4,
+    }),
+    ESTIMATE(24),
+  );
+  const summary = summariseExtension(entry, DEUX);
+  // 2 scénarios × 3 modèles × 4 répétitions = 24 : exactement ce que porte le devis.
+  assert.deepEqual(summary.headlines, [
+    "4 essais ajoutés sur 2 scénarios × 3 modèles — 24 conversations.",
+  ]);
 });
 
 test("une entrée qui ne demandait rien : aucune phrase, aucune ligne", () => {

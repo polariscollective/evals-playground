@@ -136,7 +136,7 @@ function ExtensionDetail({
  *  coût réel déduit — voir `extensionsOf`. N'apparaît que si le run a été
  *  étendu au moins une fois ; sinon la page n'a rien à en dire.
  *
- * Une note de bas de page, pas un tableau de bord : cinq colonnes, pour
+ * Une note de bas de page, pas un tableau de bord : six colonnes, pour
  * répondre à « d'où vient ce chiffre » plutôt que pour l'analyser. */
 function ExtensionsHistory({ run }: { run: EvalRun }) {
   const extensions = extensionsOf(run);
@@ -543,6 +543,8 @@ export default function EvalRunPage({
   useEffect(() => {
     const draftId = searchParams.get("extend");
     if (!draftId) {
+      // Un timer, pas un appel direct : `react-hooks/set-state-in-effect`
+      // interdit un setState synchrone dans le corps de l'effet.
       const timer = setTimeout(() => setAppliedAt(null), 0);
       return () => clearTimeout(timer);
     }
@@ -1118,7 +1120,11 @@ export default function EvalRunPage({
         </p>
       </ConfirmDialog>
 
-      {appliedAt && (
+      {/* Le bandeau et le panneau sont mutuellement exclusifs par construction ici :
+          ouvrir le panneau depuis le menu ne vide pas `appliedAt`, donc c'est ce
+          rendu, plutôt que le geste qui ouvre, qui doit empêcher les deux de
+          coexister. */}
+      {appliedAt && !extending && (
         <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm text-zinc-700">
           Cette extension a été appliquée le {formatDate(appliedAt)}.{" "}
           <a href="#extensions" className="underline">
@@ -1139,7 +1145,15 @@ export default function EvalRunPage({
           proposal={proposal}
           draftId={proposalId}
           draftMine={proposalMine}
-          onCancel={() => setExtending(false)}
+          onCancel={() => {
+            setExtending(false);
+            // L'identifiant du brouillon part maintenant vers le serveur en
+            // `?draft=` : le laisser ici attribuerait l'extension composée à
+            // la main par la suite au brouillon de quelqu'un d'autre.
+            setProposal(null);
+            setProposalId(null);
+            setProposalMine(true);
+          }}
           onSubmit={async (request) => {
             // Le brouillon part avec la demande : c'est la route qui refuse un
             // brouillon déjà appliqué et qui le marque lancé, dans la requête

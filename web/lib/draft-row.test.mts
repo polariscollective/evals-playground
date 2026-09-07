@@ -79,5 +79,8 @@ test("une extension déjà appliquée mène à l'historique du run, pas à son p
 });
 
 test("une extension en attente mène toujours à son panneau", () => {
+  // Duplique l'assertion du test ci-dessus à dessein : c'est le cas qui ne
+  // doit pas bouger, celui que l'ajout du bandeau (tâche « une extension
+  // déjà appliquée ») n'avait pas le droit de casser.
   assert.equal(draftDestination(extendDraft()), "/eval/r1?extend=d1");
 });

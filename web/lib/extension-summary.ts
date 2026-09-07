@@ -41,7 +41,7 @@ const plural = (n: number, one: string, many = `${one}s`): string =>
  * les scénarios neufs — qui prennent des positions en queue et ne peuvent donc
  * jamais entrer en collision avec les index existants. */
 function scenariosCovered(request: ExtendRequest): number {
-  return new Set(request.scenario_indices).size + request.new_scenarios.length;
+  return new Set(request.scenario_indices).size + (request.new_scenarios ?? []).length;
 }
 
 export function summariseExtension(
@@ -86,14 +86,31 @@ export function summariseExtension(
     return { headlines, lines };
   }
 
+  // `targets` n'est exigé par `extendProblem` que si la demande ajoute une
+  // case ; une extension qui ne fait qu'approfondir peut donc en registrer une
+  // sans lui.
+  const targets = request.targets ?? [];
+
+  // Le produit qui suit n'est exact que parce qu'`extendProblem`
+  // (`web/lib/validate.ts`) refuse un `scenario_indices` hors bornes et refuse
+  // des `targets` dupliqués avant qu'une demande n'atteigne le registre —
+  // c'est ce qui rend ce compte égal à `retenus.length` dans `planExtension`
+  // (`runs.ts:1206`, qui met en garde contre le recalculer à côté de
+  // `cellsForExtension` plutôt que de l'appeler). Ce module ne peut pas
+  // appeler `cellsForExtension`, qui a besoin de l'état vivant des cases du
+  // run — d'où ce produit tenu séparément, à la même formule. Et ça compte :
+  // `cases` est soustrait d'`estimate.conversations` plus bas pour obtenir le
+  // compte de l'approfondissement, donc une dérive ne se contenterait pas de
+  // mal compter les cases — elle mélangerait en silence les conversations
+  // entre les deux phrases, et pourrait même rendre ce compte négatif.
   const couverts = scenariosCovered(request);
-  const cases = couverts * request.targets.length * request.repetitions;
+  const cases = couverts * targets.length * request.repetitions;
   if (cases > 0) {
     headlines.push(
       `${request.repetitions} ${plural(request.repetitions, "essai")} ` +
         `${plural(request.repetitions, "ajouté")} sur ${couverts} ` +
-        `${plural(couverts, "scénario")} × ${request.targets.length} ` +
-        `${plural(request.targets.length, "modèle")} — ${cases} ` +
+        `${plural(couverts, "scénario")} × ${targets.length} ` +
+        `${plural(targets.length, "modèle")} — ${cases} ` +
         `${plural(cases, "conversation")}.`,
     );
   }
@@ -102,8 +119,8 @@ export function summariseExtension(
     // Le compte des essais poussés est le reste du devis une fois les cases
     // neuves retirées : `estimateExtension` additionne exactement ces deux
     // parts, et rien d'autre n'entre dans le total.
-    const poussés =
-      entry.estimate === null ? null : entry.estimate.conversations - cases;
+    const relectures = entry.estimate?.conversations;
+    const poussés = relectures == null ? null : relectures - cases;
     const paliers =
       request.deepen === "all" ? null : request.deepen.join(" ou ");
     const profondeur = `à ${request.turns} ${plural(request.turns, "tour")}`;
@@ -134,14 +151,15 @@ export function summariseExtension(
       ),
     });
   }
-  if (request.new_scenarios.length > 0) {
+  const newScenarios = request.new_scenarios ?? [];
+  if (newScenarios.length > 0) {
     lines.push({
       label: "Nouveaux scénarios",
-      values: request.new_scenarios.map((scenario) => scenario.title),
+      values: newScenarios.map((scenario) => scenario.title),
     });
   }
-  if (request.targets.length > 0) {
-    lines.push({ label: "Modèles", values: [...request.targets] });
+  if (targets.length > 0) {
+    lines.push({ label: "Modèles", values: [...targets] });
   }
   const tools = request.new_tools ?? [];
   if (tools.length > 0) {
