@@ -147,11 +147,60 @@ présélection. Le panneau d'extension porte le même select, dans le seul cas o
 il a un sens : le run n'a pas encore de modèle et l'extension introduit un outil
 servi.
 
-Côté MCP, `read_prompt` documente le champ et la règle. Aucun nouveau point
-d'insertion — les quatre chemins d'écriture passent déjà par `configProblem` et
-`extendProblem`. `models.world` entre en revanche dans `configFavouritesProblem`
-et `extendFavouritesProblem`, sans quoi on servirait avec un modèle qu'on ne
-voit nulle part.
+## 6. Ce que l'agent doit lire, et pouvoir écrire
+
+Un champ qu'aucun texte n'annonce est un champ qu'on oublie puis qu'on se voit
+refuser. Le canal MCP se documente donc en entier, et il y a une chose à y
+réparer avant même de documenter.
+
+### Le trou : un agent ne peut pas ajouter un outil servi par extension
+
+`retrieval_rules` n'apparaît **pas une seule fois** dans
+`web/app/mcp/route.ts`. `submit_draft_run` prend du YAML brut, que
+`readConfigFile` sait lire — un agent peut donc créer un outil servi au
+lancement. Mais `submit_draft_extension` prend un `new_tools` **typé**, dont le
+schéma ne porte que `name`, `description`, `result` et `parameters`.
+
+Le premier cas de l'extension (§2) — celui qui exige `world` — est donc
+aujourd'hui inatteignable par MCP, et `ExtendRequest.world` y serait du poids
+mort. Deux champs à ajouter au schéma :
+
+- `retrieval_rules`, facultatif ;
+- `result` cesse d'être requis, puisque la règle « l'un ou l'autre, jamais les
+  deux » vaut ici comme dans le YAML.
+
+C'est un élargissement vers la surface de l'autre chantier, assumé : sans lui,
+la moitié de ce design ne vit que dans l'écran.
+
+### Ce qui change dans le prompt
+
+`web/lib/agent-prompt.ts`, et donc `read_prompt` et `/prompt` avec lui :
+
+| endroit | ce qui s'y ajoute |
+|---|---|
+| le bloc `models:` du gabarit | `world:` avec son commentaire — sert les outils à règles de lecture, requis dès qu'il en existe un |
+| « Rules the tool enforces » | l'équivalence, **dans les deux sens** |
+| « Writing the world » | qui sert, que le run le nomme, et qu'il se paie à chaque appel servi |
+| la phrase du devis sur les appels servis | qu'ils sont chiffrés au tarif du modèle nommé, non d'une constante |
+
+Le gabarit remplit ses exemples par rang (`{{TARGET}}`, `{{ADVERSARY}}`,
+`{{JUDGE}}`) ; `{{WORLD}}` s'y ajoute, avec le même repli que les autres quand
+la liste des favoris est courte.
+
+### Ce qui change dans les descriptions d'outils
+
+| outil | ce qui devient faux, ou manque |
+|---|---|
+| `submit_draft_extension` | « Add tools to the run's set: new_tools … **needing no model** or depth of its own » — un outil servi en a besoin d'un. La phrase se corrige, et un champ `world` s'ajoute avec ses trois cas |
+| `launch_draft` | « which calls three model providers » — il y en a quatre depuis le catalogue élargi |
+
+### Ce qui ne bouge pas
+
+Aucun nouveau point d'insertion pour les refus : les quatre chemins d'écriture
+passent déjà par `configProblem` et `extendProblem`, qui portent les nouvelles
+règles. `models.world` entre en revanche dans `configFavouritesProblem` et
+`extendFavouritesProblem`, sans quoi on servirait avec un modèle qu'on ne voit
+nulle part.
 
 ## Ce qu'on ne fait pas
 
@@ -195,3 +244,7 @@ et le nommer ici évite de le découvrir au premier relancement.
   constante.
 - `models.world` hors favoris est refusé par MCP, au lancement comme à
   l'extension.
+- Un agent peut ajouter un outil servi par extension, et le refus « l'un ou
+  l'autre, jamais les deux » s'applique au schéma typé comme au YAML.
+- Le prompt annonce `models.world` et l'équivalence dans les deux sens ; un
+  document écrit en le lisant, sans autre information, passe du premier coup.
