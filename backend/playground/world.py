@@ -20,8 +20,10 @@ import json
 from typing import Any
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser, Model
+from inspect_ai.tool import Tool, ToolFunction, tool
 
 from playground.eval_schemas import ToolSpec
+from playground.generation import tool_call_arguments
 from playground.shared_data import load
 
 _SHARED = load("world-prompt")
@@ -44,6 +46,17 @@ champ à ajouter ; le retirer après coup serait une migration.
 """
 
 WORLD_SYSTEM: str = _SHARED["system"]
+
+CHECK_MODEL: str = _SHARED["check_model"]
+"""Le modèle qui contrôle ce que l'environnement a rendu.
+
+**D'une autre famille que celui qui a servi**, et c'est tout l'intérêt : il ne
+corrige pas sa propre copie. Deux familles, donc deux façons de se tromper qui
+ne coïncident pas. Un contrôleur qui partagerait le biais du serveur validerait
+exactement les erreurs qu'on cherche.
+"""
+
+CHECK_SYSTEM: str = _SHARED["check_system"]
 
 
 def arguments_key(arguments: dict[str, Any]) -> str:
@@ -134,3 +147,81 @@ async def serve(
         input=[ChatMessageSystem(content=système), ChatMessageUser(content=message)]
     )
     return sortie.completion.strip()
+
+
+# --- Le contrôle ---------------------------------------------------------
+#
+# Une question distincte, et qui ne porte sur aucun modèle évalué : le modèle
+# qui a servi cet appel a-t-il fait son travail ? Ce n'est pas un juge — un juge
+# note une conversation, celui-ci ne la voit jamais. Il contrôle exactement
+# `(monde, appel) → résultat`, c'est-à-dire la clé du cache, ce qui le rend bien
+# moins cher qu'un juge : autant d'appels qu'il y a de résultats DISTINCTS, et
+# non autant qu'il y a de conversations.
+
+
+@tool
+def submit_check() -> Tool:
+    """Outil de sortie du contrôle, jamais exécuté. Seul le schéma compte."""
+
+    async def execute(faithful: bool, fault: str = "") -> str:
+        """Records whether the answer holds up.
+
+        Args:
+            faithful: True if this answer could have come from this call
+                against this world.
+            fault: When it could not, one sentence saying what is wrong with
+                it. Empty when it holds up.
+        """
+        return "enregistré"
+
+    return execute
+
+
+def check_prompt(
+    world: str, tool: str, arguments: dict[str, Any], result: str
+) -> tuple[str, str]:
+    """Le message système et le message utilisateur envoyés au contrôle.
+
+    La signature est close, comme celle de `world_prompt`, et pour une raison
+    différente : ce qu'on refuse de lui donner ici, ce sont les
+    `retrieval_rules`. Un résultat qui déborde du plafond de vingt lignes reste
+    un résultat plausible, et ce n'est pas ce défaut-là qu'on cherche — le lui
+    montrer l'inviterait à noter une conformité au lieu d'une cohérence.
+
+    Le monde, lui, est indispensable : sans lui, une invention est
+    indétectable.
+    """
+    return CHECK_SYSTEM, _SHARED["check_user_template"].format(
+        world=world.strip(),
+        tool=tool,
+        arguments=arguments_key(arguments),
+        result=result,
+    )
+
+
+async def check(
+    model: Model, world: str, tool: str, arguments: dict[str, Any], result: str
+) -> tuple[bool, str]:
+    """Ce résultat pouvait-il sortir de cet appel, et sinon pourquoi.
+
+    Un défaut sans sa raison est ramené à une phrase générique plutôt que laissé
+    vide : la base refuse `faithful = false` avec `fault` vide — un voyant qui
+    annonce « trois non conformes » sans que descendre apprenne quoi que ce soit
+    ne sert à rien — et un contrôle qui ferait tomber le job sur sa propre
+    négligence serait pire que le défaut qu'il signale.
+
+    Returns:
+        Le couple (fidèle, faute). `fault` est vide quand `faithful` est vrai.
+    """
+    système, message = check_prompt(world, tool, arguments, result)
+    sortie = await model.generate(
+        input=[ChatMessageSystem(content=système), ChatMessageUser(content=message)],
+        tools=[submit_check()],
+        tool_choice=ToolFunction(name="submit_check"),
+    )
+    arguments_rendus = tool_call_arguments(sortie, "submit_check", required=("faithful",))
+    fidèle = bool(arguments_rendus.get("faithful"))
+    faute = str(arguments_rendus.get("fault") or "").strip()
+    if fidèle:
+        return True, ""
+    return False, faute or "the check gave no reason"

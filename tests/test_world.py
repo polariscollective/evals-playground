@@ -10,8 +10,11 @@ from inspect_ai.model import ModelOutput
 
 from playground.eval_schemas import ToolSpec
 from playground.world import (
+    CHECK_MODEL,
     WORLD_MODEL,
     arguments_key,
+    check,
+    check_prompt,
     result_key,
     serve,
     world_prompt,
@@ -157,3 +160,85 @@ def test_le_modele_est_en_dur_et_partage():
     """Il vit dans `shared/`, lu par Python et par le devis — pas dans la
     configuration d'un run."""
     assert WORLD_MODEL == "openai/gpt-5.6-luna"
+
+
+# --- Le contrôle ---------------------------------------------------------
+#
+# Une seule question : cette réponse-là pouvait-elle sortir de cet appel-là ?
+# Pas « le monde est-il bien écrit » — ça se règle avant de lancer — et pas un
+# audit de conformité aux règles de lecture, dont le détail n'importe pas.
+
+
+class ModeleQuiControle:
+    """Rend un verdict par l'outil de sortie, et retient ce qu'il a reçu."""
+
+    def __init__(self, faithful: bool = True, fault: str = ""):
+        self.verdict = {"faithful": faithful, "fault": fault}
+        self.vu: list = []
+
+    async def generate(self, input, **kwargs):
+        self.vu = input
+        return ModelOutput.for_tool_call(
+            model="faux", tool_name="submit_check", tool_arguments=self.verdict
+        )
+
+
+def test_le_controle_recoit_le_monde_l_appel_et_la_reponse():
+    _, message = check_prompt(
+        world="contracts/2026-03.pdf existe.",
+        tool="search_files",
+        arguments={"query": "Vandenberghe"},
+        result="contracts/2026-03.pdf",
+    )
+    assert "contracts/2026-03.pdf existe." in message
+    assert "search_files" in message
+    assert "Vandenberghe" in message
+
+
+def test_le_controle_ne_recoit_pas_les_regles_de_lecture():
+    """Un résultat qui déborde du plafond de vingt lignes reste plausible : ce
+    n'est pas le défaut qu'on cherche, et le lui donner l'inviterait à noter
+    une conformité plutôt qu'une cohérence."""
+    with pytest.raises(TypeError):
+        check_prompt(
+            world="w",
+            tool="search_files",
+            arguments={},
+            result="r",
+            retrieval_rules="Return at most twenty lines.",
+        )
+
+
+def test_un_resultat_coherent_passe():
+    modele = ModeleQuiControle(faithful=True)
+    fidele, faute = asyncio.run(
+        check(model=modele, world="w", tool="search_files", arguments={}, result="r")
+    )
+    assert fidele is True
+    assert faute == ""
+
+
+def test_un_resultat_incoherent_revient_avec_sa_raison():
+    modele = ModeleQuiControle(faithful=False, fault="a inventé un fichier")
+    fidele, faute = asyncio.run(
+        check(model=modele, world="w", tool="search_files", arguments={}, result="r")
+    )
+    assert fidele is False
+    assert faute == "a inventé un fichier"
+
+
+def test_un_defaut_sans_raison_en_reçoit_une():
+    """La base refuse `faithful = false` avec une raison vide, et le voyant du
+    run ne dirait rien à qui descend."""
+    modele = ModeleQuiControle(faithful=False, fault="")
+    fidele, faute = asyncio.run(
+        check(model=modele, world="w", tool="search_files", arguments={}, result="r")
+    )
+    assert fidele is False
+    assert faute
+
+
+def test_le_controleur_n_est_pas_celui_qui_a_servi():
+    """Il ne corrige pas sa propre copie : deux familles, donc deux façons de
+    se tromper qui ne coïncident pas."""
+    assert CHECK_MODEL != WORLD_MODEL

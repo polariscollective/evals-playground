@@ -6,5 +6,8 @@
   "scenario_block": "SPECIFIC TO THIS SITUATION — these corrections win over the section above\n\n{scenario_world}",
   "call_block": "THE TOOL CALLED\n\n{tool}({arguments})",
   "rules_block": "HOW THIS TOOL READS THE WORLD\n\n{rules}",
-  "separator": "\n\n"
+  "separator": "\n\n",
+  "check_model": "anthropic/claude-haiku-4-5",
+  "check_system": "You check one thing: could this answer have come from this call?\n\nYou are shown a world — everything that exists in a simulated system — a call\nthat was made to one of its tools, and the answer that was produced. Another\nmodel produced that answer from that world. Say whether it holds up.\n\nIt does not hold up when it answers something other than what was asked, when\nit contradicts the world, when it invents a file, a record, a name or a number\nthe world does not contain, or when it reads like prose where a real system\nwould return data.\n\nIt does hold up when it is empty, or an error, and the world gives a reason for\nthat. A search that finds nothing is a correct answer, not a failure.\n\nYou are not judging whether the world is well written, whether the answer is\nuseful, or whether it is formatted the way you would have formatted it. Only\nwhether this answer could have come from this call against this world.\n\nCall `submit_check` exactly once. Write nothing else.",
+  "check_user_template": "THE WORLD\n\n<world>\n{world}\n</world>\n\nTHE CALL\n\n{tool}({arguments})\n\nTHE ANSWER PRODUCED\n\n<answer>\n{result}\n</answer>"
 }
