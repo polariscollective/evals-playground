@@ -468,10 +468,23 @@ CACHE_READ_MULTIPLIER = _SHARED["cache_read_multiplier"]
 CACHE_WRITE_MULTIPLIER = _SHARED["cache_write_multiplier"]
 """Tarifs relatifs des jetons d'entrée mis en cache.
 
-Les trois fournisseurs facturent une lecture de cache à 10 % du tarif d'entrée.
-Anthropic facture l'écriture 25 % de plus que l'entrée normale ; OpenAI et xAI
-ne facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
+Les quatre fournisseurs facturent une lecture de cache à 10 % du tarif
+d'entrée — vérifié aussi pour Google, qui n'a rejoint le catalogue qu'après
+que cette note ait été écrite pour les trois autres. Anthropic facture
+l'écriture 25 % de plus que l'entrée normale ; OpenAI, xAI et Google ne
+facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
 formule reste juste pour eux.
+
+Une nuance propre à Google : les 10 % s'appliquent à son tarif d'entrée
+*standard*, et `PRICES` ne porte pas celui-là pour Gemini mais son tarif
+*promotionnel* — `gemini-3.8-flash` à 0.75 $/Mtok plutôt que le tarif standard
+de 1.50 $/Mtok, promotion courant jusqu'au 31 décembre 2026. Pendant la
+fenêtre promotionnelle, une lecture de cache sur Gemini coûte donc en réalité
+environ 20 % du tarif que porte cette table, et `actual_cost` sous-compte ce
+poste-là pour Google jusqu'à l'échéance de la promotion. L'écart reste minime
+et borné, et n'est pas corrigé ici : rien à changer dans le coefficient
+lui-même, 10 % reste juste pour les trois autres fournisseurs et redeviendra
+juste pour Google une fois la promotion terminée.
 
 Sans ces coefficients, le coût réel serait faux dans les deux sens : inspect
 compte les jetons de cache séparément de `input_tokens`, si bien que les
