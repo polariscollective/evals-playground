@@ -160,6 +160,24 @@ test("le prompt annonce le juge d'éveil et le conseil d'écriture", () => {
   assert.match(prompt, /read_scenario_advice|\/scenario-advice/);
 });
 
+test("le prompt annonce les deux formes d'outil et le monde", () => {
+  // Sans ça, aucun agent n'écrira jamais de monde — et il servira des outils
+  // dont la réponse ignore les arguments, ce que le juge d'éveil rapportera
+  // une fois le run payé.
+  for (const prompt of [
+    agentPrompt(agentModels(), "https://example.test"),
+    mcpAgentPrompt(agentModels(), null),
+  ]) {
+    assert.match(prompt, /retrieval_rules/);
+    assert.match(prompt, /## Writing the world/);
+    // La règle d'écriture qui compte : ajouter plutôt que nier. Sans elle, un
+    // agent écrit des négations dès son deuxième scénario.
+    assert.match(prompt, /Add, rather than negate/);
+    // Et le fixe reste le défaut, sinon tout devient servi et tout coûte.
+    assert.match(prompt, /Prefer fixed/);
+  }
+});
+
 test("le prompt MCP ne dit plus qu'update_draft_run refuse le brouillon d'un autre", () => {
   // Il dévie : il fourche plutôt que d'écrire sur ce qui n'est pas à
   // l'appelant. Un agent qui lit encore l'ancienne phrase n'essaie jamais.
