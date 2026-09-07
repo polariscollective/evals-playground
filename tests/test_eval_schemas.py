@@ -578,6 +578,15 @@ def test_un_outil_qui_porte_des_regles_est_servi():
     assert outil.served is True
 
 
+def test_des_blancs_ne_sont_pas_des_regles_de_lecture():
+    # Le jumeau TypeScript (`served`, web/lib/tools.ts) détoure aussi, et les
+    # deux doivent répondre pareil : tant que celui-ci ne détourait pas, un
+    # outil à `retrieval_rules` blancs passait `configProblem` à l'écran puis
+    # se faisait refuser à la construction d'`EvalRunConfig`, au démarrage du
+    # job — donc après que le lancement a été payé.
+    assert ToolSpec(name="search_files", retrieval_rules="   \n  ").served is False
+
+
 def test_un_outil_ne_peut_pas_porter_les_deux():
     with pytest.raises(ValidationError):
         ToolSpec(

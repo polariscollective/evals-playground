@@ -386,8 +386,15 @@ class ToolSpec(BaseModel):
         Le discriminant vit ici et nulle part ailleurs. Le recopier sur chaque
         site d'appel, c'est l'oublier sur le troisième — la leçon que
         `deleted_at` a déjà coûtée à ce dépôt (voir `RunJudge`).
+
+        **Détouré**, et son jumeau TypeScript (`served`, `web/lib/tools.ts`)
+        l'est aussi : les deux doivent répondre pareil sur la même entrée,
+        sans quoi une configuration passe à l'écran et se fait refuser au
+        démarrage du job — après que le lancement a été payé. Un champ à
+        moitié effacé dans un formulaire laisse des blancs, et des blancs ne
+        sont pas des règles de lecture.
         """
-        return bool(self.retrieval_rules)
+        return bool(self.retrieval_rules.strip())
 
     @model_validator(mode="after")
     def _fixe_ou_servi(self) -> "ToolSpec":
