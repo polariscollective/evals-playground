@@ -11,7 +11,6 @@ import {
   exportUrl,
   extendRun,
   getDraft,
-  markDraftLaunched,
   getRun,
   getRunTags,
   hasInspectLogs,
@@ -1031,13 +1030,11 @@ export default function EvalRunPage({
           draftMine={proposalMine}
           onCancel={() => setExtending(false)}
           onSubmit={async (request) => {
-            await extendRun(run.id, request);
-            // Le brouillon a servi : marqué lancé, donc sorti de la liste
-            // d'attente sans être jeté. Après l'extension, jamais avant — une
-            // extension qui échoue doit laisser de quoi recommencer.
-            if (proposalId) {
-              await markDraftLaunched(proposalId).catch(() => {});
-            }
+            // Le brouillon part avec la demande : c'est la route qui refuse un
+            // brouillon déjà appliqué et qui le marque lancé, dans la requête
+            // même qui étend. Le faire ici après coup, en avalant l'erreur,
+            // laissait un brouillon lancé se croire en attente.
+            await extendRun(run.id, request, proposalId);
             setExtending(false);
             setProposal(null);
             setProposalId(null);
