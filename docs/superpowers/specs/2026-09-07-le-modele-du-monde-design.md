@@ -202,6 +202,38 @@ règles. `models.world` entre en revanche dans `configFavouritesProblem` et
 `extendFavouritesProblem`, sans quoi on servirait avec un modèle qu'on ne voit
 nulle part.
 
+## 7. Servir depuis un monde vide : on avertit, on ne refuse pas
+
+`world` vaut `""` par défaut sur le run **et** sur le scénario, et rien
+aujourd'hui ne contrôle qu'un monde existe quand un outil est servi — la seule
+règle sur ces outils est « fixe ou servi, jamais les deux ». On peut donc lancer
+un run dont un outil est servi depuis rien, et le modèle improvise : exactement
+ce que l'outil servi existe pour éviter.
+
+Le monde qu'une case lit est `run.world + scenario.world`, et `tools` se choisit
+par scénario. La question se pose donc **par scénario** : pour chaque scénario à
+qui au moins un outil servi est proposé, ces deux textes sont-ils tous les deux
+vides ? Quand le run porte un monde, tout est couvert d'office et la question ne
+se pose pour personne.
+
+**C'est un avertissement, pas un refus**, parce qu'un outil purement calculatoire
+existe : des `retrieval_rules` qui suffisent à tout produire — « rends a × b » —
+n'ont aucun monde à lire. Refuser interdirait un usage légitime pour attraper
+une faute probable ; on nomme la faute et on laisse passer.
+
+Un second avertissement en découle à l'extension, et il est plus dur à réparer :
+le monde d'un run est **gelé au lancement**. Une extension qui applique un outil
+servi à des scénarios **existants** (`new_tools_for_existing`) d'un run au monde
+vide ne peut plus leur en donner un — un nouveau scénario, lui, porte le sien.
+L'avertissement le dit dans ces termes, pour qu'on sache que ce n'est pas
+rattrapable après coup.
+
+Ces avertissements vivent **hors de `validate.ts`**, qui ne rend que des refus.
+Une fonction à part, consultée par la réponse acceptée de `submit_draft_run` et
+de `submit_draft_extension`, et par l'écran à côté du champ du monde. Deux
+choses de nature différente ne partagent pas le même chemin : un refus arrête,
+un avertissement informe.
+
 ## Ce qu'on ne fait pas
 
 **La santé des fournisseurs.** Rien aujourd'hui ne sait dire « ce fournisseur
@@ -248,3 +280,8 @@ et le nommer ici évite de le découvrir au premier relancement.
   l'autre, jamais les deux » s'applique au schéma typé comme au YAML.
 - Le prompt annonce `models.world` et l'équivalence dans les deux sens ; un
   document écrit en le lisant, sans autre information, passe du premier coup.
+- Un scénario servi depuis deux mondes vides déclenche l'avertissement, et un
+  run qui porte un monde ne le déclenche pour personne. Un outil servi à des
+  scénarios existants sur un run au monde vide dit, en plus, que c'est gelé.
+- Aucun avertissement ne passe par `validate.ts` : ces fonctions rendent des
+  refus, et un avertissement n'en est pas un.
