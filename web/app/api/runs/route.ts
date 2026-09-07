@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { createRun, failToStart, loadRuns, recordStart } from "@/lib/runs";
+import { createRun, failToStart, loadRunList, recordStart } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
 import type { EvalRunConfig } from "@/lib/types";
@@ -9,7 +9,9 @@ export async function GET() {
   const user = await requireUser();
   if ("response" in user) return user.response;
 
-  return NextResponse.json(await loadRuns());
+  // La liste, pas les runs entiers : voir `loadRunList` et `RunListRun`.
+  // La recherche MCP, elle, continue de passer par `loadRuns`.
+  return NextResponse.json(await loadRunList());
 }
 
 /** Crée un run, écrit toute sa matrice en attente, puis démarre le job.

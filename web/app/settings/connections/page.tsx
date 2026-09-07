@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import {
-  listMcpConnections,
   revokeAllMcpConnections,
   revokeMcpConnection,
   type McpGrant,
 } from "@/lib/api";
+import { refreshConnections, useConnections } from "@/lib/connections-store";
+import { Loading, Refreshing } from "@/components/Loading";
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -26,17 +27,15 @@ function history(grant: McpGrant): string {
 }
 
 export default function ConnectionsPage() {
-  const [grants, setGrants] = useState<McpGrant[] | null>(null);
+  // La liste vient du cache partagé : « Evaluate » l'a préchargée, donc un
+  // clic sur cet onglet montre ce qu'on avait déjà et revérifie derrière.
+  const { grants, loading, error: loadError } = useConnections();
   const [error, setError] = useState<string | null>(null);
 
-  function refresh() {
-    return listMcpConnections()
-      .then(setGrants)
-      .catch((e) => setError((e as Error).message));
-  }
+  const refresh = () => refreshConnections();
 
   useEffect(() => {
-    refresh();
+    void refreshConnections();
   }, []);
 
   /** Rafraîchit depuis le serveur plutôt que de retirer la ligne
@@ -62,15 +61,21 @@ export default function ConnectionsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6">
+    <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">MCP connections</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="font-serif text-2xl font-normal">MCP connections</h1>
+        <p className="flex items-center gap-2 text-sm text-zinc-500">
           Connectors that can read this workspace on your behalf. Only yours are
           listed here.
+          {loading && grants !== null && <Refreshing />}
         </p>
       </header>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {(error ?? loadError) && (
+        <p className="text-sm text-red-600">{error ?? loadError}</p>
+      )}
+      {/* Tant que rien n'est revenu, la place du contenu est tenue — sans quoi
+          la page saute au moment où la liste arrive. */}
+      {grants === null && <Loading label="Loading connections" />}
       {grants?.length === 0 && (
         <p className="text-sm text-zinc-500">No active connection.</p>
       )}

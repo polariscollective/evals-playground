@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 // autrement — une médiane, une échelle repliée — et deux calculs de la même
 // chose finiraient par ne plus dire pareil.
 import { overallMean, progressOf } from "./matrix";
+import { meanFromHistogram } from "./run-list-mean";
 import { catchupCandidateCount } from "./catchup";
 import {
   JUDGES,
@@ -12,6 +13,7 @@ import {
   MCP_LAUNCHES,
   NOW,
   RUNS,
+  RUN_LIST,
   RUN_JUDGES,
   RUN_TAGS,
   SAMPLES,
@@ -48,6 +50,7 @@ import type { PublicRunDetail } from "./public-run";
 import { AWAKE_TYPE, type JudgeVerdict } from "./awareness.ts";
 import type {
   CostEstimate,
+  EvalModels,
   EvalRun,
   EvalRunConfig,
   EvalSample,
@@ -61,6 +64,9 @@ import type {
   RunDetail,
   RunJudge,
   RunJudgeView,
+  RunListItem,
+  RunStatus,
+  RubricLevel,
   RunSummary,
   SampleStatus,
   TemperatureSpec,
@@ -199,7 +205,99 @@ async function principalVerdictsByRun(
   return bySample;
 }
 
+/** Une ligne de la vue `eval_run_list` : un run déjà agrégé.
+ *
+ * Les noms viennent de la vue, pas de la table — voir la migration
+ * `20260907140037_eval_run_list_view.sql` (dépôt polaris-supabase). */
+interface RunListRow {
+  id: string;
+  created_at: string;
+  user_email: string;
+  label: string | null;
+  status: RunStatus;
+  cost_usd: number | null;
+  is_public: boolean;
+  origin: "local" | "cloud-run";
+  launched_via: "ui" | "mcp";
+  rubric: RubricLevel[] | null;
+  models: EvalModels | null;
+  first_scenario_title: string | null;
+  sample_total: number;
+  sample_done: number;
+  sample_running: number;
+  sample_errored: number;
+  sample_cancelled: number;
+  sample_pending: number;
+  scenario_count: number;
+  min_tries: number;
+  max_tries: number;
+  /** Combien de fois chaque note est tombée, du juge principal seul. `null`
+   *  quand aucun juge principal n'a encore noté — distinct d'un objet vide,
+   *  qui affirmerait qu'il a noté sans rien trouver. */
+  principal_scores: Record<string, number> | null;
+}
+
+/** Les runs tels que la LISTE WEB les montre — une requête, une ligne par run.
+ *
+ * L'agrégation est faite en base par la vue `eval_run_list`. Avant elle, cette
+ * fonction ramenait TOUTES les cases de TOUS les runs, sans filtre, puis
+ * toutes les lignes de score du juge principal, uniquement pour compter des
+ * statuts et faire une moyenne. Ça tenait sur treize runs et cessait de tenir
+ * sans prévenir : PostgREST est plafonné à 1000 lignes (`max_rows` dans
+ * `config.toml`) et tronque en répondant 200. À une douzaine de cases par run,
+ * le plafond tombait vers quatre-vingt-dix runs — après quoi les avancements
+ * et les moyennes des plus anciens seraient devenus faux en silence.
+ *
+ * Le plafond existe toujours, mais il compte désormais des runs et non des
+ * cases : mille runs au lieu de quatre-vingt-dix, et le remède ce jour-là sera
+ * une pagination de la liste, pas une troncature muette.
+ *
+ * La moyenne se calcule ici et non dans la vue : voir `meanFromHistogram`.
+ *
+ * `loadRuns`, juste en dessous, reste la source de la recherche MCP, qui elle
+ * a besoin du texte entier de chaque run. */
+export async function loadRunList(): Promise<RunListItem[]> {
+  await failStaleRuns();
+
+  const rows = await select<RunListRow>(RUN_LIST, {
+    select: "*",
+    order: "created_at.desc",
+  });
+
+  return rows.map((row) => ({
+    run: {
+      id: row.id,
+      created_at: row.created_at,
+      user_email: row.user_email,
+      label: row.label,
+      status: row.status,
+      cost_usd: row.cost_usd,
+      is_public: row.is_public,
+      origin: row.origin,
+      launched_via: row.launched_via,
+      rubric: row.rubric ?? [],
+      first_scenario_title: row.first_scenario_title,
+      scenario_count: row.scenario_count,
+      target_count: row.models?.targets.length ?? 0,
+    },
+    progress: {
+      total: row.sample_total,
+      done: row.sample_done,
+      running: row.sample_running,
+      pending: row.sample_pending,
+      errored: row.sample_errored,
+      cancelled: row.sample_cancelled,
+    },
+    mean: meanFromHistogram(row.principal_scores, row.rubric),
+    repetitions: [row.min_tries, row.max_tries],
+  }));
+}
+
 /** Tous les runs, du plus récent au plus ancien, avec leur avancement.
+ *
+ * Ne sert plus la liste web — `loadRunList` ci-dessus s'en charge, sans la
+ * configuration. Reste la source de la recherche MCP, qui elle a besoin de
+ * tout le texte d'un run.
  *
  * Les cases sont lues en une seule requête pour tous les runs, sans leurs
  * transcripts : les colonnes ramenées sont minuscules, et une requête par run
@@ -969,6 +1067,20 @@ export async function addJudge(
  * faire des deux côtés produirait deux vérités sur la même ligne. */
 export async function cancelRun(runId: string): Promise<void> {
   await update(RUNS, { status: "cancelled" }, { id: `eq.${runId}` });
+}
+
+/** Renomme un run.
+ *
+ * `null` remet le titre par défaut — celui du premier scénario, puis
+ * l'identifiant, comme le fait déjà l'affichage. C'est ce qu'une saisie vidée
+ * doit vouloir dire : « je n'ai pas de nom pour ce run », et non « son nom est
+ * la chaîne vide », qui laisserait une ligne sans rien où cliquer.
+ *
+ * N'écrit que la colonne `label`, jamais `config.label` : la configuration est
+ * la photo de ce qui a été demandé au lancement, et une extension la réécrit
+ * déjà bien assez. Le titre affiché vient de la colonne — voir `RunListRun`. */
+export async function saveLabel(runId: string, label: string | null): Promise<void> {
+  await update(RUNS, { label }, { id: `eq.${runId}` });
 }
 
 export async function saveNotes(runId: string, notes: string): Promise<void> {

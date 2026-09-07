@@ -259,7 +259,7 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
   return (
     <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-medium">Tools the evaluated model could call</h2>
+        <h2 className="eyebrow">Tools the evaluated model could call</h2>
         <span className="text-xs text-zinc-500">
           nothing was executed · up to{" "}
           {config.max_tool_calls_per_turn ?? 5} consecutive calls per turn
@@ -830,7 +830,7 @@ export function JudgeBlock({
     <>
       <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium">What the judge was asked</h2>
+          <h2 className="eyebrow">What the judge was asked</h2>
           <span className="font-mono text-xs text-zinc-500">
             {viewingPrincipal ? "judged by " : "viewing "}
             {shortModel(judgeModel)}
@@ -1356,7 +1356,7 @@ export function RunMatrix({
   return (
 
     <section className="space-y-3">
-      <h2 className="font-medium">Grade per scenario and model</h2>
+      <h2 className="eyebrow">Grade per scenario and model</h2>
       <ViewControls
         rubric={rubric}
         scores={detail.samples

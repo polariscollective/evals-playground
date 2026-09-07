@@ -11,35 +11,46 @@
 // Le texte affiché est celui que l'outil MCP servira : une page qui montrerait
 // autre chose que ce qui part serait un mensonge silencieux, le même qu'évite
 // déjà l'aperçu du prompt du juge.
+//
+// En lecture, ce texte est rendu comme le markdown qu'il est — c'est un
+// document qu'on lit, pas une charge utile qu'on inspecte. La promesse
+// ci-dessus tient quand même : « Copy » copie la source, « Edit » la montre,
+// et rien entre les deux ne réécrit un caractère. Seule la mise en forme
+// change, jamais ce qui part.
 import { useEffect, useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
-import { getProfile, updateScenarioAdvice } from "@/lib/api";
+import { Loading, Refreshing } from "@/components/Loading";
+import { updateScenarioAdvice } from "@/lib/api";
+import { putProfile, refreshProfile, useProfile } from "@/lib/profile-store";
+import { renderMarkdown } from "@/lib/markdown";
 import { DEFAULT_SCENARIO_ADVICE, scenarioAdvice } from "@/lib/scenario-advice";
 
 export default function ScenariosPage() {
-  const [saved, setSaved] = useState<string | null>(null);
-  // `saved === null` est ambigu tant que le profil n'est pas revenu : ça peut
-  // vouloir dire « sans surcharge » comme « pas encore su ». Un drapeau à part
-  // lève l'ambiguïté, plutôt que de laisser la page se croire sans surcharge
-  // — et copier ou écraser le défaut — avant d'avoir lu ce que porte vraiment
-  // le profil.
-  const [loaded, setLoaded] = useState(false);
+  // Le profil vient du cache partagé : « Evaluate » l'a préchargé, et la page
+  // « Profile » lit la même ressource. On affiche donc ce qu'on avait déjà, et
+  // la revérification se fait derrière.
+  const { data: profileData, loading, error: loadError } = useProfile();
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // À chaque arrivée : on revérifie. Si le cache porte déjà le profil, la page
+  // est déjà écrite au premier rendu et cette requête ne fait attendre
+  // personne — c'est tout l'objet du cache.
   useEffect(() => {
-    getProfile()
-      .then(({ profile }) => {
-        setSaved(profile.scenario_advice);
-        setDraft(scenarioAdvice(profile.scenario_advice));
-        setLoaded(true);
-      })
-      .catch((e) => setLoadError((e as Error).message));
+    void refreshProfile();
   }, []);
 
+  // Dérivé du cache à chaque rendu, jamais recopié dans un état local. Une
+  // copie aurait demandé un effet pour la tenir à jour, donc un rendu de plus
+  // à chaque réponse — et deux sources de vérité à garder d'accord.
+  //
+  // `loaded` compte : tant que le profil n'est pas revenu, un
+  // `scenario_advice` nul ne veut rien dire, et la page ne doit surtout pas se
+  // croire sans surcharge avant d'avoir lu ce que le profil porte vraiment.
+  const loaded = profileData !== null;
+  const saved = profileData?.profile.scenario_advice ?? null;
   const shown = scenarioAdvice(saved);
   const custom = saved !== null && saved.trim() !== "";
 
@@ -69,25 +80,32 @@ export default function ScenariosPage() {
     setSaveError(null);
     updateScenarioAdvice(value)
       .then(({ profile }) => {
-        setSaved(profile.scenario_advice);
         setDraft(scenarioAdvice(profile.scenario_advice));
         setEditing(false);
+        // Le cache porte l'ancien profil : sans ça, « Profile » afficherait
+        // encore la version d'avant au prochain clic.
+        if (profileData) putProfile({ ...profileData, profile });
       })
       .catch((e) => setSaveError((e as Error).message))
       .finally(() => setBusy(false));
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-6">
+    <main className="mx-auto max-w-6xl space-y-4 p-8">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Scenarios</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="font-serif text-2xl font-normal">Scenarios</h1>
+        <p className="flex items-center gap-2 text-sm text-zinc-500">
           What an agent needs to know to write a scenario a model will not
           recognise as a test.
+          {loading && loaded && <Refreshing />}
         </p>
       </header>
 
       {loadError && <p className="text-sm text-red-700">{loadError}</p>}
+
+      {/* Tient la place du document tant qu'il n'est pas là, au même bord que
+          lui — sans quoi la page saute au moment où il arrive. */}
+      {!loaded && loadError === null && <Loading label="Loading scenario advice" />}
 
       {loaded && (
         <>
@@ -136,6 +154,10 @@ export default function ScenariosPage() {
 
           {saveError && <p className="text-sm text-red-700">{saveError}</p>}
 
+          {/* Les deux modes prennent toute la largeur de la page, comme tout
+              ce qui est au-dessus d'eux. Un plafond ici les désalignait du
+              titre et du paragraphe d'introduction, ce qui se voyait plus que
+              la ligne longue qu'il évitait. */}
           {editing ? (
             <div className="space-y-2">
               <textarea
@@ -166,9 +188,19 @@ export default function ScenariosPage() {
               </div>
             </div>
           ) : (
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
-              {shown}
-            </pre>
+            <div
+              className="notes-prose w-full rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
+              // Sûr : `renderMarkdown` échappe tout le HTML d'entrée avant de
+              // produire les seules balises qu'il fabrique lui-même.
+              // `reflow` : ce document est stocké coupé à 78 colonnes, et ces
+              // coupures sont une commodité d'écriture, pas une intention. Sans
+              // ça le texte gardait ses retours au milieu d'un cadre large, et
+              // une puce coupée voyait sa suite repartir en paragraphe à la
+              // marge. Les notes de run, elles, gardent leurs retours durs.
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(shown, { reflow: true }),
+              }}
+            />
           )}
         </>
       )}

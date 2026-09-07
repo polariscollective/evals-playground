@@ -15,7 +15,7 @@ import type {
   ProviderInfo,
   RubricLevel,
   RunDetail,
-  RunSummary,
+  RunListItem,
   Tag,
 } from "./types";
 import { PLAIN_VIEW, viewToQuery, type MatrixView } from "./view";
@@ -63,7 +63,14 @@ export const exportConfigFile = (config: EvalRunConfig) =>
     method: "PUT",
     body: JSON.stringify({ config }),
   });
-export const getRuns = () => request<RunSummary[]>("/api/runs");
+export const getRuns = () => request<RunListItem[]>("/api/runs");
+
+/** Renomme un run. Une chaîne vide remet le titre par défaut. */
+export const saveRunLabel = (runId: string, label: string) =>
+  request<{ ok: true; label: string | null }>(`/api/runs/${runId}/label`, {
+    method: "PUT",
+    body: JSON.stringify({ label }),
+  });
 
 /** Un run et ses cases.
  *

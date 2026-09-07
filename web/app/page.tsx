@@ -81,7 +81,7 @@ export default function EvaluatePage() {
   // `useSearchParams` force le rendu client de tout ce qui est sous lui : la
   // limite est posée ici pour que la page reste prérendue au-dessus.
   return (
-    <Suspense fallback={<main className="mx-auto max-w-3xl p-8">Loading…</main>}>
+    <Suspense fallback={<main className="mx-auto max-w-6xl p-8">Loading…</main>}>
       <EvaluateForm />
     </Suspense>
   );
@@ -833,9 +833,9 @@ function EvaluateForm() {
   );
 
   return (
-    <main className="mx-auto max-w-3xl space-y-10 p-8">
+    <main className="mx-auto max-w-6xl space-y-10 p-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-serif text-2xl font-normal tracking-tight">
           Evaluate scenarios
         </h1>
         <p className="mt-1 text-sm text-zinc-600">
@@ -932,7 +932,7 @@ function EvaluateForm() {
       {/* Avant les scénarios, parce qu'un outil décrit le monde dans lequel ils
           se déroulent : on pose le décor, puis ce qu'on y demande. */}
       <section className="space-y-3">
-        <h2 className="font-medium">
+        <h2 className="eyebrow">
           Tools{" "}
           <span className="text-sm font-normal text-zinc-500">
             — what the evaluated model can decide to call. Optional.
@@ -970,7 +970,7 @@ function EvaluateForm() {
       {/* ---------------- Scenarios ---------------- */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium">Scenarios</h2>
+          <h2 className="eyebrow">Scenarios</h2>
           <div className="flex gap-1 rounded border border-zinc-300 p-0.5 text-sm">
             <button
               onClick={() => setSource("manual")}
@@ -1144,7 +1144,7 @@ function EvaluateForm() {
 
       {/* ---------------- Turns & repetitions ---------------- */}
       <section className="space-y-2">
-        <h2 className="font-medium">Conversation</h2>
+        <h2 className="eyebrow">Conversation</h2>
         <div className="flex gap-6">
           <label className="space-y-1">
             <span className="block text-sm font-medium">Turns</span>
@@ -1182,7 +1182,7 @@ function EvaluateForm() {
       {turns > 1 && (
         <section className="space-y-2 rounded-lg border border-red-300 bg-zinc-950 p-4 text-zinc-100">
           <div className="flex items-center gap-2">
-            <h2 className="font-medium">Adversary objective</h2>
+            <h2 className="eyebrow eyebrow-on-dark">Adversary objective</h2>
             <span className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-300">
               never shown to the evaluated model
             </span>
@@ -1205,7 +1205,7 @@ function EvaluateForm() {
 
       {/* ---------------- The judge ---------------- */}
       <section className="space-y-4">
-        <h2 className="font-medium">What the judge is asked</h2>
+        <h2 className="eyebrow">What the judge is asked</h2>
         <p className="text-sm text-zinc-600">
           Write the question in your own words, then the grades it can be
           answered with. The judge picks exactly one of your grades and
@@ -1265,7 +1265,7 @@ function EvaluateForm() {
       {/* ---------------- Secondary judges ---------------- */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium">Additional judges</h2>
+          <h2 className="eyebrow">Additional judges</h2>
           <button
             onClick={addSecondaryJudge}
             className="text-sm text-teal-700 underline hover:text-teal-900"
@@ -1349,7 +1349,7 @@ function EvaluateForm() {
 
       {/* ---------------- Models ---------------- */}
       <section className="space-y-3">
-        <h2 className="font-medium">Models</h2>
+        <h2 className="eyebrow">Models</h2>
         <div className="space-y-1">
           <span className="text-sm font-medium">
             Evaluated models — one column per model in the results
@@ -1393,7 +1393,7 @@ function EvaluateForm() {
 
       {/* ---------------- Temperature ---------------- */}
       <section className="space-y-2">
-        <h2 className="font-medium">Temperature of the evaluated model</h2>
+        <h2 className="eyebrow">Temperature of the evaluated model</h2>
         <div className="flex items-center gap-4">
           <input
             type="number"
@@ -1576,7 +1576,7 @@ function EvaluateForm() {
         <button
           onClick={launch}
           disabled={!ready || launching}
-          className="rounded bg-zinc-900 px-4 py-2 text-white disabled:opacity-40"
+          className="rounded bg-teal-700 px-4 py-2 text-white hover:bg-teal-800 disabled:opacity-40 disabled:hover:bg-teal-700"
         >
           {launching
             ? "Launching…"

@@ -49,6 +49,7 @@ import {
   verdictOf,
 } from "@/components/RunRead";
 import { NotesField } from "@/components/NotesField";
+import { RunTitle } from "@/components/RunTitle";
 import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
 import type {
@@ -191,7 +192,7 @@ function AddJudgePanel({
     <section className="space-y-4 rounded border border-teal-400 bg-teal-50/40 p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="font-medium">Add a judge</h2>
+          <h2 className="eyebrow">Add a judge</h2>
           <p className="mt-1 text-sm text-zinc-700">
             This judge does not replace the principal, or any other judge
             already on this run — it grades the same conversations alongside
@@ -274,7 +275,7 @@ function AddJudgePanel({
       <button
         onClick={add}
         disabled={!ready || busy}
-        className="rounded bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-700 disabled:opacity-40 disabled:hover:bg-zinc-900"
+        className="rounded bg-teal-700 px-4 py-2 text-white hover:bg-teal-800 disabled:opacity-40 disabled:hover:bg-teal-700"
       >
         {busy ? "Adding…" : `Add this judge to ${detail.samples.length} conversations`}
       </button>
@@ -318,7 +319,7 @@ function CatchUpButton({
 
   return (
     <section className="space-y-2 rounded border border-zinc-300 p-4">
-      <h2 className="font-medium">
+      <h2 className="eyebrow">
         Catch up on {missing} grade{missing > 1 ? "s" : ""}
       </h2>
       <p className="text-sm text-zinc-700">
@@ -618,8 +619,29 @@ export default function EvalRunPage({
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {run.label ?? "Evaluation run"}
+          <h1 className="font-serif text-2xl font-normal tracking-tight">
+            <RunTitle
+              runId={run.id}
+              label={run.label}
+              fallback="Evaluation run"
+              // Ici le titre n'est qu'un `<h1>` : le cliquer peut l'ouvrir.
+              // Dans la liste il est un lien vers ce run, et lui voler le clic
+              // rendrait la liste impraticable.
+              editOnClick
+              // Le champ prend la tête du titre — serif, même corps, pleine
+              // largeur — pour que rien ne saute au moment où il s'ouvre.
+              inputClassName="w-full border border-zinc-300 bg-transparent px-2 py-0.5 font-serif text-2xl font-normal tracking-tight"
+              // Écrit dans l'état déjà chargé plutôt que de tout relire : la
+              // réponse porte le titre enregistré, et recharger le run entier
+              // pour un mot ferait clignoter la matrice au-dessous.
+              onSaved={(next) =>
+                setDetail((current) =>
+                  current ? { ...current, run: { ...current.run, label: next } } : current,
+                )
+              }
+            >
+              {run.label ?? "Evaluation run"}
+            </RunTitle>
           </h1>
           <p className="text-sm text-zinc-600">
             <CopyId value={run.id} /> · {run.config.scenarios.length} scenario

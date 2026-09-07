@@ -3,6 +3,7 @@
 import "server-only";
 import { DRAFT_TAGS, RUN_TAGS, TAGS, insert, remove, select } from "./supabase";
 import { nextColor } from "./tag-colors";
+import { isReservedTag } from "./run-filters";
 import type { Tag } from "./types";
 
 export async function loadTags(): Promise<Tag[]> {
@@ -23,6 +24,19 @@ function escapeIlike(value: string): string {
  * écrire « ajoute ce tag » sans avoir à savoir s'il existe. */
 export async function createTag(label: string): Promise<Tag> {
   const trimmed = label.trim();
+  // La garde est ici et non dans la route : `tagsForLabels` crée aussi des
+  // tags, pour l'outil MCP qui en pose sur un run. Deux portes, une seule
+  // règle — la mettre en amont d'une seule laisserait l'autre ouverte.
+  //
+  // Un vrai tag « local » se confondrait dans la barre de filtres avec le
+  // pseudo-tag du même nom, et l'un masquerait l'autre sans que rien ne le
+  // dise. Voir `run-filters.ts`.
+  if (isReservedTag(trimmed)) {
+    throw new Error(
+      `"${trimmed}" is reserved — the runs list already uses it to filter on ` +
+        `how a run was launched or where it ran.`,
+    );
+  }
   const existing = await select<Tag>(TAGS, {
     select: "id,label,color",
     label: `ilike.${escapeIlike(trimmed)}`,

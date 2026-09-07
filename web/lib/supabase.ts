@@ -13,6 +13,10 @@ import "server-only";
 
 export const RUNS = "eval_runs";
 export const SAMPLES = "eval_samples";
+/** La vue d'agrégation de la liste : une ligne par run, quel que soit le
+ *  nombre de cases. Voir la migration `20260907140037_eval_run_list_view.sql`
+ *  (dépôt polaris-supabase). */
+export const RUN_LIST = "eval_run_list";
 export const DRAFTS = "eval_run_drafts";
 export const TAGS = "tags";
 export const RUN_TAGS = "eval_run_tags";

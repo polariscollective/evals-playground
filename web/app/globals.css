@@ -1,28 +1,86 @@
 @import "tailwindcss";
 
+/* La palette vient de polariscollective.org : fond crème, encre brun-noir,
+   olive pour l'accent. On ne l'applique pas en réécrivant huit mille lignes de
+   classes, mais en redéfinissant les échelles que Tailwind fabrique déjà.
+   `bg-zinc-50` compile vers `var(--color-zinc-50)` — changer la variable
+   repeint les quatre cent cinquante usages sans toucher à un composant.
+
+   Trois échelles reprises, chacune pour ce qu'elle sert déjà dans l'app :
+
+     zinc   le gris de tout — texte, bordures, fonds, panneaux sombres
+     teal   l'accent : liens, confirmations, action principale  → olive
+     amber  l'avertissement                                     → or
+
+   `red` reste tel quel. C'est le signal d'erreur ; le réchauffer l'affaiblit. */
+
+@theme {
+  /* Gris chauds, calés sur les deux valeurs du site : `zinc-500` est son
+     `--muted-foreground`, `zinc-900` son `--foreground`. Le reste interpole. */
+  --color-zinc-50: #faf7f0;
+  --color-zinc-100: #f0e9d9;
+  --color-zinc-200: #e4dac4;
+  --color-zinc-300: #cdc0a5;
+  --color-zinc-400: #a19783;
+  --color-zinc-500: #6a6457;
+  --color-zinc-600: #565044;
+  --color-zinc-700: #443f36;
+  --color-zinc-800: #302d26;
+  --color-zinc-900: #211f1b;
+  --color-zinc-950: #15130f;
+
+  /* Olive. `teal-700` est l'accent exact du site, #5f6b3a. */
+  --color-teal-50: #eef1e3;
+  --color-teal-100: #e1e6cb;
+  --color-teal-200: #d0d8b0;
+  --color-teal-300: #b2bd8b;
+  --color-teal-400: #93a166;
+  --color-teal-500: #7a874a;
+  --color-teal-600: #6c7841;
+  --color-teal-700: #5f6b3a;
+  --color-teal-800: #4d572f;
+  --color-teal-900: #3d4526;
+  --color-teal-950: #232814;
+
+  /* Or, tiré du favicon du site (#b8863b). `amber-700` est descendu à #8a6528
+     plutôt que sa valeur naturelle : il porte du texte en `text-sm`, et il lui
+     fallait 4.5:1 sur le crème. */
+  --color-amber-50: #faf3e3;
+  --color-amber-100: #f5e8c6;
+  --color-amber-200: #ecd69d;
+  --color-amber-300: #dfbc72;
+  --color-amber-400: #cfa04c;
+  --color-amber-500: #b98a38;
+  --color-amber-600: #a37a30;
+  --color-amber-700: #8a6528;
+  --color-amber-800: #795a25;
+  --color-amber-900: #624920;
+  --color-amber-950: #382810;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4eee2;
+  --foreground: #211f1b;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-spectral);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Pas de bloc `prefers-color-scheme: dark`. Il y en avait un ; il basculait le
+   fond en #0a0a0a alors qu'aucun composant de l'application n'a jamais porté
+   de variante `dark:` — le texte restait en gris clair sur presque noir. La
+   palette ci-dessus est un choix, pas un défaut : elle vaut dans les deux
+   réglages système. */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
 }
 
 /* Tailwind v4 a retiré le `cursor: pointer` que les navigateurs mettaient sur
@@ -54,6 +112,91 @@ label:has(textarea) {
   cursor: auto;
 }
 
+/* Les zones de saisie s'arrondissent un peu plus que les 4px du `rounded` que
+   l'application met partout. Une règle plutôt que cent quatre-vingt-douze
+   éditions : elle n'est dans aucune couche, et les styles hors couche passent
+   devant les utilitaires quelle que soit leur spécificité. Les cases à cocher
+   et les boutons radio en sont exclus — ils ont leur forme. */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-radius: 0.5rem;
+}
+
+/* Sur un fond crème, un champ doit se détacher du papier : il est plus clair
+   que lui, pas plus foncé.
+
+   Dans `base`, contrairement à la règle d'arrondi juste au-dessus : ici on veut
+   précisément l'inverse. Tout `bg-*` posé sur un champ doit gagner — le
+   `bg-zinc-900` du panneau de l'adversaire, les `bg-white` explicites — et une
+   couche `base` passe derrière les utilitaires. */
+@layer base {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    background-color: #fffdf8;
+  }
+}
+
+/* L'intertitre du site : petites capitales olive, très espacées. Pas de filet
+   au-dessus — le site n'en met que dans son hero, ses intertitres de section
+   sont du texte nu. Et un pseudo-élément en bloc ici décalerait les titres qui
+   partagent une ligne flex avec un badge. */
+.eyebrow {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-teal-700);
+}
+
+/* Plusieurs de ces titres traînent une glose derrière eux — « Tools — what the
+   evaluated model can decide to call ». C'est une phrase : elle ne se met pas
+   en capitales et ne s'espace pas.
+
+   Dans `base`, pour que les `text-sm text-zinc-500` déjà posés sur ces spans
+   continuent de décider ; la règle ne fournit qu'un repli. Une déclaration,
+   même en couche `base`, l'emporte de toute façon sur l'héritage — c'est ce
+   qui casse les capitales héritées du parent. */
+@layer base {
+  .eyebrow :where(span, small, em) {
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--color-zinc-500);
+  }
+}
+
+/* Sur le panneau sombre de l'adversaire, l'olive #5f6b3a n'a pas de quoi se
+   détacher. L'intertitre y passe au vert clair. */
+.eyebrow-on-dark {
+  color: var(--color-teal-300);
+}
+
+.eyebrow-on-dark :where(span, small, em) {
+  color: var(--color-zinc-300);
+}
+
+/* Le titre d'un run dans la liste. Pas de soulignement : sur une colonne de
+   titres, le trait fait plus de bruit qu'il ne signale, et le survol suffit à
+   dire que c'est cliquable.
+
+   La capitale est posée par `::first-letter` plutôt que par `capitalize`, qui
+   met une majuscule à CHAQUE mot — « Essai Du Viewer », et
+   « Cop-M210-Emergency-Legitimacy-V1 ». Ce sont des phrases, pas des titres
+   d'œuvres : seule la première lettre se lève, et le texte enregistré n'est
+   pas touché.
+
+   Le `inline-block` porté par le lien n'est pas décoratif : `::first-letter`
+   ne s'applique qu'aux boîtes de type bloc, et un lien est inline par défaut.
+   Sans lui, la règle ci-dessous est ignorée en silence — aucune erreur, aucun
+   avertissement, juste un titre en minuscule. */
+.run-title::first-letter {
+  text-transform: uppercase;
+}
+
 /* Notes de run rendues depuis le markdown. Volontairement sobre : ces notes
    vivent au milieu d'un tableau de bord, pas dans un article. */
 .notes-prose h2,
@@ -74,15 +217,15 @@ label:has(textarea) {
 .notes-prose ol { list-style: decimal; }
 .notes-prose li { margin: 0.15em 0; }
 .notes-prose blockquote {
-  border-left: 3px solid #d4d4d8;
+  border-left: 3px solid var(--color-zinc-300);
   padding-left: 0.7em;
-  color: #52525b;
+  color: var(--color-zinc-600);
   margin: 0.4em 0;
 }
 .notes-prose code {
-  background: #f4f4f5;
+  background: var(--color-zinc-100);
   border-radius: 3px;
   padding: 0.1em 0.3em;
   font-size: 0.9em;
 }
-.notes-prose a { color: #0f766e; text-decoration: underline; }
+.notes-prose a { color: var(--color-teal-700); text-decoration: underline; }

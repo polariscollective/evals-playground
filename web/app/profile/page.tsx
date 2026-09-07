@@ -1,39 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getProfile, updateProfileCaps } from "@/lib/api";
+import { updateProfileCaps } from "@/lib/api";
+import { putProfile, refreshProfile, useProfile } from "@/lib/profile-store";
+import { Loading, Refreshing } from "@/components/Loading";
 import { activitySentence } from "@/lib/mcp-activity";
 import { capProblem } from "@/lib/profile-caps";
-import type { Profile, ProfileActivity } from "@/lib/types";
 
 const FIELD = "mt-1 w-full rounded border border-zinc-300 p-2 text-sm";
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [activity, setActivity] = useState<ProfileActivity | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // Le profil vient du cache partagé, préchargé par « Evaluate » et lu aussi
+  // par la page « Scenarios » : arriver ici montre ce qu'on avait déjà.
+  const { data, loading, error: loadError } = useProfile();
+  const profile = data?.profile ?? null;
+  const activity = data?.activity ?? null;
 
   // Tenus en nombre plutôt qu'en chaîne, comme `RubricEditor` : une saisie
   // intermédiaire (`0.`, champ vidé) devient `NaN`, affiché comme un champ
   // vide plutôt que forcé à une valeur — `capProblem` la refuse telle quelle.
-  const [perRun, setPerRun] = useState(NaN);
-  const [perHour, setPerHour] = useState(NaN);
+  //
+  // `null` veut dire « pas encore touché », et se distingue de `NaN`, qui est
+  // une saisie réelle mais vide. Tant que personne n'a écrit, le champ suit ce
+  // que porte le profil ; dès qu'on écrit, la saisie prime — sans effet de
+  // recopie, qui aurait rendu deux fois et pu écraser la frappe en cours.
+  const [perRunEdit, setPerRunEdit] = useState<number | null>(null);
+  const [perHourEdit, setPerHourEdit] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    getProfile()
-      .then(({ profile, activity }) => {
-        setProfile(profile);
-        setActivity(activity);
-        setPerRun(profile.max_usd_per_run);
-        setPerHour(profile.max_usd_per_hour);
-      })
-      .catch((e) => setLoadError((e as Error).message));
+    void refreshProfile();
   }, []);
 
-  function edit(setter: (value: number) => void, raw: string) {
+  const perRun = perRunEdit ?? profile?.max_usd_per_run ?? NaN;
+  const perHour = perHourEdit ?? profile?.max_usd_per_hour ?? NaN;
+
+  function edit(setter: (value: number | null) => void, raw: string) {
     setSaved(false);
     setSaveError(null);
     setter(Number.parseFloat(raw));
@@ -44,7 +48,15 @@ export default function ProfilePage() {
     setSaveError(null);
     updateProfileCaps({ max_usd_per_run: perRun, max_usd_per_hour: perHour })
       .then(({ profile }) => {
-        setProfile(profile);
+        // Le profil sauvé va dans le cache, pas dans un état local : c'est ce
+        // que « Scenarios » lira aussi, et le relire coûterait un aller-retour
+        // pour une réponse qu'on tient déjà.
+        if (data) putProfile({ ...data, profile });
+        // La saisie repasse la main au profil : ce qui est enregistré est
+        // désormais ce qu'on voit, et garder une valeur « touchée » ferait
+        // diverger le champ du serveur au prochain rafraîchissement.
+        setPerRunEdit(null);
+        setPerHourEdit(null);
         setSaved(true);
       })
       .catch((e) => setSaveError((e as Error).message))
@@ -58,16 +70,21 @@ export default function ProfilePage() {
   const disabled = perRunProblem !== null || perHourProblem !== null;
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6">
+    <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Profile</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="font-serif text-2xl font-normal">Profile</h1>
+        <p className="flex items-center gap-2 text-sm text-zinc-500">
           What your agents may spend without you standing there, and what
           they have spent recently.
+          {loading && profile !== null && <Refreshing />}
         </p>
       </header>
 
       {loadError && <p className="text-sm text-red-600">{loadError}</p>}
+
+      {/* Tient la place du contenu tant qu'il n'est pas là, au même bord que
+          ce qui s'y écrira. */}
+      {profile === null && loadError === null && <Loading label="Loading profile" />}
 
       {profile && (
         <section className="space-y-3 rounded border border-zinc-300 p-4">
@@ -88,7 +105,7 @@ export default function ProfilePage() {
                 step="any"
                 min="0"
                 value={Number.isNaN(perRun) ? "" : perRun}
-                onChange={(e) => edit(setPerRun, e.target.value)}
+                onChange={(e) => edit(setPerRunEdit, e.target.value)}
                 className={FIELD}
               />
               <span className="mt-1 block text-xs text-zinc-500">
@@ -109,7 +126,7 @@ export default function ProfilePage() {
                 step="any"
                 min="0"
                 value={Number.isNaN(perHour) ? "" : perHour}
-                onChange={(e) => edit(setPerHour, e.target.value)}
+                onChange={(e) => edit(setPerHourEdit, e.target.value)}
                 className={FIELD}
               />
               <span className="mt-1 block text-xs text-zinc-500">

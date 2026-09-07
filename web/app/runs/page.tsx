@@ -1,33 +1,49 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   discardDraft,
+  publishRun,
   getDrafts,
   getMe,
-  getRuns,
-  getTagAssignments,
-  getTags,
-  setDraftTags,
   setRunTags,
   softDeleteRun,
 } from "@/lib/api";
-import { keepIfUnchanged } from "@/lib/unchanged";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
-import { publicRunPath } from "@/lib/run-id";
-import { CopyButton, CopyId, PublicIcon } from "@/components/CopyButton";
+import { CopyId, PublicIcon } from "@/components/CopyButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TagField } from "@/components/TagField";
-import type { Draft, RunSummary, Tag } from "@/lib/types";
-
-const STATUS_LABEL: Record<string, string> = {
-  triggered: "starting",
-  running: "running",
-  done: "done",
-  error: "failed",
-  cancelled: "cancelled",
-};
+import { Refreshing } from "@/components/Loading";
+import { InfoDot } from "@/components/InfoDot";
+import { RunTitle } from "@/components/RunTitle";
+import { DraftTable } from "@/components/DraftTable";
+import {
+  PSEUDO_TAG_CLASSES,
+  STATUS_LABELS,
+  draftSides,
+  offered,
+  passes,
+  matchesQuery,
+  runSides,
+} from "@/lib/run-filters";
+import type { DimensionKey } from "@/lib/run-filters";
+import {
+  clearFilters,
+  cycleDim,
+  defaultFilters,
+  toggleTag,
+  useFilterState,
+} from "@/lib/filter-store";
+import { FilterBar } from "@/components/FilterBar";
+import { defaultState } from "@/lib/filter-storage";
+import { EmptyTable } from "@/components/EmptyTable";
+import { draftHaystacks, draftName } from "@/lib/draft-row";
+import { DimensionIcon } from "@/components/DimensionIcon";
+import type { FilterMode } from "@/lib/filter-storage";
+import type { Draft } from "@/lib/types";
+import { forgetRun, refreshRuns, useRuns } from "@/lib/runs-store";
+import { refreshTags, useTags } from "@/lib/tags-store";
 
 const STATUS_STYLE: Record<string, string> = {
   triggered: "bg-zinc-100 text-zinc-700",
@@ -51,15 +67,6 @@ function formatDate(iso: string): string {
 }
 
 
-/** Comment appeler un brouillon à l'écran.
- *
- * Un brouillon de run porte le nom qu'on lui a donné ; une extension n'en a
- * pas — ce qu'elle propose n'est pas un run mais un ajout à un run qui, lui,
- * a déjà un nom. */
-function draftName(draft: Draft): string {
-  if (draft.kind === "extend") return "an extension of an existing run";
-  return draft.config.label || "Untitled run";
-}
 
 /** Une corbeille, discrète jusqu'au survol : le geste est rare et réversible,
  *  il n'a pas à peser dans la page. */
@@ -89,217 +96,31 @@ function TrashIcon() {
 /** Le bouton qui rouvre la liste aux brouillons déjà lancés. Sorti du titre
  *  pour que celui-ci continue de compter ce qui attend, et non ce qui est
  *  affiché. */
-function LaunchedToggle({
-  showLaunched,
-  onToggle,
-}: {
-  showLaunched: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-900 hover:bg-amber-100"
-    >
-      {showLaunched ? "Hide launched" : "Show launched"}
-    </button>
-  );
-}
 
-function DraftList({
-  drafts,
-  draftTags,
-  catalog,
-  onTagsSaved,
-  onDiscard,
-  showLaunched,
-  onToggleLaunched,
-}: {
-  drafts: Draft[] | null;
-  draftTags: Record<string, Tag[]>;
-  /** Le catalogue entier, pour le champ éditable de chaque ligne. */
-  catalog: Tag[];
-  /** Après un ajout, un retrait ou une création réussis : relit le
-   *  catalogue et les affectations. */
-  onTagsSaved: () => Promise<void>;
-  onDiscard: (draft: Draft) => void;
-  showLaunched: boolean;
-  onToggleLaunched: () => void;
-}) {
-  if (drafts === null) {
-    return <p className="text-sm text-zinc-500">Loading drafts…</p>;
-  }
-  if (drafts.length === 0) {
-    return (
-      <div className="space-y-2 rounded border border-zinc-300 p-4 text-sm text-zinc-600">
-        <p>
-          No draft waiting here. Agents submit them with{" "}
-          <code className="rounded bg-zinc-100 px-1">submit_draft_run</code>.
-        </p>
-        <LaunchedToggle showLaunched={showLaunched} onToggle={onToggleLaunched} />
-      </div>
-    );
-  }
-
-  const waiting = drafts.filter((draft) => !draft.launched_at).length;
-
-  return (
-    <section className="space-y-2 rounded border border-amber-300 bg-amber-50 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-amber-900">
-          {waiting} draft{waiting === 1 ? "" : "s"} waiting to be launched
-        </h2>
-        <LaunchedToggle showLaunched={showLaunched} onToggle={onToggleLaunched} />
-      </div>
-      <ul className="space-y-2">
-        {drafts.map((draft) => (
-          <li
-            key={draft.id}
-            className={
-              "flex flex-wrap items-baseline justify-between gap-3 border-t border-amber-200 pt-2 text-sm" +
-              // Déjà lancé : présent, mais visiblement plus dans la file.
-              (draft.launched_at ? " opacity-60" : "")
-            }
-          >
-            <div>
-              <div className="font-medium">
-                {draft.kind === "extend"
-                  ? "Add to an existing run"
-                  : draftName(draft)}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-                {/* D'où il vient change ce qu'on lit d'un champ manquant :
-                    l'agent n'a pu déposer que du valide, le formulaire dépose
-                    ce qu'on avait sous la main. */}
-                <span
-                  className={
-                    draft.origin === "manual"
-                      ? "rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-700"
-                      : "rounded bg-teal-100 px-1.5 py-0.5 text-teal-900"
-                  }
-                  title={
-                    draft.origin === "manual"
-                      ? "Enregistré depuis le formulaire — peut être incomplet"
-                      : "Soumis par un agent — validé au dépôt"
-                  }
-                >
-                  {draft.origin === "manual" ? "manual" : "MCP"}
-                </span>
-                {draft.kind === "extend" && (
-                  <span
-                    className="rounded bg-zinc-900 px-1.5 py-0.5 text-white"
-                    title="Agrandit un run existant plutôt que d'en lancer un nouveau"
-                  >
-                    extend
-                  </span>
-                )}
-                <span>
-                  {/* Une extension ne se compte pas comme un run : ses
-                      scénarios sont ceux qu'elle ajoute, en plus de ceux que
-                      le run porte déjà. Tolérant à l'incomplet par ailleurs :
-                      un brouillon manuel peut n'avoir encore ni scénario ni
-                      modèle. */}
-                  {draft.kind === "extend"
-                    ? `${draft.config.scenario_indices.length + draft.config.new_scenarios.length} scenario${
-                        draft.config.scenario_indices.length +
-                          draft.config.new_scenarios.length >
-                        1
-                          ? "s"
-                          : ""
-                      } × ${draft.config.targets.length} model${
-                        draft.config.targets.length > 1 ? "s" : ""
-                      } × ${draft.config.repetitions} added`
-                    : `${draft.config.scenarios?.length ?? 0} scenario${
-                        (draft.config.scenarios?.length ?? 0) > 1 ? "s" : ""
-                      } × ${draft.config.models?.targets?.length ?? 0} model${
-                        (draft.config.models?.targets?.length ?? 0) > 1 ? "s" : ""
-                      } × ${draft.config.repetitions ?? 0}`}{" "}
-                  · submitted by {draft.created_by} ·{" "}
-                  {formatDate(draft.created_at)}
-                </span>
-                {/* L'identifiant se copie : c'est ce qu'on colle à un agent
-                    pour qu'il reprenne ce brouillon. */}
-                <CopyId value={draft.id} title="Copy draft id" />
-                {draft.launched_at && (
-                  <span
-                    className="rounded bg-zinc-200 px-1.5 py-0.5 text-zinc-700"
-                    title="Sorti de la file — son adresse reste ouverte"
-                  >
-                    launched {formatDate(draft.launched_at)}
-                  </span>
-                )}
-              </div>
-              <TagField
-                compact
-                tags={draftTags[draft.id] ?? []}
-                catalog={catalog}
-                onSave={(ids) => setDraftTags(draft.id, ids)}
-                onSaved={onTagsSaved}
-              />
-            </div>
-            {/* « Launch » ouvre le formulaire plutôt que de lancer sur-le-champ :
-                un brouillon vient d'un agent, et on veut pouvoir le corriger
-                avant de dépenser. */}
-            <div className="flex shrink-0 items-center gap-2">
-              {/* Une extension ne se lance pas depuis le formulaire : elle
-                  s'ajoute à un run, donc elle s'ouvre sur la page de ce run,
-                  dans le panneau prévu pour ça. */}
-              <Link
-                href={
-                  draft.kind === "extend"
-                    ? `/eval/${draft.extends_run_id}?extend=${draft.id}`
-                    : `/?draft=${draft.id}`
-                }
-                className="rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700"
-              >
-                {draft.kind === "extend"
-                  ? "Open the run…"
-                  : draft.launched_at
-                    ? "Launch again…"
-                    : "Launch…"}
-              </Link>
-              <button
-                type="button"
-                onClick={() => onDiscard(draft)}
-                title="Discard this draft"
-                aria-label={`Discard draft ${draftName(draft)}`}
-                className="rounded p-1 text-zinc-400 hover:bg-red-100 hover:text-red-800"
-              >
-                <TrashIcon />
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 export default function RunsPage() {
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  // La liste vient du magasin partagé, plus d'un état local : c'est ce qui
+  // fait qu'un retour sur cet onglet retrouve les lignes déjà lues au lieu de
+  // repartir d'un écran vide. Voir `lib/runs-store.ts`.
+  const { runs, loading, error: runsError } = useRuns();
   const [error, setError] = useState<string | null>(null);
   // Les brouillons ne se chargent qu'à la demande : la plupart du temps il n'y
   // en a aucun, et une requête de plus à chaque ouverture de la liste des runs
   // se paierait pour rien.
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
-  // Les brouillons déjà lancés sortent de la file par défaut : elle est faite
-  // pour ce qui attend. Mais ils gardent leur adresse, et relancer la même
-  // chose est prévu — encore faut-il pouvoir les retrouver.
-  const [showLaunched, setShowLaunched] = useState(false);
+  // Quelle liste on regarde. La bascule au-dessus des filtres remplace
+  // l'ancien bouton « Show drafts » : ce ne sont pas deux sections dont l'une
+  // s'ouvre, mais deux listes dont on regarde l'une ou l'autre. Il
+  // remplace le tableau, et chaque mode a sa barre de filtres et sa
+  // préférence enregistrée — voir `filter-storage.ts`.
+  const mode: FilterMode = showDrafts ? "drafts" : "runs";
+  const filterState = useFilterState(mode);
   const [me, setMe] = useState<string | null>(null);
-  // Les tags des deux listes, en un seul appel — pas une requête par ligne.
-  // Le catalogue les accompagne : `TagField` en a besoin pour ses suggestions,
-  // et le relire après chaque changement est ce qui le tient juste — un
-  // retrait peut vider un tag de son dernier lien et le faire disparaître.
-  // Un échec laisse simplement les deux absents plutôt que de casser toute la
-  // page : ce ne sont que des pastilles à côté d'une ligne.
-  const [tagAssignments, setTagAssignments] = useState<{
-    runs: Record<string, Tag[]>;
-    drafts: Record<string, Tag[]>;
-  }>({ runs: {}, drafts: {} });
-  const [tagCatalog, setTagCatalog] = useState<Tag[]>([]);
+  // Les tags viennent du magasin partagé, comme la liste : ils sont
+  // minuscules mais coûtaient deux allers-retours à chaque visite, et les
+  // pastilles arrivaient une demi-seconde après leurs lignes.
+  const { catalog: tagCatalog, assignments: tagAssignments } = useTags();
   // Les miens par défaut : la base est partagée, et la liste de tout le monde
   // enterre la sienne au bout de quelques semaines. Ce qu'on cherche en
   // ouvrant cette page est presque toujours un run qu'on a lancé soi-même.
@@ -309,22 +130,26 @@ export default function RunsPage() {
     { kind: "run"; id: string; label: string } | { kind: "draft"; draft: Draft } | null
   >(null);
   const [deleting, setDeleting] = useState(false);
+  /** Ce qu'on cherche. Dans l'état et non dans `localStorage` : un filtre est
+   *  une préférence, une recherche est un geste. Partagée par les deux listes
+   *  — taper un mot puis basculer cherche le même mot de l'autre côté. */
+  const [query, setQuery] = useState("");
+  /** Le run qu'on s'apprête à publier, ou `null`. Séparé de `confirming` :
+   *  publier et jeter n'ont ni le même dialogue ni le même ton. */
+  const [confirmingPublish, setConfirmingPublish] = useState<
+    { id: string; label: string; next: boolean } | null
+  >(null);
+  /** L'identifiant du run dont la publication est en vol, pour n'éteindre que
+   *  son bouton — pas les treize autres. */
+  const [publishing, setPublishing] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      // Ne remplace l'état que si la base a bougé : sinon la liste entière se
-      // redessinerait toutes les trois secondes pour rien.
-      const fetched = await getRuns();
-      setRuns((current) => keepIfUnchanged(current, fetched));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
-
+  // À chaque arrivée sur l'onglet : on revérifie, indicateur allumé. Les
+  // lignes déjà en cache restent affichées pendant ce temps — c'est tout
+  // l'intérêt, on ne repart pas d'un écran vide pour retrouver la même chose.
   useEffect(() => {
-    const timer = setTimeout(load, 0);
+    const timer = setTimeout(() => void refreshRuns(), 0);
     return () => clearTimeout(timer);
-  }, [load]);
+  }, []);
 
   useEffect(() => {
     // Sans elle, « les miens » ne veut rien dire : on retombe sur tout, ce qui
@@ -334,21 +159,10 @@ export default function RunsPage() {
       .catch(() => setMe(null));
   }, []);
 
-  const loadTags = useCallback(async () => {
-    try {
-      const [catalog, assignments] = await Promise.all([getTags(), getTagAssignments()]);
-      setTagCatalog(catalog);
-      setTagAssignments(assignments);
-    } catch {
-      setTagCatalog([]);
-      setTagAssignments({ runs: {}, drafts: {} });
-    }
-  }, []);
-
   useEffect(() => {
-    const timer = setTimeout(loadTags, 0);
+    const timer = setTimeout(() => void refreshTags(), 0);
     return () => clearTimeout(timer);
-  }, [loadTags]);
+  }, []);
 
   const confirmDelete = async () => {
     if (!confirming) return;
@@ -356,9 +170,7 @@ export default function RunsPage() {
     try {
       if (confirming.kind === "run") {
         await softDeleteRun(confirming.id);
-        setRuns((current) =>
-          (current ?? []).filter((entry) => entry.run.id !== confirming.id),
-        );
+        forgetRun(confirming.id);
       } else {
         await discardDraft(confirming.draft.id);
         setDrafts((current) =>
@@ -373,68 +185,153 @@ export default function RunsPage() {
     }
   };
 
-  const fetchDrafts = async (withLaunched: boolean) => {
+  /** Publier ou dépublier, puis relire la liste. Silencieux : le bouton dit
+   *  déjà qu'il travaille, et un second voyant en haut de page ne dirait rien
+   *  de plus. */
+  const setPublished = async (runId: string, next: boolean) => {
+    setPublishing(runId);
     try {
-      setDrafts(await getDrafts(withLaunched));
+      await publishRun(runId, next);
+      await refreshRuns({ silent: true });
+      setConfirmingPublish(null);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setPublishing(null);
     }
   };
 
-  const toggleDrafts = async () => {
-    const next = !showDrafts;
-    setShowDrafts(next);
-    if (!next || drafts !== null) return;
-    await fetchDrafts(showLaunched);
-  };
+  /* Les brouillons se chargent toujours entiers, lancés compris, et c'est le
+     filtre qui les écarte. L'ancien bouton « Show launched » refaisait la
+     requête ; devenu un bouton de la barre, il ne peut plus : un libellé ne
+     s'y affiche que si une ligne le porte, et aucune ne le porterait tant que
+     la requête les exclut. Le bouton n'apparaîtrait jamais.
 
-  /** Rouvrir la liste aux lancés demande une requête de plus : ils ne sont pas
-   *  déjà là, la route par défaut ne les rend pas. */
-  const toggleLaunched = async () => {
-    const next = !showLaunched;
-    setShowLaunched(next);
-    setDrafts(null);
-    await fetchDrafts(next);
-  };
+     Ils se comptent en dizaines : tout ramener coûte moins qu'une requête de
+     plus à chaque bascule. Le chargement lui-même est dans l'effet juste
+     au-dessus. */
+
+  // Le chargement suit l'état, il ne dépend pas du geste qui l'a changé.
+  // Accroché au seul gestionnaire du bouton, il ne partait pas si la page
+  // s'ouvrait déjà sur les brouillons — et la liste restait sur « Loading… »
+  // pour toujours.
+  useEffect(() => {
+    if (!showDrafts || drafts !== null) return;
+    // `alive` : la réponse peut arriver après qu'on a quitté la page, et
+    // écrire dans un composant démonté ne sert personne.
+    let alive = true;
+    getDrafts(true)
+      .then((loaded) => {
+        if (alive) setDrafts(loaded);
+      })
+      .catch((e: Error) => {
+        if (alive) setError(e.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [showDrafts, drafts]);
 
   // Tant qu'un run tourne, la liste se rafraîchit : c'est le seul endroit d'où
   // l'on peut suivre plusieurs runs à la fois.
   useEffect(() => {
     if (!runs?.some((r) => r.run.status === "running" || r.run.status === "triggered"))
       return;
-    const timer = setInterval(load, 3000);
+    // Silencieux : un run qui tourne fait battre cette requête toutes les
+    // trois secondes, et elle ne doit rien faire clignoter.
+    const timer = setInterval(() => void refreshRuns({ silent: true }), 3000);
     return () => clearInterval(timer);
-  }, [runs, load]);
+  }, [runs]);
 
-  if (error) {
+  const shownError = error ?? runsError;
+  if (shownError) {
     return (
       <main className="mx-auto max-w-6xl p-8">
         <p
           role="alert"
           className="rounded border border-red-400 bg-red-50 p-3 text-red-800"
         >
-          {error}
+          {shownError}
         </p>
       </main>
     );
   }
 
-  if (!runs) return <main className="mx-auto max-w-6xl p-8">Loading…</main>;
+  // Seulement en mode runs : sinon, arriver sur cette page et basculer aussitôt
+  // sur les brouillons ferait attendre devant un écran vide une liste de runs
+  // qu'on ne regarde même pas.
+  if (mode === "runs" && !runs) {
+    return <main className="mx-auto max-w-6xl p-8">Loading…</main>;
+  }
 
   // Le filtre ne s'applique que si l'on sait qui regarde : sans identité, tout
   // masquer donnerait une page vide sans expliquer pourquoi.
   const mien = mineOnly && me !== null;
-  const runsVus = mien ? runs.filter((entry) => entry.run.user_email === me) : runs;
-  const draftsVus =
-    mien && drafts ? drafts.filter((draft) => draft.created_by === me) : drafts;
+  // `?? []` : en mode brouillons, la liste des runs peut n'être pas encore
+  // arrivée — la garde ci-dessus ne l'attend plus dans ce cas.
+  const chargés = runs ?? [];
+  const runsDuPerimetre = mien
+    ? chargés.filter((entry) => entry.run.user_email === me)
+    : chargés;
+  const draftsDuPerimetre =
+    drafts === null ? [] : mien ? drafts.filter((d) => d.created_by === me) : drafts;
+
+  // Ce que chaque ligne est, et ce qu'elle porte : deux choses distinctes, et
+  // deux façons de filtrer. Voir `run-filters.ts`.
+  const runRows = runsDuPerimetre.map((entry) => ({
+    entry,
+    sides: runSides(entry.run),
+    labels: [
+      entry.run.status,
+      ...(tagAssignments.runs[entry.run.id] ?? []).map((tag) => tag.label),
+    ],
+  }));
+  const draftRows = draftsDuPerimetre.map((draft) => ({
+    draft,
+    sides: draftSides(draft),
+    labels: (tagAssignments.drafts[draft.id] ?? []).map((tag) => tag.label),
+  }));
+
+  // La barre ne propose que ce que porte la liste EN COURS, et se calcule
+  // avant filtrage — sinon réduire une dimension ferait disparaître son
+  // propre bouton et il n'y aurait plus moyen de la rouvrir.
+  const bar = offered(mode, mode === "drafts" ? draftRows : runRows);
+
+  const runsVus = runRows
+    .filter(
+      (row) =>
+        passes(row.sides, row.labels, filterState) &&
+        matchesQuery(
+          [row.entry.run.label, row.entry.run.first_scenario_title, row.entry.run.id],
+          query,
+        ),
+    )
+    .map((row) => row.entry);
+  const draftsVus = draftRows
+    .filter(
+      (row) =>
+        passes(row.sides, row.labels, filterState) &&
+        matchesQuery(draftHaystacks(row.draft), query),
+    )
+    .map((row) => row.draft);
+  const masques =
+    mode === "drafts"
+      ? draftRows.length - draftsVus.length
+      : runRows.length - runsVus.length;
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-          <p className="mt-1 text-sm text-zinc-600">
-            Every evaluation run, most recent first. Open one to see its matrix.
+          <h1 className="font-serif text-2xl font-normal tracking-tight">Runs</h1>
+          <p className="mt-1 flex items-center gap-2 text-sm text-zinc-600">
+            {showDrafts
+              ? "Everything waiting to be launched, newest first. Open one to review it."
+              : "Every evaluation run, most recent first. Open one to see its matrix."}
+            {/* Ne s'allume que par-dessus une liste déjà affichée : quand il
+                n'y a encore rien à lire, c'est « Loading… » qui parle, et deux
+                messages diraient la même chose. */}
+            {loading && runs !== null && <Refreshing />}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -455,52 +352,100 @@ export default function RunsPage() {
           >
             Show mine only
           </button>
-          <button
-            type="button"
-            onClick={toggleDrafts}
-            className="rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
-          >
-            {showDrafts ? "Hide drafts" : "Show drafts"}
-          </button>
         </div>
       </header>
 
-      {showDrafts && (
-        <DraftList
-          drafts={draftsVus}
+      <FilterBar
+        mode={mode}
+        onMode={(next) => setShowDrafts(next === "drafts")}
+        dims={bar.dims}
+        statuses={bar.statuses}
+        tags={bar.tags}
+        catalog={tagCatalog}
+        state={filterState}
+        onCycle={(key: DimensionKey) => cycleDim(mode, key)}
+        onToggle={(label: string) => toggleTag(mode, label)}
+        onClear={() => clearFilters(mode)}
+        onDefault={() => defaultFilters(mode)}
+        defaults={defaultState(mode)}
+        query={query}
+        onQuery={setQuery}
+        hidden={masques}
+      />
+
+      {showDrafts ? (
+        <DraftTable
+          drafts={drafts === null ? null : draftsVus}
           draftTags={tagAssignments.drafts}
           catalog={tagCatalog}
-          onTagsSaved={loadTags}
+          onTagsSaved={refreshTags}
           onDiscard={(draft) => setConfirming({ kind: "draft", draft })}
-          showLaunched={showLaunched}
-          onToggleLaunched={toggleLaunched}
+          onClear={() => clearFilters(mode)}
+          onDefault={() => defaultFilters(mode)}
         />
-      )}
-
-      {runsVus.length === 0 ? (
-        <p className="rounded border border-zinc-300 p-4 text-sm text-zinc-600">
-          {mien && runs.length > 0 ? "No run of yours yet. " : "No run yet. "}
-          <Link href="/" className="text-teal-700 underline">
-            Launch one
-          </Link>
-          .
-        </p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
+        /* `table-fixed` et non le calcul automatique : sans lui, chaque
+            colonne se dimensionne sur son contenu, et filtrer la liste — ou
+            simplement un run au titre plus long — redistribue toute la
+            largeur. Les colonnes sautaient d'un état à l'autre.
+
+            Les largeurs sont donc posées une fois, au plus juste : « Run »
+            n'en a pas et absorbe ce qui reste, et c'est bien elle qui doit
+            s'étirer puisqu'elle porte le titre, l'identifiant et les tags.
+            Trop serrer les autres et l'identifiant passe à la ligne.
+
+            Elles sont identiques à celles du tableau des brouillons, colonne
+            par colonne : sans ça, basculer d'une liste à l'autre décalait tout
+            de quelques pixels, et l'œil le voyait sans savoir quoi. */
+        /* La liste défile dans son propre cadre plutôt que dans la page, et
+           son en-tête y colle : sur quarante runs, on perdait le nom des
+           colonnes au bout de trois lignes.
+
+           `max-h-[70vh]` et non une hauteur fixe — la barre de filtres au
+           dessus change de hauteur selon le nombre de tags, et un cadre figé
+           déborderait de l'écran sur les petits.
+
+           Sans bordure : le filet sous l'en-tête et ceux entre les lignes
+           disent déjà où la liste commence et finit. */
+        <div className="max-h-[70vh] overflow-y-auto">
+        <table className="w-full table-fixed text-sm">
+          <thead className="sticky top-0 z-10 bg-background">
+            {/* Toutes les colonnes alignées à gauche, chiffres compris. Le coût
+                et la note étaient à droite — l'usage pour des nombres — mais
+                seules deux colonnes sur sept l'étaient, et l'œil qui descend la
+                table butait dessus. Une table cohérente vaut mieux ici qu'une
+                convention typographique appliquée deux fois. */}
             <tr className="border-b border-zinc-300 text-left text-xs uppercase tracking-wide text-zinc-500">
               <th className="py-3 pr-8 font-medium">Run</th>
-              <th className="py-3 pr-8 font-medium">Launched</th>
-              <th className="py-3 pr-8 font-medium">Shape</th>
-              <th className="py-3 pr-8 font-medium">Status</th>
-              <th className="py-3 pr-8 text-right font-medium">Cost</th>
-              <th className="py-3 pr-8 text-right font-medium">Average grade</th>
-              <th className="py-3" />
+              <th className="w-40 py-3 pr-8 font-medium">Launched</th>
+              <th className="relative w-24 py-3 pr-8 font-medium">
+                Shape{" "}
+                <InfoDot label="What Shape means">
+                  scénarios × modèles × répétitions
+                </InfoDot>
+              </th>
+              <th className="w-32 py-3 pr-8 font-medium">Status</th>
+              <th className="w-24 py-3 pr-8 font-medium">Cost</th>
+              <th className="w-24 py-3 pr-8 font-medium">Grade</th>
+              <th className="w-14 py-3" />
             </tr>
           </thead>
           <tbody>
+            {/* Le squelette reste, même vide : les colonnes disaient la
+                largeur de la table, et les remplacer par un message la faisait
+                se rétracter — puis se rouvrir dès qu'un filtre était défait. */}
+            {runsVus.length === 0 && (
+              <tr>
+                <td colSpan={7}>
+                  <EmptyTable
+                    onClear={() => clearFilters(mode)}
+                    onDefault={() => defaultFilters(mode)}
+                  />
+                </td>
+              </tr>
+            )}
             {runsVus.map(({ run, progress, mean, repetitions }) => {
-              const { min, max } = rubricBounds(run.config.rubric);
+              const { max } = rubricBounds(run.rubric);
               const running =
                 run.status === "running" || run.status === "triggered";
               const [low, high] = repetitions;
@@ -512,83 +457,101 @@ export default function RunsPage() {
                   {/* La colonne du titre prend la place restante : c'est par lui
                       qu'on retrouve un run, pas par sa forme ni son statut. */}
                   <td className="w-full py-3 pr-8">
-                    <Link
-                      href={`/eval/${run.id}`}
-                      className="font-medium underline hover:text-teal-800"
+                    <RunTitle
+                      runId={run.id}
+                      label={run.label}
+                      fallback={run.first_scenario_title ?? run.id}
+                      onSaved={() => void refreshRuns({ silent: true })}
                     >
-                      {run.label ?? run.config.scenarios[0]?.title ?? run.id}
-                    </Link>
+                      <Link
+                        href={`/eval/${run.id}`}
+                        className="run-title inline-block font-medium hover:text-teal-800"
+                      >
+                        {run.label ?? run.first_scenario_title ?? run.id}
+                      </Link>
+                    </RunTitle>
                     <div className="flex items-center gap-2 text-xs text-zinc-500">
                       <CopyId value={run.id} />
                       {/* Le local et le déployé écrivent dans la même base :
                           sans ce badge, un essai jetable ressemble à un vrai
                           run. Seul le local est marqué — c'est l'exception. */}
-                      {run.origin === "local" && (
-                        <span
-                          className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600"
-                          title="Lancé depuis une machine de développement, pas depuis le job déployé"
-                        >
-                          local
-                        </span>
-                      )}
-                      {/* Le badge lui-même est le signal : en ambre, il ne
-                          se voit que sur un run publié, et sa seule présence
-                          dit « n'importe qui avec ce lien peut le lire ». Le
-                          clic copie l'adresse absolue, pas seulement l'id. */}
-                      {run.is_public && (
-                        <CopyButton
-                          value={() =>
-                            `${window.location.origin}${publicRunPath(run.id)}`
-                          }
-                          title="Copy the public link"
-                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 hover:bg-amber-200"
-                        >
-                          {(copied) =>
-                            copied ? (
-                              "copied"
-                            ) : (
-                              <>
-                                <PublicIcon />
-                                public
-                              </>
-                            )
-                          }
-                        </CopyButton>
-                      )}
                     </div>
                     <TagField
                       compact
                       tags={tagAssignments.runs[run.id] ?? []}
                       catalog={tagCatalog}
                       onSave={(ids) => setRunTags(run.id, ids)}
-                      onSaved={loadTags}
+                      onSaved={refreshTags}
                     />
                     {/* Qui l'a lancé. Tout le monde voit tous les runs : sans
                         l'auteur, une liste chargée ne dit plus à qui s'adresser
-                        quand un run surprend. */}
-                    {run.user_email && (
-                      <div className="text-xs text-zinc-500">{run.user_email}</div>
-                    )}
+                        quand un run surprend.
+
+                        Et par quoi : « (MCP) » dit qu'un agent a appuyé sur le
+                        bouton, pas un humain. Seul le lancement de CE run est
+                        compté — un brouillon écrit par un agent puis lancé d'un
+                        clic reste un lancement humain, et ce qu'on ajoute à un
+                        run après coup ne crée aucun run. Rien pour « ui » : le
+                        cas ordinaire n'a pas à porter une étiquette. */}
+                    {/* « local » et « MCP » vivent sur la ligne de l'adresse :
+                        tous trois disent qui a lancé ce run et d'où, quand la
+                        rangée du dessus dit ce qu'il EST. « public » reste
+                        là-haut — c'est un bouton qui copie le lien, pas une
+                        étiquette. Les classes viennent de `run-filters.ts`,
+                        partagées avec les boutons de la barre de filtres. */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                      {run.user_email && <span>{run.user_email}</span>}
+                      {/* « local » seulement : « live » est le cas ordinaire,
+                          et l'étiqueter reviendrait à marquer tout le monde.
+                          « MCP » et « manual », en revanche, se valent — savoir
+                          qu'un humain a lancé est une information, pas une
+                          absence d'information. */}
+                      {run.origin === "local" && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${PSEUDO_TAG_CLASSES.local}`}
+                          title="A tourné sur une machine de développement, pas sur le job déployé"
+                        >
+                          <DimensionIcon dimension="machine" />
+                          local
+                        </span>
+                      )}
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
+                          run.launched_via === "mcp"
+                            ? PSEUDO_TAG_CLASSES.mcp
+                            : PSEUDO_TAG_CLASSES.manual
+                        }`}
+                        title={
+                          run.launched_via === "mcp"
+                            ? "Lancé par un agent via MCP"
+                            : "Lancé à la main depuis cette application"
+                        }
+                      >
+                        <DimensionIcon dimension="author" />
+                        {run.launched_via === "mcp" ? "mcp" : "manual"}
+                      </span>
+                    </div>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-600">
                     {formatDate(run.created_at)}
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-700">
-                    {run.config.scenarios.length} ×{" "}
-                    {run.config.models.targets.length} ×{" "}
+                    {run.scenario_count} ×{" "}
+                    {run.target_count} ×{" "}
                     {/* Compté sur les cases : un run complété n'a plus le même
                         nombre d'essais partout, et `config.repetitions` ne dirait
                         que ce qu'on a demandé au dernier lot. */}
                     {low === high ? low : `${low}–${high}`}
-                    <div className="text-xs text-zinc-500">
-                      scenarios × models × reps
-                    </div>
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8">
                     <span
-                      className={`rounded px-2 py-0.5 text-xs ${STATUS_STYLE[run.status] ?? ""}`}
+                      /* Tous les badges à la largeur du plus long,
+                         « cancelled », et le mot centré dedans : sinon la
+                         colonne fait cinq largeurs différentes et le regard
+                         ne peut plus la descendre d'un trait. */
+                      className={`inline-block w-20 rounded px-2 py-0.5 text-center text-xs ${STATUS_STYLE[run.status] ?? ""}`}
                     >
-                      {STATUS_LABEL[run.status] ?? run.status}
+                      {STATUS_LABELS[run.status] ?? run.status}
                     </span>
                     {running && (
                       <div className="text-xs text-zinc-500">
@@ -596,14 +559,14 @@ export default function RunsPage() {
                       </div>
                     )}
                   </td>
-                  <td className="whitespace-nowrap py-3 pr-8 text-right text-zinc-700">
+                  <td className="whitespace-nowrap py-3 pr-8 text-zinc-700">
                     {run.cost_usd === null
                       ? "—"
                       : `$${run.cost_usd.toFixed(run.cost_usd < 1 ? 3 : 2)}`}
                   </td>
                   {/* La moyenne porte son échelle : chaque run a la sienne, et
                       un chiffre nu se comparerait à tort d'une ligne à l'autre. */}
-                  <td className="whitespace-nowrap py-3 pr-8 text-right">
+                  <td className="whitespace-nowrap py-3 pr-8">
                     {mean === null ? (
                       <span className="text-zinc-400">—</span>
                     ) : (
@@ -613,15 +576,46 @@ export default function RunsPage() {
                           {" "}
                           / {formatValue(max)}
                         </span>
-                        <div className="text-xs text-zinc-500">
-                          scale {formatValue(min)}–{formatValue(max)}
-                        </div>
                       </>
                     )}
                   </td>
                   {/* Rien n'est effacé : le run sort des listes et de la
                       lecture publique, sa ligne reste en base. */}
-                  <td className="py-3 text-right align-top">
+                  {/* `align-middle` contre l'`align-top` de la ligne : une
+                      ligne fait quatre niveaux — titre, identifiant, tags,
+                      adresse — et deux icônes accrochées en haut de cette
+                      hauteur-là ne se rattachent visuellement à rien. Au
+                      milieu, elles appartiennent à la ligne entière. */}
+                  <td className="py-3 align-middle">
+                    {/* Un flex, et non deux boutons en ligne : la colonne est
+                        étroite et ils s'empilaient l'un sous l'autre. */}
+                    <div className="flex items-center justify-end gap-1">
+                    {/* Les deux sens se confirment. Publier expose scénarios,
+                        conversations et justifications à quiconque a le lien.
+                        Dépublier a une conséquence tout aussi réelle en face :
+                        un lien déjà partagé cesse de répondre, sans prévenir
+                        celui qui l'a. */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setConfirmingPublish({
+                          id: run.id,
+                          label: run.label ?? run.first_scenario_title ?? run.id,
+                          next: !run.is_public,
+                        })
+                      }
+                      disabled={publishing === run.id}
+                      title={run.is_public ? "Published — click to unpublish" : "Not published — click to publish"}
+                      aria-label={run.is_public ? `Unpublish run ${run.label ?? run.id}` : `Publish run ${run.label ?? run.id}`}
+                      aria-pressed={run.is_public}
+                      className={
+                        run.is_public
+                          ? `rounded-full p-1 disabled:opacity-40 ${PSEUDO_TAG_CLASSES.public}`
+                          : "rounded-full p-1 text-zinc-300 hover:text-zinc-600 disabled:opacity-40"
+                      }
+                    >
+                      <PublicIcon />
+                    </button>
                     <button
                       type="button"
                       onClick={() =>
@@ -629,9 +623,7 @@ export default function RunsPage() {
                           kind: "run",
                           id: run.id,
                           label:
-                            run.label ??
-                            run.config.scenarios[0]?.title ??
-                            run.id,
+                            run.label ?? run.first_scenario_title ?? run.id,
                         })
                       }
                       title="Remove this run from the lists"
@@ -640,13 +632,48 @@ export default function RunsPage() {
                     >
                       <TrashIcon />
                     </button>
+                    </div>
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        </div>
       )}
+      <ConfirmDialog
+        open={confirmingPublish !== null}
+        title={
+          confirmingPublish?.next ? "Publish this run?" : "Unpublish this run?"
+        }
+        confirmLabel={confirmingPublish?.next ? "Publish" : "Unpublish"}
+        tone={confirmingPublish?.next ? "neutral" : "warning"}
+        busy={publishing !== null}
+        onConfirm={() =>
+          confirmingPublish &&
+          void setPublished(confirmingPublish.id, confirmingPublish.next)
+        }
+        onCancel={() => setConfirmingPublish(null)}
+      >
+        {confirmingPublish?.next ? (
+          <p className="text-sm">
+            Anyone with the link will be able to read{" "}
+            <strong>{confirmingPublish?.label}</strong> without signing in —
+            scores, judge justifications, full conversations and the scenarios
+            themselves. The link is not listed anywhere, and unpublishing kills
+            it.
+          </p>
+        ) : (
+          <p className="text-sm">
+            The public link to <strong>{confirmingPublish?.label}</strong> will
+            stop answering — for everyone, including the Inspect logs served
+            under it. Nobody holding that link is told; it simply stops working.
+            Publishing again mints the same address, but anything open on it
+            right now breaks.
+          </p>
+        )}
+      </ConfirmDialog>
+
       <ConfirmDialog
         open={confirming !== null}
         title={

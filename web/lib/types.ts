@@ -504,7 +504,19 @@ export interface ExtendRequest {
 export interface RunExtensionLogEntry {
   at: string;
   by: string;
-  via: "ui" | "mcp";
+  /** Par quelle porte l'extension est entrée.
+   *
+   * `"script"` n'est pas une porte de l'application : c'est une écriture faite
+   * hors d'elle, par un script tenant la clé de service — le chantier des
+   * juges multiples en a laissé une, qui a ajouté un juge à un run existant.
+   * Ce journal étant du jsonb libre, rien en base n'empêchait cette valeur, et
+   * ce type l'ignorait : `"script"` était en base sans être déclaré ici.
+   *
+   * Déclaré plutôt qu'interdit. Le passé est écrit et ne se relit pas
+   * autrement, et le nier laissait un `via` réel filer dans du code qui le
+   * croyait impossible. Les portes vivantes restent `ui` et `mcp` : rien dans
+   * l'application n'écrit `"script"`. */
+  via: "ui" | "mcp" | "script";
   /** La demande telle qu'elle a été faite. */
   request: ExtendRequest;
   /** Le devis calculé à ce moment-là. `null` seulement en théorie —
@@ -732,7 +744,61 @@ export interface Cell {
   awareness_flagged: number;
 }
 
-/** Un run dans la liste : de quoi trier et décider d'ouvrir. */
+/** Un run tel que la LISTE WEB le montre — jamais sa configuration entière.
+ *
+ * `RunSummary`, juste en dessous, porte l'`EvalRun` complet parce que la
+ * recherche MCP fouille les notes, l'analyse et le critère de chaque run.
+ * L'écran, lui, ne lit de la configuration que trois choses : l'échelle, le
+ * titre du premier scénario, et deux comptes.
+ *
+ * L'écart n'est pas théorique. Sur les treize runs d'aujourd'hui, la
+ * configuration complète pèse 72 Ko contre 3,3 Ko pour les colonnes affichées
+ * — 95 % de la charge utile pour trois valeurs lues, l'essentiel étant les
+ * prompts système et les messages d'ouverture de chaque scénario. Et cette
+ * charge repartait toutes les trois secondes tant qu'un run tournait.
+ *
+ * D'où deux formes et deux chargements, plutôt qu'un seul élargi : voir
+ * `loadRunList` et `loadRuns` (`lib/runs.ts`). */
+export interface RunListRun {
+  id: string;
+  created_at: string;
+  user_email: string;
+  label: string | null;
+  status: RunStatus;
+  cost_usd: number | null;
+  is_public: boolean;
+  origin: "local" | "cloud-run";
+  /** Qui a appuyé sur le bouton, pour CE run — jamais pour ce qui lui a été
+   *  ajouté après. Un brouillon soumis par un agent puis lancé d'un clic
+   *  humain vaut donc `ui` : c'est le lancement qui compte, pas la rédaction.
+   *  Les extensions, elles, ne créent aucun run et sont comptées ailleurs
+   *  (`mcp_launches`) — voir `EvalRun.launched_via`. */
+  launched_via: "ui" | "mcp";
+  /** L'échelle du juge principal : la liste en tire les bornes affichées. */
+  rubric: RubricLevel[];
+  /** Le titre du premier scénario — l'étiquette de repli d'un run sans nom.
+   *  Le premier seul, pas les autres : c'est tout ce qui est affiché. */
+  first_scenario_title: string | null;
+  /** Compté sur les cases, pas sur la configuration : celle-ci n'est plus
+   *  ramenée, et la matrice est écrite entière dès la création du run. */
+  scenario_count: number;
+  target_count: number;
+}
+
+/** Une ligne de la liste web. Même forme que `RunSummary` autour d'un run
+ *  réduit, pour que la page n'ait à changer que là où elle lisait `config`. */
+export interface RunListItem {
+  run: RunListRun;
+  progress: Progress;
+  mean: number | null;
+  /** Comme `RunSummary.repetitions` : le moins et le plus d'essais par case. */
+  repetitions: [number, number];
+}
+
+/** Un run dans la liste : de quoi trier et décider d'ouvrir.
+ *
+ * Ne sert plus la liste web depuis `RunListItem` ci-dessus — seulement la
+ * recherche MCP, qui a besoin du texte entier de chaque run. */
 export interface RunSummary {
   run: EvalRun;
   progress: Progress;

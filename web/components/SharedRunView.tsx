@@ -55,7 +55,7 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
         <p className="text-xs uppercase tracking-wide text-zinc-500">
           Shared run — read only
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-serif text-2xl font-normal tracking-tight">
           {run.label ?? "Evaluation run"}
         </h1>
         <p className="text-sm text-zinc-600">

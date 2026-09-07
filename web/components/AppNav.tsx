@@ -5,6 +5,11 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { getMe } from "@/lib/api";
 import { logout } from "@/lib/auth-actions";
+import { isOpen } from "@/lib/public-paths";
+import { ensureRunsLoaded } from "@/lib/runs-store";
+import { ensureTagsLoaded } from "@/lib/tags-store";
+import { ensureProfileLoaded } from "@/lib/profile-store";
+import { ensureConnectionsLoaded } from "@/lib/connections-store";
 
 /** La barre de l'application privée, absente de `/shared`.
  *
@@ -40,6 +45,31 @@ export function AppNav() {
   const hidden = pathname.startsWith("/shared");
   const [email, setEmail] = useState<string | null>(null);
 
+  /** Ce que les autres pages afficheront, chargé pendant qu'on lit celle-ci.
+   *
+   * Ici et non sur la page d'accueil : elle était le seul endroit à le faire,
+   * si bien qu'arriver directement sur « Scenarios » — par un lien, un
+   * signet, un rechargement — laissait tous les autres onglets froids. La
+   * barre, elle, est rendue par `layout.tsx` sur chaque page.
+   *
+   * Chaque `ensure*` ne demande rien si la ressource a déjà servi : passer de
+   * page en page ne relance donc pas quatre requêtes à chaque fois.
+   *
+   * `isOpen` et non `hidden` : ce dernier ne connaît que `/shared`, alors que
+   * la question posée ici est plus large — « ce chemin se lit-il sans
+   * session ? ». Précharger sur une page publique enverrait quatre requêtes
+   * privées au nom d'un inconnu, qui les verrait toutes échouer. La réponse
+   * vit dans `public-paths.ts`, avec le proxy qui l'applique ; la dupliquer
+   * ici la laisserait dériver. */
+  const publique = isOpen(pathname);
+  useEffect(() => {
+    if (publique) return;
+    ensureRunsLoaded();
+    ensureTagsLoaded();
+    ensureProfileLoaded();
+    ensureConnectionsLoaded();
+  }, [publique]);
+
   useEffect(() => {
     // Le crochet doit être appelé même sur `/shared`, où la barre ne s'affiche
     // pas — d'où la condition ici plutôt qu'un retour anticipé au-dessus.
@@ -52,8 +82,33 @@ export function AppNav() {
   if (hidden) return null;
 
   return (
-    <nav className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b px-8 py-3 text-sm">
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
+    // `bg-background` n'est pas décoratif : une barre collante sans fond opaque
+    // laisse défiler le formulaire par-dessous. Et `z-40` la met au-dessus du
+    // contenu sans passer devant les modales, qui sont en `z-50`.
+    <nav className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b bg-background px-8 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {/* L'étoile et le nom du collectif, repris de l'en-tête de
+            polariscollective.org — même tracé, même olive, même serif. Ce n'est
+            pas un lien : l'application n'a pas de page d'accueil qui soit
+            ailleurs que « Evaluate », et un logo qui mène au premier onglet
+            donne deux chemins vers la même chose. */}
+        <span className="flex items-center gap-2 font-serif text-base text-teal-700">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            aria-hidden="true"
+            className="shrink-0"
+          >
+            <path
+              d="M7 0.5 L7.6 6.4 L13.5 7 L7.6 7.6 L7 13.5 L6.4 7.6 L0.5 7 L6.4 6.4 Z"
+              fill="currentColor"
+            />
+          </svg>
+          Polaris Collective
+        </span>
+        <span aria-hidden="true" className="h-4 w-px bg-zinc-300" />
         {LINKS.map(({ href, label }) => (
           <Link
             key={href}
@@ -61,7 +116,7 @@ export function AppNav() {
             aria-current={isCurrent(pathname, href) ? "page" : undefined}
             className={
               isCurrent(pathname, href)
-                ? "font-medium"
+                ? "font-medium text-teal-700"
                 : "font-medium text-zinc-500 hover:text-zinc-900"
             }
           >

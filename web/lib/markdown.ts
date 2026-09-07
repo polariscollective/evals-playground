@@ -63,8 +63,43 @@ function run(lines: string[], from: number, pattern: RegExp): string[] {
   return out;
 }
 
-function items(lines: string[], marker: RegExp): string {
-  return lines.map((l) => `<li>${inline(l.replace(marker, ""))}</li>`).join("");
+/** Une ligne de continuation : indentée, et qui n'ouvre rien d'autre.
+ *
+ * C'est la forme que prend une puce coupée par un retour à la ligne dans un
+ * document dur-wrappé — « - une puce trop longue » suivi de «   sa suite ». */
+const CONTINUATION = /^\s+\S/;
+
+/** Les puces d'une liste à partir de `from`, et combien de lignes ont servi.
+ *
+ * En mode recomposé, une puce absorbe ses lignes de continuation ; sinon
+ * chacune reste ce qu'elle était, et la première ligne sans marqueur ferme la
+ * liste. Le compte est rendu plutôt que déduit de la longueur du tableau :
+ * une puce peut désormais tenir sur plusieurs lignes. */
+function listItems(
+  lines: string[],
+  from: number,
+  marker: RegExp,
+  reflow: boolean,
+): { html: string; used: number } {
+  const parts: string[] = [];
+  let i = from;
+
+  while (i < lines.length && marker.test(lines[i])) {
+    let text = lines[i].replace(marker, "");
+    i += 1;
+    while (
+      reflow &&
+      i < lines.length &&
+      CONTINUATION.test(lines[i]) &&
+      !opensBlock(lines[i])
+    ) {
+      text += ` ${lines[i].trim()}`;
+      i += 1;
+    }
+    parts.push(`<li>${inline(text)}</li>`);
+  }
+
+  return { html: parts.join(""), used: i - from };
 }
 
 /** Ce qui ouvre autre chose qu'un paragraphe. */
@@ -84,7 +119,11 @@ function opensBlock(line: string): boolean {
  * comptait que seul entre deux lignes vides, une liste que si aucune ligne n'en
  * sortait. Écrire un titre et enchaîner juste dessous — ce que fait tout le
  * monde — rendait le dièse en toutes lettres. */
-export function renderMarkdown(source: string): string {
+export function renderMarkdown(
+  source: string,
+  options: { reflow?: boolean } = {},
+): string {
+  const reflow = options.reflow ?? false;
   const escaped = escapeHtml(source);
   const html: string[] = [];
 
@@ -101,17 +140,17 @@ export function renderMarkdown(source: string): string {
         continue;
       }
 
-      const bullets = run(lines, i, BULLET);
-      if (bullets.length > 0) {
-        html.push(`<ul>${items(bullets, BULLET)}</ul>`);
-        i += bullets.length;
+      const bullets = listItems(lines, i, BULLET, reflow);
+      if (bullets.used > 0) {
+        html.push(`<ul>${bullets.html}</ul>`);
+        i += bullets.used;
         continue;
       }
 
-      const numbered = run(lines, i, NUMBERED);
-      if (numbered.length > 0) {
-        html.push(`<ol>${items(numbered, NUMBERED)}</ol>`);
-        i += numbered.length;
+      const numbered = listItems(lines, i, NUMBERED, reflow);
+      if (numbered.used > 0) {
+        html.push(`<ol>${numbered.html}</ol>`);
+        i += numbered.used;
         continue;
       }
 
@@ -130,7 +169,22 @@ export function renderMarkdown(source: string): string {
         paragraph.push(lines[i]);
         i += 1;
       }
-      html.push(`<p>${paragraph.map(inline).join("<br />")}</p>`);
+      // Le paragraphe est recollé AVANT d'être analysé, jamais ligne par
+      // ligne : une marque ouverte sur une ligne et fermée sur la suivante —
+      // « **could this only\nexist in a test.** », la dernière phrase du
+      // conseil de scénario — n'a sa paire complète dans aucune des deux, et
+      // ressortait en astérisques. Les puces se recollaient déjà ainsi.
+      //
+      // Recomposé, un retour simple n'était qu'une respiration de la source et
+      // redevient une espace. Sinon il reste une intention : on assemble avec
+      // un vrai saut de ligne, qu'on convertit en `<br />` une fois les marques
+      // reconnues. L'italique à une seule étoile, lui, refuse toujours de
+      // traverser un retour — voir `inline`.
+      const BREAK = "\n";
+      const assembled = reflow
+        ? paragraph.map((line) => line.trim()).join(" ")
+        : paragraph.join(BREAK);
+      html.push(`<p>${inline(assembled).split(BREAK).join("<br />")}</p>`);
     }
   }
 
