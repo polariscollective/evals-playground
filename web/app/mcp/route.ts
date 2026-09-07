@@ -882,10 +882,8 @@ const handler = createMcpHandler((server) => {
       // même chose — sans ce contrôle, il écrirait le modèle refusé dans le
       // brouillon en le disant lançable, pour que launch_draft le refuse
       // ensuite avec la même raison, un aller-retour plus tard.
-      const outside = configFavouritesProblem(
-        config,
-        favoriteModels(await profileOf(caller)),
-      );
+      const profile = await profileOf(caller);
+      const outside = configFavouritesProblem(config, favoriteModels(profile));
       if (outside) return toolError(outside);
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
