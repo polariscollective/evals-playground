@@ -17,7 +17,24 @@
 - Le fournisseur Google porte l'identifiant `google`, le préfixe de modèle `google/`, et les variables d'environnement `["GEMINI_API_KEY", "GOOGLE_API_KEY"]` dans cet ordre.
 - Défaut de favoris, dix identifiants exactement : `anthropic/claude-fable-5-1`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`, `anthropic/claude-haiku-4-5`, `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, `openai/gpt-5.6-luna`, `grok/grok-4.6`, `grok/grok-4.5`, `grok/grok-4.3`.
 - Les sept modèles qui ignorent la température : `anthropic/claude-fable-5-1`, `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-opus-4-8`, `anthropic/claude-opus-4-7`, `anthropic/claude-sonnet-5`, `openai/gpt-6-astra`.
-- Tests : `pytest` depuis la racine du dépôt, `npm test` depuis `web/` (qui lance `node --test "lib/**/*.test.mts"`).
+- Tests, et l'état de départ mesuré dans ce worktree :
+
+  | commande | où | départ |
+  |---|---|---|
+  | `.venv/bin/python -m pytest -q` | racine | `392 passed` |
+  | `npm test` | `web/` | `511 pass, 0 fail` |
+  | `npx tsc --noEmit` | `web/` | propre |
+  | `npx eslint app lib components` | `web/` | propre |
+
+- **`npm run lint` sans argument ne sert à rien ici** : il balaie
+  `web/public/inspect-view`, un bundle vendu et généré, et rend 251 erreurs et
+  5810 avertissements qui existent déjà sur `main`. Cadrer sur les sources —
+  `npx eslint app lib components` — est la seule lecture qui distingue une
+  faute à soi d'un bruit hérité.
+- **`npx tsc --noEmit` a besoin d'un `npx next typegen` une fois** dans un
+  worktree neuf, sans quoi il rend `Cannot find name 'LayoutProps'` : ce type
+  est généré par Next et absent tant que rien n'a été construit. Ce n'est pas
+  une faute du code.
 - Les commentaires du code de ce dépôt sont en français et disent *pourquoi*, pas *quoi*. Les textes vus par un humain ou un agent sont en anglais.
 
 ---
@@ -420,7 +437,9 @@ cd web && npm test 2>&1 | tail -20
 
 Attendu : tous les tests de `catalog.test.mts` passent, et rien d'autre ne casse.
 
-`node --test` retire les types sans les vérifier : `agentModels`, qui appelle encore `catalog()` sans argument, ne plantera donc pas — `new Set(undefined)` est un ensemble vide, et tout ressort simplement avec `favorite: false`. C'est sans conséquence tant que personne ne filtre là-dessus, ce qui n'arrive qu'à la Task 7. `npx tsc --noEmit`, lui, signalera l'argument manquant : c'est attendu ici, et corrigé à la Task 7.
+`node --test` retire les types sans les vérifier : les deux appelants qui passent encore `catalog()` sans argument — `web/app/api/catalog/route.ts` et `agentModels` dans `web/lib/agent-prompt.ts` — ne planteront donc pas. `new Set(undefined)` est un ensemble vide, et tout ressort simplement avec `favorite: false`, sans conséquence tant que personne ne filtre là-dessus.
+
+`npx tsc --noEmit`, lui, signalera les deux arguments manquants. **C'est attendu à la fin de cette tâche**, et c'est la seule tâche du plan qui laisse le typage en défaut : la route est reprise à la Task 6, `agentModels` à la Task 7. Ne pas les corriger ici par anticipation — leur forme dépend de décisions que ces deux tâches portent.
 
 - [ ] **Step 7: Étendre `ModelOption` côté Python**
 
@@ -1415,7 +1434,7 @@ Ajouter en tête du fichier `import { getCatalog } from "@/lib/api";` s'il n'y e
 - [ ] **Step 7: Vérifier la compilation et le lint**
 
 ```bash
-cd web && npx tsc --noEmit 2>&1 | head -20 && npm run lint 2>&1 | tail -10
+cd web && npx tsc --noEmit 2>&1 | head -20 && npx eslint app lib components 2>&1 | tail -10
 ```
 
 Attendu : aucune erreur.
@@ -1618,7 +1637,7 @@ Insérer, entre la section des plafonds et celle de « Last hour » :
 - [ ] **Step 4: Vérifier**
 
 ```bash
-cd web && npx tsc --noEmit 2>&1 | head -10 && npm run lint 2>&1 | tail -5
+cd web && npx tsc --noEmit 2>&1 | head -10 && npx eslint app lib components 2>&1 | tail -5
 ```
 
 Attendu : aucune erreur.
@@ -1943,7 +1962,7 @@ Vérifier qu'`import { favoriteModels } from "@/lib/favorite-models";` est bien 
 - [ ] **Step 6: Vérifier la compilation**
 
 ```bash
-cd web && npx tsc --noEmit 2>&1 | head -10 && npm run lint 2>&1 | tail -5
+cd web && npx tsc --noEmit 2>&1 | head -10 && npx eslint app lib components 2>&1 | tail -5
 ```
 
 Attendu : aucune erreur. Si un `const outside` entre en collision avec un identifiant du même bloc, le renommer localement (`outsideFavourites`).
@@ -2149,7 +2168,7 @@ L'apply se fait par la CI de `polaris-tf` sur `develop` (dev) puis `main` (prod,
 
 ```bash
 .venv/bin/python -m pytest -q
-cd web && npm test && npx tsc --noEmit && npm run lint
+cd web && npm test && npx tsc --noEmit && npx eslint app lib components
 ```
 
 Attendu : `392 passed` côté Python (plus les nouveaux tests de `test_catalog.py`), tout vert côté web, zéro erreur de type, zéro avertissement de lint.
