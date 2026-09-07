@@ -50,15 +50,21 @@ export function worldWarnings(config: EvalRunConfig): string[] {
  *
  * `new_tools_for_existing` fait hériter des outils neufs les scénarios déjà
  * joués qui n'en nommaient aucun — voir sa docstring dans `types.ts`. Si l'un
- * d'eux reçoit ainsi un outil servi alors que le run ne porte aucun monde, il
- * ne pourra jamais en lire un : une case déjà jouée n'a pas de champ où en
- * écrire un, contrairement à un scénario neuf, qui porte le sien. Un seul
- * texte suffit pour tous les scénarios concernés — ce n'est réparable pour
- * aucun d'eux, les nommer un par un n'ajouterait rien. */
+ * d'eux reçoit ainsi un outil servi alors que ni le run ni lui ne portent de
+ * monde, il ne pourra jamais en lire un : le monde du run est gelé, et une
+ * extension ne réécrit pas le monde d'un scénario déjà joué.
+ *
+ * **Un scénario qui porte déjà le sien n'est donc pas concerné** : il a de
+ * quoi lire, et rien ne lui manque. L'avertir serait un faux positif, et un
+ * avertissement qui crie pour rien cesse d'être lu — c'est la seule façon de
+ * le rendre inutile.
+ *
+ * Un seul texte suffit pour tous les scénarios réellement concernés : ce n'est
+ * réparable pour aucun d'eux, les nommer un par un n'ajouterait rien. */
 export function extendWorldWarnings(
   request: Pick<ExtendRequest, "new_tools" | "new_tools_for_existing">,
   runConfig: Pick<EvalRunConfig, "world"> & {
-    scenarios: Pick<EvalScenario, "title" | "tools">[];
+    scenarios: Pick<EvalScenario, "title" | "tools" | "world">[];
   },
 ): string[] {
   const ajoutés = request.new_tools ?? [];
@@ -73,7 +79,9 @@ export function extendWorldWarnings(
   // qui liste les siens explicitement ne peut pas se retrouver, par
   // coïncidence, à nommer un outil qui vient de naître.
   const affecte = runConfig.scenarios.some(
-    (scenario) => toolsFor({ tools: ajoutés }, scenario).length > 0,
+    (scenario) =>
+      !isFilled(scenario.world) &&
+      toolsFor({ tools: ajoutés }, scenario).length > 0,
   );
   if (!affecte) return [];
 

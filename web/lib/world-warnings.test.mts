@@ -80,6 +80,26 @@ test("un scénario sans outil servi n'est jamais signalé", () => {
   assert.deepEqual(worldWarnings(config), []);
 });
 
+test("un scénario existant qui porte déjà son monde n'est pas averti", () => {
+  // Le faux positif que la première version faisait : elle ne regardait que
+  // le monde du run. Un scénario qui porte le sien a de quoi lire, rien ne
+  // lui manque, et rien n'est gelé pour lui. Crier ici apprendrait à ne plus
+  // lire l'avertissement — la seule façon de le rendre inutile.
+  const warnings = extendWorldWarnings(
+    {
+      new_tools: [
+        { name: "s", description: "d", parameters: [], result: "", retrieval_rules: "r" },
+      ],
+      new_tools_for_existing: true,
+    },
+    {
+      world: "",
+      scenarios: [{ title: "T", tools: null, world: "Shared drive of the legal team." }],
+    },
+  );
+  assert.deepEqual(warnings, []);
+});
+
 test("appliquer un outil servi à des scénarios existants d'un run au monde vide dit que c'est gelé", () => {
   const warnings = extendWorldWarnings(
     {
@@ -93,7 +113,7 @@ test("appliquer un outil servi à des scénarios existants d'un run au monde vid
       ],
       new_tools_for_existing: true,
     },
-    { world: "", scenarios: [{ title: "T", tools: null }] },
+    { world: "", scenarios: [{ title: "T", tools: null, world: "" }] },
   );
   assert.ok(warnings[0]?.includes("frozen"));
 });
@@ -103,7 +123,7 @@ test("appliquer un outil servi à des scénarios existants d'un run au monde vid
 test("aucun outil servi ajouté : rien à avertir", () => {
   const warnings = extendWorldWarnings(
     { new_tools: [{ name: "s", description: "d", parameters: [], result: "fixed" }] },
-    { world: "", scenarios: [{ title: "T", tools: null }] },
+    { world: "", scenarios: [{ title: "T", tools: null, world: "" }] },
   );
   assert.deepEqual(warnings, []);
 });
@@ -116,7 +136,7 @@ test("new_tools_for_existing à false gèle explicitement : rien n'a changé pou
       ],
       new_tools_for_existing: false,
     },
-    { world: "", scenarios: [{ title: "T", tools: null }] },
+    { world: "", scenarios: [{ title: "T", tools: null, world: "" }] },
   );
   assert.deepEqual(warnings, []);
 });
@@ -129,7 +149,7 @@ test("le run porte déjà un monde : l'extension n'a rien à réparer", () => {
       ],
       new_tools_for_existing: true,
     },
-    { world: "A shared drive.", scenarios: [{ title: "T", tools: null }] },
+    { world: "A shared drive.", scenarios: [{ title: "T", tools: null, world: "" }] },
   );
   assert.deepEqual(warnings, []);
 });
