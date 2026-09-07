@@ -167,8 +167,8 @@ test("le prompt annonce les deux formes d'outil et le monde", () => {
   // dont la réponse ignore les arguments, ce que le juge d'éveil rapportera
   // une fois le run payé.
   for (const prompt of [
-    agentPrompt(agentModels(), "https://example.test"),
-    mcpAgentPrompt(agentModels(), null),
+    agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    mcpAgentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /retrieval_rules/);
     assert.match(prompt, /## Writing the world/);
