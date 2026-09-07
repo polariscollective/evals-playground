@@ -689,6 +689,21 @@ function EvaluateForm() {
     setTargets(config.models.targets);
     setAdversary(config.models.adversary ?? "");
     setJudge(config.models.judge);
+    // Ce que ce document nomme, gardé à part de l'état vivant — voir le
+    // commentaire de `carriedModels` plus haut sur pourquoi. Posé (et non
+    // ajouté) à chaque import : un document chargé après une reprise remplace
+    // les modèles de l'ancien run plutôt que de les offrir indéfiniment à
+    // côté des siens.
+    setCarriedModels(
+      new Set(
+        [
+          ...config.models.targets,
+          config.models.adversary,
+          config.models.judge,
+          ...(config.judges ?? []).map((j) => j.model),
+        ].filter((m): m is string => Boolean(m)),
+      ),
+    );
     setTemperatureMin(config.temperature?.min ?? 1);
     setVaryTemperature(config.temperature?.max != null);
     setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
