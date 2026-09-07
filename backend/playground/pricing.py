@@ -15,7 +15,6 @@ from dataclasses import dataclass
 
 from playground.eval_schemas import EvalRunConfig, tools_for, ModelUsage
 from playground.shared_data import load
-from playground.world import WORLD_MODEL
 
 _SHARED = load("pricing")
 """Tarifs, calibrations et catalogue, partagés avec TypeScript.
@@ -439,7 +438,7 @@ def estimate_tokens(
                 served_conversations += weight
                 _add(
                     per_model,
-                    WORLD_MODEL,
+                    config.models.world,
                     monde * served_calls * weight,
                     WORLD_RESPONSE_TOKENS * served_calls * weight,
                     WORLD_RESPONSE_TOKENS,

@@ -8,7 +8,7 @@ import {
   estimateCost,
   estimateJudgeAdditionCost,
 } from "./pricing.ts";
-import { SHARED_PRICING, SHARED_WORLD_PROMPT } from "./shared.ts";
+import { SHARED_PRICING } from "./shared.ts";
 import type { EvalRunConfig, EvalScenario, JudgeSpec } from "./types.ts";
 
 const scenario = (title = "T"): EvalScenario => ({
@@ -30,6 +30,9 @@ const config = (extra: Partial<EvalRunConfig> = {}): EvalRunConfig => ({
     targets: ["anthropic/claude-sonnet-5"],
     adversary: "anthropic/claude-haiku-4-5",
     judge: "openai/gpt-5.6-luna",
+    // Non lu par les scénarios sans outil servi ; posé ici pour que les tests
+    // qui en offrent un (plus bas dans ce fichier) n'aient pas à le répéter.
+    world: MONDE,
   },
   adversary_prompt: "A".repeat(200),
   ...extra,
@@ -355,18 +358,25 @@ test("une conversation plus longue coûte plus cher à relire", () => {
 // déclaré nulle part : le devis prend le milieu des seules bornes qu'on
 // connaisse, zéro et le plafond.
 
-const MONDE = SHARED_WORLD_PROMPT.model;
+// Avant ce chantier, ce modèle vivait dans `shared/world-prompt.json` et
+// servait tous les runs sans exception ; il vient maintenant de
+// `config.models.world`, propre à chaque run — voir
+// `docs/superpowers/specs/2026-09-07-le-monde-des-outils.md`. Cette constante
+// n'est donc plus lue depuis le fichier partagé : c'est juste la valeur que
+// les fixtures ci-dessous donnent à `models.world` par défaut.
+const MONDE = "openai/gpt-5.6-luna";
 
 /** Le fixture partagé juge avec `gpt-5.6-luna`, qui se trouve être aussi le
- *  modèle d'environnement : sa présence dans `per_model` ne dirait alors rien.
- *  Ici le juge est ailleurs, pour que le monde soit la seule raison possible
- *  de l'y voir. */
+ *  modèle d'environnement par défaut de `config()` (`MONDE`) : sa présence
+ *  dans `per_model` ne dirait alors rien. Ici le juge est ailleurs, pour que
+ *  le monde soit la seule raison possible de l'y voir. */
 const sansLuna = (extra: Partial<EvalRunConfig> = {}): EvalRunConfig =>
   config({
     models: {
       targets: ["anthropic/claude-sonnet-5"],
       adversary: "anthropic/claude-haiku-4-5",
       judge: "anthropic/claude-haiku-4-5",
+      world: MONDE,
     },
     ...extra,
   });
@@ -399,6 +409,27 @@ test("un outil servi ajoute des appels d'environnement", () => {
   );
   assert.ok(devis.per_model.some((entry) => entry.model === MONDE));
   assert.ok(devis.model_calls > estimateCost(sansLuna()).model_calls);
+});
+
+test("les appels servis sont chiffrés au modèle que le run nomme", () => {
+  // Chiffrer une constante annoncerait le prix d'un modèle qui ne tournera
+  // pas — le devis mentirait sans que rien ne le montre. Ni le juge ni la
+  // cible ne portent l'un ou l'autre des deux modèles comparés ici, pour que
+  // les deux assertions ne puissent parler que de l'appel servi.
+  const devis = estimateCost(
+    sansLuna({
+      tools: [servi()],
+      world: "W".repeat(2000),
+      models: {
+        targets: ["anthropic/claude-sonnet-5"],
+        judge: "anthropic/claude-opus-5",
+        world: "anthropic/claude-haiku-4-5",
+      },
+    }),
+  );
+  const modèles = devis.per_model.map((entry) => entry.model);
+  assert.ok(modèles.includes("anthropic/claude-haiku-4-5"));
+  assert.ok(!modèles.includes("openai/gpt-5.6-luna"));
 });
 
 test("le nombre d'appels suit le plafond", () => {

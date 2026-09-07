@@ -9,9 +9,9 @@ import pytest
 from inspect_ai.model import ModelOutput
 
 from playground.eval_schemas import ToolSpec
+from playground import world as world_module
 from playground.world import (
     CHECK_MODEL,
-    WORLD_MODEL,
     arguments_key,
     check,
     check_prompt,
@@ -156,10 +156,13 @@ def test_servir_coupe_les_blancs_de_bord():
     assert rendu == "404 Not Found"
 
 
-def test_le_modele_est_en_dur_et_partage():
-    """Il vit dans `shared/`, lu par Python et par le devis — pas dans la
-    configuration d'un run."""
-    assert WORLD_MODEL == "openai/gpt-5.6-luna"
+def test_le_modele_ne_vit_plus_en_dur_ici():
+    """`WORLD_MODEL` a disparu de ce module avec la clé `model` du fichier
+    partagé : le modèle qui sert les appels vient maintenant de
+    `config.models.world`, propre à chaque run — voir
+    docs/superpowers/specs/2026-09-07-le-monde-des-outils.md."""
+    assert not hasattr(world_module, "WORLD_MODEL")
+    assert "model" not in world_module._SHARED
 
 
 # --- Le contrôle ---------------------------------------------------------
@@ -238,7 +241,9 @@ def test_un_defaut_sans_raison_en_reçoit_une():
     assert faute
 
 
-def test_le_controleur_n_est_pas_celui_qui_a_servi():
-    """Il ne corrige pas sa propre copie : deux familles, donc deux façons de
-    se tromper qui ne coïncident pas."""
-    assert CHECK_MODEL != WORLD_MODEL
+def test_le_controle_reste_intact_quand_le_serveur_devient_configurable():
+    """Cette tâche retire `WORLD_MODEL` et ne doit toucher à rien du côté du
+    contrôle — Task 5 s'en charge, en listant `check_models` et en choisissant
+    parmi eux un autre fournisseur que le serveur. En attendant, `CHECK_MODEL`
+    doit rester exactement ce qu'il était."""
+    assert CHECK_MODEL == "anthropic/claude-haiku-4-5"

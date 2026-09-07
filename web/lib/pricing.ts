@@ -333,7 +333,11 @@ export function estimateTokens(
               servis.length,
           );
         add(
-          M.model,
+          // `?? ""` n'est pas un défaut caché : on est dans la branche où
+          // `servis.length > 0`, et `configProblem` a donc déjà exigé
+          // `models.world` avant que ce devis ne soit montré. Le repli ne
+          // sert qu'à satisfaire le typage (`world?: string | null`).
+          config.models.world ?? "",
           monde * servedCalls * weight,
           S.world_response_tokens * servedCalls * weight,
           S.world_response_tokens,

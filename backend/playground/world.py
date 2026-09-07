@@ -27,22 +27,12 @@ from playground.generation import tool_call_arguments
 from playground.shared_data import load
 
 _SHARED = load("world-prompt")
-"""Le prompt de l'environnement et le modèle qui le porte, partagés.
+"""Le prompt de l'environnement, partagé.
 
-L'interface les lit pour compter leurs jetons dans le devis. Si elle en gardait
+L'interface le lit pour compter ses jetons dans le devis. Si elle en gardait
 sa propre copie, le devis finirait par chiffrer autre chose que ce qui part —
-un mensonge que personne ne verrait. Les changer se fait dans
+un mensonge que personne ne verrait. Le changer se fait dans
 `shared/world-prompt.json`.
-"""
-
-WORLD_MODEL: str = _SHARED["model"]
-"""Le modèle qui sert les appels, en dur.
-
-Pas un champ de configuration, et c'est un choix : ce qu'on lui demande n'est
-pas de l'intelligence mais de l'obéissance — ne rien rendre qui ne soit pas
-dans le monde — et laisser choisir n'ouvrirait qu'une façon de plus de rendre
-un run incomparable à un autre. Le rendre configurable plus tard n'est qu'un
-champ à ajouter ; le retirer après coup serait une migration.
 """
 
 WORLD_SYSTEM: str = _SHARED["system"]

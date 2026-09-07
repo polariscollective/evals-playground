@@ -57,7 +57,7 @@ from playground.supabase_store import (
     write_tool_result,
     write_tool_verdict,
 )
-from playground.world import CHECK_MODEL, WORLD_MODEL, check, result_key, serve
+from playground.world import CHECK_MODEL, check, result_key, serve
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
@@ -406,7 +406,7 @@ def run_batch_job(
         if déjà is not None:
             return déjà
         rendu = await serve(
-            model=get_model(WORLD_MODEL, **(model_args or {})),
+            model=get_model(config.models.world, **(model_args or {})),
             world=config.world,
             scenario_world=config.scenarios[scenario_index].world,
             tool=tool,
@@ -420,7 +420,7 @@ def run_batch_job(
             clé,
             arguments=arguments,
             result=rendu,
-            model=WORLD_MODEL,
+            model=config.models.world,
         )
 
     def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:
