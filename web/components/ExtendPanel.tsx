@@ -736,7 +736,10 @@ export function ExtendPanel({
               <option value="">Add another model…</option>
               {catalog.flatMap((provider) =>
                 provider.models
-                  .filter((model) => !targets.includes(model.id))
+                  // Les favoris seulement : ce menu ajoute des colonnes à un
+                  // run, donc il propose — et ce qu'on propose suit les
+                  // favoris partout dans l'application.
+                  .filter((model) => model.favorite && !targets.includes(model.id))
                   .map((model) => (
                     <option key={model.id} value={model.id}>
                       {provider.label} · {model.label}

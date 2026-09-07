@@ -10,6 +10,7 @@ import {
   designateRunPrincipal,
   exportUrl,
   extendRun,
+  getCatalog,
   getDraft,
   markDraftLaunched,
   getRun,
@@ -55,6 +56,7 @@ import { RubricEditor } from "@/components/RubricEditor";
 import type {
   EvalRun,
   ExtendRequest,
+  ProviderInfo,
   RubricLevel,
   RunDetail,
   Tag,
@@ -155,7 +157,24 @@ function AddJudgePanel({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const models = [...new Set([...config.models.targets, config.models.judge])];
+  // Le catalogue, pour ne pas enfermer un juge dans les modèles du run : on
+  // ajoute un juge précisément pour regarder autrement, et le meilleur
+  // modèle pour ça n'est pas forcément une des colonnes déjà jouées.
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  useEffect(() => {
+    getCatalog().then(setProviders).catch(() => setProviders([]));
+  }, []);
+
+  // Les favoris, plus les modèles du run : ceux-ci restent proposables même
+  // s'ils ont quitté les favoris depuis, sans quoi on ne pourrait plus
+  // ajouter un juge tournant sur le même modèle que le principal.
+  const models = [
+    ...new Set([
+      ...providers.flatMap((p) => p.models.filter((m) => m.favorite).map((m) => m.id)),
+      ...config.models.targets,
+      config.models.judge,
+    ]),
+  ];
   const values = rubric.map((level) => level.value);
   const ready =
     criterion.trim() !== "" &&

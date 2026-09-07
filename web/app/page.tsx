@@ -820,17 +820,26 @@ function EvaluateForm() {
     }
   };
 
+  // Les favoris seulement — plus, s'il y a lieu, les modèles que ce
+  // formulaire porte déjà. Une relance pré-remplie peut nommer un modèle
+  // qui a quitté les favoris depuis : le retirer du menu rendrait le
+  // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
+  const chosen = new Set([...targets, adversary, judge].filter(Boolean));
   const modelRows = providers.flatMap((provider) =>
-    provider.models.map((model) => ({
-      id: model.id,
-      label: `${provider.label} — ${model.label}`,
-      available: provider.key_present,
-      missing: provider.env_vars.join(" or "),
-      price:
-        model.input_per_mtok === null || model.output_per_mtok === null
-          ? null
-          : `in $${model.input_per_mtok.toFixed(2)} · out $${model.output_per_mtok.toFixed(2)} /Mtok`,
-    })),
+    provider.models
+      .filter((model) => model.favorite || chosen.has(model.id))
+      .map((model) => ({
+        id: model.id,
+        label: `${provider.label} — ${model.label}`,
+        available: provider.key_present,
+        missing: provider.env_vars.join(" or "),
+        outsideFavourites: !model.favorite,
+        honoursTemperature: model.honours_temperature,
+        price:
+          model.input_per_mtok === null || model.output_per_mtok === null
+            ? null
+            : `in $${model.input_per_mtok.toFixed(2)} · out $${model.output_per_mtok.toFixed(2)} /Mtok`,
+      })),
   );
 
   const single = (
@@ -853,6 +862,7 @@ function EvaluateForm() {
           <option key={m.id} value={m.id} disabled={!m.available}>
             {m.label}
             {m.price ? ` — ${m.price}` : ""}
+            {m.outsideFavourites ? " — not in your favourites" : ""}
             {m.available ? "" : ` (${m.missing} missing)`}
           </option>
         ))}
@@ -1374,6 +1384,13 @@ function EvaluateForm() {
           <span className="text-sm font-medium">
             Evaluated models — one column per model in the results
           </span>
+          <p className="text-sm text-zinc-600">
+            Only your favourite models are listed.{" "}
+            <a href="/profile" className="underline hover:text-zinc-900">
+              Change which models you see
+            </a>
+            .
+          </p>
           <div className="grid grid-cols-2 gap-1 rounded border border-zinc-300 p-2">
             {modelRows.map((m) => (
               <label
@@ -1394,6 +1411,7 @@ function EvaluateForm() {
                 />
                 <span className="flex-1">
                   {m.label}
+                  {m.outsideFavourites ? " — not in your favourites" : ""}
                   {m.available ? "" : ` (${m.missing} missing)`}
                 </span>
                 {m.price && (
@@ -1447,6 +1465,25 @@ function EvaluateForm() {
         {temperatureError && (
           <p className="text-sm text-red-700">{temperatureError}</p>
         )}
+        {(() => {
+          // Ces modèles acceptent l'appel et jettent le paramètre : Claude 4.7
+          // et au-delà tournent en adaptive thinking et le refusent, inspect le
+          // retire, et rien dans la réponse ne le dit. Un balayage sur eux ne
+          // mesure que du bruit — on le dit ici plutôt que de griser le
+          // réglage, parce qu'une température fixe sur eux reste légitime.
+          const deaf = modelRows.filter(
+            (m) => targets.includes(m.id) && !m.honoursTemperature,
+          );
+          if (deaf.length === 0) return null;
+          return (
+            <p className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+              {deaf.map((m) => m.label).join(", ")}
+              {deaf.length > 1 ? " ignore" : " ignores"} temperature — the
+              provider runs them at its own setting. Their answers will still
+              vary between repetitions, but not because of this control.
+            </p>
+          );
+        })()}
         <p className="text-sm text-zinc-600">
           The adversary and the judge keep their provider default: varying them
           too would make any difference impossible to attribute.
