@@ -17,6 +17,7 @@ import {
   RUN_JUDGES,
   RUN_TAGS,
   SAMPLES,
+  TOOL_RESULTS,
   SupabaseError,
   failStaleRuns,
   insert,
@@ -30,6 +31,7 @@ import { estimateExtension } from "./extend-estimate";
 import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
 import { measureRun, type MeasurableCell } from "./measured-length";
+import type { ToolResultRow } from "./served";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells";
 import type { NewCell } from "./cells";
 import {
@@ -392,6 +394,13 @@ export async function loadRun(
     withJudges?: boolean;
     withCatchupMissingFlag?: boolean;
     withFullJudgeScores?: boolean;
+    /** Ramène les résultats d'outils servis depuis le monde, pour le voyant du
+     *  run et son croisement avec l'éveil (voir `lib/served.ts`).
+     *
+     * Hors du défaut, comme les transcripts : la quasi-totalité des runs n'en
+     * a aucun, et la liste des runs ne doit pas payer une lecture par run pour
+     * une table le plus souvent vide. */
+    withToolResults?: boolean;
   } = {},
 ): Promise<RunDetail> {
   await failStaleRuns();
@@ -435,6 +444,13 @@ export async function loadRun(
           runId,
           Boolean(options.withTranscripts) || Boolean(options.withFullJudgeScores),
         )
+      : undefined,
+    tool_results: options.withToolResults
+      ? await select<ToolResultRow>(TOOL_RESULTS, {
+          run_id: `eq.${runId}`,
+          select: "scenario_index,tool_name,arguments,faithful,fault",
+          order: "scenario_index.asc,tool_name.asc",
+        })
       : undefined,
   };
 }

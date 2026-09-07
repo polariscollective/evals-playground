@@ -925,6 +925,12 @@ export interface RunDetail {
    *  `withJudges`) : la quasi-totalité des appelants de `loadRun` ne
    *  regardent jamais les juges, seulement l'existence du run. */
   judges?: RunJudgeView[];
+  /** Les résultats d'outils servis depuis le monde, avec le verdict du
+   *  contrôle sur chacun — voir `lib/served.ts`. `undefined` quand non
+   *  demandé (voir `withToolResults`) : la quasi-totalité des runs n'en a
+   *  aucun, et la liste ne doit pas payer une lecture par run pour une table
+   *  le plus souvent vide. */
+  tool_results?: import("./served").ToolResultRow[];
 }
 
 export interface ModelOption {

@@ -36,6 +36,7 @@ export const PROFILES = "profiles";
 export const JUDGES = "judges";
 export const RUN_JUDGES = "run_judges";
 export const JUDGE_SCORES = "judge_scores";
+export const TOOL_RESULTS = "tool_results";
 
 /** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
  *

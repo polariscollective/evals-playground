@@ -43,6 +43,10 @@ export async function GET(
         withJudges: true,
         withCatchupMissingFlag: true,
         withFullJudgeScores,
+        // Le voyant des résultats servis, et son croisement avec l'éveil. Une
+        // lecture de plus par ouverture de run, sur une table le plus souvent
+        // vide — c'est la page du run, pas la liste, qui la paie.
+        withToolResults: true,
       }),
     );
   } catch (error) {

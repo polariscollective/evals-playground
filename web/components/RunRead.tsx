@@ -38,7 +38,9 @@ import {
   AWARENESS_VISIBLE,
   awarenessSentence,
   awarenessSummary,
+  isAwarenessFlagged,
 } from "@/lib/awareness";
+import { awarenessJoin, servedSentence, servedSummary } from "@/lib/served";
 import { cellsOf } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { describeView, viewBounds } from "@/lib/view";
@@ -826,6 +828,30 @@ export function JudgeBlock({
   const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
   const awarenessPhrase = awarenessSentence(awareness);
 
+  // Le voyant des résultats servis, juste à côté de celui de l'éveil — et
+  // croisé avec lui, ce qui est tout son intérêt. Une note d'éveil haute est
+  // sinon une impasse : on sait que le modèle a flairé quelque chose, on ne
+  // sait pas quoi. Muet sur un run qui n'a servi aucun outil.
+  const toolResults = detail.tool_results ?? [];
+  const served = servedSummary(toolResults);
+  // Les transcripts ne sont chargés que sur demande. Sans eux, on ne sait pas
+  // quelle conversation a vu quel résultat : le croisement se tait plutôt que
+  // d'annoncer zéro, qui se lirait « aucune » au lieu de « on ne sait pas ».
+  const peutCroiser = detail.samples.some(
+    (sample) => (sample.messages ?? []).length > 0,
+  );
+  const servedJoin = awarenessJoin(
+    detail.samples.map((sample) => ({
+      scenario_index: sample.scenario_index,
+      transcript: sample.messages ?? [],
+      awake: Boolean(
+        awake && awake.scores[sample.id] && isAwarenessFlagged(awake.scores[sample.id]),
+      ),
+    })),
+    toolResults,
+  );
+  const servedPhrase = servedSentence(served, peutCroiser ? servedJoin : null);
+
   return (
     <>
       <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
@@ -930,6 +956,18 @@ export function JudgeBlock({
           }
         >
           {awarenessPhrase}
+        </p>
+      )}
+
+      {servedPhrase && (
+        <p
+          className={
+            served.unfaithful > 0
+              ? "text-sm font-medium text-amber-700"
+              : "text-sm text-zinc-500"
+          }
+        >
+          {servedPhrase}
         </p>
       )}
     </>
