@@ -76,6 +76,7 @@ export async function POST(
     detail.run.config.turns,
     detail.run.config.models.adversary ?? null,
     detail.run.config.rubric.map((level) => level.value),
+    detail.run.config.models.world ?? null,
   );
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 

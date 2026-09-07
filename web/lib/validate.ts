@@ -401,7 +401,12 @@ export function configProblem(config: unknown): string | null {
  *
  * `scenarioCount` est la taille de la matrice actuelle : un indice qui la
  * dépasse désignerait un scénario que le job ne saurait pas lire, puisque c'est
- * par cet indice qu'il retrouve le message d'ouverture. */
+ * par cet indice qu'il retrouve le message d'ouverture.
+ *
+ * `runWorldModel` est `models.world` du run tel qu'il est avant cette
+ * extension — `null` quand le run n'en a encore aucun, que ce soit parce qu'il
+ * ne sert rien ou parce qu'il a été lancé avant que ce modèle ne se choisisse.
+ * Ajouté en dernier pour ne déplacer aucun appelant existant. */
 export function extendProblem(
   request: unknown,
   scenarioCount: number,
@@ -409,6 +414,7 @@ export function extendProblem(
   currentTurns = 1,
   adversary: string | null = null,
   rubricValues: number[] = [],
+  runWorldModel: string | null = null,
 ): string | null {
   if (!request || typeof request !== "object") return "body must be an object";
   const r = request as ExtendRequest;
@@ -427,6 +433,36 @@ export function extendProblem(
     }
   }
   const disponibles = [...runTools, ...ajoutés];
+
+  // Trois cas, et le troisième est le seul qui surprenne : un run qui sert
+  // déjà impose son modèle. Deux serveurs dans un même run rendraient ses
+  // cases incomparables, et c'est la seule chose qu'une matrice ne survit pas.
+  // Placé avant le reste — scénarios, modèles, répétitions — pour qu'une
+  // demande qui ne fait qu'ajouter un outil servi sans nommer de monde ne
+  // s'entende pas d'abord reprocher un champ qu'elle n'a pas à porter.
+  const ajouteDuServi = servesTools(ajoutés);
+  const nommé = isFilled(r.world);
+  if (runWorldModel) {
+    if (nommé && r.world !== runWorldModel) {
+      return (
+        `world: this run already serves its tools with "${runWorldModel}". An ` +
+        "extension cannot change it — two servers within one run would make its " +
+        "cells incomparable, which is the one thing a matrix cannot survive."
+      );
+    }
+  } else if (ajouteDuServi) {
+    if (!nommé) {
+      return (
+        "world: this extension adds a tool with retrieval_rules to a run that " +
+        "serves none yet, so it needs a model to answer those calls."
+      );
+    }
+  } else if (nommé) {
+    return (
+      "world: this extension adds no served tool and the run serves none, so " +
+      "this model would never be called."
+    );
+  }
 
   const indices = r.scenario_indices;
   if (!Array.isArray(indices)) return "scenario_indices must be a list";

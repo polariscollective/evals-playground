@@ -1103,6 +1103,7 @@ const handler = createMcpHandler((server) => {
           run.config.turns,
           run.config.models.adversary ?? null,
           rubric.map((level) => level.value),
+          run.config.models.world ?? null,
         );
         if (problem) return toolError(problem);
 
@@ -1566,6 +1567,7 @@ const handler = createMcpHandler((server) => {
         run.config.turns,
         run.config.models.adversary ?? null,
         rubric.map((level) => level.value),
+        run.config.models.world ?? null,
       );
       if (problem) {
         return { content: [{ type: "text", text: problem }], isError: true };

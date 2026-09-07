@@ -13,6 +13,14 @@ const OUTIL = (name: string): ToolSpec => ({
   result: "ok",
 });
 
+const OUTIL_SERVI = (name: string): ToolSpec => ({
+  name,
+  description: `Ce que lit ${name}.`,
+  parameters: [],
+  result: "",
+  retrieval_rules: "Renvoie trois lignes au plus.",
+});
+
 const DEMANDE = (extra: Partial<ExtendRequest> = {}): ExtendRequest => ({
   scenario_indices: [0],
   new_scenarios: [],
@@ -373,4 +381,50 @@ test("une extension entièrement vide reste refusée", () => {
     1,
   );
   assert.match(problem ?? "", /a judge to add/);
+});
+
+// --- world, à l'extension : trois cas ---------------------------------------
+//
+// Voir docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md, §2. Le
+// septième paramètre d'`extendProblem` est le modèle de monde du run tel qu'il
+// est AVANT cette extension — `null` quand le run n'en a encore aucun, que ce
+// soit parce qu'il ne sert rien ou parce qu'il a été lancé avant ce chantier.
+
+test("un run sans modèle de monde, une extension qui sert : world requis", () => {
+  const problem = extendProblem(DEMANDE({ new_tools: [OUTIL_SERVI("search")] }), 1);
+  assert.ok(problem?.includes("world"));
+});
+
+test("un run sans modèle, une extension qui ne sert rien : nommer world est refusé", () => {
+  const problem = extendProblem(DEMANDE({ world: "openai/gpt-5.6-luna" }), 1);
+  assert.ok(problem?.includes("world"));
+});
+
+test("un run qui a déjà un modèle : le même passe, un autre est refusé", () => {
+  const même = extendProblem(
+    DEMANDE({ world: "openai/gpt-5.6-luna" }),
+    1,
+    [],
+    1,
+    null,
+    [],
+    "openai/gpt-5.6-luna",
+  );
+  assert.equal(même, null);
+
+  const problem = extendProblem(
+    DEMANDE({ world: "grok/grok-4.3" }),
+    1,
+    [],
+    1,
+    null,
+    [],
+    "openai/gpt-5.6-luna",
+  );
+  assert.ok(problem?.includes("incomparable"));
+});
+
+test("un run qui a déjà un modèle : ne rien nommer passe, c'est hérité", () => {
+  const problem = extendProblem(DEMANDE(), 1, [], 1, null, [], "openai/gpt-5.6-luna");
+  assert.equal(problem, null);
 });

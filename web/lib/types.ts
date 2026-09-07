@@ -503,6 +503,17 @@ export interface ExtendRequest {
    * Ajouter est permis, redéfinir non : un outil qui reprendrait un nom
    * existant ferait relire les cases déjà jouées comme ayant eu celui-ci. */
   new_tools?: ToolSpec[];
+  /** Le modèle qui sert les outils ajoutés par `new_tools`, quand ce run n'en a
+   *  pas encore un.
+   *
+   * Trois cas, et le troisième est le seul qui surprenne : un run sans modèle
+   * de monde qui reçoit un outil servi doit en nommer un, qui devient celui du
+   * run ; un run sans modèle à qui rien de servi n'est ajouté refuse qu'on en
+   * nomme un, un réglage sans effet étant pire qu'absent ; un run qui sert déjà
+   * ses outils l'impose silencieusement — nommer le même passe, une redite
+   * sans conséquence, nommer un autre est refusé, deux serveurs dans un même
+   * run rendraient ses cases incomparables. Voir `extendProblem`. */
+  world?: string | null;
   /** Des juges à poser sur ce run, en plus de ceux qu'il porte déjà.
    *
    * Toujours secondaires : devenir principal est un second geste, explicite.
