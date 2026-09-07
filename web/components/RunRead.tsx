@@ -30,6 +30,7 @@
 // encore en cours d'ouverture, ou un futur appelant plus léger).
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/Dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ViewControls } from "@/components/ViewControls";
 import {
   AWAKE_TYPE,
@@ -422,9 +423,41 @@ export function ScenarioModal({
  * l'afficher ferait lire la matrice sur une question que personne n'a écrite.
  * Le bouton qui écrit — « Make principal » — a migré dans `JudgeBlock`, sur
  * le juge affiché plutôt que sur chaque ligne : voir son commentaire. */
+/** Ce que délier coûte, dit une fois pour les deux chemins — le juge
+ *  secondaire ici même, le principal dans `PrincipalUnlink`.
+ *
+ * Les trois phrases sont vérifiées, pas supposées :
+ *
+ * - **Sans retour** : `run_judges_unlink` pose `deleted_at`, et rien ne le
+ *   remet à null — ni l'application, ni le MCP. La ligne reste en base pour
+ *   qu'on sache que ce run a été jugé par celui-là, mais aucun geste ne la
+ *   ramène.
+ * - **Les notes ne reviennent pas** : elles ne sont pas effacées non plus (la
+ *   clé étrangère `on delete cascade` existe et ne se déclenche jamais, voir
+ *   le commentaire de `run_judges.deleted_at`), mais plus rien ne les montre —
+ *   la lecture filtre sur les liaisons vivantes. Reposer le même juge crée une
+ *   liaison NEUVE, dont les verdicts repartent en attente et se repaient.
+ * - **Une copie ne le porte pas** : dupliquer un run dérive sa configuration
+ *   des liaisons vivantes (`withLiveJudges`, appelé par `app/page.tsx`), donc
+ *   un juge délié n'y figure plus. */
+function UnlinkConsequences() {
+  return (
+    <ul className="list-disc space-y-1 pl-4">
+      <li>This cannot be undone — there is no way to link it back.</li>
+      <li>
+        Its grades stop showing anywhere: the matrix, the trajectories, the
+        export, the MCP. Adding the same judge again starts a fresh one, whose
+        verdicts have to be paid for over.
+      </li>
+      <li>A new run duplicated from this one will not carry this judge.</li>
+    </ul>
+  );
+}
+
 function OtherJudgeRow({
   judge,
   viewing,
+  isPrincipal = false,
   onUnlink,
   onView,
 }: {
@@ -432,11 +465,22 @@ function OtherJudgeRow({
   /** Ce juge est celui qu'on regarde en ce moment — un choix purement local
    *  (voir `JudgeBlock`), jamais écrit en base. */
   viewing: boolean;
+  /** Le principal figure dans cette liste comme les autres, pour qu'on
+   *  puisse y REVENIR après en avoir regardé un autre : sans lui, une fois
+   *  parti sur un secondaire, plus rien ne ramenait — il disparaissait de
+   *  l'écran entièrement. Il n'a pas de bouton « Unlink » ici : le délier
+   *  demande de désigner un remplaçant, ce que `PrincipalUnlink` fait
+   *  au-dessus, avec son sélecteur. */
+  isPrincipal?: boolean;
   onUnlink?: (runJudgeId: string) => Promise<void>;
   onView?: (runJudgeId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  // Délier ne se rattrape pas, et le bouton était à un clic : demander
+  // d'abord. Le principal a déjà son étape à lui — voir `PrincipalUnlink`,
+  // qui dit les mêmes conséquences par la même fonction.
+  const [asking, setAsking] = useState(false);
 
   const unlink = async () => {
     if (!onUnlink) return;
@@ -444,6 +488,7 @@ function OtherJudgeRow({
     setFailed(null);
     try {
       await onUnlink(judge.run_judge_id);
+      setAsking(false);
     } catch (e) {
       setFailed((e as Error).message);
     } finally {
@@ -463,6 +508,11 @@ function OtherJudgeRow({
             system
           </span>
         )}
+        {isPrincipal && (
+          <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] tracking-wide text-white uppercase">
+            principal
+          </span>
+        )}
       </div>
       {(onUnlink || onView) && (
         <div className="flex items-center gap-2">
@@ -480,9 +530,9 @@ function OtherJudgeRow({
               </button>
             )
           )}
-          {onUnlink && (
+          {onUnlink && !isPrincipal && (
             <button
-              onClick={unlink}
+              onClick={() => setAsking(true)}
               disabled={busy}
               className="cursor-pointer rounded border border-red-300 px-2 py-0.5 text-xs text-red-800 hover:bg-red-50 disabled:opacity-50"
             >
@@ -496,6 +546,26 @@ function OtherJudgeRow({
           {failed}
         </p>
       )}
+      <ConfirmDialog
+        open={asking}
+        // Titre court et fixe : un critère finit souvent par un point
+        // d'interrogation, et le coller dans le titre en produisait deux.
+        // La question posée par ce juge est dans le corps, où elle a la place.
+        title="Unlink this judge?"
+        confirmLabel="Unlink this judge"
+        tone="warning"
+        busy={busy}
+        onConfirm={unlink}
+        onCancel={() => setAsking(false)}
+      >
+        <p className="mb-2">
+          <span className="font-mono text-xs text-zinc-500">
+            {shortModel(judge.judge.model)}
+          </span>{" "}
+          <span className="text-zinc-700">{judgeLabel(judge.judge)}</span>
+        </p>
+        <UnlinkConsequences />
+      </ConfirmDialog>
     </div>
   );
 }
@@ -622,6 +692,9 @@ function PrincipalUnlink({
         This judge is the principal — the matrix follows it. Choose who
         takes over before unlinking it.
       </p>
+      <div className="text-xs text-amber-900">
+        <UnlinkConsequences />
+      </div>
       <select
         value={replacement}
         onChange={(e) => setReplacement(e.target.value)}
@@ -814,22 +887,30 @@ export function JudgeBlock({
             rien derrière le bouton, il ne sert donc à rien. C'est ici que
             vit le sélecteur d'affichage — un juge ordinaire de cette liste
             devient le juge affiché en cliquant « View », sans rien écrire. */}
+        {/* La liste porte TOUS les juges du run, le principal en tête.
+            L'exclure était un cul-de-sac : « View » n'existait que pour les
+            autres, si bien qu'une fois parti sur un secondaire plus rien ne
+            ramenait au principal — il quittait l'écran entièrement. Il y
+            figure donc comme les autres, marqué, avec son « View » ; ce qu'il
+            n'a pas ici, c'est « Unlink », qui demande un remplaçant et vit
+            au-dessus dans `PrincipalUnlink`. */}
         {others.length > 0 && (
           <div className="border-t border-zinc-200 pt-2">
             <button
               onClick={() => setShowOthers((visible) => !visible)}
               className="cursor-pointer text-xs text-zinc-600 underline hover:text-zinc-900"
             >
-              {showOthers ? "Hide" : "Show"} {others.length} other judge
-              {others.length > 1 ? "s" : ""}
+              {showOthers ? "Hide" : "Show all"} {judges?.length ?? 0} judge
+              {(judges?.length ?? 0) > 1 ? "s" : ""}
             </button>
             {showOthers && (
               <div className="mt-2 space-y-1">
-                {others.map((judge) => (
+                {(principal ? [principal, ...others] : others).map((judge) => (
                   <OtherJudgeRow
                     key={judge.run_judge_id}
                     judge={judge}
                     viewing={displayedJudge?.run_judge_id === judge.run_judge_id}
+                    isPrincipal={judge.run_judge_id === principal?.run_judge_id}
                     onUnlink={onUnlink}
                     onView={onSelectDisplayed}
                   />
