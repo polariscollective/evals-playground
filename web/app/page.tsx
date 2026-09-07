@@ -174,6 +174,15 @@ function EvaluateForm() {
   // reste porté par `criterion`/`rubric`/`judge` ci-dessus : rien ici ne peut
   // se déclarer principal, la forme de `JudgeSpec` ne le permet pas.
   const [secondaryJudges, setSecondaryJudges] = useState<JudgeSpec[]>([]);
+  // Les modèles qu'une reprise ou un brouillon apportait à l'ouverture,
+  // hors favoris ou non — posés une fois par `fillFromConfig` et jamais
+  // recalculés ensuite. `chosen`, plus bas, les ajoute à la sélection vivante
+  // plutôt que de les y remplacer : recalculer ce sous-ensemble depuis
+  // `targets`/`adversary`/`judge`/`secondaryJudges` à chaque rendu ferait
+  // disparaître un modèle carried dès qu'on le désélectionne, empêchant de le
+  // reposer ensuite sans recharger la page — exactement l'usage que ce
+  // mécanisme sert.
+  const [carriedModels, setCarriedModels] = useState<Set<string>>(new Set());
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
@@ -216,9 +225,20 @@ function EvaluateForm() {
         // Un relaunch apporte ses propres modèles : les défauts du catalogue
         // les écraseraient selon l'ordre d'arrivée des deux requêtes.
         if (available && !relaunchOf) {
-          setTargets([available.models[0].id]);
-          setAdversary(available.models[0].id);
-          setJudge(available.models[0].id);
+          // Le premier favori parmi les fournisseurs dont la clé est
+          // présente : préremplir un modèle que le catalogue filtré
+          // n'affichera pas serait la même faute que celle réparée plus bas,
+          // juste un cran plus tôt. Seule l'absence totale de favori
+          // disponible retombe sur le premier modèle du premier fournisseur,
+          // pour ne jamais laisser les trois champs vides.
+          const firstFavorite = catalog
+            .filter((p) => p.key_present)
+            .flatMap((p) => p.models)
+            .find((m) => m.favorite);
+          const preselected = firstFavorite?.id ?? available.models[0].id;
+          setTargets([preselected]);
+          setAdversary(preselected);
+          setJudge(preselected);
         }
       })
       .catch((e: Error) => setError(e.message));
@@ -253,6 +273,18 @@ function EvaluateForm() {
       setTargets(config.models?.targets ?? []);
       setAdversary(config.models?.adversary ?? "");
       setJudge(config.models?.judge ?? "");
+      // Ce que cette configuration nomme, gardé à part de l'état vivant —
+      // voir le commentaire de `carriedModels` plus haut sur pourquoi.
+      setCarriedModels(
+        new Set(
+          [
+            ...(config.models?.targets ?? []),
+            config.models?.adversary,
+            config.models?.judge,
+            ...(config.judges ?? []).map((j) => j.model),
+          ].filter((m): m is string => Boolean(m)),
+        ),
+      );
       setTemperatureMin(config.temperature?.min ?? 1);
       setVaryTemperature(config.temperature?.max != null);
       setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
@@ -826,10 +858,20 @@ function EvaluateForm() {
   // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
   // Les juges secondaires en font partie : chacun peut porter son propre
   // modèle (absent, il suit celui du run, déjà dans l'ensemble).
+  //
+  // `carriedModels` s'ajoute à la sélection vivante plutôt que de s'y
+  // substituer : un modèle carried qu'on désélectionne (par exemple, un
+  // juge changé pour un favori puis reposé sur l'ancien modèle) doit rester
+  // proposable, alors qu'il aurait disparu d'un ensemble recalculé seulement
+  // depuis l'état courant.
   const chosen = new Set(
-    [...targets, adversary, judge, ...secondaryJudges.map((j) => j.model)].filter(
-      Boolean,
-    ),
+    [
+      ...targets,
+      adversary,
+      judge,
+      ...secondaryJudges.map((j) => j.model),
+      ...carriedModels,
+    ].filter(Boolean),
   );
   const modelRows = providers.flatMap((provider) =>
     provider.models
