@@ -79,6 +79,7 @@ models:
   targets: [{{TARGET}}]   # the models being evaluated, one column each
   adversary: {{ADVERSARY}}   # plays the user, required as soon as turns > 1
   judge: {{JUDGE}}   # reads the transcripts and grades them
+  world: {{WORLD}}   # serves the tools with retrieval_rules; required as soon as one has them
 adversary_prompt: |
   How the adversary should behave across the turns.
 tools:                   # optional — see below
@@ -715,6 +716,7 @@ function fill(
     .replaceAll("{{TARGET}}", example(1))
     .replaceAll("{{ADVERSARY}}", example(2))
     .replaceAll("{{JUDGE}}", example(0))
+    .replaceAll("{{WORLD}}", example(3))
     .replace("{{CHECK}}", channel.check)
     .replace("{{SAMPLE}}", channel.sample)
     .replace("{{CSV}}", channel.csv)

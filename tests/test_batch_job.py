@@ -1260,6 +1260,8 @@ def test_un_run_a_outil_servi_va_chercher_ce_qui_reste():
     config = EvalRunConfig(
         **{
             **CONFIG,
+            # Un outil servi exige models.world — voir _monde_et_service_equivalents.
+            "models": {**CONFIG["models"], "world": "mockllm/model"},
             "world": "Un lecteur partagé.",
             "tools": [
                 {

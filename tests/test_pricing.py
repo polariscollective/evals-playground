@@ -30,13 +30,25 @@ def _scenario(title: str = "T") -> EvalScenario:
 
 
 def _config(**overrides) -> EvalRunConfig:
+    # Un outil servi exige models.world (voir _monde_et_service_equivalents) ;
+    # les appelants d'ici ne posent jamais leur propre `models` en même temps
+    # qu'un outil servi, donc le déduire ici évite de le répéter sur chaque
+    # appel de test qui pose `tools=[_servi()]`.
+    tools = overrides.get("tools") or []
+    sert = any(
+        isinstance(tool, dict) and tool.get("retrieval_rules") for tool in tools
+    )
     base = dict(
         scenarios=[_scenario()],
         criterion="C" * 200,
         rubric=RUBRIC,
         turns=1,
         repetitions=1,
-        models=EvalModels(targets=["anthropic/claude-haiku-4-5"], judge="anthropic/claude-haiku-4-5"),
+        models=EvalModels(
+            targets=["anthropic/claude-haiku-4-5"],
+            judge="anthropic/claude-haiku-4-5",
+            world="anthropic/claude-haiku-4-5" if sert else None,
+        ),
     )
     base.update(overrides)
     return EvalRunConfig(**base)

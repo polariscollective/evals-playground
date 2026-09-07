@@ -765,6 +765,8 @@ test("un outil servi se relit servi, et sans result vide à côté", () => {
       retrieval_rules: "Return at most twenty lines.",
     },
   ];
+  // Un outil servi exige models.world.
+  config.models.world = "openai/gpt-5.6-luna";
   const écrit = writeConfigFile(config);
   assert.ok(!écrit.includes("result: ''"));
   const relu = readConfigFile(écrit);
