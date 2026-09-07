@@ -824,7 +824,13 @@ function EvaluateForm() {
   // formulaire porte déjà. Une relance pré-remplie peut nommer un modèle
   // qui a quitté les favoris depuis : le retirer du menu rendrait le
   // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
-  const chosen = new Set([...targets, adversary, judge].filter(Boolean));
+  // Les juges secondaires en font partie : chacun peut porter son propre
+  // modèle (absent, il suit celui du run, déjà dans l'ensemble).
+  const chosen = new Set(
+    [...targets, adversary, judge, ...secondaryJudges.map((j) => j.model)].filter(
+      Boolean,
+    ),
+  );
   const modelRows = providers.flatMap((provider) =>
     provider.models
       .filter((model) => model.favorite || chosen.has(model.id))
