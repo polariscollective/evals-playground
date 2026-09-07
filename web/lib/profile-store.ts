@@ -27,10 +27,11 @@ export const ensureProfileLoaded = profile.ensureLoaded;
 
 /** Écrit le profil rendu par une sauvegarde, sans relire.
  *
- * Les deux pages qui écrivent — les plafonds de dépense, le conseil de
- * scénario — reçoivent le profil à jour dans leur réponse. S'en servir évite
- * un aller-retour, et surtout évite que l'autre page affiche encore l'ancienne
- * version au prochain clic. */
+ * Les trois écritures qui existent — les plafonds de dépense et les modèles
+ * favoris, toutes deux sur « Profile », et le conseil de scénario, sur
+ * « Scenarios » — reçoivent le profil à jour dans leur réponse. S'en servir
+ * évite un aller-retour, et surtout évite qu'une autre écriture affiche
+ * encore l'ancienne version au prochain clic. */
 export function putProfile(next: ProfileData): void {
   profile.set(next);
 }
