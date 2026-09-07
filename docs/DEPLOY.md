@@ -90,6 +90,11 @@ quiconque le remarque.
 Le job et ses secrets sont décrits dans `polaris-tf`
 (`environments/app/evals_playground_batch.tf`), pas ici.
 
+Quatre clés de fournisseur y sont montées : `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `XAI_API_KEY` et `GEMINI_API_KEY`. La dernière est arrivée
+avec le catalogue élargi ; comme les autres, `polaris-tf` crée le conteneur et
+jamais la valeur — et le piège rappelé plus bas s'applique à elle en premier.
+
 ## Le schéma — polaris-supabase
 
 Les migrations ne sont pas dans ce dépôt. Voir le `CLAUDE.md` de l'espace de
