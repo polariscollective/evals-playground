@@ -6,6 +6,7 @@
 // sans adversaire produiraient un run qui ne mesure rien, et le job n'aurait
 // aucun moyen de s'en rendre compte.
 import { knownModelIds } from "./catalog.ts";
+import { servesTools } from "./tools.ts";
 import type {
   Draft,
   EvalRunConfig,
@@ -369,6 +370,26 @@ export function configProblem(config: unknown): string | null {
   if (judgeModel) return judgeModel;
   const adversaryModel = modelProblem(c.models?.adversary, "adversary model");
   if (adversaryModel) return adversaryModel;
+
+  // L'équivalence, dans les deux sens. Servir sans modèle ne répondrait à
+  // rien ; nommer un modèle sans rien à servir est un réglage sans effet, et
+  // un réglage sans effet est pire qu'absent — on le relit plus tard en se
+  // demandant s'il a compté.
+  const sert = servesTools(c.tools ?? []);
+  const monde = isFilled(c.models?.world);
+  if (sert && !monde) {
+    return (
+      "models.world: this run serves at least one tool, so it needs a model to " +
+      "answer those calls. Pick one from the models listed in /prompt."
+    );
+  }
+  if (!sert && monde) {
+    return (
+      "models.world: no tool in this run has retrieval_rules, so nothing is " +
+      "served and this model would never be called. Remove it, or give a tool " +
+      "reading rules."
+    );
+  }
 
   const temperature = temperatureProblem(c.temperature);
   if (temperature) return temperature;

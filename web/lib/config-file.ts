@@ -325,6 +325,10 @@ export function readConfigFile(text: string): ImportedConfig {
         : [],
       adversary: asString(models.adversary) || null,
       judge: asString(models.judge),
+      // Requis exactement quand un outil sert, interdit sinon — voir
+      // `configProblem`. Même patron qu'`adversary` : une chaîne vide se lit
+      // comme absente.
+      world: asString(models.world) || null,
     },
     adversary_prompt: asString(file.adversary_prompt),
     // Ce que contient l'environnement, pour les outils qui portent des

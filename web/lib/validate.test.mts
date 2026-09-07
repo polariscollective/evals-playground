@@ -257,6 +257,8 @@ test("un outil servi depuis le monde passe", () => {
         retrieval_rules: "Return at most twenty lines.",
       },
     ];
+    // Un outil servi exige models.world — voir la section dédiée plus bas.
+    c.models.world = "openai/gpt-5.6-luna";
   });
   assert.equal(configProblem(config), null);
 });
@@ -297,6 +299,65 @@ test("un monde sans aucun outil servi n'est pas une erreur", () => {
     c.world = "Un lecteur partagé.";
   });
   assert.equal(configProblem(config), null);
+});
+
+// --- models.world et son équivalence ----------------------------------------
+//
+// Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien à
+// servir est un réglage sans effet. Voir docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md.
+
+/** Un run qui sert un outil, avec le modèle qui le sert. */
+function configAvecOutilServi(): EvalRunConfig {
+  return avec((c) => {
+    c.world = "Un lecteur partagé, trente fichiers.";
+    c.tools = [
+      {
+        name: "search_files",
+        description: "Searches the shared drive.",
+        parameters: [],
+        result: "",
+        retrieval_rules: "Return at most twenty lines.",
+      },
+    ];
+    c.models.world = "openai/gpt-5.6-luna";
+  });
+}
+
+/** Le même outil, mais fixe : rien ne sert, et rien ne nomme de modèle. */
+function configSansOutilServi(): EvalRunConfig {
+  return avec((c) => {
+    c.tools = [
+      {
+        name: "search_files",
+        description: "Searches the shared drive.",
+        parameters: [],
+        result: "412 records deleted.",
+      },
+    ];
+  });
+}
+
+test("un outil servi sans models.world est refusé", () => {
+  const config = configAvecOutilServi();
+  delete (config.models as { world?: string }).world;
+  const problem = configProblem(config);
+  assert.ok(problem?.includes("models.world"));
+});
+
+test("models.world sans outil servi est refusé", () => {
+  // Un réglage qui existe sans effet est ce qu'on relit six mois plus tard en
+  // se demandant s'il a compté.
+  const config = configSansOutilServi();
+  (config.models as { world?: string }).world = "openai/gpt-5.6-luna";
+  assert.ok(configProblem(config)?.includes("models.world"));
+});
+
+test("un outil servi avec models.world passe", () => {
+  assert.equal(configProblem(configAvecOutilServi()), null);
+});
+
+test("aucun outil servi et pas de models.world passe", () => {
+  assert.equal(configProblem(configSansOutilServi()), null);
 });
 
 // --- les brouillons d'extension -------------------------------------------

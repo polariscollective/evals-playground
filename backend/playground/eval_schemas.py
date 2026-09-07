@@ -561,6 +561,16 @@ class EvalModels(BaseModel):
     adversary: str | None = None
     judge: str = Field(min_length=1)
 
+    world: str | None = None
+    """Le modèle qui sert les outils portant des règles de lecture.
+
+    Requis exactement quand un outil du run est servi, et interdit sinon —
+    voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
+    appel servi, et un défaut que personne n'a remarqué se découvrirait sur
+    une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
+    changement, et ce qui reste protégé, sont dans le spec du 7 septembre.
+    """
+
     @model_validator(mode="after")
     def _modeles_evalues_valides(self) -> "EvalModels":
         if any(not target.strip() for target in self.targets):
@@ -748,6 +758,32 @@ class EvalRunConfig(BaseModel):
                 raise ValueError(
                     "An adversary prompt is required once turns exceeds 1."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _monde_et_service_equivalents(self) -> "EvalRunConfig":
+        """L'équivalence, dans les deux sens.
+
+        Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien
+        à servir est un réglage sans effet, et un réglage sans effet est pire
+        qu'absent — on le relit plus tard en se demandant s'il a compté.
+        Miroir du refus TypeScript dans `configProblem`, voir
+        `web/lib/validate.ts`.
+        """
+        sert = any(tool.served for tool in self.tools)
+        monde = bool(self.models.world and self.models.world.strip())
+        if sert and not monde:
+            raise ValueError(
+                "models.world: this run serves at least one tool, so it needs a "
+                "model to answer those calls. Pick one from the models listed "
+                "in /prompt."
+            )
+        if not sert and monde:
+            raise ValueError(
+                "models.world: no tool in this run has retrieval_rules, so "
+                "nothing is served and this model would never be called. "
+                "Remove it, or give a tool reading rules."
+            )
         return self
 
 

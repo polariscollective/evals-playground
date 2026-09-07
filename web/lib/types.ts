@@ -114,6 +114,14 @@ export interface EvalModels {
   targets: string[];
   adversary?: string | null;
   judge: string;
+  /** Le modèle qui sert les outils portant des règles de lecture.
+   *
+   * Requis exactement quand un outil du run est servi, et interdit sinon —
+   * voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
+   * appel servi, et un défaut que personne n'a remarqué se découvrirait sur
+   * une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
+   * changement, et ce qui reste protégé, sont dans le spec du 7 septembre. */
+  world?: string | null;
 }
 
 // --- Juges multiples --------------------------------------------------------
