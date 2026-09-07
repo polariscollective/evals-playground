@@ -66,3 +66,18 @@ test("un brouillon déjà lancé mène au run qu'il a produit", () => {
     "/eval/r9",
   );
 });
+
+test("une extension déjà appliquée mène à l'historique du run, pas à son panneau", () => {
+  // Réappliquer n'est pas idempotent : les répétitions s'empilent. Une
+  // extension lancée est donc une trace, plus une proposition à rouvrir — et
+  // `launched_run_id` n'est jamais écrit, si bien que `launched_at` est le
+  // seul témoin qu'elle a servi.
+  assert.equal(
+    draftDestination(extendDraft({ launched_at: "2026-09-06T16:33:42.873Z" })),
+    "/eval/r1#extensions",
+  );
+});
+
+test("une extension en attente mène toujours à son panneau", () => {
+  assert.equal(draftDestination(extendDraft()), "/eval/r1?extend=d1");
+});

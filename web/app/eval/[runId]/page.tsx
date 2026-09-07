@@ -446,6 +446,9 @@ export default function EvalRunPage({
   // Vrai par défaut : sans proposition ouverte, enregistrer en crée toujours
   // une à soi.
   const [proposalMine, setProposalMine] = useState(true);
+  // Quand `?extend=` désigne une extension déjà appliquée : sa date, pour le
+  // dire, plutôt qu'un panneau qui laisserait croire qu'elle attend encore.
+  const [appliedAt, setAppliedAt] = useState<string | null>(null);
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
   // pas un résultat, et un rechargement ramène la lecture ordinaire.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
@@ -535,7 +538,8 @@ export default function EvalRunPage({
   );
 
   // `?extend=<id>` : on vient de la liste des brouillons avec une proposition à
-  // relire. Le panneau s'ouvre dessus plutôt que vide.
+  // relire. Le panneau s'ouvre dessus plutôt que vide — sauf si elle a déjà
+  // servi, auquel cas il n'y a plus de proposition, seulement une trace.
   useEffect(() => {
     const draftId = searchParams.get("extend");
     if (!draftId) return;
@@ -545,6 +549,12 @@ export default function EvalRunPage({
         if (cancelled) return;
         if (draft.kind !== "extend") {
           setError("That draft is a run to launch, not an extension.");
+          return;
+        }
+        // Une adresse se partage et se met en signet : rien ne garantit que
+        // celle-ci soit arrivée par la liste, où le lien a déjà disparu.
+        if (draft.launched_at) {
+          setAppliedAt(draft.launched_at);
           return;
         }
         setProposal(draft.config);
@@ -1097,6 +1107,16 @@ export default function EvalRunPage({
           Your email address is the only thing kept back.
         </p>
       </ConfirmDialog>
+
+      {appliedAt && (
+        <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm text-zinc-700">
+          Cette extension a été appliquée le {formatDate(appliedAt)}.{" "}
+          <a href="#extensions" className="underline">
+            Voir ce qu&apos;elle a fait
+          </a>
+          .
+        </div>
+      )}
 
       {extending && !running && (
         <ExtendPanel
