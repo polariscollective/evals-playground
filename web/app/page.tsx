@@ -77,11 +77,39 @@ const PASTED: ConfigOrigin = { said: "Pasted config", csvName: "pasted.csv" };
 
 type Source = "manual" | "csv";
 
+/** Le titre de la page, rendu des deux côtés de la frontière Suspense.
+ *
+ * `useSearchParams` force le rendu client de tout ce qui est sous cette
+ * frontière, et le formulaire entier est dessous. Sans ce composant, le repli
+ * remplaçait la page par le seul mot « Loading… » : le titre disparaissait,
+ * puis réapparaissait ailleurs. Il ne dépend d'aucune donnée — il n'a aucune
+ * raison d'attendre. */
+function PageHeader() {
+  return (
+    <header>
+      <h1 className="font-serif text-2xl font-normal tracking-tight">
+        Evaluate scenarios
+      </h1>
+      <p className="mt-1 text-sm text-zinc-600">
+        Run each scenario against each model, several times over, and see who
+        holds and who gives in.
+      </p>
+    </header>
+  );
+}
+
 export default function EvaluatePage() {
   // `useSearchParams` force le rendu client de tout ce qui est sous lui : la
   // limite est posée ici pour que la page reste prérendue au-dessus.
   return (
-    <Suspense fallback={<main className="mx-auto max-w-6xl p-8">Loading…</main>}>
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-6xl space-y-10 p-8">
+          <PageHeader />
+          <p className="text-sm text-zinc-500">Loading…</p>
+        </main>
+      }
+    >
       <EvaluateForm />
     </Suspense>
   );
@@ -834,15 +862,7 @@ function EvaluateForm() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-10 p-8">
-      <header>
-        <h1 className="font-serif text-2xl font-normal tracking-tight">
-          Evaluate scenarios
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Run each scenario against each model, several times over, and see who
-          holds and who gives in.
-        </p>
-      </header>
+      <PageHeader />
 
       {error && (
         <p

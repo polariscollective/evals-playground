@@ -257,13 +257,6 @@ export default function RunsPage() {
     );
   }
 
-  // Seulement en mode runs : sinon, arriver sur cette page et basculer aussitôt
-  // sur les brouillons ferait attendre devant un écran vide une liste de runs
-  // qu'on ne regarde même pas.
-  if (mode === "runs" && !runs) {
-    return <main className="mx-auto max-w-6xl p-8">Loading…</main>;
-  }
-
   // Le filtre ne s'applique que si l'on sait qui regarde : sans identité, tout
   // masquer donnerait une page vide sans expliquer pourquoi.
   const mien = mineOnly && me !== null;
@@ -433,8 +426,20 @@ export default function RunsPage() {
           <tbody>
             {/* Le squelette reste, même vide : les colonnes disaient la
                 largeur de la table, et les remplacer par un message la faisait
-                se rétracter — puis se rouvrir dès qu'un filtre était défait. */}
-            {runsVus.length === 0 && (
+                se rétracter — puis se rouvrir dès qu'un filtre était défait.
+
+                Et « pas encore chargé » n'est pas « vide » : proposer de
+                défaire les filtres pendant que la requête est en vol
+                accuserait le filtre d'un écran que personne n'a encore
+                rempli. */}
+            {runs === null && (
+              <tr>
+                <td colSpan={7} className="py-6 text-sm text-zinc-500">
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {runs !== null && runsVus.length === 0 && (
               <tr>
                 <td colSpan={7}>
                   <EmptyTable
