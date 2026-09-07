@@ -95,3 +95,22 @@ export async function updateScenarioAdvice(
   await update(PROFILES, { scenario_advice: value }, { user_email: `eq.${email}` });
   return ensureProfile(email);
 }
+
+/** Écrit les favoris de `email`, depuis l'écran de profil.
+ *
+ * Ne valide rien : `favoritesProblem`, dans `favorite-models.ts`, l'a déjà
+ * fait avant d'arriver ici, côté route comme côté formulaire.
+ *
+ * N'écrit jamais `null` : remettre le défaut se fait en cochant ce qu'on
+ * veut, pas en vidant la liste — et une liste vide est refusée en amont. La
+ * colonne ne redevient `null` que si personne n'y a jamais touché.
+ *
+ * Relit après coup pour la même raison qu'`updateProfileCaps` :
+ * `ensureProfile` est la seule fonction qui sache refaire exister la ligne. */
+export async function updateFavoriteModels(
+  email: string,
+  models: string[],
+): Promise<Profile> {
+  await update(PROFILES, { favorite_models: models }, { user_email: `eq.${email}` });
+  return ensureProfile(email);
+}

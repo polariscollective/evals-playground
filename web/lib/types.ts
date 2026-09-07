@@ -645,6 +645,14 @@ export interface Profile {
    * personne, chacun traînant la version du jour de son inscription. Revenir
    * au défaut, c'est remettre `null`. */
   scenario_advice: string | null;
+  /** Les modèles que cette personne veut voir proposés.
+   *
+   * `null` — le cas courant — veut dire « utilise le défaut du code », par
+   * `favoriteModels` dans `favorite-models.ts`. Le défaut n'est jamais
+   * recopié ici, pour la même raison que `scenario_advice` : l'enrichir
+   * n'atteindrait plus personne. Ne borne que ce qui est PROPOSÉ ; la
+   * validation d'un run, elle, accepte tout le catalogue. */
+  favorite_models: string[] | null;
 }
 
 /** Ce que `mcp_launches` dit de la dernière heure, pour une personne : combien

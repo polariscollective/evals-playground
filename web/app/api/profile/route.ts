@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
+import { favoritesProblem } from "@/lib/favorite-models";
 import { capProblem, profilePatchProblem } from "@/lib/profile-caps";
-import { ensureProfile, updateProfileCaps, updateScenarioAdvice } from "@/lib/profiles";
+import {
+  ensureProfile,
+  updateFavoriteModels,
+  updateProfileCaps,
+  updateScenarioAdvice,
+} from "@/lib/profiles";
 import { mcpActivityLastHour } from "@/lib/runs";
 
 /** Le profil de qui regarde, et l'heure glissante d'`mcp_launches` pour elle
@@ -18,17 +24,20 @@ export async function GET() {
   return NextResponse.json({ profile, activity });
 }
 
-/** Change les plafonds, ou le conseil d'écriture de scénario, mais jamais les deux.
+/** Change les plafonds, le conseil d'écriture de scénario, ou les favoris de
+ *  modèles — jamais deux de ces trois à la fois.
  *
  * L'email vient de la session, jamais du corps — comme pour une révocation de
  * connexion MCP : sans quoi n'importe quel compte connecté pourrait modifier
  * le profil d'un autre en devinant son adresse.
  *
- * Les deux champs sont indépendants : la page de profil envoie les plafonds,
- * la page des scénarios envoie le conseil, et aucune n'a à connaître l'autre.
- * Si une requête porte les deux, elle est refusée plutôt que de dédouaner
- * l'un ou l'autre en silence. `undefined` veut dire « ne touche pas », et
- * `null` veut dire « remets le défaut ». */
+ * Les trois réglages sont indépendants : la page de profil envoie les
+ * plafonds ou les favoris, la page des scénarios envoie le conseil, et
+ * aucune n'a à connaître les autres. Si une requête en porte deux, elle est
+ * refusée plutôt que de dédouaner l'un d'eux en silence. `undefined` veut
+ * dire « ne touche pas », et `null` veut dire « remets le défaut » — sauf
+ * pour les favoris, qui n'acceptent jamais `null` : voir
+ * `updateFavoriteModels`. */
 export async function PATCH(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -41,9 +50,10 @@ export async function PATCH(request: Request) {
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
     scenario_advice?: unknown;
+    favorite_models?: unknown;
   };
 
-  // Refuser une requête qui porte à la fois le conseil et un des plafonds —
+  // Refuser une requête qui porte à la fois deux de ces trois réglages —
   // règle testée séparément dans profile-caps.test.mts, sur le même patron
   // que capProblem.
   const patchProblem = profilePatchProblem(body);
@@ -61,6 +71,16 @@ export async function PATCH(request: Request) {
     const profile = await updateScenarioAdvice(
       user.email,
       body.scenario_advice as string | null,
+    );
+    return NextResponse.json({ profile });
+  }
+
+  if (body.favorite_models !== undefined) {
+    const problem = favoritesProblem(body.favorite_models);
+    if (problem) return NextResponse.json({ error: problem }, { status: 422 });
+    const profile = await updateFavoriteModels(
+      user.email,
+      body.favorite_models as string[],
     );
     return NextResponse.json({ profile });
   }
