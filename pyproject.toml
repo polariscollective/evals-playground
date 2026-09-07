@@ -4,14 +4,19 @@ version = "0.1.0"
 description = "Playground de génération et de notation de scénarios d'évaluation"
 requires-python = ">=3.11"
 dependencies = [
-    "inspect-ai>=0.3.249",
+    # 0.3.263 et pas moins : en 0.3.259, `gpt-6-astra` part en Chat Completions
+    # avec `max_tokens` et OpenAI le refuse (« use max_completion_tokens »).
+    "inspect-ai>=0.3.263",
     "inspect-petri>=3.0.11",
     # Providers d'inspect : chacun exige son SDK, sans quoi le modèle
     # échoue silencieusement au premier appel — une colonne vide dans la
     # matrice, sans message d'erreur.
-    "anthropic>=0.40",
+    # `anthropic` en 1.x est exigé par inspect-ai 0.3.263, qui refuse en
+    # dessous : « Anthropic API requires at least version 1.0.0 ».
+    "anthropic>=1.0",
     "openai>=1.0",
     "xai-sdk>=0.1",
+    "google-genai>=1.0",
     "pydantic>=2.7",
     # Le client HTTP du magasin Supabase. Le SDK `supabase-py` traînerait son
     # propre client, sa gestion d'authentification et son moteur de requêtes
