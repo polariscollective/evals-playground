@@ -542,7 +542,10 @@ export default function EvalRunPage({
   // servi, auquel cas il n'y a plus de proposition, seulement une trace.
   useEffect(() => {
     const draftId = searchParams.get("extend");
-    if (!draftId) return;
+    if (!draftId) {
+      const timer = setTimeout(() => setAppliedAt(null), 0);
+      return () => clearTimeout(timer);
+    }
     let cancelled = false;
     getDraft(draftId)
       .then((draft) => {
@@ -554,9 +557,16 @@ export default function EvalRunPage({
         // Une adresse se partage et se met en signet : rien ne garantit que
         // celle-ci soit arrivée par la liste, où le lien a déjà disparu.
         if (draft.launched_at) {
+          // Le bandeau ferme le panneau qu'une adresse précédente aurait pu
+          // ouvrir : sur une même page, passer d'un `?extend=` à un autre ne
+          // remonte pas le composant, et les deux ne doivent jamais coexister.
           setAppliedAt(draft.launched_at);
+          setExtending(false);
+          setProposal(null);
+          setProposalId(null);
           return;
         }
+        setAppliedAt(null);
         setProposal(draft.config);
         setProposalId(draftId);
         setProposalMine(draft.mine);
