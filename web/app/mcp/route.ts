@@ -1323,9 +1323,10 @@ const handler = createMcpHandler((server) => {
         "scenario_indices, together with targets and repetitions. Add brand-new scenarios: " +
         "new_scenarios, together with the same targets and repetitions — a scenario, existing or new, " +
         "is always covered by some models some number of times. Add tools to the run's set: new_tools, " +
-        "and optionally new_tools_for_existing — needing no model or depth of its own, but never the " +
-        "only thing a call does: a call naming no scenario (scenario_indices or new_scenarios) and no " +
-        "deepen is refused even when new_tools is filled in, since adding tools to a batch that adds " +
+        "and optionally new_tools_for_existing and world — needing no depth of its own, and no model " +
+        "unless the tool carries retrieval_rules, but never the only thing a call does: a call naming " +
+        "no scenario (scenario_indices or new_scenarios) and no deepen is refused even when new_tools " +
+        "is filled in, since adding tools to a batch that adds " +
         "nothing else is not enough on its own. Raise the run's depth for what this call adds: turns — " +
         "never on its own, since a call adding no scenario and deepening nothing is refused; it " +
         "takes effect on the scenarios or cells this same call adds, and leaves already-played " +
@@ -1424,7 +1425,17 @@ const handler = createMcpHandler((server) => {
             z.object({
               name: z.string(),
               description: z.string(),
-              result: z.string().describe("What the tool returns, always the same thing."),
+              result: z
+                .string()
+                .optional()
+                .describe("What the tool returns, always the same thing."),
+              retrieval_rules: z
+                .string()
+                .optional()
+                .describe(
+                  "How this tool reads the world. Written instead of result, never both — a tool " +
+                    "carries one or the other.",
+                ),
               parameters: z
                 .array(
                   z.object({
@@ -1442,6 +1453,13 @@ const handler = createMcpHandler((server) => {
             "Tools to add to the run's set. Adding is allowed; redefining an existing name is not — " +
               "cells already run would be read as having had this one. Independent of everything else " +
               "in this call: no scenario, model or turns change is needed to add a tool.",
+          ),
+        world: z
+          .string()
+          .optional()
+          .describe(
+            "The model that serves tools with retrieval_rules. Required when this call adds one to " +
+              "a run that serves none yet; inherited, and unchangeable, when the run already serves.",
           ),
         new_judges: z
           .array(
@@ -1544,7 +1562,19 @@ const handler = createMcpHandler((server) => {
         new_scenarios: input.new_scenarios,
         targets: input.targets ?? [],
         repetitions: input.repetitions ?? 0,
-        ...(input.new_tools ? { new_tools: input.new_tools } : {}),
+        ...(input.new_tools
+          ? {
+              // `result` retombe sur "" quand l'agent ne l'a pas écrit — même
+              // repli que la lecture YAML (`config-file.ts`), pour qu'un outil
+              // servi, qui n'a jamais de raison d'en porter un, arrive ici
+              // sous la même forme qu'un outil fixe sans résultat déclaré.
+              new_tools: input.new_tools.map((tool) => ({
+                ...tool,
+                result: tool.result ?? "",
+              })),
+            }
+          : {}),
+        ...(input.world === undefined ? {} : { world: input.world }),
         ...(input.new_tools_for_existing === undefined
           ? {}
           : { new_tools_for_existing: input.new_tools_for_existing }),

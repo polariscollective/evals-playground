@@ -148,6 +148,7 @@ scenarios:
   does not define.
 - A tool carries \`result\` or \`retrieval_rules\`, never both. Neither is allowed
   and means a fixed tool that returns nothing.
+- \`models.world\` is required as soon as one tool has \`retrieval_rules\`, and refused when none has.
 
 \`average_output_tokens\` is what one answer from an evaluated model costs in
 output tokens — reasoning included, not just the reply you would read. A model
@@ -333,6 +334,11 @@ It belongs to the run, not to a scenario, because the tools have to agree with
 each other: \`search_files\` and \`read_file\` describe the same drive, and two
 copies of it would drift apart.
 
+\`models.world\` is what names its server, next to \`targets\`, \`adversary\` and
+\`judge\` in the same \`models:\` block above. Required exactly when a tool
+carries \`retrieval_rules\`, refused when none does — there would be nothing
+for it to answer.
+
 Four things to get right, and an agent gets all four wrong by default:
 
 - **A world holds more than the scenario needs.** Five files, one of which is
@@ -365,8 +371,10 @@ missing. Negation works, but a row described by what it adds still reads six
 months later, and a row described by what it removes does not.
 
 **Every served call is a model call**, on top of the target, the adversary and
-the judges. The estimate counts them, and says what it assumed about how many
-calls each turn makes — nothing declares that, so it takes half the cap.
+the judges — billed at \`models.world\`'s own rate, not some flat constant, so
+which model you name changes what the run costs. The estimate counts them, and
+says what it assumed about how many calls each turn makes — nothing declares
+that, so it takes half the cap.
 
 ## Adding more judges
 
