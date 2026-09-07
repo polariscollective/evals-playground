@@ -29,6 +29,7 @@ import {
   unlinkRunJudge,
   updateDraft,
 } from "@/lib/api";
+import { withLiveJudges } from "@/lib/live-config";
 import { amountDigits, estimateJudgeAdditionCost } from "@/lib/pricing";
 import { extensionsOf } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
@@ -171,12 +172,19 @@ function AddJudgePanel({
   // secondaires déjà posés en font partie aussi : chacun peut porter son
   // propre modèle (absent, il suit celui du run, déjà dans l'ensemble) —
   // même raison que `chosen` dans `app/page.tsx` (commit 1a991da).
+  //
+  // Dérivé des juges VIVANTS (`detail.judges`), jamais de `config.judges` —
+  // la photo du lancement : voir `withLiveJudges` (`lib/live-config.ts`) et
+  // son en-tête. Sans ça, un juge ajouté depuis ce panneau lui-même dont le
+  // modèle a quitté les favoris depuis ne serait plus proposable, tandis
+  // qu'un juge délié y resterait.
+  const liveConfig = withLiveJudges(config, detail.judges ?? []);
   const models = [
     ...new Set([
       ...providers.flatMap((p) => p.models.filter((m) => m.favorite).map((m) => m.id)),
-      ...config.models.targets,
-      config.models.judge,
-      ...(config.judges ?? []).map((j) => j.model).filter((m): m is string => Boolean(m)),
+      ...liveConfig.models.targets,
+      liveConfig.models.judge,
+      ...(liveConfig.judges ?? []).map((j) => j.model).filter((m): m is string => Boolean(m)),
     ]),
   ];
   const values = rubric.map((level) => level.value);
