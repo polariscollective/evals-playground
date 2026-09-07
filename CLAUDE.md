@@ -67,5 +67,5 @@ scripts/dev.sh          # backend et front ensemble
 pytest                  # le moteur
 ```
 
-Le `.env` porte les clés des trois fournisseurs, celles de Supabase, et le
+Le `.env` porte les clés des quatre fournisseurs, celles de Supabase, et le
 secret du déclencheur. `.env.example` en donne la liste, valeurs vides.

@@ -8,7 +8,7 @@ sait remplacer des variables d'environnement au lancement, pas des arguments.
     EVAL_RUN_ID     le run à exécuter, déjà écrit en base avec ses échantillons
     EVAL_JOB_MODE   `run` (défaut) ou `catchup`
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-    ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY
+    ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GEMINI_API_KEY
 
 Le job n'invente rien : la matrice existe déjà en base, une ligne par case, en
 `pending`. Il ne fait que les remplir. Depuis les juges multiples, c'est vrai
