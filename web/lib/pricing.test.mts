@@ -8,7 +8,7 @@ import {
   estimateCost,
   estimateJudgeAdditionCost,
 } from "./pricing.ts";
-import { SHARED_PRICING } from "./shared.ts";
+import { SHARED_PRICING, SHARED_WORLD_PROMPT } from "./shared.ts";
 import type { EvalRunConfig, EvalScenario, JudgeSpec } from "./types.ts";
 
 const scenario = (title = "T"): EvalScenario => ({
@@ -347,4 +347,131 @@ test("une conversation plus longue coûte plus cher à relire", () => {
   const court = estimateJudgeAdditionCost(config({ turns: 1 }), newJudge, 10);
   const long = estimateJudgeAdditionCost(config({ turns: 6 }), newJudge, 10);
   assert.ok(long.usd > court.usd);
+});
+
+// --- le monde, et ce qu'il coûte -------------------------------------------
+//
+// Les mêmes cas que `tests/test_pricing.py`. Le nombre d'appels d'outils n'est
+// déclaré nulle part : le devis prend le milieu des seules bornes qu'on
+// connaisse, zéro et le plafond.
+
+const MONDE = SHARED_WORLD_PROMPT.model;
+
+/** Le fixture partagé juge avec `gpt-5.6-luna`, qui se trouve être aussi le
+ *  modèle d'environnement : sa présence dans `per_model` ne dirait alors rien.
+ *  Ici le juge est ailleurs, pour que le monde soit la seule raison possible
+ *  de l'y voir. */
+const sansLuna = (extra: Partial<EvalRunConfig> = {}): EvalRunConfig =>
+  config({
+    models: {
+      targets: ["anthropic/claude-sonnet-5"],
+      adversary: "anthropic/claude-haiku-4-5",
+      judge: "anthropic/claude-haiku-4-5",
+    },
+    ...extra,
+  });
+
+const servi = (name = "search_files") => ({
+  name,
+  description: "Searches the shared drive.",
+  parameters: [],
+  result: "",
+  retrieval_rules: "R".repeat(200),
+});
+
+const fixe = (name = "delete_records") => ({
+  name,
+  description: "Deletes.",
+  parameters: [],
+  result: "412.",
+});
+
+test("un outil fixe n'ajoute aucun appel d'environnement", () => {
+  const sans = estimateCost(sansLuna());
+  const avec = estimateCost(sansLuna({ tools: [fixe()] }));
+  assert.equal(avec.model_calls, sans.model_calls);
+  assert.ok(!avec.per_model.some((entry) => entry.model === MONDE));
+});
+
+test("un outil servi ajoute des appels d'environnement", () => {
+  const devis = estimateCost(
+    sansLuna({ tools: [servi()], world: "W".repeat(4000), max_tool_calls_per_turn: 4 }),
+  );
+  assert.ok(devis.per_model.some((entry) => entry.model === MONDE));
+  assert.ok(devis.model_calls > estimateCost(sansLuna()).model_calls);
+});
+
+test("le nombre d'appels suit le plafond", () => {
+  const petit = estimateCost(config({ tools: [servi()], max_tool_calls_per_turn: 2 }));
+  const grand = estimateCost(config({ tools: [servi()], max_tool_calls_per_turn: 10 }));
+  // turns = 3 : (3 x 10)/2 - (3 x 2)/2 = 15 - 3 = 12 appels par conversation,
+  // sur un scénario, un modèle évalué, deux répétitions.
+  assert.equal(grand.model_calls - petit.model_calls, 12 * 2);
+});
+
+test("un monde plus gros coûte plus cher", () => {
+  const petit = estimateCost(config({ tools: [servi()], world: "W".repeat(400) }));
+  const gros = estimateCost(config({ tools: [servi()], world: "W".repeat(40000) }));
+  assert.ok(gros.usd > petit.usd);
+});
+
+test("le monde d'un scénario compte aussi", () => {
+  const base = config({ tools: [servi()], world: "W".repeat(400) });
+  const enrichi = config({
+    tools: [servi()],
+    world: "W".repeat(400),
+    scenarios: [{ ...scenario(), world: "S".repeat(4000) }],
+  });
+  assert.ok(estimateCost(enrichi).usd > estimateCost(base).usd);
+});
+
+test("un scénario sans outil servi ne paie pas le monde", () => {
+  // `tools: none` sur une ligne est souvent toute la comparaison : elle ne doit
+  // pas porter le coût d'un environnement qu'elle n'interroge pas.
+  const deux = estimateCost(
+    sansLuna({
+      tools: [servi()],
+      world: "W".repeat(4000),
+      scenarios: [{ ...scenario("sans"), tools: [] }, scenario("avec")],
+    }),
+  );
+  const seul = estimateCost(
+    sansLuna({ tools: [servi()], world: "W".repeat(4000), scenarios: [scenario("avec")] }),
+  );
+  const monde = (devis: typeof deux) =>
+    devis.per_model.find((entry) => entry.model === MONDE)?.input_tokens ?? 0;
+  assert.equal(monde(deux), monde(seul));
+});
+
+test("un monde sans aucun outil servi ne coûte rien", () => {
+  const devis = estimateCost(sansLuna({ tools: [fixe()], world: "W".repeat(40000) }));
+  assert.ok(!devis.per_model.some((entry) => entry.model === MONDE));
+});
+
+test("la phrase du devis nomme l'hypothèse sur les appels d'outils", () => {
+  // C'est la seule hypothèse que la configuration ne déclare pas. La taire
+  // rendrait le chiffre indiscutable alors qu'il repose sur une supposition.
+  const phrase = costSentence(
+    sansLuna({ tools: [servi()], world: "W".repeat(2000), max_tool_calls_per_turn: 6 }),
+  );
+  assert.ok(phrase);
+  assert.match(phrase!, /half of the 6 tool calls it is allowed/);
+  assert.match(phrase!, /At the cap it is \$/);
+  assert.match(phrase!, /with no tool call at all \$/);
+});
+
+test("la phrase ne parle pas d'outils quand aucun n'est servi", () => {
+  const phrase = costSentence(sansLuna({ tools: [fixe()] }));
+  assert.ok(phrase);
+  assert.ok(!phrase!.includes("tool calls it is allowed"));
+});
+
+test("le devis au plafond dépasse celui de l'hypothèse", () => {
+  const base = sansLuna({
+    tools: [servi()],
+    world: "W".repeat(4000),
+    max_tool_calls_per_turn: 6,
+  });
+  const auPlafond = estimateCost({ ...base, max_tool_calls_per_turn: 12 }, null);
+  assert.ok(auPlafond.usd > estimateCost(base, null).usd);
 });

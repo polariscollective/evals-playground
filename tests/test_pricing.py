@@ -6,6 +6,7 @@ from playground.eval_schemas import (
     EvalScenario,
     RubricLevel,
 )
+from playground.world import WORLD_MODEL
 from playground.pricing import (
     DEFAULT_RESPONSE_TOKENS,
     LengthAssumption,
@@ -341,3 +342,84 @@ def test_les_bornes_ne_bougent_pas_avec_l_hypothese():
     assert basse.min_usd == haute.min_usd
     assert basse.max_usd == haute.max_usd
     assert basse.min_usd <= basse.usd
+
+
+# --- le monde, et ce qu'il coûte -----------------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le nombre
+# d'appels d'outils n'est déclaré nulle part : le devis prend le milieu des
+# seules bornes qu'on connaisse, zéro et le plafond.
+
+
+def _servi(name="search_files"):
+    return {
+        "name": name,
+        "description": "Searches the shared drive.",
+        "retrieval_rules": "R" * 200,
+    }
+
+
+def _fixe(name="delete_records"):
+    return {"name": name, "description": "Deletes.", "result": "412."}
+
+
+def test_un_outil_fixe_n_ajoute_aucun_appel():
+    """La moitié de l'intérêt du défaut : il ne coûte rien."""
+    sans = estimate_tokens(_config())
+    avec = estimate_tokens(_config(tools=[_fixe()]))
+    assert avec.model_calls == sans.model_calls
+    assert WORLD_MODEL not in avec.per_model
+
+
+def test_un_outil_servi_ajoute_des_appels_d_environnement():
+    estimate = estimate_tokens(
+        _config(tools=[_servi()], world="W" * 4000, max_tool_calls_per_turn=4)
+    )
+    # 1 conversation : 1 appel cible + 1 juge, plus 1 tour x 4/2 appels servis.
+    assert estimate.model_calls == 2 + 2
+    assert WORLD_MODEL in estimate.per_model
+
+
+def test_le_nombre_d_appels_suit_le_plafond():
+    """Le milieu de zéro et du plafond : la seule hypothèse qu'on puisse
+    défendre sans inventer un chiffre."""
+    petit = estimate_tokens(_config(tools=[_servi()], max_tool_calls_per_turn=2))
+    grand = estimate_tokens(_config(tools=[_servi()], max_tool_calls_per_turn=10))
+    assert grand.model_calls - petit.model_calls == 5 - 1
+
+
+def test_le_monde_est_compte_dans_chaque_appel():
+    """Il repart en entier à chaque fois : c'est ce qui domine la facture d'un
+    gros monde, et l'oublier sous-estimerait tout le run."""
+    petit = estimate_tokens(_config(tools=[_servi()], world="W" * 400))
+    gros = estimate_tokens(_config(tools=[_servi()], world="W" * 40_000))
+    assert gros.per_model[WORLD_MODEL].input > petit.per_model[WORLD_MODEL].input
+
+
+def test_le_monde_d_un_scenario_compte_aussi():
+    base = _config(tools=[_servi()], world="W" * 400)
+    scenario_avec = _scenario()
+    scenario_avec.world = "S" * 4000
+    enrichi = _config(tools=[_servi()], world="W" * 400, scenarios=[scenario_avec])
+    assert (
+        estimate_tokens(enrichi).per_model[WORLD_MODEL].input
+        > estimate_tokens(base).per_model[WORLD_MODEL].input
+    )
+
+
+def test_un_scenario_sans_outil_servi_ne_paie_pas_le_monde():
+    """`tools: none` sur une ligne est souvent toute la comparaison : elle ne
+    doit pas porter le coût d'un environnement qu'elle n'interroge pas."""
+    sans = _scenario("sans")
+    sans.tools = []
+    avec = _scenario("avec")
+    estimate = estimate_tokens(
+        _config(tools=[_servi()], world="W" * 4000, scenarios=[sans, avec])
+    )
+    seul = estimate_tokens(_config(tools=[_servi()], world="W" * 4000, scenarios=[avec]))
+    assert estimate.per_model[WORLD_MODEL].input == seul.per_model[WORLD_MODEL].input
+
+
+def test_un_monde_sans_outil_servi_ne_coute_rien():
+    estimate = estimate_tokens(_config(tools=[_fixe()], world="W" * 40_000))
+    assert WORLD_MODEL not in estimate.per_model

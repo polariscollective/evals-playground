@@ -481,9 +481,25 @@ Le devis annonce donc un chiffre central à **la moitié de
 document costs $6.53 at 200 output tokens and $130.42 at 6,000 »*). Un chiffre
 inventé sans le dire serait pire qu'une fourchette.
 
-Le monde est un texte fixe en tête de chaque appel : il est mis en cache par le
-fournisseur, à `cache_read_multiplier`. C'est le cas idéal, et le devis doit le
-compter ainsi plutôt qu'au plein tarif d'entrée.
+**Le monde n'est pas compté au tarif du cache**, alors qu'il est bien un texte
+fixe en tête de chaque appel et que le fournisseur le mettra vraisemblablement
+en cache. La conception disait l'inverse ; l'implémentation a tranché autrement,
+pour deux raisons.
+
+La remise n'est garantie par personne : elle dépend du fournisseur, de la
+longueur du préfixe, de l'écart entre deux appels. Un devis qui la suppose
+sous-estime chaque fois qu'elle ne joue pas — et c'est sur ce chiffre que se
+prend la décision de lancer. Le fichier le dit déjà pour les longueurs de
+réponse : *une borne haute que le réel dépasse est pire qu'une fourchette
+large*.
+
+Et `actual_cost` lit les vrais compteurs de cache rapportés par inspect : le
+coût **constaté** reste juste. Seule la prévision est prudente, ce qui est le
+bon sens de l'erreur.
+
+`ModelTokens` n'a du reste pas de champ pour l'entrée mise en cache, et lui en
+ajouter un ferait remonter la distinction jusqu'à l'affichage pour une finesse
+que rien ne réclame.
 
 ### La validation
 

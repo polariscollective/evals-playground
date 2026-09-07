@@ -10,6 +10,7 @@ import {
   SHARED_AWARENESS_PROMPT as W,
   SHARED_JUDGE_PROMPT as J,
   SHARED_PRICING as S,
+  SHARED_WORLD_PROMPT as M,
 } from "./shared.ts";
 import { toolsFor } from "./tools.ts";
 import type {
@@ -110,6 +111,30 @@ function fixedTokens(text: string, ...placeholders: string[]): number {
  *
  * Mesuré sur les gabarits plutôt qu'écrit en dur : une reformulation du prompt
  * se répercute alors sur le devis toute seule. */
+/** Ce que l'environnement reçoit en plus du monde, à chaque appel servi.
+ *
+ * Mesuré sur les gabarits, comme pour le juge et l'adversaire : une
+ * reformulation du prompt se répercute sur le devis toute seule. */
+const WORLD_OVERHEAD_TOKENS = fixedTokens(
+  M.system + M.world_block + M.scenario_block + M.call_block + M.rules_block,
+  "{world}",
+  "{scenario_world}",
+  "{tool}",
+  "{arguments}",
+  "{rules}",
+);
+
+/** Combien d'appels d'outils servis une conversation fait, en gros.
+ *
+ * **Le milieu de zéro et du plafond**, et c'est la seule hypothèse défendable :
+ * aucune configuration ne déclare combien de fois un modèle appellera ses
+ * outils, et les deux seules bornes connues sont « jamais » et
+ * `max_tool_calls_per_turn` à chaque tour. Un choix assumé, que la phrase du
+ * devis nomme plutôt que de le taire. */
+export function servedCallsPerConversation(config: EvalRunConfig): number {
+  return Math.floor((config.turns * (config.max_tool_calls_per_turn ?? 5)) / 2);
+}
+
 const JUDGE_OVERHEAD_TOKENS =
   fixedTokens(J.system) +
   fixedTokens(
@@ -194,6 +219,16 @@ export function estimateTokens(
     })),
   ];
 
+  // Le monde repart en entier à chaque appel d'environnement. Il n'est pas
+  // compté au tarif du cache, alors que le fournisseur le mettra
+  // vraisemblablement en cache : la remise n'est garantie par personne — elle
+  // dépend du fournisseur, de la longueur du préfixe et de l'écart entre deux
+  // appels — et un devis qui la suppose sous-estime chaque fois qu'elle ne
+  // joue pas. Or c'est sur ce chiffre que se prend la décision de lancer.
+  const worldTokens = tokens(config.world ?? "");
+  const servedCalls = servedCallsPerConversation(config);
+  let servedConversations = 0;
+
   config.scenarios.forEach((scenario, index) => {
     const system = tokens(scenario.system_prompt);
     const opening = tokens(scenario.opening_message);
@@ -277,6 +312,33 @@ export function estimateTokens(
           S.judge_response_tokens,
         );
       }
+      // Un scénario qui n'offre aucun outil servi ne paie pas l'environnement.
+      // `tools: none` sur une ligne est souvent toute la comparaison qu'on
+      // cherche : elle ne doit pas porter le coût d'un monde qu'elle
+      // n'interroge jamais.
+      const servis = toolsFor(config, scenario).filter(
+        (tool) => (tool.retrieval_rules ?? "") !== "",
+      );
+      if (servis.length > 0 && servedCalls > 0) {
+        servedConversations += weight;
+        const monde =
+          worldTokens +
+          tokens(scenario.world ?? "") +
+          WORLD_OVERHEAD_TOKENS +
+          // Les règles de lecture de l'outil appelé. On ne sait pas lequel : la
+          // moyenne des outils servis de ce scénario est la seule valeur qui
+          // n'en privilégie aucun.
+          Math.floor(
+            servis.reduce((sum, tool) => sum + tokens(tool.retrieval_rules ?? ""), 0) /
+              servis.length,
+          );
+        add(
+          M.model,
+          monde * servedCalls * weight,
+          S.world_response_tokens * servedCalls * weight,
+          S.world_response_tokens,
+        );
+      }
       // Le juge d'éveil relit la même conversation, avec son propre gabarit à
       // la place de la question et de l'échelle de l'utilisateur — toujours
       // au modèle du run, jamais personnalisable : voir `judgesForLaunch`.
@@ -320,7 +382,8 @@ export function estimateTokens(
 
   return {
     conversations,
-    modelCalls: conversations * callsPerConversation,
+    modelCalls:
+      conversations * callsPerConversation + servedConversations * servedCalls,
     perModel,
   };
 }
@@ -600,10 +663,44 @@ export function costSentence(config: EvalRunConfig): string | null {
     ` ${money(estimate.min_usd)} at ${S.short_response_tokens.toLocaleString()}` +
     ` output tokens per turn and ${money(estimate.max_usd)} at` +
     ` ${S.long_response_tokens.toLocaleString()}.` +
+    // L'hypothèse du nombre d'appels d'outils est nommée, jamais tue. Elle
+    // n'est pas déclarée par la configuration, contrairement à toutes les
+    // autres, et un chiffre dont on ignore qu'il repose sur une supposition
+    // est pire qu'une fourchette — c'est déjà la règle qu'applique la phrase
+    // sur la longueur de réponse, juste au-dessus.
+    servedCallsSentence(config, estimate.usd) +
     (estimate.unpriced_models.length
       ? ` No price on file for ${estimate.unpriced_models.join(", ")}:` +
         " the real cost is higher."
       : "")
+  );
+}
+
+/** Ce que le devis suppose sur les appels d'outils, et ce qu'il coûterait au
+ *  plafond — vide quand aucun outil n'est servi.
+ *
+ * Un run sans outil servi ne doit pas lire une hypothèse sur des appels qu'il
+ * ne fera jamais.
+ *
+ * Le chiffre haut est obtenu en doublant le plafond plutôt qu'en isolant la
+ * part de l'environnement dans `per_model` : le modèle d'environnement peut
+ * être aussi celui du juge, auquel cas les deux volumes sont additionnés sur
+ * la même entrée et ne se séparent plus. Doubler le plafond double exactement
+ * le nombre d'appels servis et ne touche à rien d'autre — c'est la seule
+ * chose dont `max_tool_calls_per_turn` décide dans le devis. */
+function servedCallsSentence(config: EvalRunConfig, usd: number): string {
+  const servis = (config.tools ?? []).some(
+    (tool) => (tool.retrieval_rules ?? "") !== "",
+  );
+  const cap = config.max_tool_calls_per_turn ?? 5;
+  if (!servis || servedCallsPerConversation(config) === 0) return "";
+  const auPlafond = estimateCost({ ...config, max_tool_calls_per_turn: cap * 2 }, null);
+  return (
+    ` That assumes each turn makes half of the ${cap} tool calls it is allowed —` +
+    ` nothing declares how many it will really make. At the cap it is` +
+    ` ${money(auPlafond.usd)}, and with no tool call at all ${money(
+      estimateCost({ ...config, tools: [] }, null).usd,
+    )}.`
   );
 }
 
