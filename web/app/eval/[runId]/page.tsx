@@ -167,12 +167,16 @@ function AddJudgePanel({
 
   // Les favoris, plus les modèles du run : ceux-ci restent proposables même
   // s'ils ont quitté les favoris depuis, sans quoi on ne pourrait plus
-  // ajouter un juge tournant sur le même modèle que le principal.
+  // ajouter un juge tournant sur le même modèle que le principal. Les juges
+  // secondaires déjà posés en font partie aussi : chacun peut porter son
+  // propre modèle (absent, il suit celui du run, déjà dans l'ensemble) —
+  // même raison que `chosen` dans `app/page.tsx` (commit 1a991da).
   const models = [
     ...new Set([
       ...providers.flatMap((p) => p.models.filter((m) => m.favorite).map((m) => m.id)),
       ...config.models.targets,
       config.models.judge,
+      ...(config.judges ?? []).map((j) => j.model).filter((m): m is string => Boolean(m)),
     ]),
   ];
   const values = rubric.map((level) => level.value);
