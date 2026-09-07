@@ -111,6 +111,16 @@ function fixedTokens(text: string, ...placeholders: string[]): number {
  *
  * Mesuré sur les gabarits plutôt qu'écrit en dur : une reformulation du prompt
  * se répercute alors sur le devis toute seule. */
+const JUDGE_OVERHEAD_TOKENS =
+  fixedTokens(J.system) +
+  fixedTokens(
+    J.user_template,
+    "{criterion}",
+    "{transcript}",
+    "{rubric}",
+    "{values}",
+  );
+
 /** Ce que l'environnement reçoit en plus du monde, à chaque appel servi.
  *
  * Mesuré sur les gabarits, comme pour le juge et l'adversaire : une
@@ -134,16 +144,6 @@ const WORLD_OVERHEAD_TOKENS = fixedTokens(
 export function servedCallsPerConversation(config: EvalRunConfig): number {
   return Math.floor((config.turns * (config.max_tool_calls_per_turn ?? 5)) / 2);
 }
-
-const JUDGE_OVERHEAD_TOKENS =
-  fixedTokens(J.system) +
-  fixedTokens(
-    J.user_template,
-    "{criterion}",
-    "{transcript}",
-    "{rubric}",
-    "{values}",
-  );
 
 /** Ce que l'adversaire reçoit en plus de son objectif. La consigne de
  * confidentialité y figure **deux fois**, avant et après l'objectif — d'où le
@@ -668,7 +668,7 @@ export function costSentence(config: EvalRunConfig): string | null {
     // autres, et un chiffre dont on ignore qu'il repose sur une supposition
     // est pire qu'une fourchette — c'est déjà la règle qu'applique la phrase
     // sur la longueur de réponse, juste au-dessus.
-    servedCallsSentence(config, estimate.usd) +
+    servedCallsSentence(config) +
     (estimate.unpriced_models.length
       ? ` No price on file for ${estimate.unpriced_models.join(", ")}:` +
         " the real cost is higher."
@@ -688,7 +688,7 @@ export function costSentence(config: EvalRunConfig): string | null {
  * la même entrée et ne se séparent plus. Doubler le plafond double exactement
  * le nombre d'appels servis et ne touche à rien d'autre — c'est la seule
  * chose dont `max_tool_calls_per_turn` décide dans le devis. */
-function servedCallsSentence(config: EvalRunConfig, usd: number): string {
+function servedCallsSentence(config: EvalRunConfig): string {
   const servis = (config.tools ?? []).some(
     (tool) => (tool.retrieval_rules ?? "") !== "",
   );

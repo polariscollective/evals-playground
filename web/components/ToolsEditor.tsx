@@ -2,14 +2,21 @@
 
 // Les outils d'un run : ce que le modèle évalué peut décider d'appeler.
 //
-// Rien n'est jamais exécuté. Un outil existe, le modèle l'appelle ou non, et
-// l'appel rend le `result` écrit ici — la même chaîne à chaque fois. Faire
-// improviser la réponse par un autre modèle ferait voir autre chose à chaque
-// répétition, et deux cases cesseraient de mesurer la même chose.
+// Rien n'est jamais exécuté. Un outil répond de l'une de deux façons, et la
+// présence de `retrieval_rules` décide laquelle : vide, l'appel rend le
+// `result` écrit ici — la même chaîne à chaque fois, sans qu'aucun modèle ne
+// soit appelé ; renseigné, l'outil est servi depuis le monde du run par un
+// petit modèle, et sa réponse dépend des arguments reçus.
+//
+// Le fixe reste le défaut, et il faut le tenir : il ne coûte pas un appel et ne
+// varie pas. Servir n'a de sens que lorsque la sortie dépend légitimement de
+// l'entrée — une recherche qui rendrait une liste sans rapport avec ce qu'on a
+// cherché est ce qu'aucun vrai système ne fait, et c'est un tell.
 //
 // Au niveau du run parce qu'un outil décrit un monde, pas une situation : les
 // scénarios d'une même matrice partagent le décor et se distinguent par ce
-// qu'on y demande.
+// qu'on y demande. Voir
+// docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
 import type { ToolParam, ToolParamType, ToolSpec } from "@/lib/types";
 
 const TYPES: ToolParamType[] = ["string", "number", "integer", "boolean"];
@@ -156,19 +163,44 @@ export function ToolsEditor({
             </button>
           </div>
 
-          <label className="block space-y-1">
-            <span className="text-xs text-zinc-500">
-              {/* Fixe, et c'est le choix : voir la tête du fichier. */}
-              Result — returned on every call, always the same
-            </span>
-            <textarea
-              value={tool.result}
-              rows={2}
-              onChange={(e) => replace(index, { ...tool, result: e.target.value })}
-              placeholder="412 records deleted."
-              className={FIELD}
-            />
-          </label>
+          {/* Les deux formes s'excluent, et l'écran le montre plutôt que de
+              laisser écrire les deux puis refuser au lancement : le champ
+              inutile disparaît dès que l'autre porte du texte. */}
+          {!tool.retrieval_rules && (
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">
+                Result — returned on every call, always the same
+              </span>
+              <textarea
+                value={tool.result}
+                rows={2}
+                onChange={(e) => replace(index, { ...tool, result: e.target.value })}
+                placeholder="412 records deleted."
+                className={FIELD}
+              />
+            </label>
+          )}
+
+          {!tool.result && (
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">
+                Or: how this tool reads the world — leave empty for a fixed
+                result
+              </span>
+              <textarea
+                value={tool.retrieval_rules ?? ""}
+                rows={2}
+                onChange={(e) =>
+                  replace(index, { ...tool, retrieval_rules: e.target.value })
+                }
+                placeholder={
+                  "Return at most twenty lines, most recent first.\n" +
+                  "No match: an empty list, not a sentence."
+                }
+                className={FIELD}
+              />
+            </label>
+          )}
         </div>
       ))}
 
@@ -180,8 +212,9 @@ export function ToolsEditor({
           Add a tool
         </button>
         <span className="text-xs text-zinc-500">
-          Nothing is executed. A call returns the result you wrote, every time —
-          so every repetition sees the same thing.
+          Nothing is executed. A fixed result is returned every time, so every
+          repetition sees the same thing. Give a tool reading rules instead only
+          when its answer has to depend on what it was asked.
         </span>
       </div>
     </div>
