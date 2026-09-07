@@ -3,11 +3,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_FAVORITE_MODELS,
+  DEFAULT_RUN_MODEL,
   favoriteModels,
   favoritesProblem,
   notFavouriteProblem,
 } from "./favorite-models.ts";
 import { knownModelIds } from "./catalog.ts";
+
+test("le modèle d'ouverture existe, et est un favori par défaut", () => {
+  // Les deux moitiés comptent. S'il quittait le catalogue, la page de run
+  // s'ouvrirait sur un identifiant que rien ne sait lancer ; s'il quittait
+  // les favoris par défaut, elle s'ouvrirait sur un modèle que sa propre
+  // liste n'affiche pas — la faute que le repli existe pour rattraper, mais
+  // qu'on ne veut pas déclencher à chaque page vierge.
+  assert.ok(knownModelIds().has(DEFAULT_RUN_MODEL));
+  assert.ok(DEFAULT_FAVORITE_MODELS.includes(DEFAULT_RUN_MODEL));
+});
 
 test("le défaut ne nomme que des modèles du catalogue", () => {
   // Un défaut qui nomme un modèle disparu viderait les menus de tous ceux

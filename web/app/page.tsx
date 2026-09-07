@@ -40,6 +40,7 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { PromptGuide } from "@/components/PromptGuide";
 import { configProblem } from "@/lib/validate";
+import { DEFAULT_RUN_MODEL } from "@/lib/favorite-models";
 import { withLiveJudges } from "@/lib/live-config";
 import { SHARED_PRICING } from "@/lib/shared";
 import { RubricEditor } from "@/components/RubricEditor";
@@ -225,17 +226,24 @@ function EvaluateForm() {
         // Un relaunch apporte ses propres modèles : les défauts du catalogue
         // les écraseraient selon l'ordre d'arrivée des deux requêtes.
         if (available && !relaunchOf) {
-          // Le premier favori parmi les fournisseurs dont la clé est
-          // présente : préremplir un modèle que le catalogue filtré
-          // n'affichera pas serait la même faute que celle réparée plus bas,
-          // juste un cran plus tôt. Seule l'absence totale de favori
-          // disponible retombe sur le premier modèle du premier fournisseur,
-          // pour ne jamais laisser les trois champs vides.
-          const firstFavorite = catalog
+          // Le défaut est nommé (`DEFAULT_RUN_MODEL`), pas déduit d'un ordre :
+          // tant qu'il l'était, élargir ou réordonner le catalogue déplaçait
+          // l'ouverture d'une page vierge — et le devis avec.
+          //
+          // Les deux replis servent le cas où ce modèle-là n'est pas offert à
+          // cette personne : elle l'a retiré de ses favoris, ou la clé de son
+          // fournisseur manque. On prend alors son premier favori disponible,
+          // puis, s'il n'en reste aucun, le premier modèle venu — préremplir
+          // un modèle que le catalogue filtré n'affichera pas serait la même
+          // faute que celle réparée plus bas, mais laisser les trois champs
+          // vides serait pire.
+          const offered = catalog
             .filter((p) => p.key_present)
-            .flatMap((p) => p.models)
-            .find((m) => m.favorite);
-          const preselected = firstFavorite?.id ?? available.models[0].id;
+            .flatMap((p) => p.models);
+          const preselected =
+            offered.find((m) => m.id === DEFAULT_RUN_MODEL && m.favorite)?.id ??
+            offered.find((m) => m.favorite)?.id ??
+            available.models[0].id;
           setTargets([preselected]);
           setAdversary(preselected);
           setJudge(preselected);

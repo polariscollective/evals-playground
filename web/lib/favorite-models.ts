@@ -15,6 +15,20 @@
 // contourné.
 import { knownModelIds } from "./catalog.ts";
 
+/** Le modèle sur lequel une page de run vierge s'ouvre.
+ *
+ * Nommé, et non déduit du premier de la liste : tant qu'il était déduit, un
+ * réordonnancement du catalogue déplaçait le défaut sans que personne le
+ * demande — l'élargissement à quarante et un modèles a ainsi fait passer
+ * l'ouverture d'Opus 5 à Fable 5.1, et doublé le devis d'une page vierge en
+ * silence. Un nom résiste à l'ordre.
+ *
+ * Sonnet 5 : le dernier Sonnet, et le moins cher des trois du catalogue. Il
+ * ignore la température, comme tout Claude 4.7 et au-delà — donc une page
+ * vierge affiche l'avertissement. C'est vrai, et le dire vaut mieux que de
+ * choisir un modèle plus ancien pour l'éviter. */
+export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5";
+
 /** Ce qu'on propose à qui n'a rien choisi.
  *
  * Les neuf modèles que le produit proposait quand le catalogue était écrit à
