@@ -32,7 +32,9 @@ import type { JudgeForConfig } from "@/lib/live-config";
 import { measureRun } from "@/lib/measured-length";
 import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
+import { servesTools } from "@/lib/tools";
 import { MAX_TURNS } from "@/lib/validate";
+import { extendWorldWarnings } from "@/lib/world-warnings";
 import type {
   CostEstimate,
   EvalRun,
@@ -232,6 +234,10 @@ export function ExtendPanel({
   const [forExisting, setForExisting] = useState<boolean | null>(
     proposal?.new_tools_for_existing ?? null,
   );
+  // Le modèle qui sert les outils que cette extension ajoute, quand le run
+  // n'en a pas encore un. Jamais présélectionné, comme sur la page de
+  // composition — voir `EvalModels.world`.
+  const [worldModel, setWorldModel] = useState<string>(proposal?.world ?? "");
   // La profondeur voulue. Jamais sous celle du run — une conversation déjà
   // jouée ne se coupe pas — et jamais au-delà de `MAX_TURNS`.
   // Borné dès l'ouverture, comme il l'est à chaque frappe : un brouillon écrit
@@ -256,6 +262,18 @@ export function ExtendPanel({
   // Les scénarios qui n'ont jamais nommé leurs outils : eux seuls sont
   // concernés par la question, les autres ayant déjà leur liste écrite.
   const aHériter = config.scenarios.filter((scenario) => scenario.tools == null);
+
+  // Le run a-t-il déjà un modèle qui sert ? Nommé une fois — repris plus bas
+  // pour décider si le champ a une raison d'exister, et si la demande doit
+  // porter `world`.
+  const hasWorldModel = Boolean(config.models.world?.trim());
+  // Le seul cas où il y a quelque chose à demander : le run n'a personne pour
+  // servir, et cette extension en donnerait quelque chose à servir.
+  const needsWorldModel = !hasWorldModel && servesTools(newTools);
+  const worldModelWarnings = extendWorldWarnings(
+    { new_tools: newTools, new_tools_for_existing: forExisting ?? undefined },
+    config,
+  );
 
   const toggle = <T,>(list: T[], value: T): T[] =>
     list.includes(value)
@@ -386,6 +404,10 @@ export function ExtendPanel({
             ...(forExisting !== null
               ? { new_tools_for_existing: forExisting }
               : {}),
+            // Seulement quand il y a quelque chose à nommer : un run qui sert
+            // déjà impose silencieusement son modèle (`extendRun`), et lui en
+            // envoyer un autre serait refusé pour rien.
+            ...(needsWorldModel ? { world: worldModel } : {}),
           }
         : {}),
       // Absent laisse la profondeur telle quelle : envoyer la valeur de
@@ -1020,6 +1042,49 @@ export function ExtendPanel({
           <div className="mt-2 space-y-3">
             <ToolsEditor tools={newTools} onChange={setNewTools} />
 
+            {/* Le seul cas où il y a quelque chose à demander : le run n'a
+                personne pour servir, et cette extension lui en donne
+                besoin — voir `needsWorldModel`. Un run qui sert déjà impose
+                silencieusement son modèle (`extendProblem`), donc rien à
+                choisir ici dans ce cas. */}
+            {needsWorldModel && (
+              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
+                <label className="block text-xs">
+                  <span className="font-medium text-amber-900">
+                    World model — this run has none yet, and this extension
+                    would need one to answer the calls it adds.
+                  </span>
+                  <select
+                    className={`${FIELD} mt-1 cursor-pointer`}
+                    value={worldModel}
+                    onChange={(e) => setWorldModel(e.target.value)}
+                  >
+                    <option value="">
+                      Pick the model that serves your tools…
+                    </option>
+                    {catalog.flatMap((provider) =>
+                      provider.models
+                        .filter((model) => model.favorite)
+                        .map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {provider.label} — {model.label}
+                          </option>
+                        )),
+                    )}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {worldModelWarnings.map((warning, i) => (
+              <p
+                key={i}
+                className="rounded border border-amber-300 bg-amber-50 p-3 text-xs font-medium text-amber-900"
+              >
+                {warning}
+              </p>
+            ))}
+
             {newTools.length > 0 && aHériter.length > 0 && (
               <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
                 <p className="font-medium text-amber-900">
@@ -1119,7 +1184,10 @@ export function ExtendPanel({
               // que ses anciens scénarios reverront.
               (newTools.length > 0 &&
                 aHériter.length > 0 &&
-                forExisting === null)
+                forExisting === null) ||
+              // Un outil servi sans personne pour le servir ne mènerait qu'à
+              // un refus sûr — `extendProblem` l'exige exactement dans ce cas.
+              (needsWorldModel && !worldModel)
             }
             className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700 disabled:cursor-default disabled:opacity-40"
           >

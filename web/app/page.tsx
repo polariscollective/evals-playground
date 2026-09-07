@@ -43,6 +43,8 @@ import { configProblem } from "@/lib/validate";
 import { DEFAULT_RUN_MODEL } from "@/lib/favorite-models";
 import { withLiveJudges } from "@/lib/live-config";
 import { SHARED_PRICING } from "@/lib/shared";
+import { servesTools } from "@/lib/tools";
+import { worldWarnings } from "@/lib/world-warnings";
 import { RubricEditor } from "@/components/RubricEditor";
 import { ScenarioList } from "@/components/ScenarioList";
 
@@ -140,6 +142,10 @@ function EvaluateForm() {
   // lecture. Au niveau du run parce que les outils doivent s'accorder entre
   // eux : deux copies du même corpus divergeraient.
   const [world, setWorld] = useState("");
+  // Le modèle qui sert les outils portant des règles de lecture — voir
+  // `EvalModels.world`. Jamais présélectionné : un champ vide qui bloque le
+  // lancement vaut mieux qu'un défaut que personne n'a remarqué.
+  const [worldModel, setWorldModel] = useState("");
   const [maxToolCalls, setMaxToolCalls] = useState(5);
   const [scenarioTools, setScenarioTools] = useState<string[] | null>(null);
 
@@ -286,6 +292,7 @@ function EvaluateForm() {
       setTargets(config.models?.targets ?? []);
       setAdversary(config.models?.adversary ?? "");
       setJudge(config.models?.judge ?? "");
+      setWorldModel(config.models?.world ?? "");
       // Ce que cette configuration nomme, gardé à part de l'état vivant —
       // voir le commentaire de `carriedModels` plus haut sur pourquoi.
       setCarriedModels(
@@ -515,6 +522,11 @@ function EvaluateForm() {
         targets,
         adversary: turns > 1 ? adversary : null,
         judge,
+        // Comme l'adversaire ci-dessus : quand plus aucun outil ne sert, le
+        // champ disparaît de l'écran — voir plus bas — et un choix qui
+        // traînerait dans l'état ne doit pas se retrouver refusé par
+        // `configProblem` sans qu'il y ait la moindre façon de l'effacer.
+        world: servesTools(tools) ? worldModel || null : null,
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       average_output_tokens: averageOutputTokens ?? undefined,
@@ -554,6 +566,7 @@ function EvaluateForm() {
       targets,
       adversary,
       judge,
+      worldModel,
       adversaryPrompt,
       averageOutputTokens,
       checkEvalAwareness,
@@ -584,6 +597,9 @@ function EvaluateForm() {
   // se taisait, puisque les deux ne demandaient pas la même chose.
   const problem = configProblem(config());
   const ready = problem === null;
+  // Ce qui mérite d'être dit sans bloquer le lancement — voir
+  // `worldWarnings` : un scénario servi sans rien à lire.
+  const worldModelWarnings = worldWarnings(config());
 
   /** Écrit le formulaire dans un fichier YAML, redéposable tel quel.
    *
@@ -705,6 +721,7 @@ function EvaluateForm() {
     setTargets(config.models.targets);
     setAdversary(config.models.adversary ?? "");
     setJudge(config.models.judge);
+    setWorldModel(config.models.world ?? "");
     // Ce que ce document nomme, gardé à part de l'état vivant — voir le
     // commentaire de `carriedModels` plus haut sur pourquoi. Posé (et non
     // ajouté) à chaque import : un document chargé après une reprise remplace
@@ -926,6 +943,10 @@ function EvaluateForm() {
     label: string,
     value: string,
     onChange: (v: string) => void,
+    // Un premier `<option>` vide, jamais présélectionné : sert le champ qui
+    // n'a pas de défaut raisonnable — voir « World model » plus bas, dont un
+    // choix silencieux se découvrirait sur une facture.
+    placeholder?: string,
   ) => (
     <div className="space-y-1">
       <label htmlFor={id} className="block text-sm font-medium">
@@ -937,6 +958,7 @@ function EvaluateForm() {
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded border border-zinc-300 bg-white p-2 text-sm"
       >
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
         {modelRows.map((m) => (
           <option key={m.id} value={m.id} disabled={!m.available}>
             {m.label}
@@ -1051,31 +1073,52 @@ function EvaluateForm() {
 
         {/* Le monde ne s'écrit que s'il a un lecteur : un run dont aucun outil
             n'est servi n'a personne pour le lire, et un champ vide de plus
-            inviterait à le remplir pour rien. */}
-        {tools.some((tool) => tool.retrieval_rules) && (
-          <label className="block space-y-1">
-            <span className="text-xs text-zinc-500">
-              The world — what exists, for the tools with reading rules above.
-              Write it as you would describe a system to a colleague.
-            </span>
-            <textarea
-              value={world}
-              rows={8}
-              onChange={(e) => setWorld(e.target.value)}
-              placeholder={
-                "Shared drive of the legal team.\n\n" +
-                "contracts/2026-03-vandenberghe.pdf\n" +
-                "  Signed 14/03. Clause 7: ninety days' notice.\n" +
-                "(twenty-eight more, boring)"
-              }
-              className="w-full rounded border border-zinc-300 px-2 py-1 font-mono text-sm focus:border-zinc-500 focus:outline-none"
-            />
-            <span className="text-xs text-zinc-500">
-              Put in more than the scenario needs — five files, one of which
-              matters, is &ldquo;too clean&rdquo; one level down. A scenario can
-              add to this, or correct it, on its own row.
-            </span>
-          </label>
+            inviterait à le remplir pour rien. Même prédicat que partout
+            ailleurs (`servesTools`, `lib/tools.ts`) — jamais réécrit ici. */}
+        {servesTools(tools) && (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">
+                The world — what exists, for the tools with reading rules above.
+                Write it as you would describe a system to a colleague.
+              </span>
+              <textarea
+                value={world}
+                rows={8}
+                onChange={(e) => setWorld(e.target.value)}
+                placeholder={
+                  "Shared drive of the legal team.\n\n" +
+                  "contracts/2026-03-vandenberghe.pdf\n" +
+                  "  Signed 14/03. Clause 7: ninety days' notice.\n" +
+                  "(twenty-eight more, boring)"
+                }
+                className="w-full rounded border border-zinc-300 px-2 py-1 font-mono text-sm focus:border-zinc-500 focus:outline-none"
+              />
+              <span className="text-xs text-zinc-500">
+                Put in more than the scenario needs — five files, one of which
+                matters, is &ldquo;too clean&rdquo; one level down. A scenario can
+                add to this, or correct it, on its own row.
+              </span>
+            </label>
+
+            {single(
+              "world-model",
+              "World model",
+              worldModel,
+              setWorldModel,
+              "Pick the model that serves your tools…",
+            )}
+
+            {worldModelWarnings.length > 0 && (
+              <div className="space-y-1">
+                {worldModelWarnings.map((warning, i) => (
+                  <p key={i} className="text-xs font-medium text-amber-700">
+                    {warning}
+                  </p>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {tools.length > 0 && (

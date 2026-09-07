@@ -962,7 +962,7 @@ export function JudgeBlock({
       {servedPhrase && (
         <p
           className={
-            served.unfaithful > 0
+            served.unfaithful > 0 || served.couldNotCheck > 0
               ? "text-sm font-medium text-amber-700"
               : "text-sm text-zinc-500"
           }

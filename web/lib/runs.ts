@@ -448,7 +448,9 @@ export async function loadRun(
     tool_results: options.withToolResults
       ? await select<ToolResultRow>(TOOL_RESULTS, {
           run_id: `eq.${runId}`,
-          select: "scenario_index,tool_name,arguments,faithful,fault",
+          // `check_error` en plus depuis que le voyant distingue « jamais
+          // tenté » de « tenté sans aboutir » — voir `lib/served.ts`.
+          select: "scenario_index,tool_name,arguments,faithful,fault,check_error",
           order: "scenario_index.asc,tool_name.asc",
         })
       : undefined,
