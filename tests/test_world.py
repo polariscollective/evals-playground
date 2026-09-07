@@ -11,9 +11,10 @@ from inspect_ai.model import ModelOutput
 from playground.eval_schemas import ToolSpec
 from playground import world as world_module
 from playground.world import (
-    CHECK_MODEL,
+    CHECK_MODELS,
     arguments_key,
     check,
+    check_model_for,
     check_prompt,
     result_key,
     serve,
@@ -241,9 +242,19 @@ def test_un_defaut_sans_raison_en_reçoit_une():
     assert faute
 
 
-def test_le_controle_reste_intact_quand_le_serveur_devient_configurable():
-    """Cette tâche retire `WORLD_MODEL` et ne doit toucher à rien du côté du
-    contrôle — Task 5 s'en charge, en listant `check_models` et en choisissant
-    parmi eux un autre fournisseur que le serveur. En attendant, `CHECK_MODEL`
-    doit rester exactement ce qu'il était."""
-    assert CHECK_MODEL == "anthropic/claude-haiku-4-5"
+def test_le_controleur_est_d_un_autre_fournisseur_que_le_serveur():
+    """Le serveur est devenu un choix par run — `config.models.world` — et un
+    contrôleur fixe deviendrait creux sans le dire dès que ce choix tombe sur
+    sa propre famille. `check_model_for` retient donc, parmi `CHECK_MODELS`,
+    le premier dont le fournisseur diffère de celui du serveur."""
+    assert check_model_for("openai/gpt-5.6-luna") == "anthropic/claude-haiku-4-5"
+    assert check_model_for("anthropic/claude-haiku-4-5") == "openai/gpt-5.6-luna"
+    assert check_model_for("grok/grok-4.3") == "anthropic/claude-haiku-4-5"
+
+
+def test_la_liste_des_controleurs_couvre_au_moins_deux_fournisseurs():
+    """Sans ça, un serveur de la famille de l'unique candidat se ferait
+    contrôler par lui-même, et le contrôle validerait ses propres erreurs.
+    Ceci est une faute du fichier partagé, pas un cas d'exécution."""
+    fournisseurs = {modele.split("/")[0] for modele in CHECK_MODELS}
+    assert len(fournisseurs) >= 2

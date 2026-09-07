@@ -57,7 +57,7 @@ from playground.supabase_store import (
     write_tool_result,
     write_tool_verdict,
 )
-from playground.world import CHECK_MODEL, check, result_key, serve
+from playground.world import check, check_model_for, result_key, serve
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
@@ -156,7 +156,7 @@ def check_served_results(
     if not à_faire:
         return 0
 
-    modèle = get_model(CHECK_MODEL, **(model_args or {}))
+    modèle = get_model(check_model_for(config.models.world), **(model_args or {}))
     contrôlées = 0
     for ligne in à_faire:
         index = int(ligne["scenario_index"])

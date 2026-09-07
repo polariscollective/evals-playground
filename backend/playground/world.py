@@ -37,14 +37,37 @@ un mensonge que personne ne verrait. Le changer se fait dans
 
 WORLD_SYSTEM: str = _SHARED["system"]
 
-CHECK_MODEL: str = _SHARED["check_model"]
-"""Le modèle qui contrôle ce que l'environnement a rendu.
+CHECK_MODELS: list[str] = _SHARED["check_models"]
+"""Les candidats au contrôle de ce que l'environnement a rendu, dans l'ordre.
 
-**D'une autre famille que celui qui a servi**, et c'est tout l'intérêt : il ne
-corrige pas sa propre copie. Deux familles, donc deux façons de se tromper qui
-ne coïncident pas. Un contrôleur qui partagerait le biais du serveur validerait
+Le serveur (`config.models.world`) est un choix par run depuis Task 2 ; le
+contrôleur ne peut donc plus être une constante unique — un contrôleur fixe
+deviendrait creux, sans le dire, le jour où le serveur choisi partage sa
+famille. `check_model_for` retient le premier candidat d'un autre fournisseur
+que le serveur : deux familles, donc deux façons de se tromper qui ne
+coïncident pas. Un contrôleur qui partagerait le biais du serveur validerait
 exactement les erreurs qu'on cherche.
+
+Que la liste couvre au moins deux fournisseurs est une exigence sur ce
+fichier, pas un cas à gérer ici : `tests/test_world.py` le vérifie.
 """
+
+
+def check_model_for(world_model: str) -> str:
+    """Le contrôleur d'un run servi par `world_model` : le premier candidat de
+    `CHECK_MODELS` d'un autre fournisseur.
+
+    Le fournisseur est la partie de l'identifiant avant le `/`. Si aucun
+    candidat n'en diffère — une faute du fichier partagé, pas un cas
+    d'exécution, voir `CHECK_MODELS` — le premier candidat est rendu quand
+    même, pour ne jamais renvoyer autre chose qu'un modèle appelable.
+    """
+    fournisseur = world_model.split("/")[0]
+    return next(
+        (candidat for candidat in CHECK_MODELS if candidat.split("/")[0] != fournisseur),
+        CHECK_MODELS[0],
+    )
+
 
 CHECK_SYSTEM: str = _SHARED["check_system"]
 
