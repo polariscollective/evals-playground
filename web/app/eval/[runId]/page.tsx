@@ -1,8 +1,9 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { Fragment, use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { stringify } from "yaml";
 import {
   addRunJudge,
   cancelRun,
@@ -11,7 +12,6 @@ import {
   exportUrl,
   extendRun,
   getDraft,
-  markDraftLaunched,
   getRun,
   getRunTags,
   hasInspectLogs,
@@ -28,8 +28,10 @@ import {
   unlinkRunJudge,
   updateDraft,
 } from "@/lib/api";
+import { summariseExtension } from "@/lib/extension-summary";
 import { amountDigits, estimateJudgeAdditionCost } from "@/lib/pricing";
 import { extensionsOf } from "@/lib/run-extensions";
+import type { RunExtension } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
@@ -54,6 +56,7 @@ import { TagField } from "@/components/TagField";
 import { RubricEditor } from "@/components/RubricEditor";
 import type {
   EvalRun,
+  EvalScenario,
   ExtendRequest,
   RubricLevel,
   RunDetail,
@@ -79,18 +82,71 @@ function formatDate(iso: string): string {
       });
 }
 
+/** Ce qu'une extension a fait, sous sa ligne du tableau.
+ *
+ * La phrase répond à « qu'est-ce qu'elle a fait », et la demande brute est
+ * juste en dessous, repliée d'un cran de plus : c'est elle qui garantit que la
+ * phrase n'invente rien. En YAML plutôt qu'en JSON parce que les scénarios et
+ * les barèmes imbriqués s'y lisent, et par la dépendance `yaml` plutôt que par
+ * un sérialiseur maison, qui divergerait le jour où `ExtendRequest` gagnerait
+ * un champ. */
+function ExtensionDetail({
+  extension,
+  scenarios,
+}: {
+  extension: RunExtension;
+  scenarios: EvalScenario[];
+}) {
+  const summary = summariseExtension(extension, scenarios);
+
+  return (
+    <div className="space-y-3 bg-zinc-50 px-3 py-3 text-sm">
+      {summary.headlines.map((headline, index) => (
+        <p key={index} className="text-zinc-800">
+          {headline}
+        </p>
+      ))}
+      {summary.lines.length > 0 && (
+        <dl className="space-y-1">
+          {summary.lines.map((line) => (
+            <div key={line.label} className="flex gap-2">
+              <dt className="w-40 shrink-0 text-xs text-zinc-500">{line.label}</dt>
+              <dd className="text-zinc-800">
+                {line.values.map((value, index) => (
+                  <div key={index}>{value}</div>
+                ))}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <details>
+        <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800">
+          La demande, telle qu&apos;elle a été faite
+        </summary>
+        <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-zinc-700">
+          {stringify(extension.request)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 /** Ce qu'un run a subi depuis sa création : une ligne par extension, avec son
  *  coût réel déduit — voir `extensionsOf`. N'apparaît que si le run a été
  *  étendu au moins une fois ; sinon la page n'a rien à en dire.
  *
- * Une note de bas de page, pas un tableau de bord : cinq colonnes, pour
+ * Une note de bas de page, pas un tableau de bord : six colonnes, pour
  * répondre à « d'où vient ce chiffre » plutôt que pour l'analyser. */
 function ExtensionsHistory({ run }: { run: EvalRun }) {
   const extensions = extensionsOf(run);
+  // Une seule ligne ouverte à la fois : deux détails dépliés côte à côte se
+  // lisent mal, et on vient ici comparer une ligne au reste du tableau.
+  const [open, setOpen] = useState<number | null>(null);
   if (extensions.length === 0) return null;
 
   return (
-    <section className="space-y-2 rounded border border-zinc-300 p-3">
+    <section id="extensions" className="space-y-2 rounded border border-zinc-300 p-3">
       <h2 className="text-sm font-medium">
         Extensions ({extensions.length})
       </h2>
@@ -98,6 +154,7 @@ function ExtensionsHistory({ run }: { run: EvalRun }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-zinc-500">
+              <th className="pb-1 pr-3 font-normal" />
               <th className="pb-1 pr-3 font-normal">When</th>
               <th className="pb-1 pr-3 font-normal">Who</th>
               <th className="pb-1 pr-3 font-normal">Via</th>
@@ -107,21 +164,44 @@ function ExtensionsHistory({ run }: { run: EvalRun }) {
           </thead>
           <tbody>
             {extensions.map((extension, index) => (
-              <tr key={index} className="border-t border-zinc-200">
-                <td className="py-1 pr-3 whitespace-nowrap text-zinc-700">
-                  {formatDate(extension.at)}
-                </td>
-                <td className="py-1 pr-3 text-zinc-700">{extension.by}</td>
-                <td className="py-1 pr-3 text-zinc-500">{extension.via}</td>
-                <td className="py-1 pr-3 text-right text-zinc-700">
-                  {extension.estimate ? money(extension.estimate.usd) : "—"}
-                </td>
-                <td className="py-1 text-right font-medium text-zinc-900">
-                  {extension.actual_cost_usd === null
-                    ? "—"
-                    : money(extension.actual_cost_usd)}
-                </td>
-              </tr>
+              <Fragment key={index}>
+                <tr className="border-t border-zinc-200">
+                  <td className="py-1 pr-1">
+                    <button
+                      type="button"
+                      onClick={() => setOpen(open === index ? null : index)}
+                      aria-expanded={open === index}
+                      aria-label={`What the extension of ${formatDate(extension.at)} did`}
+                      className="rounded px-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
+                    >
+                      {open === index ? "▾" : "▸"}
+                    </button>
+                  </td>
+                  <td className="py-1 pr-3 whitespace-nowrap text-zinc-700">
+                    {formatDate(extension.at)}
+                  </td>
+                  <td className="py-1 pr-3 text-zinc-700">{extension.by}</td>
+                  <td className="py-1 pr-3 text-zinc-500">{extension.via}</td>
+                  <td className="py-1 pr-3 text-right text-zinc-700">
+                    {extension.estimate ? money(extension.estimate.usd) : "—"}
+                  </td>
+                  <td className="py-1 text-right font-medium text-zinc-900">
+                    {extension.actual_cost_usd === null
+                      ? "—"
+                      : money(extension.actual_cost_usd)}
+                  </td>
+                </tr>
+                {open === index && (
+                  <tr className="border-t border-zinc-200">
+                    <td colSpan={6} className="p-0">
+                      <ExtensionDetail
+                        extension={extension}
+                        scenarios={run.config.scenarios}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -366,6 +446,9 @@ export default function EvalRunPage({
   // Vrai par défaut : sans proposition ouverte, enregistrer en crée toujours
   // une à soi.
   const [proposalMine, setProposalMine] = useState(true);
+  // Quand `?extend=` désigne une extension déjà appliquée : sa date, pour le
+  // dire, plutôt qu'un panneau qui laisserait croire qu'elle attend encore.
+  const [appliedAt, setAppliedAt] = useState<string | null>(null);
   // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
   // pas un résultat, et un rechargement ramène la lecture ordinaire.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
@@ -455,10 +538,16 @@ export default function EvalRunPage({
   );
 
   // `?extend=<id>` : on vient de la liste des brouillons avec une proposition à
-  // relire. Le panneau s'ouvre dessus plutôt que vide.
+  // relire. Le panneau s'ouvre dessus plutôt que vide — sauf si elle a déjà
+  // servi, auquel cas il n'y a plus de proposition, seulement une trace.
   useEffect(() => {
     const draftId = searchParams.get("extend");
-    if (!draftId) return;
+    if (!draftId) {
+      // Un timer, pas un appel direct : `react-hooks/set-state-in-effect`
+      // interdit un setState synchrone dans le corps de l'effet.
+      const timer = setTimeout(() => setAppliedAt(null), 0);
+      return () => clearTimeout(timer);
+    }
     let cancelled = false;
     getDraft(draftId)
       .then((draft) => {
@@ -467,6 +556,19 @@ export default function EvalRunPage({
           setError("That draft is a run to launch, not an extension.");
           return;
         }
+        // Une adresse se partage et se met en signet : rien ne garantit que
+        // celle-ci soit arrivée par la liste, où le lien a déjà disparu.
+        if (draft.launched_at) {
+          // Le bandeau ferme le panneau qu'une adresse précédente aurait pu
+          // ouvrir : sur une même page, passer d'un `?extend=` à un autre ne
+          // remonte pas le composant, et les deux ne doivent jamais coexister.
+          setAppliedAt(draft.launched_at);
+          setExtending(false);
+          setProposal(null);
+          setProposalId(null);
+          return;
+        }
+        setAppliedAt(null);
         setProposal(draft.config);
         setProposalId(draftId);
         setProposalMine(draft.mine);
@@ -1018,6 +1120,20 @@ export default function EvalRunPage({
         </p>
       </ConfirmDialog>
 
+      {/* Le bandeau et le panneau sont mutuellement exclusifs par construction ici :
+          ouvrir le panneau depuis le menu ne vide pas `appliedAt`, donc c'est ce
+          rendu, plutôt que le geste qui ouvre, qui doit empêcher les deux de
+          coexister. */}
+      {appliedAt && !extending && (
+        <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm text-zinc-700">
+          Cette extension a été appliquée le {formatDate(appliedAt)}.{" "}
+          <a href="#extensions" className="underline">
+            Voir ce qu&apos;elle a fait
+          </a>
+          .
+        </div>
+      )}
+
       {extending && !running && (
         <ExtendPanel
           run={run}
@@ -1029,15 +1145,21 @@ export default function EvalRunPage({
           proposal={proposal}
           draftId={proposalId}
           draftMine={proposalMine}
-          onCancel={() => setExtending(false)}
+          onCancel={() => {
+            setExtending(false);
+            // L'identifiant du brouillon part maintenant vers le serveur en
+            // `?draft=` : le laisser ici attribuerait l'extension composée à
+            // la main par la suite au brouillon de quelqu'un d'autre.
+            setProposal(null);
+            setProposalId(null);
+            setProposalMine(true);
+          }}
           onSubmit={async (request) => {
-            await extendRun(run.id, request);
-            // Le brouillon a servi : marqué lancé, donc sorti de la liste
-            // d'attente sans être jeté. Après l'extension, jamais avant — une
-            // extension qui échoue doit laisser de quoi recommencer.
-            if (proposalId) {
-              await markDraftLaunched(proposalId).catch(() => {});
-            }
+            // Le brouillon part avec la demande : c'est la route qui refuse un
+            // brouillon déjà appliqué et qui le marque lancé, dans la requête
+            // même qui étend. Le faire ici après coup, en avalant l'erreur,
+            // laissait un brouillon lancé se croire en attente.
+            await extendRun(run.id, request, proposalId);
             setExtending(false);
             setProposal(null);
             setProposalId(null);

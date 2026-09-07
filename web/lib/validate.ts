@@ -7,7 +7,9 @@
 // aucun moyen de s'en rendre compte.
 import { knownModelIds } from "./catalog.ts";
 import type {
+  Draft,
   EvalRunConfig,
+  ExtendDraft,
   ExtendRequest,
   JudgeSpec,
   RubricLevel,
@@ -540,4 +542,44 @@ export function extendProblem(
   if (temperature) return temperature;
 
   return null;
+}
+
+/** Pourquoi une extension déjà appliquée ne se réapplique pas — ou `null` tant
+ *  qu'elle attend.
+ *
+ * Réappliquer n'est pas idempotent, et c'est ce qui rend ce refus nécessaire
+ * plutôt que confortable : `cellsForExtension` numérote les répétitions à partir
+ * de la dernière, si bien qu'une seconde application empile des essais au lieu
+ * de constater qu'il n'y a rien à faire, et réécrit les `new_scenarios` une
+ * seconde fois dans le run. Le filet `added === 0` ne rattrape que l'extension
+ * qui n'ajoutait déjà rien.
+ *
+ * Un brouillon de run lancé, lui, reste relançable : il produit un run de plus,
+ * sans toucher au premier. C'est la même règle qui est bonne d'un côté et
+ * fausse de l'autre — d'où ce prédicat, qui ne vaut que pour les extensions. */
+export function alreadyAppliedProblem(draft: ExtendDraft): string | null {
+  if (!draft.launched_at) return null;
+  return (
+    `This extension was already applied to run ${draft.extends_run_id} on ` +
+    `${draft.launched_at}. Applying it again would add to what it already added, not ` +
+    "repeat it. See the run's Extensions history for what it did, and compose a new " +
+    "extension on the run's page if you mean to go further."
+  );
+}
+
+/** Ce qui interdit d'appliquer ce brouillon au run `runId` — ou `null` s'il peut
+ *  servir.
+ *
+ * Trois refus, dans l'ordre où ils cessent d'être vrais : ce n'est pas une
+ * extension, elle vise un autre run, elle a déjà servi. Pour la route HTTP, qui
+ * reçoit le brouillon et le run par deux chemins indépendants — l'adresse et un
+ * paramètre — et n'a donc rien qui garantisse d'avance qu'ils vont ensemble. */
+export function extensionDraftProblem(draft: Draft, runId: string): string | null {
+  if (draft.kind !== "extend") {
+    return `Draft ${draft.id} is a run to launch, not an extension of a run.`;
+  }
+  if (draft.extends_run_id !== runId) {
+    return `Draft ${draft.id} extends run ${draft.extends_run_id}, not ${runId}.`;
+  }
+  return alreadyAppliedProblem(draft);
 }
