@@ -101,8 +101,8 @@ function ExtensionDetail({
 
   return (
     <div className="space-y-3 bg-zinc-50 px-3 py-3 text-sm">
-      {summary.headlines.map((headline) => (
-        <p key={headline} className="text-zinc-800">
+      {summary.headlines.map((headline, index) => (
+        <p key={index} className="text-zinc-800">
           {headline}
         </p>
       ))}
@@ -112,8 +112,8 @@ function ExtensionDetail({
             <div key={line.label} className="flex gap-2">
               <dt className="w-40 shrink-0 text-xs text-zinc-500">{line.label}</dt>
               <dd className="text-zinc-800">
-                {line.values.map((value) => (
-                  <div key={value}>{value}</div>
+                {line.values.map((value, index) => (
+                  <div key={index}>{value}</div>
                 ))}
               </dd>
             </div>
