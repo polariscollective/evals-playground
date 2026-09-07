@@ -1010,7 +1010,7 @@ const handler = createMcpHandler((server) => {
       title: "Launch a run draft",
       description:
         "Unlike every other tool in this server, calling this one spends real money: it launches the " +
-        "draft — as a new run, or as an extension of one that already exists — which calls three " +
+        "draft — as a new run, or as an extension of one that already exists — which calls four " +
         "model providers. Two caps of your own bound every launch, read from your profile rather " +
         "than from this code: a per-run cap refuses a draft quoted above it on its own; a per-hour " +
         "cap refuses one that would push what you have personally spent by MCP in the last rolling " +

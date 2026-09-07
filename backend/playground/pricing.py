@@ -6,7 +6,7 @@ réponses — et comme chaque tour renvoie tout l'historique au modèle suivant,
 une réponse longue enfle le coût de tous les tours qui la suivent. D'où une
 fourchette, dont les bornes viennent d'hypothèses sur cette longueur.
 
-Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des trois
+Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des quatre
 fournisseurs. Ils changent : ce fichier est le seul endroit à mettre à jour.
 """
 
