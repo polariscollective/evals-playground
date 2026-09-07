@@ -48,7 +48,7 @@
 | `web/lib/favorite-models.ts` | la résolution des favoris et ses refus, sans Supabase ni session |
 | `web/lib/favorite-models.test.mts` | ses tests |
 | `web/lib/catalog.test.mts` | l'intégrité du catalogue : tout modèle proposé a un tarif |
-| `polaris-supabase/evals/supabase/migrations/20260907120000_profiles_favorite_models.sql` | la colonne |
+| `polaris-supabase/evals/supabase/migrations/20260907180000_profiles_favorite_models.sql` | la colonne |
 | `polaris-tf/environments/app/` (modif) | le secret `GEMINI_API_KEY` et son montage |
 
 **Modifiés** — `shared/pricing.json`, `pyproject.toml`, `backend/playground/catalog.py`, `tests/test_catalog.py`, `web/lib/types.ts`, `web/lib/catalog.ts`, `web/lib/profiles.ts`, `web/lib/profile-caps.ts`, `web/lib/api.ts`, `web/lib/agent-prompt.ts`, `web/app/api/profile/route.ts`, `web/app/api/catalog/route.ts`, `web/app/prompt/route.ts`, `web/app/mcp/route.ts`, `web/app/profile/page.tsx`, `web/app/page.tsx`, `web/components/ExtendPanel.tsx`, `web/app/eval/[runId]/page.tsx`, `.env.example`, `docs/DEPLOY.md`.
@@ -539,7 +539,7 @@ git commit -m "feat: quarante et un modèles, quatre fournisseurs, et la tempér
 ### Task 3 : La colonne des favoris
 
 **Files:**
-- Create: `/Users/sverbo/Desktop/Codes/Polaris/polaris-supabase/evals/supabase/migrations/20260907120000_profiles_favorite_models.sql`
+- Create: `/Users/sverbo/Desktop/Codes/Polaris/polaris-supabase/evals/supabase/migrations/20260907180000_profiles_favorite_models.sql`
 
 **Interfaces:**
 - Consumes: rien.
@@ -598,7 +598,7 @@ Attendu : un JSON portant `favorite_models: null`, pas une erreur de colonne inc
 
 ```bash
 cd /Users/sverbo/Desktop/Codes/Polaris/polaris-supabase
-git add evals/supabase/migrations/20260907120000_profiles_favorite_models.sql
+git add evals/supabase/migrations/20260907180000_profiles_favorite_models.sql
 git commit -m "feat(evals): les favoris de modèles d'un profil"
 ```
 
