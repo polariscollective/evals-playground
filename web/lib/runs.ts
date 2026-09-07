@@ -1565,7 +1565,19 @@ export async function extendRun(
         tools: outils,
         turns: request.turns ?? config.turns,
         scenarios,
-        models: { ...config.models, targets },
+        models: {
+          ...config.models,
+          targets,
+          // Le modèle du monde ne se pose qu'une fois. `extendProblem` refuse
+          // d'en changer un qui existe — deux serveurs dans un même run
+          // rendraient ses cases incomparables — donc celui du run gagne
+          // toujours, et l'extension ne peut que combler un vide.
+          //
+          // Sans cette ligne, le premier cas de l'extension passait la
+          // validation puis se perdait : le run restait sans serveur, et rien
+          // ne le disait. Validé, jamais appliqué.
+          world: config.models.world || request.world || null,
+        },
         temperature,
       },
       total_samples: run.total_samples + cases.length,

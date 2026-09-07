@@ -403,6 +403,20 @@ test("un outil fixe n'ajoute aucun appel d'environnement", () => {
   assert.ok(!avec.per_model.some((entry) => entry.model === MONDE));
 });
 
+test("des règles de lecture blanches ne font pas un outil servi", () => {
+  // Le devis décidait de son côté ce qu'« être servi » veut dire, sans
+  // détourer. Un tel outil est licite — ni `result` ni règles ne sont exigés —
+  // et `configProblem` ne réclame donc pas `models.world` pour lui. Le devis,
+  // lui, entrait dans la branche servie et chiffrait un modèle vide, pendant
+  // que le moteur ne servait rien. Le devis et le moteur ne peuvent pas
+  // diverger sur cette question-là : c'est celle qui décide de la facture.
+  const devis = estimateCost(
+    sansLuna({ tools: [{ ...servi(), retrieval_rules: "   \n  " }] }),
+  );
+  assert.ok(!devis.per_model.some((entry) => entry.model === MONDE));
+  assert.ok(!devis.per_model.some((entry) => entry.model === ""));
+});
+
 test("un outil servi ajoute des appels d'environnement", () => {
   const devis = estimateCost(
     sansLuna({ tools: [servi()], world: "W".repeat(4000), max_tool_calls_per_turn: 4 }),
