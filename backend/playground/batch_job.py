@@ -54,6 +54,7 @@ from playground.supabase_store import (
     sample_filters,
     start_run,
     write_judge_score,
+    write_tool_check_error,
     write_tool_result,
     write_tool_verdict,
 )
@@ -141,7 +142,8 @@ def check_served_results(
     **Ne fait jamais tomber le run.** Il arrive après que tout a été joué et
     payé : un contrôle qui échouerait ferait perdre des notes déjà obtenues
     pour un renseignement qui, lui, se rattrape. Les lignes non contrôlées
-    restent `faithful` nul, et une passe ultérieure les reprendra.
+    restent `faithful` nul, et une passe ultérieure les reprendra — en disant
+    dans `check_error` pourquoi la tentative précédente n'a pas abouti.
 
     Returns:
         Combien de lignes ont reçu un verdict.
@@ -177,9 +179,18 @@ def check_served_results(
                     result=str(ligne.get("result") or ""),
                 )
             )
-        except Exception:
-            # Une ligne qu'on n'a pas su contrôler reste à contrôler. Elle ne
-            # doit ni passer pour fidèle, ni faire tomber les suivantes.
+        except Exception as e:
+            # Une ligne qu'on n'a pas su contrôler reste à contrôler — mais on
+            # dit désormais pourquoi. Muette, elle ressemblait à du calme. Elle
+            # ne doit ni passer pour fidèle, ni faire tomber les suivantes.
+            write_tool_check_error(
+                supabase,
+                run_id,
+                index,
+                str(ligne["tool_name"]),
+                str(ligne["arguments_hash"]),
+                reason=f"{type(e).__name__}: {e}"[:500],
+            )
             continue
         write_tool_verdict(
             supabase,

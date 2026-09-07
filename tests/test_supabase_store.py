@@ -19,6 +19,7 @@ from playground.supabase_store import (
     start_run,
     unchecked_tool_results,
     write_judge_score,
+    write_tool_check_error,
     write_tool_result,
     write_tool_verdict,
 )
@@ -421,7 +422,36 @@ def test_le_verdict_du_controle_vise_la_ligne_par_sa_cle():
         supabase, "run-1", 3, "search_files", "abc", faithful=False, fault="a inventé un fichier"
     )
     corps = _body(envoyees[0])
-    assert corps == {"faithful": False, "fault": "a inventé un fichier"}
+    assert corps == {"faithful": False, "fault": "a inventé un fichier", "check_error": None}
     params = dict(envoyees[0].url.params)
     assert params["scenario_index"] == "eq.3"
     assert params["tool_name"] == "eq.search_files"
+
+
+def test_un_verdict_efface_une_raison_d_echec_anterieure():
+    """Un contrôle qui réussit dément la dernière fois où il avait échoué —
+    sans quoi une panne transitoire laisserait une raison périmée sur une
+    ligne pourtant contrôlée depuis."""
+    supabase, envoyees = _supabase(_ok())
+    write_tool_verdict(
+        supabase, "run-1", 3, "search_files", "abc", faithful=True, fault=""
+    )
+    corps = _body(envoyees[0])
+    assert corps["check_error"] is None
+
+
+def test_la_raison_d_un_controle_en_echec_vise_la_ligne_par_sa_cle():
+    """`faithful` n'est délibérément pas dans le corps : la ligne reste nulle,
+    parce qu'on ne sait pas — seule la raison de ne pas savoir est écrite."""
+    supabase, envoyees = _supabase(_ok())
+    write_tool_check_error(
+        supabase, "run-1", 3, "search_files", "abc", reason="AuthenticationError: clé invalide"
+    )
+    corps = _body(envoyees[0])
+    assert corps == {"check_error": "AuthenticationError: clé invalide"}
+    assert "faithful" not in corps
+    params = dict(envoyees[0].url.params)
+    assert params["run_id"] == "eq.run-1"
+    assert params["scenario_index"] == "eq.3"
+    assert params["tool_name"] == "eq.search_files"
+    assert params["arguments_hash"] == "eq.abc"
