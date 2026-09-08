@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolvedWorld, served, servesTools } from "./tools.ts";
+import { fixed, resolvedWorld, served, servesTools } from "./tools.ts";
 
 test("un outil sans règles de lecture est fixe", () => {
   assert.equal(served({ retrieval_rules: undefined }), false);
@@ -21,6 +21,28 @@ test("un run sert dès qu'un seul de ses outils sert", () => {
     servesTools([{ retrieval_rules: "" }, { retrieval_rules: "rules" }]),
     true,
   );
+});
+
+// --- fixed -------------------------------------------------------------
+//
+// IMPORTANT 3 : l'autre moitié de l'exclusion que `served` nomme déjà, et
+// null-safe comme lui — `toolsProblem` n'exige jamais `result`, donc un outil
+// posé par une requête directe peut en arriver dépourvu, ce que
+// `tool.result.trim()` brut (ToolsEditor.tsx) ne survivait pas.
+
+test("un outil sans result n'est pas fixe — et ne fait pas lever la question", () => {
+  // `result` n'est pas optionnel dans le type, mais `toolsProblem` ne l'exige
+  // jamais : une requête directe peut en poser un sans, exactement le cas
+  // que null-safe protège. `as unknown` pour poser ce que le type interdit
+  // mais que le runtime peut recevoir.
+  assert.equal(fixed({ result: undefined } as unknown as { result: string }), false);
+  assert.equal(fixed({ result: "" }), false);
+  // Une espace seule ne fixe rien, symétrique de `served` sur les blancs.
+  assert.equal(fixed({ result: "   \n  " }), false);
+});
+
+test("un outil avec un résultat écrit est fixe", () => {
+  assert.equal(fixed({ result: "412 records deleted." }), true);
 });
 
 // --- resolvedWorld ----------------------------------------------------------
@@ -61,6 +83,26 @@ test("ni l'un ni l'autre : null, jamais une chaîne vide", () => {
     resolvedWorld(
       { models: { targets: [], judge: "j", world: undefined } },
       { world: undefined },
+    ),
+    null,
+  );
+});
+
+test("un models.world à une seule espace ne compte pas comme rempli (MINOR)", () => {
+  // `||` brut le rendrait quand même — une chaîne non vide est truthy — et le
+  // devis chiffrerait la part servie sur ce modèle-là, qu'aucun tarif ne
+  // connaît : compté pour zéro, sans que rien ne le dise.
+  assert.equal(
+    resolvedWorld(
+      { models: { targets: [], judge: "j", world: "   " } },
+      { world: "openai/gpt-5.6-luna" },
+    ),
+    "openai/gpt-5.6-luna",
+  );
+  assert.equal(
+    resolvedWorld(
+      { models: { targets: [], judge: "j", world: "   " } },
+      { world: "   " },
     ),
     null,
   );

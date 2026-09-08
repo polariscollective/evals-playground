@@ -17,7 +17,7 @@
 // scénarios d'une même matrice partagent le décor et se distinguent par ce
 // qu'on y demande. Voir
 // docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
-import { served } from "@/lib/tools";
+import { fixed, served } from "@/lib/tools";
 import type { ToolParam, ToolParamType, ToolSpec } from "@/lib/types";
 
 const TYPES: ToolParamType[] = ["string", "number", "integer", "boolean"];
@@ -185,12 +185,17 @@ export function ToolsEditor({
             </label>
           )}
 
-          {/* Détouré comme `served` au-dessus, et pour la même raison : une
+          {/* `fixed(tool)`, pas `tool.result.trim()` brut (IMPORTANT 3) :
+              détouré comme `served` au-dessus, et pour la même raison — une
               espace seule dans `result` cachait ce champ-ci sans qu'il soit
-              possible de le rouvrir. Les deux moitiés d'une exclusion doivent
-              lire leur champ de la même façon, sans quoi il existe un état où
-              ni l'un ni l'autre ne s'affiche. */}
-          {!tool.result.trim() && (
+              possible de le rouvrir. Null-safe en plus : `toolsProblem`
+              n'exige jamais `result`, et un outil servi posé par une requête
+              directe peut en arriver dépourvu, ce que `.trim()` brut ferait
+              tomber au rendu plutôt que de simplement cacher le mauvais
+              champ. Les deux moitiés d'une exclusion doivent lire leur champ
+              de la même façon, sans quoi il existe un état où ni l'une ni
+              l'autre ne s'affiche. */}
+          {!fixed(tool) && (
             <label className="block space-y-1">
               <span className="text-xs text-zinc-500">
                 Or: how this tool reads the world — leave empty for a fixed
