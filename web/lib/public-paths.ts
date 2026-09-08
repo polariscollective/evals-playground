@@ -43,8 +43,15 @@ export const OPEN_PREFIXES = [
   "_next/image",
 ];
 
-/** Le seul fichier ouvert : ancré sur la fin, pas sur un répertoire. */
-export const OPEN_FILES = ["favicon.ico"];
+/** The open files: anchored on the end, not on a directory.
+ *
+ * The tab's two icons, which Next serves under these exact names out of
+ * `app/` and announces both of in the `<head>`. Closing the second would make
+ * the badge vanish on `/shared` — the only place someone without a session
+ * looks at a page, and so the only place the omission would show. The query
+ * string Next appends behind them changes nothing: the matcher reads the path
+ * alone. */
+export const OPEN_FILES = ["favicon.ico", "icon.svg"];
 
 /** Le point est le seul caractère de ces chemins qu'une expression régulière
  *  lirait autrement que lui-même. */

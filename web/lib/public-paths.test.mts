@@ -13,6 +13,7 @@ test("les chemins ouverts passent la porte sans session", () => {
     "/shared/2f1c9e6a-0000-4000-8000-000000000000",
     "/api/auth/signin",
     "/favicon.ico",
+    "/icon.svg",
     "/_next/static/chunks/main.js",
     // Sans la chaîne de requête : `isOpen` prend un `pathname`, comme le
     // `matcher` de Next — la query n'en fait jamais partie.
@@ -41,6 +42,7 @@ test("leurs voisins de préfixe restent fermés", () => {
     // qui rend le défaut, est publique.
     "/scenarios",
     "/favicon.icon",
+    "/icon.svgx",
     "/mcpx",
     "/mcp-secrets",
   ]) {
