@@ -10,6 +10,7 @@ import { ensureRunsLoaded } from "@/lib/runs-store";
 import { ensureTagsLoaded } from "@/lib/tags-store";
 import { ensureProfileLoaded } from "@/lib/profile-store";
 import { ensureConnectionsLoaded } from "@/lib/connections-store";
+import { PolarisStar } from "@/components/PolarisStar";
 
 /** La barre de l'application privée, absente de `/shared`.
  *
@@ -40,9 +41,18 @@ function isCurrent(pathname: string, href: string): boolean {
   return pathname.startsWith(href);
 }
 
+/** Where the bar does not belong.
+ *
+ * `/signin` joins `/shared`: four links to pages that need the very session
+ * you are trying to obtain are worse than no bar at all.
+ *
+ * Not `isOpen` from `public-paths.ts`, which answers a different question —
+ * `/prompt` and `/validate` are open paths that do want the bar. */
+const HIDDEN_ON = ["/shared", "/signin"];
+
 export function AppNav() {
   const pathname = usePathname();
-  const hidden = pathname.startsWith("/shared");
+  const hidden = HIDDEN_ON.some((prefix) => pathname.startsWith(prefix));
   const [email, setEmail] = useState<string | null>(null);
 
   /** Ce que les autres pages afficheront, chargé pendant qu'on lit celle-ci.
@@ -93,19 +103,7 @@ export function AppNav() {
             ailleurs que « Evaluate », et un logo qui mène au premier onglet
             donne deux chemins vers la même chose. */}
         <span className="flex items-center gap-2 font-serif text-base text-teal-700">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            aria-hidden="true"
-            className="shrink-0"
-          >
-            <path
-              d="M7 0.5 L7.6 6.4 L13.5 7 L7.6 7.6 L7 13.5 L6.4 7.6 L0.5 7 L6.4 6.4 Z"
-              fill="currentColor"
-            />
-          </svg>
+          <PolarisStar />
           Polaris Collective
         </span>
         <span aria-hidden="true" className="h-4 w-px bg-zinc-300" />
