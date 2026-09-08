@@ -76,7 +76,7 @@ export async function GET(request: Request) {
     // à Google pour atterrir sur l'accueil, pendant que claude.ai attend un
     // code qui n'arriverait jamais. Même raison que `originOf` dans `/prompt`.
     const origin = getPublicOrigin(request);
-    const signin = new URL("/api/auth/signin", origin);
+    const signin = new URL("/signin", origin);
     signin.searchParams.set("callbackUrl", `${origin}${url.pathname}${url.search}`);
     return NextResponse.redirect(signin);
   }

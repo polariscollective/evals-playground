@@ -7,7 +7,7 @@ The Supabase tables, annotated one by one: `web/lib/supabase.ts`.
 ## Tests
 
     pytest                  # the engine, backend/playground — 19 files
-    npm --prefix web test   # everything else — 50 .test.mts files
+    npm --prefix web test   # everything else — 52 .test.mts files
 
 Most of the code is TypeScript. A green `pytest` is not a green build.
 

@@ -21,6 +21,10 @@
 export const OPEN_PREFIXES = [
   // La connexion elle-même, sans quoi personne ne peut entrer.
   "api/auth",
+  // The page that asks. Same status as `api/auth`, and for the same reason:
+  // no one can sign in through a page that requires being signed in. Safe
+  // behind an open door — it reads nothing and writes nothing.
+  "signin",
   // Le mode d'emploi et le vérificateur : ils s'adressent à un agent, qui n'a
   // pas de session et ne saurait pas en obtenir une.
   "prompt",
