@@ -865,6 +865,15 @@ export function JudgeBlock({
             {detail.run.awareness_judged_at && " · eval-awareness added after the run"}
           </span>
         </div>
+        {/* Une variable comme le juge ou l'adversaire (§1 du design), mais
+            jamais montrée nulle part sur cet écran avant ceci — voir D dans
+            la revue de branche. Muet quand le run ne sert rien : `world` est
+            alors `null`, et l'afficher inviterait à se demander s'il compte. */}
+        {config.models.world?.trim() && (
+          <p className="font-mono text-xs text-zinc-500">
+            world served by {shortModel(config.models.world)}
+          </p>
+        )}
 
         <p className="whitespace-pre-wrap text-sm text-zinc-800">{criterion}</p>
 

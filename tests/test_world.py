@@ -161,7 +161,7 @@ def test_le_modele_ne_vit_plus_en_dur_ici():
     """`WORLD_MODEL` a disparu de ce module avec la clé `model` du fichier
     partagé : le modèle qui sert les appels vient maintenant de
     `config.models.world`, propre à chaque run — voir
-    docs/superpowers/specs/2026-09-07-le-monde-des-outils.md."""
+    docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md."""
     assert not hasattr(world_module, "WORLD_MODEL")
     assert "model" not in world_module._SHARED
 

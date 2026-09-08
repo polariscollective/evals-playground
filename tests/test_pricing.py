@@ -360,7 +360,7 @@ def test_les_bornes_ne_bougent_pas_avec_l_hypothese():
 
 # --- le monde, et ce qu'il coûte -----------------------------------------
 #
-# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le nombre
+# Voir docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md. Le nombre
 # d'appels d'outils n'est déclaré nulle part : le devis prend le milieu des
 # seules bornes qu'on connaisse, zéro et le plafond.
 

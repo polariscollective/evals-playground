@@ -120,7 +120,9 @@ export interface EvalModels {
    * voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
    * appel servi, et un défaut que personne n'a remarqué se découvrirait sur
    * une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
-   * changement, et ce qui reste protégé, sont dans le spec du 7 septembre. */
+   * changement, et ce qui reste protégé, sont dans
+   * docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — pas dans
+   * le-monde-des-outils.md, du même jour, qui argumentait le contraire. */
   world?: string | null;
 }
 
