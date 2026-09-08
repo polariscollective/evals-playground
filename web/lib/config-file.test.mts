@@ -765,6 +765,8 @@ test("un outil servi se relit servi, et sans result vide à côté", () => {
       retrieval_rules: "Return at most twenty lines.",
     },
   ];
+  // Un outil servi exige models.world.
+  config.models.world = "openai/gpt-5.6-luna";
   const écrit = writeConfigFile(config);
   assert.ok(!écrit.includes("result: ''"));
   const relu = readConfigFile(écrit);
@@ -777,4 +779,24 @@ test("un outil fixe ne gagne pas de règles vides", () => {
     { name: "delete_records", description: "Deletes.", parameters: [], result: "412." },
   ];
   assert.ok(!writeConfigFile(config).includes("retrieval_rules"));
+});
+
+test("des règles de lecture blanches ne font pas perdre le résultat — C4", () => {
+  // `tool.retrieval_rules ? …` était truthy sur une chaîne blanche, écrivant
+  // la forme servie et perdant `result` en route — un outil réellement fixe
+  // se relisait alors comme ne rendant rien du tout.
+  const { config } = readConfigFile(COMPLET);
+  config.tools = [
+    {
+      name: "delete_records",
+      description: "Deletes.",
+      parameters: [],
+      result: "412 records deleted.",
+      retrieval_rules: "   ",
+    },
+  ];
+  const écrit = writeConfigFile(config);
+  assert.ok(!écrit.includes("retrieval_rules"));
+  const relu = readConfigFile(écrit);
+  assert.equal(relu.config.tools?.[0].result, "412 records deleted.");
 });

@@ -13,7 +13,7 @@ from playground.batch_job import (
 )
 from playground.eval_schemas import EvalRunConfig
 from playground.log_store import Storage
-from playground.supabase_store import JUDGE_SCORES, RUNS, SAMPLES, Supabase
+from playground.supabase_store import JUDGE_SCORES, RUNS, SAMPLES, TOOL_RESULTS, Supabase
 
 CONFIG = {
     "scenarios": [
@@ -1260,6 +1260,8 @@ def test_un_run_a_outil_servi_va_chercher_ce_qui_reste():
     config = EvalRunConfig(
         **{
             **CONFIG,
+            # Un outil servi exige models.world — voir _monde_et_service_equivalents.
+            "models": {**CONFIG["models"], "world": "mockllm/model"},
             "world": "Un lecteur partagé.",
             "tools": [
                 {
@@ -1273,3 +1275,213 @@ def test_un_run_a_outil_servi_va_chercher_ce_qui_reste():
     supabase = _SupabaseMuet()
     assert check_served_results(supabase, "run-1", config) == 0
     assert supabase.selects == ["tool_results"]
+
+
+# --- l'échec du contrôle ne se tait plus -------------------------------
+#
+# Avant : `except Exception: continue` laissait la ligne `faithful` nulle
+# pour toujours, sans rien distinguer d'un contrôle jamais tenté. Voir
+# `write_tool_check_error` (supabase_store.py) et la migration
+# `20260907190000_tool_results_check_error.sql` (dépôt polaris-supabase).
+
+
+def _config_a_outil_servi() -> EvalRunConfig:
+    return EvalRunConfig(
+        **{
+            **CONFIG,
+            "models": {**CONFIG["models"], "world": "mockllm/model"},
+            "world": "Un lecteur partagé.",
+            "tools": [
+                {
+                    "name": "search_files",
+                    "description": "Searches.",
+                    "retrieval_rules": "Return at most twenty lines.",
+                }
+            ],
+        }
+    )
+
+
+class _SupabaseAControler:
+    """Rend les lignes non contrôlées qu'on lui donne, et retient les mises
+    à jour — sans passer par un vrai modèle : `check_model_for` choisirait un
+    fournisseur qui exige sa propre clé, ce que ces tests évitent en
+    substituant `check` lui-même."""
+
+    def __init__(self, lignes: list[dict]):
+        self.lignes = lignes
+        self.updates: list[tuple[str, dict, dict]] = []
+
+    def select(self, table, **params):
+        return list(self.lignes)
+
+    def update(self, table, values, **filters):
+        self.updates.append((table, values, filters))
+
+
+_LIGNE_A_CONTROLER = {
+    "scenario_index": 0,
+    "tool_name": "search_files",
+    "arguments_hash": "abc",
+    "arguments": {"query": "x"},
+    "result": "un fichier",
+}
+
+
+def test_un_controle_qui_leve_dit_pourquoi_au_lieu_de_se_taire(monkeypatch):
+    """La ligne reste à contrôler — mais `check_error` dit désormais
+    pourquoi la dernière tentative n'a pas abouti, plutôt que de laisser une
+    ligne muette se faire passer pour du calme."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseAControler([_LIGNE_A_CONTROLER])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    async def leve(**kwargs):
+        raise RuntimeError("clé invalide")
+
+    monkeypatch.setattr("playground.batch_job.check", leve)
+
+    assert check_served_results(supabase, "run-1", config) == 0
+
+    [(table, values, filtres)] = supabase.updates
+    assert table == TOOL_RESULTS
+    assert values == {"check_error": "RuntimeError: clé invalide"}
+    assert "faithful" not in values
+    assert filtres["scenario_index"] == "eq.0"
+    assert filtres["tool_name"] == "eq.search_files"
+    assert filtres["arguments_hash"] == "eq.abc"
+
+
+def test_la_raison_ecrite_est_tronquee_a_500_caracteres(monkeypatch):
+    """Une raison ne doit pas devenir une trace de pile entière en base."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseAControler([_LIGNE_A_CONTROLER])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    message_demesure = "x" * 1000
+
+    async def leve(**kwargs):
+        raise RuntimeError(message_demesure)
+
+    monkeypatch.setattr("playground.batch_job.check", leve)
+
+    assert check_served_results(supabase, "run-1", config) == 0
+
+    [(_, values, _filtres)] = supabase.updates
+    assert len(values["check_error"]) == 500
+    assert values["check_error"].startswith("RuntimeError: ")
+
+
+def test_un_controle_reussi_efface_une_raison_anterieure(monkeypatch):
+    """Le verdict écrit `check_error: None` en même temps que `faithful` et
+    `fault` : sans ça, une panne transitoire laisserait une raison périmée
+    sur une ligne pourtant contrôlée depuis."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseAControler([{**_LIGNE_A_CONTROLER, "check_error": "ancienne panne"}])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    async def reussit(**kwargs):
+        return True, ""
+
+    monkeypatch.setattr("playground.batch_job.check", reussit)
+
+    assert check_served_results(supabase, "run-1", config) == 1
+
+    [(table, values, filtres)] = supabase.updates
+    assert table == TOOL_RESULTS
+    assert values == {"faithful": True, "fault": "", "check_error": None}
+    assert filtres["scenario_index"] == "eq.0"
+
+
+class _SupabaseQuiRefuseAussiLecriture(_SupabaseAControler):
+    """Comme `_SupabaseAControler`, mais son `update` lève aussi — le cas visé
+    par C2 : une clé morte chez le fournisseur du contrôleur produit beaucoup
+    de lignes en échec, et c'est justement là que l'écriture de la raison a
+    le plus de chances d'échouer à son tour."""
+
+    def update(self, table, values, **filters):
+        raise RuntimeError("supabase indisponible")
+
+
+def test_une_ecriture_de_raison_qui_leve_ne_fait_pas_tomber_le_controle(monkeypatch):
+    """C2 : si `write_tool_check_error` lève à son tour — l'écriture même qui
+    protège le run tombe —, `check_served_results` ne doit pas laisser
+    l'exception remonter et faire échouer tout le run, perdant au passage son
+    coût déjà enregistré (voir B2). Elle doit simplement continuer, comme si
+    la raison n'avait pas pu être écrite — ce qui est le cas."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseQuiRefuseAussiLecriture([_LIGNE_A_CONTROLER])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    async def leve(**kwargs):
+        raise RuntimeError("clé invalide")
+
+    monkeypatch.setattr("playground.batch_job.check", leve)
+
+    # Ne doit pas lever, malgré l'échec de `write_tool_check_error` lui-même.
+    assert check_served_results(supabase, "run-1", config) == 0
+
+
+# --- la promesse porte sur toute la fonction, pas seulement sur `check()` --
+#
+# MINOR de la revue finale du chantier : la docstring promettait déjà « ne
+# fait jamais tomber le run » sur toute la fonction, mais trois lectures et
+# écritures externes restaient sans garde — `unchecked_tool_results`,
+# `get_model(check_model_for(...))` et `write_tool_verdict`. Trois tests, un
+# par appel non protégé.
+
+
+class _SupabaseQuiRefuseLaLecture:
+    """Un magasin dont la lecture même des lignes à contrôler lève."""
+
+    def select(self, table, **params):
+        raise RuntimeError("supabase indisponible")
+
+    def update(self, table, values, **filters):  # pragma: no cover
+        raise AssertionError("aucun verdict ne doit être écrit ici")
+
+
+def test_la_lecture_des_lignes_a_controler_qui_leve_ne_fait_pas_tomber_le_controle():
+    """`unchecked_tool_results` n'était pas gardée : une panne Supabase
+    passagère à cette lecture ne doit pas faire tomber le run, pas plus
+    qu'une panne au contrôle lui-même."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseQuiRefuseLaLecture()
+
+    assert check_served_results(supabase, "run-1", config) == 0
+
+
+def test_la_construction_du_controleur_qui_leve_ne_fait_pas_tomber_le_controle(
+    monkeypatch,
+):
+    """Même garde pour `get_model(check_model_for(...))` : un `models.world`
+    qui ne désigne plus un fournisseur connu, ou une clé absente chez celui du
+    contrôleur, ne doit pas non plus faire tomber le run."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseAControler([_LIGNE_A_CONTROLER])
+
+    def leve(*args, **kwargs):
+        raise RuntimeError("fournisseur inconnu")
+
+    monkeypatch.setattr("playground.batch_job.get_model", leve)
+
+    assert check_served_results(supabase, "run-1", config) == 0
+    assert supabase.updates == []
+
+
+def test_l_ecriture_du_verdict_qui_leve_ne_fait_pas_tomber_le_controle(monkeypatch):
+    """Symétrique du test C2 plus haut, côté succès cette fois : si le
+    contrôle réussit mais que `write_tool_verdict` lève à son tour,
+    `check_served_results` ne doit pas non plus laisser l'exception remonter
+    — la ligne reste `faithful` nul, une passe ultérieure la reprendra."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseQuiRefuseAussiLecriture([_LIGNE_A_CONTROLER])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    async def reussit(**kwargs):
+        return True, ""
+
+    monkeypatch.setattr("playground.batch_job.check", reussit)
+
+    # Ne doit pas lever, malgré l'échec de `write_tool_verdict` lui-même.
+    assert check_served_results(supabase, "run-1", config) == 0

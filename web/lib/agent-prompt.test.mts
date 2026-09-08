@@ -180,6 +180,28 @@ test("le prompt annonce les deux formes d'outil et le monde", () => {
   }
 });
 
+test("le prompt annonce models.world et son équivalence", () => {
+  // Le champ existe dans le gabarit depuis le chantier précédent, mais rien
+  // d'autre ne le disait : un agent qui ne lit que la prose des règles ne
+  // saurait pas qu'il devient obligatoire dès qu'un outil est servi.
+  const prompt = agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
+  assert.match(prompt, /models\.world/);
+  assert.match(prompt, /required as soon as one tool has/i);
+});
+
+test("le prompt dit que le run nomme le serveur du monde, à son propre tarif", () => {
+  // Deux idées à ne pas perdre : c'est le run qui choisit qui sert (comme
+  // targets, adversary et judge), et chaque appel servi est facturé au tarif
+  // du modèle nommé — jamais une constante, comme `pricing.ts` le fait déjà.
+  for (const prompt of [
+    agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    mcpAgentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), null),
+  ]) {
+    assert.match(prompt, /`models\.world` is what names its server/);
+    assert.match(prompt, /billed at `models\.world`'s own rate, not some flat constant/);
+  }
+});
+
 test("le prompt MCP ne dit plus qu'update_draft_run refuse le brouillon d'un autre", () => {
   // Il dévie : il fourche plutôt que d'écrire sur ce qui n'est pas à
   // l'appelant. Un agent qui lit encore l'ancienne phrase n'essaie jamais.

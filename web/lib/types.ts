@@ -114,6 +114,16 @@ export interface EvalModels {
   targets: string[];
   adversary?: string | null;
   judge: string;
+  /** Le modèle qui sert les outils portant des règles de lecture.
+   *
+   * Requis exactement quand un outil du run est servi, et interdit sinon —
+   * voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
+   * appel servi, et un défaut que personne n'a remarqué se découvrirait sur
+   * une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
+   * changement, et ce qui reste protégé, sont dans
+   * docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — pas dans
+   * le-monde-des-outils.md, du même jour, qui argumentait le contraire. */
+  world?: string | null;
 }
 
 // --- Juges multiples --------------------------------------------------------
@@ -495,6 +505,23 @@ export interface ExtendRequest {
    * Ajouter est permis, redéfinir non : un outil qui reprendrait un nom
    * existant ferait relire les cases déjà jouées comme ayant eu celui-ci. */
   new_tools?: ToolSpec[];
+  /** Le modèle qui sert les outils de ce run — ceux qu'il porte déjà comme
+   *  ceux que `new_tools` ajoute — quand ce run n'en a pas encore un.
+   *
+   * Pas seulement les outils ajoutés : un run antérieur à ce champ peut déjà
+   * servir sans le nommer, et une extension qui n'ajoute rien de servi doit
+   * alors le porter tout autant — c'est le cas que la ligne précédente
+   * faisait facilement oublier (voir CRITICAL 2, `ExtendPanel.buildRequest`,
+   * qui l'avait niché sous `new_tools.length > 0`).
+   *
+   * Trois cas, et le troisième est le seul qui surprenne : un run sans modèle
+   * de monde qui reçoit un outil servi doit en nommer un, qui devient celui du
+   * run ; un run sans modèle à qui rien de servi n'est ajouté refuse qu'on en
+   * nomme un, un réglage sans effet étant pire qu'absent ; un run qui sert déjà
+   * ses outils l'impose silencieusement — nommer le même passe, une redite
+   * sans conséquence, nommer un autre est refusé, deux serveurs dans un même
+   * run rendraient ses cases incomparables. Voir `extendProblem`. */
+  world?: string | null;
   /** Des juges à poser sur ce run, en plus de ceux qu'il porte déjà.
    *
    * Toujours secondaires : devenir principal est un second geste, explicite.

@@ -31,6 +31,7 @@ import {
   type PrincipalVerdict,
 } from "./deepen-counts.ts";
 import { measureRun, type MeasurableCell } from "./measured-length.ts";
+import { resolvedWorld } from "./tools.ts";
 import type {
   EvalRunConfig,
   EvalSample,
@@ -158,13 +159,25 @@ function commePanneau(
     newTools: ExtendRequest["new_tools"];
     forExisting: boolean | null;
     deepen: "all" | number[] | null;
+    /** Ce que le champ « World model » du panneau porte, tel quel — vide tant
+     *  que rien n'a été tapé. Fusionné comme `ExtendPanel.tsx` le fait
+     *  (`resolvedWorld`, `tools.ts`) : un run qui n'a pas encore de
+     *  `models.world` chiffrerait sinon sa part servie sur le modèle vide. */
+    worldModel: string;
   },
 ) {
   const measured = measureRun(samples, config.models, config.turns);
   const gèle = (ui.newTools ?? []).length > 0 && ui.forExisting === false;
   const anciensOutils = (config.tools ?? []).map((tool) => tool.name);
+  // Voir `ExtendPanel.tsx:362` : sans cette résolution, un devis qui
+  // introduit le premier outil servi d'un run chiffrerait ses appels servis
+  // au modèle vide plutôt qu'à celui que le champ « World model » propose.
+  const configRésolu: EvalRunConfig = {
+    ...config,
+    models: { ...config.models, world: resolvedWorld(config, { world: ui.worldModel || null }) },
+  };
   return estimateExtension(
-    config,
+    configRésolu,
     {
       scenarios: [
         ...ui.indices.map((index) => {
@@ -258,8 +271,15 @@ function commeServeur(
             turns_done: sample.turns_done,
           }));
 
+  // Voir `runs.ts:1383` : même résolution que côté panneau, sur ce que la
+  // demande porte cette fois plutôt que sur l'état d'un champ d'écran.
+  const configRésolu: EvalRunConfig = {
+    ...config,
+    models: { ...config.models, world: resolvedWorld(config, request) },
+  };
+
   return estimateExtension(
-    config,
+    configRésolu,
     {
       scenarios: indices
         .filter((index) => Boolean(scenarios[index]))
@@ -292,6 +312,9 @@ function lesDeuxCôtés(
       newTools: request.new_tools,
       forExisting,
       deepen: request.deepen ?? null,
+      // Ce que la demande porte est ce que le champ aurait porté à l'écran :
+      // les deux langues disent la même extension.
+      worldModel: request.world ?? "",
     }),
     serveur: commeServeur(config, samples, request),
   };
@@ -404,4 +427,56 @@ test("un run sans rien de mesurable retombe sur ce qu'il avait déclaré", () =>
   });
   assert.deepEqual(panneau, serveur);
   assert.equal(panneau!.response_tokens, 300);
+});
+
+// --- le monde résolu entre dans le devis, des deux côtés (MINOR) -----------
+//
+// Aucun test ci-dessus ne passait jamais `world` : sans lui, retirer la
+// fusion `resolvedWorld` de `commePanneau` ou de `commeServeur` — le même
+// oubli que celui, réel, de `runs.ts:1383` ou `ExtendPanel.tsx:362` —
+// laisserait la suite entière verte, `panneau` et `serveur` continuant de
+// s'accorder, simplement sur un devis qui aurait cessé de compter la part
+// servie : `pricing.ts` la chiffrerait sur `config.models.world ?? ""`, un
+// modèle sans tarif, silencieusement compté pour zéro. Ce test porte sur le
+// nombre, pas seulement sur l'accord des deux côtés : il échoue si l'un ou
+// l'autre site de fusion disparaît, même si les deux disparaissent ensemble.
+
+test("un run qui sert déjà sans nommer de monde : le monde de la demande entre dans le devis servi", () => {
+  const config: EvalRunConfig = {
+    ...CONFIG,
+    // Antérieur à ce champ, exactement le cas ouvert par A1 : sert déjà,
+    // sans que `models.world` existe.
+    tools: [
+      {
+        name: "search_files",
+        description: "Searches the shared drive.",
+        parameters: [],
+        result: "",
+        retrieval_rules: "Return at most twenty lines.",
+      },
+    ],
+  };
+  const request: ExtendRequest = {
+    scenario_indices: [0],
+    new_scenarios: [],
+    targets: ["anthropic/claude-sonnet-5"],
+    repetitions: 1,
+    world: "anthropic/claude-haiku-4-5",
+  };
+
+  const { panneau, serveur } = lesDeuxCôtés(config, JOUÉES, request);
+  assert.deepEqual(panneau, serveur);
+
+  // Ce qui tomberait à zéro si l'une des deux fusions manquait : la part
+  // servie doit être chiffrée sur le modèle nommé par la demande, jamais sur
+  // le modèle vide.
+  assert.equal(panneau!.unpriced_models.includes(""), false);
+  const monde = panneau!.per_model.find(
+    (entry) => entry.model === "anthropic/claude-haiku-4-5",
+  );
+  assert.ok(monde, "le modèle du monde devrait apparaître dans le détail du devis");
+  assert.ok(
+    (monde!.usd ?? 0) > 0,
+    "la part servie devrait avoir un prix, pas être comptée pour zéro",
+  );
 });

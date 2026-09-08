@@ -10,6 +10,7 @@
 // paquet envoyé au navigateur, et pour que la validation reste celle qui fait
 // autorité.
 import { parse, stringify } from "yaml";
+import { served } from "./tools.ts";
 import { configProblem } from "./validate.ts";
 import type {
   EvalRunConfig,
@@ -325,6 +326,10 @@ export function readConfigFile(text: string): ImportedConfig {
         : [],
       adversary: asString(models.adversary) || null,
       judge: asString(models.judge),
+      // Requis exactement quand un outil sert, interdit sinon — voir
+      // `configProblem`. Même patron qu'`adversary` : une chaîne vide se lit
+      // comme absente.
+      world: asString(models.world) || null,
     },
     adversary_prompt: asString(file.adversary_prompt),
     // Ce que contient l'environnement, pour les outils qui portent des
@@ -442,7 +447,11 @@ export function writeConfigFile(config: EvalRunConfig): string {
           // dommage, mais donne à lire un outil qui serait les deux — et ce
           // document est ce qu'un agent édite pour repartir d'un run.
           tools: config.tools.map((tool) =>
-            tool.retrieval_rules
+            // `served(tool)`, jamais `tool.retrieval_rules` brut : un champ
+            // blanc y est truthy, et écrirait ici la forme servie — perdant
+            // `result` en route — pour un outil qui, `configProblem` mis à
+            // part, n'est en réalité que fixe. Voir C4.
+            served(tool)
               ? {
                   name: tool.name,
                   description: tool.description,

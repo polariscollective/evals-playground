@@ -28,6 +28,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
+import { resolvedWorld } from "./tools";
 import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
 import { measureRun, type MeasurableCell } from "./measured-length";
@@ -448,7 +449,9 @@ export async function loadRun(
     tool_results: options.withToolResults
       ? await select<ToolResultRow>(TOOL_RESULTS, {
           run_id: `eq.${runId}`,
-          select: "scenario_index,tool_name,arguments,faithful,fault",
+          // `check_error` en plus depuis que le voyant distingue « jamais
+          // tenté » de « tenté sans aboutir » — voir `lib/served.ts`.
+          select: "scenario_index,tool_name,arguments,faithful,fault,check_error",
           order: "scenario_index.asc,tool_name.asc",
         })
       : undefined,
@@ -1149,12 +1152,8 @@ export async function failToStart(runId: string, reason: string): Promise<void> 
  *
  * Renvoie le nombre de cases remises en jeu, zéro s'il n'y en avait aucune. */
 export async function retryFailed(runId: string): Promise<number> {
-  const failed = await select<{ id: string }>(SAMPLES, {
-    select: "id",
-    run_id: `eq.${runId}`,
-    status: "eq.error",
-  });
-  if (failed.length === 0) return 0;
+  const count = await failedCellCount(runId);
+  if (count === 0) return 0;
 
   await update(
     SAMPLES,
@@ -1172,6 +1171,23 @@ export async function retryFailed(runId: string): Promise<number> {
     { status: "triggered", error: null, finished_at: null },
     { id: `eq.${runId}` },
   );
+  return count;
+}
+
+/** Combien de cases de ce run sont en erreur — sans rien changer.
+ *
+ * Séparée de `retryFailed` (CRITICAL 1) : la route doit savoir s'il y a
+ * quelque chose à retenter *avant* de décider si la configuration du run le
+ * permet encore, et `retryFailed` mute dès qu'elle rend un compte non nul —
+ * l'appeler seulement pour compter aurait déjà remis les cases en `pending`
+ * et le run en `triggered` avant même de savoir si le job pourrait démarrer,
+ * laissant un run coincé `triggered` si le refus tombait ensuite. */
+export async function failedCellCount(runId: string): Promise<number> {
+  const failed = await select<{ id: string }>(SAMPLES, {
+    select: "id",
+    run_id: `eq.${runId}`,
+    status: "eq.error",
+  });
   return failed.length;
 }
 
@@ -1366,7 +1382,19 @@ export async function planExtension(
   // même correction ici, le devis étant ce qu'un outil MCP oppose aux
   // plafonds de dépense de l'agent appelant : un devis sous-estimé le
   // laisserait dépasser le sien.
-  const liveConfig = withLiveJudges(config, liveJudges);
+  // `withLiveJudges` répare les juges ; le monde a le même problème pour
+  // l'estimation qui suit — `config.models.world` est encore `null` quand
+  // c'est justement cette extension qui introduit le premier outil servi, et
+  // le prix des appels servis retomberait alors sur le modèle vide. Résolu
+  // une fois, comme `world` l'est ailleurs — voir `resolvedWorld`. Fusionné
+  // sur `.models` déjà réparé par `withLiveJudges`, pas sur celui du
+  // lancement : sans ça, un juge vivant différent du lancement redeviendrait
+  // celui d'alors.
+  const withJudges = withLiveJudges(config, liveJudges);
+  const liveConfig = {
+    ...withJudges,
+    models: { ...withJudges.models, world: resolvedWorld(withJudges, request) },
+  };
 
   // Poser un juge ne joue aucune conversation : il relit celles qui sont déjà
   // finies. Son devis n'a donc rien à voir avec celui d'une extension qui
@@ -1565,7 +1593,19 @@ export async function extendRun(
         tools: outils,
         turns: request.turns ?? config.turns,
         scenarios,
-        models: { ...config.models, targets },
+        models: {
+          ...config.models,
+          targets,
+          // Le modèle du monde ne se pose qu'une fois. `extendProblem` refuse
+          // d'en changer un qui existe — deux serveurs dans un même run
+          // rendraient ses cases incomparables — donc celui du run gagne
+          // toujours, et l'extension ne peut que combler un vide.
+          //
+          // Sans cette ligne, le premier cas de l'extension passait la
+          // validation puis se perdait : le run restait sans serveur, et rien
+          // ne le disait. Validé, jamais appliqué.
+          world: resolvedWorld(config, request),
+        },
         temperature,
       },
       total_samples: run.total_samples + cases.length,

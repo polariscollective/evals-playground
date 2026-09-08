@@ -72,6 +72,7 @@ import {
   extendProblem,
 } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
+import { extendWorldWarnings, worldWarnings } from "@/lib/world-warnings";
 import type { Draft, Judge, JudgeSystemTypeColumn, Profile, RunDetail } from "@/lib/types";
 
 /** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
@@ -998,11 +999,19 @@ const handler = createMcpHandler((server) => {
           "change if other runs launch meanwhile.";
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      // Ce qui mérite d'être dit sans être refusé — voir `worldWarnings` : un
+      // scénario servi sans rien à lire. Design §7 : l'écran les affichait
+      // déjà ; un agent composant le même run par MCP n'en entendait jamais
+      // parler, exactement le cas que cet avertissement existe pour nommer.
+      const warnings = worldWarnings(config);
       return {
         content: [
           {
             type: "text",
-            text: `${verdict.message}\n\n${launchability}\n\n${origin}/runs/drafts/${draftId}`,
+            text:
+              `${verdict.message}` +
+              (warnings.length > 0 ? `\n\n${warnings.join("\n")}` : "") +
+              `\n\n${launchability}\n\n${origin}/runs/drafts/${draftId}`,
           },
         ],
       };
@@ -1103,6 +1112,7 @@ const handler = createMcpHandler((server) => {
           run.config.turns,
           run.config.models.adversary ?? null,
           rubric.map((level) => level.value),
+          run.config.models.world ?? null,
         );
         if (problem) return toolError(problem);
 
@@ -1322,9 +1332,10 @@ const handler = createMcpHandler((server) => {
         "scenario_indices, together with targets and repetitions. Add brand-new scenarios: " +
         "new_scenarios, together with the same targets and repetitions — a scenario, existing or new, " +
         "is always covered by some models some number of times. Add tools to the run's set: new_tools, " +
-        "and optionally new_tools_for_existing — needing no model or depth of its own, but never the " +
-        "only thing a call does: a call naming no scenario (scenario_indices or new_scenarios) and no " +
-        "deepen is refused even when new_tools is filled in, since adding tools to a batch that adds " +
+        "and optionally new_tools_for_existing and world — needing no depth of its own, and no model " +
+        "unless the tool carries retrieval_rules, but never the only thing a call does: a call naming " +
+        "no scenario (scenario_indices or new_scenarios) and no deepen is refused even when new_tools " +
+        "is filled in, since adding tools to a batch that adds " +
         "nothing else is not enough on its own. Raise the run's depth for what this call adds: turns — " +
         "never on its own, since a call adding no scenario and deepening nothing is refused; it " +
         "takes effect on the scenarios or cells this same call adds, and leaves already-played " +
@@ -1423,7 +1434,17 @@ const handler = createMcpHandler((server) => {
             z.object({
               name: z.string(),
               description: z.string(),
-              result: z.string().describe("What the tool returns, always the same thing."),
+              result: z
+                .string()
+                .optional()
+                .describe("What the tool returns, always the same thing."),
+              retrieval_rules: z
+                .string()
+                .optional()
+                .describe(
+                  "How this tool reads the world. Written instead of result, never both — a tool " +
+                    "carries one or the other.",
+                ),
               parameters: z
                 .array(
                   z.object({
@@ -1441,6 +1462,13 @@ const handler = createMcpHandler((server) => {
             "Tools to add to the run's set. Adding is allowed; redefining an existing name is not — " +
               "cells already run would be read as having had this one. Independent of everything else " +
               "in this call: no scenario, model or turns change is needed to add a tool.",
+          ),
+        world: z
+          .string()
+          .optional()
+          .describe(
+            "The model that serves tools with retrieval_rules. Required when this call adds one to " +
+              "a run that serves none yet; inherited, and unchangeable, when the run already serves.",
           ),
         new_judges: z
           .array(
@@ -1543,7 +1571,19 @@ const handler = createMcpHandler((server) => {
         new_scenarios: input.new_scenarios,
         targets: input.targets ?? [],
         repetitions: input.repetitions ?? 0,
-        ...(input.new_tools ? { new_tools: input.new_tools } : {}),
+        ...(input.new_tools
+          ? {
+              // `result` retombe sur "" quand l'agent ne l'a pas écrit — même
+              // repli que la lecture YAML (`config-file.ts`), pour qu'un outil
+              // servi, qui n'a jamais de raison d'en porter un, arrive ici
+              // sous la même forme qu'un outil fixe sans résultat déclaré.
+              new_tools: input.new_tools.map((tool) => ({
+                ...tool,
+                result: tool.result ?? "",
+              })),
+            }
+          : {}),
+        ...(input.world === undefined ? {} : { world: input.world }),
         ...(input.new_tools_for_existing === undefined
           ? {}
           : { new_tools_for_existing: input.new_tools_for_existing }),
@@ -1566,6 +1606,7 @@ const handler = createMcpHandler((server) => {
         run.config.turns,
         run.config.models.adversary ?? null,
         rubric.map((level) => level.value),
+        run.config.models.world ?? null,
       );
       if (problem) {
         return { content: [{ type: "text", text: problem }], isError: true };
@@ -1593,6 +1634,10 @@ const handler = createMcpHandler((server) => {
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       const address = `${origin}/eval/${input.run_id}?extend=${draftId}`;
+      // Même avertissement que côté écran (§7) : servir depuis un monde vide,
+      // sans que rien ne le refuse — voir `extendWorldWarnings`.
+      const warnings = extendWorldWarnings(request, run.config);
+      const warningsSuffix = warnings.length > 0 ? `\n\n${warnings.join("\n")}` : "";
 
       // Rien à ajouter ni à approfondir : `launch_draft` refuserait ce
       // brouillon pour cette seule raison, avant même de regarder le budget
@@ -1605,7 +1650,7 @@ const handler = createMcpHandler((server) => {
               text:
                 `Saved as a draft extension of "${run.label ?? input.run_id}": nothing to add or ` +
                 "deepen. Not launchable today — Nothing to add: that combination is already covered." +
-                `\n\n${address}`,
+                `${warningsSuffix}\n\n${address}`,
             },
           ],
         };
@@ -1653,7 +1698,7 @@ const handler = createMcpHandler((server) => {
             text:
               `Saved as a draft extension of "${run.label ?? input.run_id}": ` +
               `${summary}, quoted at ${formatUsd(quote)}. Nothing has been spent yet. ${launchability}` +
-              `\n\n${address}`,
+              `${warningsSuffix}\n\n${address}`,
           },
         ],
       };

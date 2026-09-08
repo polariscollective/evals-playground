@@ -348,6 +348,8 @@ def test_le_rang_du_scenario_accompagne_chaque_appel_d_outil():
             }
         ],
         world="un lecteur partagé",
+        # Un outil servi exige models.world — voir _monde_et_service_equivalents.
+        models=EvalModels(targets=["mockllm/model"], judge="mockllm/model", world="mockllm/model"),
     )
     state = _task_state(config)
     state.metadata["scenario_index"] = 1
@@ -376,6 +378,8 @@ def test_un_outil_servi_sans_fonction_fait_echouer_la_case():
             }
         ],
         world="un lecteur partagé",
+        # Un outil servi exige models.world — voir _monde_et_service_equivalents.
+        models=EvalModels(targets=["mockllm/model"], judge="mockllm/model", world="mockllm/model"),
     )
     with pytest.raises(ValueError, match="serve_tool"):
         asyncio.run(conversation_solver(config)(_task_state(config), _unused_generate))

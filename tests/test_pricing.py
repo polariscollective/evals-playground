@@ -6,7 +6,6 @@ from playground.eval_schemas import (
     EvalScenario,
     RubricLevel,
 )
-from playground.world import WORLD_MODEL
 from playground.pricing import (
     DEFAULT_RESPONSE_TOKENS,
     LengthAssumption,
@@ -30,13 +29,28 @@ def _scenario(title: str = "T") -> EvalScenario:
 
 
 def _config(**overrides) -> EvalRunConfig:
+    # Un outil servi exige models.world (voir _monde_et_service_equivalents) ;
+    # les appelants d'ici ne posent jamais leur propre `models` en même temps
+    # qu'un outil servi, donc le déduire ici évite de le répéter sur chaque
+    # appel de test qui pose `tools=[_servi()]`.
+    tools = overrides.get("tools") or []
+    sert = any(
+        isinstance(tool, dict) and tool.get("retrieval_rules") for tool in tools
+    )
     base = dict(
         scenarios=[_scenario()],
         criterion="C" * 200,
         rubric=RUBRIC,
         turns=1,
         repetitions=1,
-        models=EvalModels(targets=["anthropic/claude-haiku-4-5"], judge="anthropic/claude-haiku-4-5"),
+        models=EvalModels(
+            targets=["anthropic/claude-haiku-4-5"],
+            judge="anthropic/claude-haiku-4-5",
+            # Distinct de la cible et du juge ci-dessus : sans quoi un appel
+            # d'environnement se fondrait dans leur compte, et les tests plus
+            # bas qui isolent son coût (`MONDE`) ne testeraient plus rien.
+            world=MONDE if sert else None,
+        ),
     )
     base.update(overrides)
     return EvalRunConfig(**base)
@@ -346,9 +360,16 @@ def test_les_bornes_ne_bougent_pas_avec_l_hypothese():
 
 # --- le monde, et ce qu'il coûte -----------------------------------------
 #
-# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le nombre
+# Voir docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md. Le nombre
 # d'appels d'outils n'est déclaré nulle part : le devis prend le milieu des
 # seules bornes qu'on connaisse, zéro et le plafond.
+
+MONDE = "openai/gpt-5.6-luna"
+"""Le modèle que `_config()` pose sur `models.world` dès qu'un outil est
+servi — voir sa docstring. N'est plus lu depuis `playground.world` : il vient
+de la configuration de chaque run, jamais d'une constante. Distinct de
+`anthropic/claude-haiku-4-5`, la cible et le juge de `_config()`, pour que les
+tests plus bas puissent encore isoler ce que l'environnement coûte."""
 
 
 def _servi(name="search_files"):
@@ -368,7 +389,7 @@ def test_un_outil_fixe_n_ajoute_aucun_appel():
     sans = estimate_tokens(_config())
     avec = estimate_tokens(_config(tools=[_fixe()]))
     assert avec.model_calls == sans.model_calls
-    assert WORLD_MODEL not in avec.per_model
+    assert MONDE not in avec.per_model
 
 
 def test_un_outil_servi_ajoute_des_appels_d_environnement():
@@ -377,7 +398,7 @@ def test_un_outil_servi_ajoute_des_appels_d_environnement():
     )
     # 1 conversation : 1 appel cible + 1 juge, plus 1 tour x 4/2 appels servis.
     assert estimate.model_calls == 2 + 2
-    assert WORLD_MODEL in estimate.per_model
+    assert MONDE in estimate.per_model
 
 
 def test_le_nombre_d_appels_suit_le_plafond():
@@ -393,7 +414,7 @@ def test_le_monde_est_compte_dans_chaque_appel():
     gros monde, et l'oublier sous-estimerait tout le run."""
     petit = estimate_tokens(_config(tools=[_servi()], world="W" * 400))
     gros = estimate_tokens(_config(tools=[_servi()], world="W" * 40_000))
-    assert gros.per_model[WORLD_MODEL].input > petit.per_model[WORLD_MODEL].input
+    assert gros.per_model[MONDE].input > petit.per_model[MONDE].input
 
 
 def test_le_monde_d_un_scenario_compte_aussi():
@@ -402,8 +423,8 @@ def test_le_monde_d_un_scenario_compte_aussi():
     scenario_avec.world = "S" * 4000
     enrichi = _config(tools=[_servi()], world="W" * 400, scenarios=[scenario_avec])
     assert (
-        estimate_tokens(enrichi).per_model[WORLD_MODEL].input
-        > estimate_tokens(base).per_model[WORLD_MODEL].input
+        estimate_tokens(enrichi).per_model[MONDE].input
+        > estimate_tokens(base).per_model[MONDE].input
     )
 
 
@@ -417,9 +438,9 @@ def test_un_scenario_sans_outil_servi_ne_paie_pas_le_monde():
         _config(tools=[_servi()], world="W" * 4000, scenarios=[sans, avec])
     )
     seul = estimate_tokens(_config(tools=[_servi()], world="W" * 4000, scenarios=[avec]))
-    assert estimate.per_model[WORLD_MODEL].input == seul.per_model[WORLD_MODEL].input
+    assert estimate.per_model[MONDE].input == seul.per_model[MONDE].input
 
 
 def test_un_monde_sans_outil_servi_ne_coute_rien():
     estimate = estimate_tokens(_config(tools=[_fixe()], world="W" * 40_000))
-    assert WORLD_MODEL not in estimate.per_model
+    assert MONDE not in estimate.per_model

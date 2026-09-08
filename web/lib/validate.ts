@@ -6,6 +6,7 @@
 // sans adversaire produiraient un run qui ne mesure rien, et le job n'aurait
 // aucun moyen de s'en rendre compte.
 import { knownModelIds } from "./catalog.ts";
+import { servesTools } from "./tools.ts";
 import type {
   Draft,
   EvalRunConfig,
@@ -262,6 +263,44 @@ export function historyProblem(history: unknown, where: string): string | null {
   return null;
 }
 
+/** Ce qui cloche dans l'équivalence outil-servi / `models.world`, ou null si
+ *  elle tient.
+ *
+ * Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien à
+ * servir est un réglage sans effet, et un réglage sans effet est pire
+ * qu'absent — on le relit plus tard en se demandant s'il a compté. Miroir du
+ * refus Python dans `_monde_et_service_equivalents`, voir
+ * `backend/playground/eval_schemas.py`.
+ *
+ * Extraite de `configProblem` (CRITICAL 1) : `retry` et `catchup` doivent
+ * refuser exactement ce que le job refuserait au même titre — cette
+ * équivalence-là, et rien de plus — plutôt que la validation de lancement
+ * entière, bien plus stricte (`average_output_tokens`, notamment, que le job
+ * accepte absent sur un run enregistré avant ce champ). `configProblem` reste
+ * l'unique appelant qui doit tout vérifier ; `retry` et `catchup` n'ont besoin
+ * que de celle-ci, et l'appellent désormais directement — une définition,
+ * trois appelants. */
+export function worldEquivalenceProblem(
+  config: Pick<EvalRunConfig, "tools" | "models">,
+): string | null {
+  const sert = servesTools(config.tools ?? []);
+  const monde = isFilled(config.models?.world);
+  if (sert && !monde) {
+    return (
+      "models.world: this run serves at least one tool, so it needs a model to " +
+      "answer those calls. Pick one from the models listed in /prompt."
+    );
+  }
+  if (!sert && monde) {
+    return (
+      "models.world: no tool in this run has retrieval_rules, so nothing is " +
+      "served and this model would never be called. Remove it, or give a tool " +
+      "reading rules."
+    );
+  }
+  return null;
+}
+
 /** Ce qui cloche dans une configuration de run, ou null si elle tient. */
 export function configProblem(config: unknown): string | null {
   if (!config || typeof config !== "object") return "config must be an object";
@@ -369,6 +408,13 @@ export function configProblem(config: unknown): string | null {
   if (judgeModel) return judgeModel;
   const adversaryModel = modelProblem(c.models?.adversary, "adversary model");
   if (adversaryModel) return adversaryModel;
+  const worldModel = modelProblem(c.models?.world, "world model");
+  if (worldModel) return worldModel;
+
+  // L'équivalence, dans les deux sens — voir `worldEquivalenceProblem`, qui
+  // porte seule cette règle désormais.
+  const worldEquivalence = worldEquivalenceProblem(c);
+  if (worldEquivalence) return worldEquivalence;
 
   const temperature = temperatureProblem(c.temperature);
   if (temperature) return temperature;
@@ -380,7 +426,12 @@ export function configProblem(config: unknown): string | null {
  *
  * `scenarioCount` est la taille de la matrice actuelle : un indice qui la
  * dépasse désignerait un scénario que le job ne saurait pas lire, puisque c'est
- * par cet indice qu'il retrouve le message d'ouverture. */
+ * par cet indice qu'il retrouve le message d'ouverture.
+ *
+ * `runWorldModel` est `models.world` du run tel qu'il est avant cette
+ * extension — `null` quand le run n'en a encore aucun, que ce soit parce qu'il
+ * ne sert rien ou parce qu'il a été lancé avant que ce modèle ne se choisisse.
+ * Ajouté en dernier pour ne déplacer aucun appelant existant. */
 export function extendProblem(
   request: unknown,
   scenarioCount: number,
@@ -388,6 +439,7 @@ export function extendProblem(
   currentTurns = 1,
   adversary: string | null = null,
   rubricValues: number[] = [],
+  runWorldModel: string | null = null,
 ): string | null {
   if (!request || typeof request !== "object") return "body must be an object";
   const r = request as ExtendRequest;
@@ -406,6 +458,42 @@ export function extendProblem(
     }
   }
   const disponibles = [...runTools, ...ajoutés];
+
+  // Trois cas, et le troisième est le seul qui surprenne : un run qui sert
+  // déjà impose son modèle. Deux serveurs dans un même run rendraient ses
+  // cases incomparables, et c'est la seule chose qu'une matrice ne survit pas.
+  // Placé avant le reste — scénarios, modèles, répétitions — pour qu'une
+  // demande qui ne fait qu'ajouter un outil servi sans nommer de monde ne
+  // s'entende pas d'abord reprocher un champ qu'elle n'a pas à porter.
+  // L'union du déjà-là et de l'ajouté, pas seulement l'ajouté : un run lancé
+  // avant ce chantier sert déjà des outils sans `models.world` (`runWorldModel`
+  // est alors `null`), et c'est le cas qui doit exiger un modèle — pas une
+  // extension qui n'ajoute rien de servi mais touche un run qui, lui, sert.
+  const sertUneFoisAppliquée = servesTools(disponibles);
+  const nommé = isFilled(r.world);
+  const worldModel = modelProblem(r.world, "world");
+  if (worldModel) return worldModel;
+  if (runWorldModel) {
+    if (nommé && r.world !== runWorldModel) {
+      return (
+        `world: this run already serves its tools with "${runWorldModel}". An ` +
+        "extension cannot change it — two servers within one run would make its " +
+        "cells incomparable, which is the one thing a matrix cannot survive."
+      );
+    }
+  } else if (sertUneFoisAppliquée) {
+    if (!nommé) {
+      return (
+        "world: this run serves at least one tool but names no model to answer " +
+        "its calls, so this extension needs to name one — it becomes the run's."
+      );
+    }
+  } else if (nommé) {
+    return (
+      "world: this extension adds no served tool and the run serves none, so " +
+      "this model would never be called."
+    );
+  }
 
   const indices = r.scenario_indices;
   if (!Array.isArray(indices)) return "scenario_indices must be a list";

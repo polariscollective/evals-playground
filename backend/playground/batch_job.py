@@ -54,10 +54,11 @@ from playground.supabase_store import (
     sample_filters,
     start_run,
     write_judge_score,
+    write_tool_check_error,
     write_tool_result,
     write_tool_verdict,
 )
-from playground.world import CHECK_MODEL, WORLD_MODEL, check, result_key, serve
+from playground.world import check, check_model_for, result_key, serve
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
@@ -141,7 +142,16 @@ def check_served_results(
     **Ne fait jamais tomber le run.** Il arrive après que tout a été joué et
     payé : un contrôle qui échouerait ferait perdre des notes déjà obtenues
     pour un renseignement qui, lui, se rattrape. Les lignes non contrôlées
-    restent `faithful` nul, et une passe ultérieure les reprendra.
+    restent `faithful` nul, et une passe ultérieure les reprendra — en disant
+    dans `check_error` pourquoi la tentative précédente n'a pas abouti.
+
+    La promesse tient sur toute la fonction, pas seulement sur `check()` : la
+    lecture de ce qui reste à contrôler, la construction du contrôleur et
+    l'écriture du verdict peuvent chacune lever — une panne Supabase
+    passagère, un `models.world` qui ne désigne plus un fournisseur connu —
+    et aucune ne doit remonter jusqu'à l'appelant, qui finirait le run en
+    erreur (voir C2/B2 : c'est exactement ce que ce garde-fou existe pour
+    éviter).
 
     Returns:
         Combien de lignes ont reçu un verdict.
@@ -152,11 +162,24 @@ def check_served_results(
     if not any(tool.served for tool in config.tools):
         return 0
 
-    à_faire = unchecked_tool_results(supabase, run_id)
+    try:
+        à_faire = unchecked_tool_results(supabase, run_id)
+    except Exception:
+        # Ne pas savoir dire ce qui reste à contrôler ne doit pas non plus
+        # faire tomber le run : une passe ultérieure retentera cette lecture.
+        return 0
     if not à_faire:
         return 0
 
-    modèle = get_model(CHECK_MODEL, **(model_args or {}))
+    try:
+        modèle = get_model(check_model_for(config.models.world), **(model_args or {}))
+    except Exception:
+        # Un contrôleur qu'on ne sait pas construire — clé absente,
+        # identifiant devenu invalide — ne doit pas non plus faire tomber le
+        # run : les lignes restent à contrôler, une passe ultérieure les
+        # reprendra une fois le fournisseur réparé.
+        return 0
+
     contrôlées = 0
     for ligne in à_faire:
         index = int(ligne["scenario_index"])
@@ -177,19 +200,47 @@ def check_served_results(
                     result=str(ligne.get("result") or ""),
                 )
             )
-        except Exception:
-            # Une ligne qu'on n'a pas su contrôler reste à contrôler. Elle ne
-            # doit ni passer pour fidèle, ni faire tomber les suivantes.
+        except Exception as e:
+            # Une ligne qu'on n'a pas su contrôler reste à contrôler — mais on
+            # dit désormais pourquoi. Muette, elle ressemblait à du calme. Elle
+            # ne doit ni passer pour fidèle, ni faire tomber les suivantes.
+            try:
+                write_tool_check_error(
+                    supabase,
+                    run_id,
+                    index,
+                    str(ligne["tool_name"]),
+                    str(ligne["arguments_hash"]),
+                    reason=f"{type(e).__name__}: {e}"[:500],
+                )
+            except Exception:
+                # Ne pas savoir dire pourquoi ne doit jamais coûter plus cher
+                # que la panne qu'on essayait de nommer : cette écriture est
+                # elle-même la ligne qui protège le run de `check_served_results`
+                # — la faire lever remonterait l'exception hors de cette
+                # fonction, contredisant sa promesse de ne jamais faire tomber
+                # le run, et lui ferait perdre son coût déjà enregistré (voir
+                # B2). C'est exactement dans le cas visé ici — une clé morte
+                # chez le fournisseur du contrôleur, donc beaucoup de lignes en
+                # échec — que cette écriture a le plus de chances d'échouer à
+                # son tour.
+                pass
             continue
-        write_tool_verdict(
-            supabase,
-            run_id,
-            index,
-            str(ligne["tool_name"]),
-            str(ligne["arguments_hash"]),
-            faithful=fidèle,
-            fault=faute,
-        )
+        try:
+            write_tool_verdict(
+                supabase,
+                run_id,
+                index,
+                str(ligne["tool_name"]),
+                str(ligne["arguments_hash"]),
+                faithful=fidèle,
+                fault=faute,
+            )
+        except Exception:
+            # Symétrique de l'écriture de la raison, juste au-dessus : écrire
+            # le verdict peut échouer comme écrire l'erreur peut échouer. La
+            # ligne reste `faithful` nul, une passe ultérieure la reprendra.
+            continue
         contrôlées += 1
     return contrôlées
 
@@ -406,7 +457,7 @@ def run_batch_job(
         if déjà is not None:
             return déjà
         rendu = await serve(
-            model=get_model(WORLD_MODEL, **(model_args or {})),
+            model=get_model(config.models.world, **(model_args or {})),
             world=config.world,
             scenario_world=config.scenarios[scenario_index].world,
             tool=tool,
@@ -420,7 +471,7 @@ def run_batch_job(
             clé,
             arguments=arguments,
             result=rendu,
-            model=WORLD_MODEL,
+            model=config.models.world,
         )
 
     def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:

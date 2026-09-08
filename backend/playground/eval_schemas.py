@@ -386,8 +386,15 @@ class ToolSpec(BaseModel):
         Le discriminant vit ici et nulle part ailleurs. Le recopier sur chaque
         site d'appel, c'est l'oublier sur le troisième — la leçon que
         `deleted_at` a déjà coûtée à ce dépôt (voir `RunJudge`).
+
+        **Détouré**, et son jumeau TypeScript (`served`, `web/lib/tools.ts`)
+        l'est aussi : les deux doivent répondre pareil sur la même entrée,
+        sans quoi une configuration passe à l'écran et se fait refuser au
+        démarrage du job — après que le lancement a été payé. Un champ à
+        moitié effacé dans un formulaire laisse des blancs, et des blancs ne
+        sont pas des règles de lecture.
         """
-        return bool(self.retrieval_rules)
+        return bool(self.retrieval_rules.strip())
 
     @model_validator(mode="after")
     def _fixe_ou_servi(self) -> "ToolSpec":
@@ -397,7 +404,7 @@ class ToolSpec(BaseModel):
         vide : on mesure la décision d'appeler, pas ce que l'outil rend, et le
         refuser ici casserait la relecture des runs déjà en base.
         """
-        if self.result and self.retrieval_rules:
+        if self.result.strip() and self.retrieval_rules.strip():
             raise ValueError(
                 f"tool {self.name!r} carries both result and retrieval_rules:"
                 " a tool is fixed or served from the world, never both."
@@ -560,6 +567,18 @@ class EvalModels(BaseModel):
     targets: list[str] = Field(min_length=1)
     adversary: str | None = None
     judge: str = Field(min_length=1)
+
+    world: str | None = None
+    """Le modèle qui sert les outils portant des règles de lecture.
+
+    Requis exactement quand un outil du run est servi, et interdit sinon —
+    voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
+    appel servi, et un défaut que personne n'a remarqué se découvrirait sur
+    une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
+    changement, et ce qui reste protégé, sont dans
+    docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — pas dans
+    le-monde-des-outils.md, du même jour, qui argumentait le contraire.
+    """
 
     @model_validator(mode="after")
     def _modeles_evalues_valides(self) -> "EvalModels":
@@ -748,6 +767,32 @@ class EvalRunConfig(BaseModel):
                 raise ValueError(
                     "An adversary prompt is required once turns exceeds 1."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _monde_et_service_equivalents(self) -> "EvalRunConfig":
+        """L'équivalence, dans les deux sens.
+
+        Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien
+        à servir est un réglage sans effet, et un réglage sans effet est pire
+        qu'absent — on le relit plus tard en se demandant s'il a compté.
+        Miroir du refus TypeScript dans `configProblem`, voir
+        `web/lib/validate.ts`.
+        """
+        sert = any(tool.served for tool in self.tools)
+        monde = bool(self.models.world and self.models.world.strip())
+        if sert and not monde:
+            raise ValueError(
+                "models.world: this run serves at least one tool, so it needs a "
+                "model to answer those calls. Pick one from the models listed "
+                "in /prompt."
+            )
+        if not sert and monde:
+            raise ValueError(
+                "models.world: no tool in this run has retrieval_rules, so "
+                "nothing is served and this model would never be called. "
+                "Remove it, or give a tool reading rules."
+            )
         return self
 
 

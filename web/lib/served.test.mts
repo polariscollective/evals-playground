@@ -18,6 +18,7 @@ const ligne = (extra: Partial<ToolResultRow> = {}): ToolResultRow => ({
   arguments: { query: "Vandenberghe" },
   faithful: true,
   fault: "",
+  check_error: null,
   ...extra,
 });
 
@@ -37,7 +38,31 @@ test("le voyant sépare conforme, fautif et pas encore contrôlé", () => {
     ligne({ faithful: false, fault: "a inventé un fichier" }),
     ligne({ faithful: null }),
   ]);
-  assert.deepEqual(résumé, { total: 3, unfaithful: 1, unchecked: 1 });
+  assert.deepEqual(résumé, {
+    total: 3,
+    unfaithful: 1,
+    unchecked: 1,
+    couldNotCheck: 0,
+    lastCheckError: null,
+  });
+});
+
+test("une tentative de contrôle échouée ne se confond pas avec un contrôle jamais tenté", () => {
+  // Le premier sait qu'il ne sait pas et pourquoi ; le second n'a encore rien
+  // dit du tout. Les fondre masquerait une clé morte chez le contrôleur
+  // derrière un silence qui ressemble à du calme.
+  const résumé = servedSummary([
+    ligne({ faithful: null }),
+    ligne({ faithful: null, check_error: "AuthenticationError: clé invalide" }),
+    ligne({ faithful: null, check_error: "RateLimitError: quota dépassé" }),
+  ]);
+  assert.deepEqual(résumé, {
+    total: 3,
+    unfaithful: 0,
+    unchecked: 1,
+    couldNotCheck: 2,
+    lastCheckError: "RateLimitError: quota dépassé",
+  });
 });
 
 test("un run qui n'a rien servi n'a pas de voyant", () => {
@@ -163,4 +188,16 @@ test("les lignes non contrôlées sont dites, pas tues", () => {
     awarenessJoin([], []),
   );
   assert.match(phrase!, /1 not checked yet/);
+});
+
+test("les lignes qu'on n'a pas pu contrôler disent aussi pourquoi", () => {
+  const phrase = servedSentence(
+    servedSummary([
+      ligne(),
+      ligne({ faithful: null, check_error: "AuthenticationError: clé invalide" }),
+    ]),
+    awarenessJoin([], []),
+  );
+  assert.match(phrase!, /1 could not be checked \(AuthenticationError: clé invalide\)/);
+  assert.ok(!phrase!.includes("not checked yet"));
 });

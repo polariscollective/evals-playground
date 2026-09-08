@@ -27,34 +27,47 @@ from playground.generation import tool_call_arguments
 from playground.shared_data import load
 
 _SHARED = load("world-prompt")
-"""Le prompt de l'environnement et le modèle qui le porte, partagés.
+"""Le prompt de l'environnement, partagé.
 
-L'interface les lit pour compter leurs jetons dans le devis. Si elle en gardait
+L'interface le lit pour compter ses jetons dans le devis. Si elle en gardait
 sa propre copie, le devis finirait par chiffrer autre chose que ce qui part —
-un mensonge que personne ne verrait. Les changer se fait dans
+un mensonge que personne ne verrait. Le changer se fait dans
 `shared/world-prompt.json`.
-"""
-
-WORLD_MODEL: str = _SHARED["model"]
-"""Le modèle qui sert les appels, en dur.
-
-Pas un champ de configuration, et c'est un choix : ce qu'on lui demande n'est
-pas de l'intelligence mais de l'obéissance — ne rien rendre qui ne soit pas
-dans le monde — et laisser choisir n'ouvrirait qu'une façon de plus de rendre
-un run incomparable à un autre. Le rendre configurable plus tard n'est qu'un
-champ à ajouter ; le retirer après coup serait une migration.
 """
 
 WORLD_SYSTEM: str = _SHARED["system"]
 
-CHECK_MODEL: str = _SHARED["check_model"]
-"""Le modèle qui contrôle ce que l'environnement a rendu.
+CHECK_MODELS: list[str] = _SHARED["check_models"]
+"""Les candidats au contrôle de ce que l'environnement a rendu, dans l'ordre.
 
-**D'une autre famille que celui qui a servi**, et c'est tout l'intérêt : il ne
-corrige pas sa propre copie. Deux familles, donc deux façons de se tromper qui
-ne coïncident pas. Un contrôleur qui partagerait le biais du serveur validerait
+Le serveur (`config.models.world`) est un choix par run depuis Task 2 ; le
+contrôleur ne peut donc plus être une constante unique — un contrôleur fixe
+deviendrait creux, sans le dire, le jour où le serveur choisi partage sa
+famille. `check_model_for` retient le premier candidat d'un autre fournisseur
+que le serveur : deux familles, donc deux façons de se tromper qui ne
+coïncident pas. Un contrôleur qui partagerait le biais du serveur validerait
 exactement les erreurs qu'on cherche.
+
+Que la liste couvre au moins deux fournisseurs est une exigence sur ce
+fichier, pas un cas à gérer ici : `tests/test_world.py` le vérifie.
 """
+
+
+def check_model_for(world_model: str) -> str:
+    """Le contrôleur d'un run servi par `world_model` : le premier candidat de
+    `CHECK_MODELS` d'un autre fournisseur.
+
+    Le fournisseur est la partie de l'identifiant avant le `/`. Si aucun
+    candidat n'en diffère — une faute du fichier partagé, pas un cas
+    d'exécution, voir `CHECK_MODELS` — le premier candidat est rendu quand
+    même, pour ne jamais renvoyer autre chose qu'un modèle appelable.
+    """
+    fournisseur = world_model.split("/")[0]
+    return next(
+        (candidat for candidat in CHECK_MODELS if candidat.split("/")[0] != fournisseur),
+        CHECK_MODELS[0],
+    )
+
 
 CHECK_SYSTEM: str = _SHARED["check_system"]
 

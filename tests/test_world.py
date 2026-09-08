@@ -9,11 +9,12 @@ import pytest
 from inspect_ai.model import ModelOutput
 
 from playground.eval_schemas import ToolSpec
+from playground import world as world_module
 from playground.world import (
-    CHECK_MODEL,
-    WORLD_MODEL,
+    CHECK_MODELS,
     arguments_key,
     check,
+    check_model_for,
     check_prompt,
     result_key,
     serve,
@@ -156,10 +157,13 @@ def test_servir_coupe_les_blancs_de_bord():
     assert rendu == "404 Not Found"
 
 
-def test_le_modele_est_en_dur_et_partage():
-    """Il vit dans `shared/`, lu par Python et par le devis — pas dans la
-    configuration d'un run."""
-    assert WORLD_MODEL == "openai/gpt-5.6-luna"
+def test_le_modele_ne_vit_plus_en_dur_ici():
+    """`WORLD_MODEL` a disparu de ce module avec la clé `model` du fichier
+    partagé : le modèle qui sert les appels vient maintenant de
+    `config.models.world`, propre à chaque run — voir
+    docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md."""
+    assert not hasattr(world_module, "WORLD_MODEL")
+    assert "model" not in world_module._SHARED
 
 
 # --- Le contrôle ---------------------------------------------------------
@@ -238,7 +242,19 @@ def test_un_defaut_sans_raison_en_reçoit_une():
     assert faute
 
 
-def test_le_controleur_n_est_pas_celui_qui_a_servi():
-    """Il ne corrige pas sa propre copie : deux familles, donc deux façons de
-    se tromper qui ne coïncident pas."""
-    assert CHECK_MODEL != WORLD_MODEL
+def test_le_controleur_est_d_un_autre_fournisseur_que_le_serveur():
+    """Le serveur est devenu un choix par run — `config.models.world` — et un
+    contrôleur fixe deviendrait creux sans le dire dès que ce choix tombe sur
+    sa propre famille. `check_model_for` retient donc, parmi `CHECK_MODELS`,
+    le premier dont le fournisseur diffère de celui du serveur."""
+    assert check_model_for("openai/gpt-5.6-luna") == "anthropic/claude-haiku-4-5"
+    assert check_model_for("anthropic/claude-haiku-4-5") == "openai/gpt-5.6-luna"
+    assert check_model_for("grok/grok-4.3") == "anthropic/claude-haiku-4-5"
+
+
+def test_la_liste_des_controleurs_couvre_au_moins_deux_fournisseurs():
+    """Sans ça, un serveur de la famille de l'unique candidat se ferait
+    contrôler par lui-même, et le contrôle validerait ses propres erreurs.
+    Ceci est une faute du fichier partagé, pas un cas d'exécution."""
+    fournisseurs = {modele.split("/")[0] for modele in CHECK_MODELS}
+    assert len(fournisseurs) >= 2

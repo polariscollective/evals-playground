@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { NotFound, failToStart, loadRun, recordStart, retryFailed } from "@/lib/runs";
+import {
+  NotFound,
+  failToStart,
+  failedCellCount,
+  loadRun,
+  recordStart,
+  retryFailed,
+} from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
+import { worldEquivalenceProblem } from "@/lib/validate";
 
 /** Relance les cases en erreur d'un run, dans ce même run.
  *
@@ -35,13 +43,45 @@ export async function POST(
     );
   }
 
-  const retried = await retryFailed(runId);
-  if (retried === 0) {
+  // Lu, pas encore agi : `retryFailed` mute dès qu'il trouve quelque chose,
+  // et l'appeler seulement pour compter aurait déjà remis des cases en
+  // `pending` avant même de savoir si le job pourrait démarrer.
+  if ((await failedCellCount(runId)) === 0) {
     return NextResponse.json(
       { error: "This run has no failed cell to retry." },
       { status: 409 },
     );
   }
+
+  // Un run lancé avant que `models.world` existe peut servir des outils sans
+  // en nommer un : le job applique la même équivalence qu'`extendProblem`
+  // (voir CRITICAL 1) et lèverait à froid, effaçant au passage le coût déjà
+  // enregistré (`check_served_results` avant `finish_run`). Vérifié ici
+  // plutôt que découvert dans les logs du job — et seulement cette
+  // équivalence, jamais `configProblem` entier : ce dernier refuse aussi des
+  // fautes qu'un run enregistré avant ce chantier porte déjà sans que le job
+  // s'en soucie (`average_output_tokens`, notamment), et qu'`ExtendRequest` ne
+  // sait de toute façon pas réparer. Après le 409 ci-dessus, et avant toute
+  // écriture : un run qui n'a rien à retenter n'a pas à s'entendre dire que sa
+  // configuration est cassée, et un run dont la configuration l'est ne doit
+  // pas se retrouver `triggered` avec des cases en `pending` sans qu'aucun job
+  // ne démarre pour les jouer.
+  const worldProblem = worldEquivalenceProblem(detail.run.config);
+  if (worldProblem) {
+    return NextResponse.json(
+      {
+        error:
+          "This run serves at least one tool but names no model to answer its " +
+          "calls — it was launched before models.world was a per-run choice. " +
+          "Retry cannot supply it: reopen the run in the composer instead, " +
+          "which prefills everything already recorded and asks for the model " +
+          "that's missing.",
+      },
+      { status: 422 },
+    );
+  }
+
+  const retried = await retryFailed(runId);
 
   try {
     await recordStart(runId, await startJob(runId, "run"));

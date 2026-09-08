@@ -72,6 +72,16 @@ test("un juge supplémentaire hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
+test("models.world hors favoris est refusé", () => {
+  // Sans ce contrôle, un agent pourrait servir des outils avec un modèle
+  // qu'il ne peut même pas voir dans le prompt.
+  const problem = configFavouritesProblem(
+    config({ world: "openai/gpt-4o" }),
+    FAVOURITES,
+  );
+  assert.ok(problem?.includes("openai/gpt-4o"));
+});
+
 test("un modèle qui n'existe nulle part n'est pas refusé ici", () => {
   // `configProblem` s'en charge, avec son propre message. Deux refus pour la
   // même faute enverraient corriger un profil qui n'y peut rien.
@@ -114,6 +124,17 @@ test("un juge ajouté sans modèle reprend celui du run, et passe", () => {
     new_judges: [{ criterion: "x" }],
   } as unknown as ExtendRequest;
   assert.equal(extendFavouritesProblem(request, FAVOURITES), null);
+});
+
+test("le world d'une extension hors favoris est refusé", () => {
+  // Le champ que `submit_draft_extension` gagne pour servir un outil ajouté :
+  // sans ce contrôle, il échapperait au bornage que tous les autres modèles
+  // subissent déjà.
+  const problem = extendFavouritesProblem(
+    { targets: [], world: "openai/gpt-4o" } as unknown as ExtendRequest,
+    FAVOURITES,
+  );
+  assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
 test("configProblem, lui, ne connaît pas les favoris", () => {

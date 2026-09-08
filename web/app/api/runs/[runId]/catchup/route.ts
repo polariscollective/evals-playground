@@ -8,6 +8,7 @@ import {
   startCatchupPass,
 } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
+import { worldEquivalenceProblem } from "@/lib/validate";
 
 /** Remplit les lignes de `judge_scores` encore en attente OU en erreur sur ce
  *  run, pour toute liaison vivante et toute conversation déjà terminée.
@@ -51,10 +52,13 @@ export async function POST(
       { status: 409 },
     );
   }
+
   // `catchup_missing` vient de `loadRun`, qui l'a calculé à l'instant : le
   // recalculer ici recompterait la même chose une seconde fois — voir
   // `catchupMissingTotal`, l'unique fonction qui porte ce compte, appelée
-  // des deux côtés (l'affichage, et cette garde).
+  // des deux côtés (l'affichage, et cette garde). Lecture seule, donc avant
+  // la garde qui suit : un run qui n'a rien à rattraper n'a pas à s'entendre
+  // dire que sa configuration est cassée (CRITICAL 1).
   if (detail.catchup_missing === 0) {
     return NextResponse.json(
       {
@@ -63,6 +67,29 @@ export async function POST(
           "grade on every finished conversation.",
       },
       { status: 409 },
+    );
+  }
+
+  // Même garde que `retry` (voir CRITICAL 1) : un run lancé avant
+  // `models.world` peut servir des outils sans en nommer un, et le job
+  // applique la même équivalence qu'`extendProblem` — une levée à froid qui
+  // effacerait le coût déjà enregistré. Seulement cette équivalence, jamais
+  // `configProblem` entier : ce dernier refuse aussi des fautes qu'un run
+  // enregistré avant ce chantier porte déjà sans que le job s'en soucie
+  // (`average_output_tokens`, notamment), et que `retry`/`catchup` ne savent
+  // de toute façon pas réparer.
+  const worldProblem = worldEquivalenceProblem(detail.run.config);
+  if (worldProblem) {
+    return NextResponse.json(
+      {
+        error:
+          "This run serves at least one tool but names no model to answer its " +
+          "calls — it was launched before models.world was a per-run choice. " +
+          "Catch-up cannot supply it: reopen the run in the composer instead, " +
+          "which prefills everything already recorded and asks for the model " +
+          "that's missing.",
+      },
+      { status: 422 },
     );
   }
 

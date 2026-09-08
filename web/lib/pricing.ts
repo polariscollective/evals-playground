@@ -12,7 +12,13 @@ import {
   SHARED_PRICING as S,
   SHARED_WORLD_PROMPT as M,
 } from "./shared.ts";
-import { toolsFor } from "./tools.ts";
+// `served` et `servesTools` plutôt qu'un test en ligne : le devis décidait de
+// son côté ce qu'« être servi » veut dire, sans détourer, là où `configProblem`
+// et le moteur détourent. Un outil à `retrieval_rules` blancs — licite, voir
+// `toolsProblem` — était alors chiffré comme servi tout en n'étant servi par
+// personne, et le devis annonçait un modèle vide. Le discriminant vit à un
+// endroit ; trois copies finissent toujours par diverger.
+import { served, servesTools, toolsFor } from "./tools.ts";
 import type {
   CostEstimate,
   EvalRunConfig,
@@ -316,9 +322,7 @@ export function estimateTokens(
       // `tools: none` sur une ligne est souvent toute la comparaison qu'on
       // cherche : elle ne doit pas porter le coût d'un monde qu'elle
       // n'interroge jamais.
-      const servis = toolsFor(config, scenario).filter(
-        (tool) => (tool.retrieval_rules ?? "") !== "",
-      );
+      const servis = toolsFor(config, scenario).filter(served);
       if (servis.length > 0 && servedCalls > 0) {
         servedConversations += weight;
         const monde =
@@ -333,7 +337,19 @@ export function estimateTokens(
               servis.length,
           );
         add(
-          M.model,
+          // `?? ""` n'est pas un défaut caché, mais il n'est pas non plus
+          // toujours mort : c'est vrai pour le lancement, `submit_draft_run`
+          // et `draftCost`, qui font tous passer la configuration par
+          // `configProblem` avant d'arriver ici, et qui donc n'atteignent
+          // jamais cette branche sans `models.world`. Ce n'est PAS vrai pour
+          // les deux appelants d'extension — `estimateExtension` et l'aperçu
+          // vivant d'`ExtendPanel` — qui n'appellent jamais `configProblem` :
+          // ils résolvent `models.world` eux-mêmes avec `resolvedWorld`
+          // (`tools.ts`), qui ne rend un modèle que si `extendProblem` a déjà
+          // validé la demande. L'aperçu affiché avant qu'un modèle ne soit
+          // choisi retombe donc, sciemment, sur ce repli — un devis à 0 $ pour
+          // la part servie, le temps que le champ se remplisse.
+          config.models.world ?? "",
           monde * servedCalls * weight,
           S.world_response_tokens * servedCalls * weight,
           S.world_response_tokens,
@@ -689,9 +705,7 @@ export function costSentence(config: EvalRunConfig): string | null {
  * le nombre d'appels servis et ne touche à rien d'autre — c'est la seule
  * chose dont `max_tool_calls_per_turn` décide dans le devis. */
 function servedCallsSentence(config: EvalRunConfig): string {
-  const servis = (config.tools ?? []).some(
-    (tool) => (tool.retrieval_rules ?? "") !== "",
-  );
+  const servis = servesTools(config.tools ?? []);
   const cap = config.max_tool_calls_per_turn ?? 5;
   if (!servis || servedCallsPerConversation(config) === 0) return "";
   const auPlafond = estimateCost({ ...config, max_tool_calls_per_turn: cap * 2 }, null);

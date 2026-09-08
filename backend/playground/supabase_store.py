@@ -605,9 +605,35 @@ def write_tool_verdict(
     Il ne réécrit jamais `result` : ce qui a été servi est ce qu'une
     conversation a réellement vu, et le corriger après coup rendrait son
     transcript inexplicable.
+
+    Efface aussi `check_error` : un contrôle qui réussit dément la dernière
+    fois où il avait échoué. Sans ça, une panne transitoire laisserait une
+    raison périmée sur une ligne pourtant contrôlée depuis.
     """
     supabase.update(
         TOOL_RESULTS,
-        {"faithful": faithful, "fault": fault},
+        {"faithful": faithful, "fault": fault, "check_error": None},
+        **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
+    )
+
+
+def write_tool_check_error(
+    supabase: Supabase,
+    run_id: str,
+    scenario_index: int,
+    tool_name: str,
+    arguments_hash: str,
+    *,
+    reason: str,
+) -> None:
+    """Pourquoi cette ligne n'a pas pu être contrôlée.
+
+    `faithful` n'est pas touché : il reste nul, parce qu'on ne sait pas. La
+    ligne repassera donc au prochain contrôle, et un succès effacera cette
+    raison — c'est la dernière, pas un verdict.
+    """
+    supabase.update(
+        TOOL_RESULTS,
+        {"check_error": reason},
         **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
     )

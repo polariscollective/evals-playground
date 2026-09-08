@@ -40,6 +40,7 @@ export function configFavouritesProblem(
       })),
       { id: config.models.adversary, where: "models.adversary" },
       { id: config.models.judge, where: "models.judge" },
+      { id: config.models.world, where: "models.world" },
       ...(config.judges ?? []).map((judge, index) => ({
         id: judge.model,
         where: `judges[${index}].model`,
@@ -72,6 +73,10 @@ export function extendFavouritesProblem(
         id: judge.model,
         where: `new_judges[${index}].model`,
       })),
+      // Une extension sans monde propre reprend celui du run, déjà lancé —
+      // même remarque que pour `new_judges` ci-dessus. `notFavouriteProblem`
+      // laisse passer la chaîne vide.
+      { id: request.world, where: "world" },
     ],
     favorites,
   );
