@@ -29,10 +29,10 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
       <p className="eyebrow">Evals Playground</p>
 
-      <span className="flex items-center gap-3 font-serif text-2xl text-teal-700">
+      <h1 className="flex items-center gap-3 font-serif text-2xl font-normal text-teal-700">
         <PolarisStar size={22} />
         Polaris Collective
-      </span>
+      </h1>
 
       {message && <p className="text-sm text-zinc-600">{message}</p>}
 
