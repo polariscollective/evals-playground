@@ -1237,6 +1237,24 @@ export default function EvalRunPage({
         <CatchUpButton detail={detail} onLaunched={() => load(transcripts)} />
       )}
 
+      {/* Avant le juge : ce qu'on a écrit sur ce run se lit d'abord, et
+          l'échelle du juge après — l'analyse, elle, reste en bas, parce
+          qu'elle s'écrit une fois la matrice lue. */}
+      <NotesField
+        // La clé force un remontage quand le run change : sans elle, l'état
+        // local du composant survivrait à la navigation d'un run à l'autre.
+        // Distincte de celle du champ Run Analysis, plus bas — deux
+        // instances du même composant, à la même profondeur, ne peuvent pas
+        // partager une clé sans que React confonde leur état local.
+        key={`${run.id}-notes`}
+        value={notes}
+        onChange={setNotes}
+        rows={8}
+        onSave={async (next) => {
+          await saveNotes(run.id, next);
+        }}
+      />
+
       <JudgeBlock
         detail={detail}
         onUnlink={handleUnlinkJudge}
@@ -1254,21 +1272,6 @@ export default function EvalRunPage({
         onOpenScenario={setOpenScenario}
         onOpenCell={openCell}
         displayedRunJudgeId={displayedRunJudgeId}
-      />
-
-      <NotesField
-        // La clé force un remontage quand le run change : sans elle, l'état
-        // local du composant survivrait à la navigation d'un run à l'autre.
-        // Distincte de celle du champ Run Analysis, juste en dessous — deux
-        // instances du même composant, à la même profondeur, ne peuvent pas
-        // partager une clé sans que React confonde leur état local.
-        key={`${run.id}-notes`}
-        value={notes}
-        onChange={setNotes}
-        rows={8}
-        onSave={async (next) => {
-          await saveNotes(run.id, next);
-        }}
       />
 
       <NotesField

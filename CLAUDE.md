@@ -1,71 +1,25 @@
 # evals-playground
 
-Composer des scénarios, les faire jouer par plusieurs modèles, les faire noter,
-lire la matrice.
+What the product is, and what a run contains: `docs/what-this-is.md`.
+How it deploys: `docs/DEPLOY.md`.
+The Supabase tables, annotated one by one: `web/lib/supabase.ts`.
 
-## Où vivent les données
+## Tests
 
-Projet Supabase **`evals`** — `hkqzamibfpyvlowiqgpn`, partagé avec
-`cop-subtask-decomposition-evals`, dont les tables ne croisent jamais les
-nôtres.
+    pytest                  # the engine, backend/playground — 19 files
+    npm --prefix web test   # everything else — 50 .test.mts files
 
-| table | contenu |
-|---|---|
-| `eval_runs` | un run : sa configuration, son statut, son coût, ses notes |
-| `eval_samples` | une ligne par scénario × modèle × répétition — une case de la matrice |
+Most of the code is TypeScript. A green `pytest` is not a green build.
 
-**Les migrations ne sont pas ici.** Elles vivent dans `polaris-supabase`, sous
-`evals/supabase/migrations/`. Changer le schéma se fait là-bas ; voir le
-`CLAUDE.md` de l'espace de travail pour pourquoi.
+`scripts/dev.sh` runs the app: one server, Next only. The eval engine does not
+run in dev.
 
-Rien de ce qui fait foi ne vit sur disque.
+## Two rules
 
-La table `profiles` porte aussi les **favoris de modèles** : `favorite_models`,
-`NULL` valant « le défaut du code » (`web/lib/favorite-models.ts`). Ils décident
-de tout ce qui *propose* — écrans, prompt de l'agent, outils MCP — et de rien
-de ce qui *existe* : `configProblem` valide contre le catalogue entier, pour
-qu'un run déjà lancé s'affiche et qu'une relance humaine reste lançable. Seuls
-les outils MCP refusent un modèle hors favoris.
+- **The engine runs only in the job.** The `/api` routes authenticate, talk to
+  Supabase, and trigger the Cloud Run job. Anything measured in minutes goes
+  there, never into a request.
 
-## L'architecture
-
-```
-Vercel : Next.js, pages + routes /api  →  Supabase
-                                       →  polaris-batch-trigger
-                                              →  Cloud Run Job evals-playground-runner
-                                                     →  Supabase
-```
-
-Les routes `/api` portent l'authentification — Google, restreinte par
-`ALLOWED_EMAILS` et `ALLOWED_DOMAINS` — et sont les seules à parler à Supabase.
-Le navigateur ne voit jamais la clé de service.
-
-Le moteur d'évaluation reste en Python, dans `backend/playground/`, parce qu'il
-repose sur `inspect_ai`. Il ne tourne que dans le job : `EVAL_RUN_ID` par
-l'environnement, et chaque case écrite en base dès qu'elle est jugée.
-
-## Ce qu'il faut savoir avant de toucher au juge
-
-Le juge ne rend pas un verdict figé mais une note choisie sur une **échelle que
-l'utilisateur écrit** : des paliers, chacun un nombre et la phrase qui dit ce
-qu'il signifie. Le code ne connaît que des nombres. Une case de la matrice
-affiche la moyenne des notes obtenues, et le haut de l'échelle est le bout
-foncé.
-
-Trois issues à ne pas confondre, et le schéma les distingue :
-
-| situation | `status` | `score` |
-|---|---|---|
-| noté | `done` | la note |
-| conversation vide, ou note hors de l'échelle | `done` | `null` |
-| le juge est tombé | `error` | `null` |
-
-## Développement
-
-```bash
-scripts/dev.sh          # backend et front ensemble
-pytest                  # le moteur
-```
-
-Le `.env` porte les clés des quatre fournisseurs, celles de Supabase, et le
-secret du déclencheur. `.env.example` en donne la liste, valeurs vides.
+- **Nothing authoritative lives on disk.** Migrations live in
+  `polaris-supabase`, under `evals/supabase/migrations/`. There is deliberately
+  no `supabase/` folder here — see the workspace `CLAUDE.md` for why.

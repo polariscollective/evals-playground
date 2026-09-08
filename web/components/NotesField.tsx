@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Collapsible } from "@/components/Collapsible";
 import { renderMarkdown } from "@/lib/markdown";
 
 /** Le commentaire d'un run : markdown en édition, HTML une fois sauvé.
@@ -63,10 +64,15 @@ export function NotesField({
   };
 
   return (
-    <section className="rounded border border-zinc-300 p-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">{label}</h2>
-        {editing ? (
+    // Repliable par son titre, sauf en édition : `pinned` la tient ouverte,
+    // et « Edit » sur une case repliée la rouvre du même geste, puisqu'il
+    // fait passer `editing` à vrai.
+    <Collapsible
+      className="rounded border border-zinc-300 p-3"
+      pinned={editing}
+      title={<h2 className="text-sm font-medium">{label}</h2>}
+      aside={
+        editing ? (
           <button
             type="button"
             onClick={save}
@@ -83,9 +89,9 @@ export function NotesField({
           >
             Edit
           </button>
-        )}
-      </div>
-
+        )
+      }
+    >
       {editing ? (
         <>
           <textarea
@@ -118,6 +124,6 @@ export function NotesField({
           {error}
         </p>
       )}
-    </section>
+    </Collapsible>
   );
 }

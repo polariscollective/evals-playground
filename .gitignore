@@ -26,6 +26,7 @@ data/selected/
 # du déploiement, la route `web/app/inspect-view/[runId]/logs/` qui sert les
 # journaux au viewer. Le bouton ne s'affichait alors sur aucun run.
 /logs/
+/local/*
 /backend/logs/
 
 # os

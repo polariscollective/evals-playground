@@ -392,6 +392,9 @@ export interface ScenarioSource {
   column_tools?: string;
   /** La colonne portant la note de laboratoire du scénario. */
   column_note?: string;
+  /** The column holding each scenario's own world. Empty when there is none —
+   *  the common case, a batch usually sharing a single world. */
+  column_world?: string;
   skipped_rows: number;
 }
 
@@ -999,8 +1002,50 @@ export interface ProviderInfo {
 }
 
 /** Ce qu'un modèle coûte dans un run, et sur quelle hypothèse. */
+/** À quel titre un modèle est appelé dans un run.
+ *
+ * Les mots du code — ceux du YAML, de `models.world` et des messages d'erreur —
+ * pour que ce qu'on lit dans le devis se retrouve tel quel dans le fichier
+ * qu'on édite.
+ *
+ * Pas de `awareness` : le juge d'éveil tourne sur `models.judge`, au même tarif
+ * et sur la même conversation qu'un juge ordinaire. Il est compté dans la ligne
+ * `judge` de ce modèle, et c'est le libellé de la ligne qui le nomme. */
+export type ModelRole =
+  | "evaluated"
+  | "adversary"
+  | "judge"
+  | "world"
+  | "check";
+
+/** Ce qu'un modèle coûte **à un titre donné**, et sur quelle hypothèse.
+ *
+ * Une ligne par (rôle, modèle), et non par modèle : un `claude-sonnet-5` évalué
+ * et juge dans le même run est la configuration ordinaire, et fondre ses deux
+ * dépenses empêchait de voir ce qu'un réglage coûte. Voir
+ * docs/superpowers/specs/2026-09-08-devis-par-role-design.md. */
 export interface ModelCost {
   model: string;
+  /** Absent sur les devis pris avant ce découpage — ils sont stockés sur les
+   *  runs et les brouillons, et ne sont jamais recalculés : le devis affiché
+   *  sur un run lancé doit rester celui qui a été pris au lancement, sans quoi
+   *  l'écart au coût réel cesserait de mesurer la dérive de l'estimation pour
+   *  mesurer le mouvement des tarifs. Une ligne sans rôle s'affiche sans
+   *  étiquette. */
+  role?: ModelRole;
+  /** Les appels de modèle que cette ligne compte.
+   *
+   * Facultatif pour la même raison que `role`, et il faut le traiter avec la
+   * même méfiance : une ligne relue d'un devis stocké avant ce découpage n'en
+   * porte pas. Le type dirait le contraire qu'une addition y trouverait
+   * `undefined` et rendrait `NaN` — un total faux, affiché sans broncher. */
+  calls?: number;
+  /** Ce nombre est-il un pari ? Vrai pour `world` et `check` seulement, et pour
+   *  deux raisons qui jouent dans le même sens : rien ne déclare combien
+   *  d'outils le modèle évalué appellera, et le cache `tool_results` supprime
+   *  la plupart des appels restants. Le chiffre est donc un **plafond** —
+   *  jamais un plancher. */
+  assumed?: boolean;
   input_tokens: number;
   output_tokens: number;
   response_tokens: number;

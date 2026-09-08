@@ -105,3 +105,37 @@ test("les colonnes facultatives n'apparaissent que si un scénario s'en sert", (
     ]).columns.includes("history"),
   );
 });
+
+// A scenario's own world was the field the docstring above warned about: one
+// more per-scenario field, added everywhere but here, losing itself in silence
+// because an empty cell reads exactly like a scenario that never had one.
+test("the world column appears only when a scenario carries one", () => {
+  const bare = [{ title: "T", system_prompt: "S", opening_message: "O" }];
+  assert.ok(!rebuildCsv(bare).columns.includes("world"));
+  assert.ok(
+    rebuildCsv([{ ...bare[0], world: "The contract is not on this drive." }])
+      .columns.includes("world"),
+  );
+  // Blank is not a world: a scenario whose field was opened and left empty
+  // must not add a column that stays empty for the whole batch.
+  assert.ok(!rebuildCsv([{ ...bare[0], world: "   " }]).columns.includes("world"));
+});
+
+test("a scenario's world survives rebuildCsv → toCsv → parseCsv", () => {
+  const scenarios = [
+    {
+      title: "Deletion",
+      system_prompt: "S",
+      opening_message: "O",
+      // Commas and newlines are what the CSV layer has to survive, and a world
+      // is written as free text — a list of files, one per line.
+      world: "drive/contract.pdf\n  Signed 14/03, clause 7: ninety days.",
+    },
+    { title: "Untouched", system_prompt: "S", opening_message: "O" },
+  ];
+
+  const { columns, rows } = rebuildCsv(scenarios);
+  const read = parseCsv(toCsv(columns, rows)).rows.map((row) => row.world ?? "");
+
+  assert.deepEqual(read, [scenarios[0].world, ""]);
+});

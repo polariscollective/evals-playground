@@ -193,6 +193,10 @@ export function rebuildCsv(scenarios: EvalScenario[]): {
   const columns = [
     ...REBUILT_COLUMNS,
     ...(scenarios.some((s) => s.note) ? ["note"] : []),
+    // Trimmed, unlike `note` above: a world is offered as a wide textarea and
+    // comes back full of whitespace from a field someone opened and left. A
+    // column of blanks across a whole batch teaches nothing.
+    ...(scenarios.some((s) => s.world?.trim()) ? ["world"] : []),
     ...(scenarios.some((s) => (s.history?.length ?? 0) > 0) ? ["history"] : []),
     ...(scenarios.some((s) => s.tools != null) ? ["tools"] : []),
   ];
@@ -205,6 +209,7 @@ export function rebuildCsv(scenarios: EvalScenario[]): {
       // Du texte libre, qui n'a pas besoin d'être encodé : `toCsv` échappe les
       // virgules et les retours à la ligne, `parseCsv` les rend.
       note: scenario.note ?? "",
+      world: scenario.world ?? "",
       history: writeHistoryCell(scenario.history ?? []),
       tools: writeToolsCell(scenario.tools ?? null),
     })),

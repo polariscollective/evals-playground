@@ -212,6 +212,17 @@ export default function ProfilePage() {
             guard against an agent that runs away — not against you deciding
             to spend more.
           </p>
+
+          {/* Ce qui a été dépensé se lit contre le plafond qui le borne :
+              les séparer d'un carré à l'autre faisait chercher. */}
+          {activity && (
+            <div className="space-y-1 border-t border-zinc-200 pt-3">
+              <h3 className="text-sm font-medium">Last hour</h3>
+              <p className="text-sm text-zinc-600">
+                {activitySentence(activity.count, activity.usd)}
+              </p>
+            </div>
+          )}
         </section>
       )}
 
@@ -286,15 +297,6 @@ export default function ProfilePage() {
             </button>
             {savedFavorites && <span className="text-sm text-teal-700">Saved.</span>}
           </div>
-        </section>
-      )}
-
-      {activity && (
-        <section className="space-y-2 rounded border border-zinc-300 p-4">
-          <h2 className="text-sm font-medium">Last hour</h2>
-          <p className="text-sm text-zinc-600">
-            {activitySentence(activity.count, activity.usd)}
-          </p>
         </section>
       )}
     </main>

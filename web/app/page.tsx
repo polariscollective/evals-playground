@@ -38,9 +38,11 @@ import { HistoryEditor } from "@/components/HistoryEditor";
 import { NotesField } from "@/components/NotesField";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PromptGuide } from "@/components/PromptGuide";
 import { configProblem } from "@/lib/validate";
 import { DEFAULT_RUN_MODEL } from "@/lib/favorite-models";
+import { clearSaved, readSaved, writeSaved } from "@/lib/evaluate-storage";
 import { withLiveJudges } from "@/lib/live-config";
 import { SHARED_PRICING } from "@/lib/shared";
 import { servesTools } from "@/lib/tools";
@@ -79,6 +81,34 @@ const originOfFile = (file: File): ConfigOrigin => ({
 const PASTED: ConfigOrigin = { said: "Pasted config", csvName: "pasted.csv" };
 
 type Source = "manual" | "csv";
+
+/** The model a blank page opens on, or `null` when no provider key is set.
+ *
+ * Pulled out of the catalogue effect because "Clear evaluation config" has to
+ * give back exactly the opening page: two ways of choosing this model would
+ * have ended up choosing different ones.
+ *
+ * The default is named (`DEFAULT_RUN_MODEL`), not inferred from an order: for
+ * as long as it was inferred, widening or reordering the catalogue moved what
+ * a blank page opened on — and the quote with it.
+ *
+ * The two fallbacks serve the case where that model is not offered to this
+ * person: they removed it from their favourites, or their provider's key is
+ * missing. We then take their first available favourite, and failing that the
+ * first model at all — preselecting a model the filtered catalogue will not
+ * show would be a fault, but leaving all three fields empty would be worse. */
+function openingModel(catalog: ProviderInfo[]): string | null {
+  const available = catalog.find((p) => p.key_present);
+  if (!available) return null;
+  const offered = catalog
+    .filter((p) => p.key_present)
+    .flatMap((p) => p.models);
+  return (
+    offered.find((m) => m.id === DEFAULT_RUN_MODEL && m.favorite)?.id ??
+    offered.find((m) => m.favorite)?.id ??
+    available.models[0].id
+  );
+}
 
 /** Le titre de la page, rendu des deux côtés de la frontière Suspense.
  *
@@ -135,6 +165,11 @@ function EvaluateForm() {
   // colonne : ce sont deux chemins vers le même champ du scénario.
   const [history, setHistory] = useState<SeededTurn[]>([]);
   const [scenarioNote, setScenarioNote] = useState("");
+  // What this row changes about the run's world — see `EvalScenario.world`.
+  // Given to the environment as a second, named block that wins over the run's
+  // own, never melted into it: that is what makes a denial readable as a
+  // correction rather than a contradiction to untangle.
+  const [scenarioWorld, setScenarioWorld] = useState("");
   // Les outils du run, et ce que le scénario manuel en prend. Le mode CSV a
   // sa colonne : deux chemins vers le même champ du scénario.
   const [tools, setTools] = useState<ToolSpec[]>([]);
@@ -168,6 +203,8 @@ function EvaluateForm() {
   // Facultative : la note de laboratoire du scénario, celle qu'on relit six
   // mois plus tard pour se rappeler pourquoi cette ligne existe.
   const [colNote, setColNote] = useState("");
+  // Optional: the column holding each row's own world.
+  const [colWorld, setColWorld] = useState("");
 
   const [adversaryPrompt, setAdversaryPrompt] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -194,6 +231,20 @@ function EvaluateForm() {
   // reposer ensuite sans recharger la page — exactement l'usage que ce
   // mécanisme sert.
   const [carriedModels, setCarriedModels] = useState<Set<string>>(new Set());
+
+  // The last document received — a run being duplicated, a draft opened, a
+  // file dropped — kept underneath everything the form rewrites.
+  //
+  // `config()` rewrites all seventeen fields of `EvalRunConfig` unconditionally,
+  // so no stale value survives this base. What it carries is the EIGHTEENTH:
+  // the field `EvalRunConfig` gains tomorrow will cross a duplicate and a draft
+  // before this screen even knows how to show it, instead of being found months
+  // later — as the per-scenario world was, dropped here in silence.
+  //
+  // Scenarios never come from it: their identity is an index, and CSV mode
+  // replaces the whole list. A stale base would paste the old row 3's world
+  // onto the new one.
+  const [base, setBase] = useState<EvalRunConfig | null>(null);
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
@@ -228,39 +279,41 @@ function EvaluateForm() {
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // Has the restore happened? It happens once, and nothing is written before
+  // it: the first blank render would overwrite what was just kept.
+  const restored = useRef(false);
+  // The draft or run whose content is ALREADY in the form. The effects that go
+  // and fetch it check here before leaving: without this, a restore that puts
+  // `?draft=X` back in the address would read that draft from the database and
+  // overwrite unsaved edits — the exact opposite of the point.
+  const loadedFrom = useRef<string | null>(null);
+  // Has anyone filled this form? The catalogue's preselection must not
+  // overwrite what is already there. `!relaunchOf` alone was not enough: a
+  // draft whose response arrived after the catalogue's had its models reset to
+  // the defaults, decided by the order two requests happened to land in.
+  const filled = useRef(false);
+  // The form has been launched: nothing is written any more, so the debounced
+  // write cannot put it back while the page is on its way to the run.
+  const launched = useRef(false);
+
   useEffect(() => {
     getCatalog()
       .then((catalog) => {
         setProviders(catalog);
-        const available = catalog.find((p) => p.key_present);
-        // Un relaunch apporte ses propres modèles : les défauts du catalogue
-        // les écraseraient selon l'ordre d'arrivée des deux requêtes.
-        if (available && !relaunchOf) {
-          // Le défaut est nommé (`DEFAULT_RUN_MODEL`), pas déduit d'un ordre :
-          // tant qu'il l'était, élargir ou réordonner le catalogue déplaçait
-          // l'ouverture d'une page vierge — et le devis avec.
-          //
-          // Les deux replis servent le cas où ce modèle-là n'est pas offert à
-          // cette personne : elle l'a retiré de ses favoris, ou la clé de son
-          // fournisseur manque. On prend alors son premier favori disponible,
-          // puis, s'il n'en reste aucun, le premier modèle venu — préremplir
-          // un modèle que le catalogue filtré n'affichera pas serait la même
-          // faute que celle réparée plus bas, mais laisser les trois champs
-          // vides serait pire.
-          const offered = catalog
-            .filter((p) => p.key_present)
-            .flatMap((p) => p.models);
-          const preselected =
-            offered.find((m) => m.id === DEFAULT_RUN_MODEL && m.favorite)?.id ??
-            offered.find((m) => m.favorite)?.id ??
-            available.models[0].id;
+        // A duplicate, a draft or a restored form brings its own models: the
+        // catalogue's defaults would overwrite them depending on the order the
+        // requests land in. `filled` is set before any response arrives, the
+        // restore being synchronous.
+        const preselected =
+          filled.current || draftOf || relaunchOf ? null : openingModel(catalog);
+        if (preselected) {
           setTargets([preselected]);
           setAdversary(preselected);
           setJudge(preselected);
         }
       })
       .catch((e: Error) => setError(e.message));
-  }, [relaunchOf]);
+  }, [draftOf, relaunchOf]);
 
   /** Poser une configuration dans le formulaire.
    *
@@ -278,6 +331,7 @@ function EvaluateForm() {
   const fillFromConfig = useCallback(
     (config: EvalRunConfig, label: string, csvText: string | null) => {
       const scenarios = config.scenarios ?? [];
+      setBase(config);
       setLabel(label);
       setNotes(config.notes ?? "");
       setCriterion(config.criterion ?? "");
@@ -333,6 +387,7 @@ function EvaluateForm() {
         setHistory(first?.history ?? []);
         setScenarioTools(first?.tools ?? null);
         setScenarioNote(first?.note ?? "");
+        setScenarioWorld(first?.world ?? "");
         return;
       }
 
@@ -350,6 +405,7 @@ function EvaluateForm() {
         setColHistory(config.source?.column_history ?? "");
         setColTools(config.source?.column_tools ?? "");
         setColNote(config.source?.column_note ?? "");
+        setColWorld(config.source?.column_world ?? "");
         return;
       }
 
@@ -365,6 +421,7 @@ function EvaluateForm() {
       setColSystem("system_prompt");
       setColOpening("opening_message");
       setColNote(columns.includes("note") ? "note" : "");
+      setColWorld(columns.includes("world") ? "world" : "");
       setColHistory(columns.includes("history") ? "history" : "");
       setColTools(columns.includes("tools") ? "tools" : "");
     },
@@ -381,8 +438,54 @@ function EvaluateForm() {
   // enregistrer en crée toujours un à soi.
   const [draftMine, setDraftMine] = useState(true);
 
+  /** Pick the form up where it was left.
+   *
+   * Three sources compete for this screen on mount, and the order matters:
+   * the address first — clicking a draft in the list opens THAT draft, not
+   * whatever was written before — then the kept form, then a blank one.
+   *
+   * The bar's "Evaluate" link points at a bare `/`, so coming back never
+   * carries the query. Without restoring the attachment below, returning from
+   * a draft would silently detach the form and "Save as draft" would sow a
+   * second draft next to the first. The address is rewritten to agree with
+   * what is being edited — and `loadedFrom` stops the next effect from
+   * reading that draft back from the database, which would throw away
+   * whatever has not been saved yet.
+   *
+   * The rule below is right about cascading renders and cannot tell them from
+   * this: a one-shot restore on mount, guarded by a ref, from an external
+   * store the server cannot see. The idiomatic alternative — seeding forty
+   * lazy initialisers — would restate every default `fillFromConfig` already
+   * owns, in a second place, forever. */
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    if (draftOf || relaunchOf) return;
+
+    const saved = readSaved();
+    if (!saved) return;
+
+    filled.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fillFromConfig(saved.config, saved.label, saved.csvText);
+    setWantedColumns(saved.wantedColumns);
+
+    if (saved.attached?.kind === "draft") {
+      loadedFrom.current = saved.attached.id;
+      setDraftMine(saved.attached.mine);
+      router.replace(`/?draft=${saved.attached.id}`);
+    } else if (saved.attached?.kind === "relaunch") {
+      loadedFrom.current = saved.attached.runId;
+      setRelaunchNote(saved.attached.note);
+      router.replace(`/?from=${saved.attached.runId}`);
+    }
+  }, [draftOf, relaunchOf, fillFromConfig, router]);
+
   useEffect(() => {
     if (!draftOf) return;
+    // Already in hand: this draft was just restored from the kept form, and
+    // reading it back here would throw away what has not been saved yet.
+    if (loadedFrom.current === draftOf) return;
     let cancelled = false;
 
     getDraft(draftOf)
@@ -398,6 +501,8 @@ function EvaluateForm() {
           return;
         }
         setDraftMine(draft.mine);
+        filled.current = true;
+        loadedFrom.current = draftOf;
         fillFromConfig(draft.config, draft.config.label ?? "", draft.csv_text);
       })
       .catch((e: Error) => {
@@ -412,6 +517,8 @@ function EvaluateForm() {
   // Relancer un run : le formulaire reprend exactement ses paramètres.
   useEffect(() => {
     if (!relaunchOf) return;
+    // As with the draft above: already restored, so already in hand.
+    if (loadedFrom.current === relaunchOf) return;
     let cancelled = false;
 
     getRun(relaunchOf)
@@ -431,6 +538,8 @@ function EvaluateForm() {
         // juge ajouté après coup rejoint donc le formulaire ; un juge délié
         // en sort. `criterion`/`rubric`/le modèle du juge suivent le
         // principal vivant, même s'il a changé depuis le lancement.
+        filled.current = true;
+        loadedFrom.current = relaunchOf;
         fillFromConfig(
           withLiveJudges(run.config, judges ?? []),
           run.label ?? "",
@@ -463,6 +572,7 @@ function EvaluateForm() {
           opening_message: openingMessage,
           history,
           note: scenarioNote,
+          world: scenarioWorld,
           tools: scenarioTools,
         },
       ];
@@ -475,6 +585,7 @@ function EvaluateForm() {
       history: colHistory ? parseHistoryCell(row[colHistory] ?? "") : [],
       tools: colTools ? parseToolsCell(row[colTools] ?? "") : null,
       note: colNote ? (row[colNote] ?? "") : "",
+      world: colWorld ? (row[colWorld] ?? "") : "",
     }));
   }, [
     source,
@@ -490,7 +601,9 @@ function EvaluateForm() {
     colHistory,
     colTools,
     colNote,
+    colWorld,
     scenarioNote,
+    scenarioWorld,
   ]);
 
   const turnsError =
@@ -513,6 +626,9 @@ function EvaluateForm() {
 
   const config = useCallback(
     (): EvalRunConfig => ({
+      // The base first: everything below overwrites it, and what is not below
+      // is what this screen cannot name yet — see `base`.
+      ...base,
       scenarios,
       criterion,
       rubric,
@@ -548,6 +664,7 @@ function EvaluateForm() {
         column_history: source === "csv" ? colHistory : "",
         column_tools: source === "csv" ? colTools : "",
         column_note: source === "csv" ? colNote : "",
+        column_world: source === "csv" ? colWorld : "",
         skipped_rows: source === "csv" ? csvSkipped : 0,
       },
       temperature: {
@@ -556,6 +673,7 @@ function EvaluateForm() {
       },
     }),
     [
+      base,
       label,
       notes,
       scenarios,
@@ -585,6 +703,7 @@ function EvaluateForm() {
       colHistory,
       colTools,
       colNote,
+      colWorld,
       csvSkipped,
     ],
   );
@@ -656,6 +775,52 @@ function EvaluateForm() {
     };
   }, [ready, config]);
 
+  /** Keep the form, so that leaving stops losing it.
+   *
+   * What is written is exactly what "Save as draft" already sends, plus what
+   * the form is attached to — see `lib/evaluate-storage.ts`. Same delay as the
+   * quote: we write what has settled, not every keystroke.
+   *
+   * Nothing before the restore, or the first blank render would overwrite what
+   * was just kept. Nothing after a launch, or this write would put back the
+   * form `launch` has just cleared, while the page is on its way to the run.
+   *
+   * And nothing before the catalogue has answered. A blank page picks its
+   * models only once that response lands, and a slow one — a cold start is
+   * enough — would let this write store a form with no models at all. Restored
+   * next visit, that form counts as filled, the preselection is skipped, and
+   * the page opens on an empty model list every time from then on. An
+   * unanswered catalogue means nothing is kept; the form on screen is
+   * untouched, and there is nothing to pick models from anyway. */
+  useEffect(() => {
+    if (!restored.current || launched.current || providers.length === 0) return;
+    const timer = setTimeout(() => {
+      writeSaved({
+        config: config(),
+        label,
+        csvText: source === "csv" ? csvText : null,
+        attached: draftOf
+          ? { kind: "draft", id: draftOf, mine: draftMine }
+          : relaunchOf
+            ? { kind: "relaunch", runId: relaunchOf, note: relaunchNote }
+            : null,
+        wantedColumns,
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    config,
+    label,
+    source,
+    csvText,
+    draftOf,
+    relaunchOf,
+    draftMine,
+    relaunchNote,
+    wantedColumns,
+    providers,
+  ]);
+
   const onCsv = async (file: File) => {
     const text = await file.text();
     const parsed = parseCsv(text);
@@ -703,6 +868,7 @@ function EvaluateForm() {
     // celui-ci a pu changer entre-temps.
     setImportNote(null);
     const { config, csv } = await importConfigFile(text);
+    setBase(config);
     setLabel(config.label ?? "");
     setNotes(config.notes ?? "");
     setCriterion(config.criterion);
@@ -776,6 +942,7 @@ function EvaluateForm() {
       setSystemPrompt(config.scenarios[0].system_prompt);
       setOpeningMessage(config.scenarios[0].opening_message);
       setScenarioNote(config.scenarios[0].note ?? "");
+      setScenarioWorld(config.scenarios[0].world ?? "");
       setHistory(config.scenarios[0].history ?? []);
       setScenarioTools(config.scenarios[0].tools ?? null);
     } else {
@@ -793,6 +960,7 @@ function EvaluateForm() {
       setColSystem("system_prompt");
       setColOpening("opening_message");
       setColNote(columns.includes("note") ? "note" : "");
+      setColWorld(columns.includes("world") ? "world" : "");
       setColHistory(columns.includes("history") ? "history" : "");
       setColTools(columns.includes("tools") ? "tools" : "");
     }
@@ -841,6 +1009,7 @@ function EvaluateForm() {
 
   // Ce que l'enregistrement vient de faire, le temps qu'on le lise.
   const [draftNotice, setDraftNotice] = useState("");
+  const [clearing, setClearing] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
 
   /** Mettre le formulaire de côté, dans l'état où il est.
@@ -879,6 +1048,84 @@ function EvaluateForm() {
     }
   };
 
+  /** Start over: the opening page, and nothing else.
+   *
+   * Every field is put back by name rather than through a `fillFromConfig` on
+   * an empty configuration: that one would touch neither the CSV, nor the
+   * notices, nor what the form is attached to, and "clear" would leave behind
+   * enough to wonder what is still there.
+   *
+   * The draft itself is untouched: we stop editing it, it stays where it is.
+   * That is why the address goes back to `/` — without it, the next save would
+   * rewrite a draft nothing on screen comes from any more. */
+  const clearForm = () => {
+    clearSaved();
+    loadedFrom.current = null;
+    filled.current = false;
+
+    setBase(null);
+    setLabel("");
+    setNotes("");
+    setSource("manual");
+    setTitle("");
+    setSystemPrompt("");
+    setOpeningMessage("");
+    setHistory([]);
+    setScenarioNote("");
+    setScenarioWorld("");
+    setScenarioTools(null);
+    setTools([]);
+    setWorld("");
+    setWorldModel("");
+    setMaxToolCalls(5);
+
+    setCsvColumns([]);
+    setCsvRows([]);
+    setCsvSkipped(0);
+    setCsvName("");
+    setCsvText("");
+    setColTitle("");
+    setColSystem("");
+    setColOpening("");
+    setColHistory("");
+    setColTools("");
+    setColNote("");
+    setColWorld("");
+    setWantedColumns(null);
+
+    setAdversaryPrompt("");
+    setCriterion("");
+    setRubric(DEFAULT_RUBRIC);
+    setSecondaryJudges([]);
+    setTurns(1);
+    setRepetitions(5);
+    setVaryTemperature(false);
+    setTemperatureMin(1);
+    setTemperatureMax(1);
+    setAverageOutputTokens(null);
+    setCheckEvalAwareness(true);
+
+    // A blank page's models, chosen exactly as they are on opening — see
+    // `openingModel`. The catalogue is already in hand: nothing to re-fetch.
+    const preselected = openingModel(providers);
+    setTargets(preselected ? [preselected] : []);
+    setAdversary(preselected ?? "");
+    setJudge(preselected ?? "");
+    setCarriedModels(new Set());
+
+    setEstimate(null);
+    setEstimateError(null);
+    setJudgePrompt(null);
+    setError(null);
+    setImportNote(null);
+    setRelaunchNote(null);
+    setDraftNotice("");
+    setDraftMine(true);
+
+    setClearing(false);
+    router.replace("/");
+  };
+
   const launch = async () => {
     setError(null);
     setLaunching(true);
@@ -894,6 +1141,12 @@ function EvaluateForm() {
       // laisser de quoi recommencer. Et un échec de marquage ne fait pas
       // échouer le lancement, le run existe — c'est lui qui porte le lien.
       if (draftOf) await markDraftLaunched(draftOf).catch(() => {});
+      // The form has served. The run carries its configuration and
+      // "Duplicate" brings it back whole; keeping it here would invite
+      // launching the same thing twice. The ref first: without it the
+      // debounced write would put it back 400 ms later.
+      launched.current = true;
+      clearSaved();
       router.push(`/eval/${run_id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -1024,6 +1277,16 @@ function EvaluateForm() {
           />
         </label>
         <PasteConfig onLoad={(text) => onConfigText(text, PASTED)} />
+        {/* What is written here now survives leaving the page — see
+            `lib/evaluate-storage.ts`. This button is the way back out, and it
+            sits here rather than elsewhere because the form's two other doors
+            in are on this same bar. */}
+        <button
+          onClick={() => setClearing(true)}
+          className="cursor-pointer rounded border border-zinc-300 bg-white px-3 py-1 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+        >
+          Clear evaluation config
+        </button>
         <span className="text-zinc-500">JSON or YAML — fills in everything below.</span>
         <span className="ml-auto flex gap-4">
           <PromptGuide providers={providers} />
@@ -1035,6 +1298,33 @@ function EvaluateForm() {
           </button>
         </span>
       </div>
+
+      <ConfirmDialog
+        open={clearing}
+        title="Clear evaluation config"
+        confirmLabel="Clear it"
+        tone="warning"
+        onConfirm={clearForm}
+        onCancel={() => setClearing(false)}
+      >
+        <p>
+          Everything written in this form goes — scenarios, judge, models,
+          notes. Nothing already launched or saved is touched.
+        </p>
+        {draftOf && (
+          <p className="mt-2">
+            You are editing draft <span className="font-mono text-xs">{draftOf}</span>.
+            Clearing starts a new evaluation — the draft itself stays where it is.
+          </p>
+        )}
+        {relaunchOf && (
+          <p className="mt-2">
+            This form was filled in from run{" "}
+            <span className="font-mono text-xs">{relaunchOf}</span>. Clearing
+            starts a new evaluation — that run is untouched.
+          </p>
+        )}
+      </ConfirmDialog>
 
       {importNote && (
         <p className="rounded border border-teal-300 bg-teal-50 p-3 text-sm text-teal-900">
@@ -1229,6 +1519,33 @@ function EvaluateForm() {
               selected={scenarioTools}
               onChange={setScenarioTools}
             />
+            {/* Same predicate as the run's world: a row's world with no served
+                tool has nobody to read it. Hidden, but never erased —
+                `config()` emits it regardless, like the run's world and unlike
+                `models.world`. We erase a choice that has become impossible,
+                never a text somebody wrote. */}
+            {servesTools(tools) && (
+              <label className="block space-y-1">
+                <span className="text-sm font-medium">
+                  This row&rsquo;s world{" "}
+                  <span className="font-normal text-zinc-500">
+                    — what it adds to the run&rsquo;s world, or corrects in it
+                  </span>
+                </span>
+                <textarea
+                  value={scenarioWorld}
+                  onChange={(e) => setScenarioWorld(e.target.value)}
+                  rows={3}
+                  placeholder="The Vandenberghe contract is not on this drive."
+                  className="w-full rounded border border-zinc-300 p-2 font-mono text-sm"
+                />
+                <span className="text-xs text-zinc-500">
+                  Given to the environment as a second, named block that wins
+                  where the two disagree — so a denial reads as a correction,
+                  not a contradiction.
+                </span>
+              </label>
+            )}
             <label className="block space-y-1">
               <span className="text-sm font-medium">Opening message</span>
               <textarea
@@ -1272,7 +1589,7 @@ function EvaluateForm() {
                     à cette largeur, et sans ça son menu descendait d'un cran,
                     seul de sa rangée. Ce sont les menus qui doivent s'aligner,
                     pas les intitulés. */}
-                <div className="grid grid-cols-6 items-end gap-3">
+                <div className="grid grid-cols-4 items-end gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
                     {
@@ -1301,6 +1618,11 @@ function EvaluateForm() {
                       label: "Note (optional)",
                       value: colNote,
                       set: setColNote,
+                    },
+                    {
+                      label: "World (optional)",
+                      value: colWorld,
+                      set: setColWorld,
                     },
                   ].map((f) => (
                     <label key={f.label} className="block space-y-1">
@@ -1728,25 +2050,71 @@ function EvaluateForm() {
               (€{estimate.eur.toFixed(2)}).
             </p>
 
+            {/* Une ligne par (rôle, modèle), et non par modèle : un même
+                modèle évalué et juge est la configuration ordinaire, et fondre
+                ses deux dépenses empêchait de voir ce qu'un réglage coûte.
+                D'où aussi la clé, qui doit porter les deux. */}
             <table className="w-full text-sm">
               <tbody>
-                {estimate.per_model.map((model) => (
-                  <tr key={model.model} className="border-t border-zinc-200">
-                    <td className="py-1 pr-4 font-mono text-xs">
-                      {model.model}
-                    </td>
-                    <td className="py-1 pr-4 text-right text-zinc-500">
-                      {model.response_tokens.toLocaleString()} tok/turn
-                    </td>
-                    <td className="py-1 pr-4 text-right text-zinc-500">
-                      {model.input_tokens.toLocaleString()} in /{" "}
-                      {model.output_tokens.toLocaleString()} out
-                    </td>
-                    <td className="py-1 text-right font-medium">
-                      {model.usd === null ? "—" : `$${model.usd.toFixed(2)}`}
-                    </td>
-                  </tr>
-                ))}
+                {estimate.per_model.map((model) => {
+                  // Combien de passes de juge cette ligne facture, par
+                  // conversation. Déduit de `calls` plutôt que recompté depuis
+                  // la configuration : chaque juge, d'éveil compris, est un
+                  // appel par conversation, si bien que le rapport EST leur
+                  // nombre — et il reste juste sans refaire ici le tri que
+                  // `judgesForLaunch` fait ailleurs.
+                  const passes =
+                    model.role === "judge" && model.calls && estimate.conversations
+                      ? Math.round(model.calls / estimate.conversations)
+                      : 0;
+                  const éveilIci =
+                    checkEvalAwareness && model.model === judge && passes > 0;
+                  const juges = passes - (éveilIci ? 1 : 0);
+                  return (
+                    <tr
+                      key={`${model.role ?? ""} ${model.model}`}
+                      className="border-t border-zinc-200"
+                    >
+                      <td className="py-1 pr-4">
+                        {model.role ?? "—"}
+                        {passes > 0 && (
+                          <span className="ml-2 text-xs text-zinc-500">
+                            {juges} judge{juges > 1 ? "s" : ""}
+                            {éveilIci && " + awareness"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1 pr-4 font-mono text-xs">
+                        {model.model}
+                      </td>
+                      <td
+                        className="py-1 pr-4 text-right text-zinc-500"
+                        title={
+                          model.assumed
+                            ? "A ceiling, on two counts: nothing declares how many" +
+                              " tools the model will call, and repetitions of a" +
+                              " scenario share their served results instead of" +
+                              " asking again."
+                            : undefined
+                        }
+                      >
+                        {model.calls == null
+                          ? "—"
+                          : `${model.assumed ? "≈" : ""}${model.calls.toLocaleString()} calls`}
+                      </td>
+                      <td className="py-1 pr-4 text-right text-zinc-500">
+                        {model.response_tokens.toLocaleString()} tok/turn
+                      </td>
+                      <td className="py-1 pr-4 text-right text-zinc-500">
+                        {model.input_tokens.toLocaleString()} in /{" "}
+                        {model.output_tokens.toLocaleString()} out
+                      </td>
+                      <td className="py-1 text-right font-medium">
+                        {model.usd === null ? "—" : `$${model.usd.toFixed(2)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 

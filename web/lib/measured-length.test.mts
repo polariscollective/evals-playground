@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measureRun, answerLengthsFor } from "./measured-length.ts";
-import { estimateTokens } from "./pricing.ts";
+import { estimateTokens, roleKey } from "./pricing.ts";
 import { SHARED_PRICING } from "./shared.ts";
 import type { EvalModels, EvalRunConfig, ModelUsage } from "./types.ts";
 
@@ -322,8 +322,13 @@ test("le devis reproduit exactement les jetons de sortie observés", () => {
     adversary: mesure.adversary,
   });
 
+  // La ligne du rôle évalué, et non celle du modèle : `perModel` est clé par
+  // (rôle, modèle) depuis le découpage du devis par rôle. Ici grok n'en tient
+  // qu'un, mais viser le rôle est ce qui rend l'assertion juste même le jour
+  // où le même modèle jugerait aussi — c'est bien la sortie du modèle *évalué*
+  // que la mesure prétend reproduire, pas la somme de ses casquettes.
   assert.equal(
-    perModel.get("grok/grok-4.3")?.output,
+    perModel.get(roleKey("evaluated", "grok/grok-4.3"))?.output,
     observés.reduce((total, jetons) => total + jetons, 0),
   );
 });

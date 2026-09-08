@@ -1,15 +1,26 @@
-// Les mêmes cas que `tests/test_pricing.py` côté Python : les deux estimateurs
-// doivent rendre le même devis, sans quoi le chiffre affiché avant un run et
-// celui qu'on enregistre ne parleraient plus de la même chose.
+// Le devis, et il n'y a plus qu'un endroit où le vérifier.
+//
+// Ce fichier doublait `tests/test_pricing.py`, les deux estimateurs devant
+// rendre le même chiffre. Le Python a été supprimé — il n'avait aucun appelant
+// dans le moteur, et sa seule fonction était de devoir être tenu d'accord avec
+// celui-ci. Ces tests sont donc désormais la seule garde sur le devis.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  addEstimates,
   costSentence,
   estimateCost,
   estimateJudgeAdditionCost,
 } from "./pricing.ts";
 import { SHARED_PRICING } from "./shared.ts";
-import type { EvalRunConfig, EvalScenario, JudgeSpec } from "./types.ts";
+import type {
+  CostEstimate,
+  EvalRunConfig,
+  EvalScenario,
+  JudgeSpec,
+  ModelCost,
+  ModelRole,
+} from "./types.ts";
 
 const scenario = (title = "T"): EvalScenario => ({
   title,
@@ -441,17 +452,34 @@ test("les appels servis sont chiffrés au modèle que le run nomme", () => {
       },
     }),
   );
-  const modèles = devis.per_model.map((entry) => entry.model);
-  assert.ok(modèles.includes("anthropic/claude-haiku-4-5"));
-  assert.ok(!modèles.includes("openai/gpt-5.6-luna"));
+  // Sur la ligne `world`, et non sur la liste des modèles : `gpt-5.6-luna` y
+  // figure désormais à bon droit, comme contrôleur — `checkModelFor` le retient
+  // parce que le monde est servi par un modèle d'Anthropic. Chercher son
+  // absence dans tout le devis reviendrait à interdire au contrôle d'exister.
+  const monde = devis.per_model.filter((entry) => entry.role === "world");
+  assert.deepEqual(
+    monde.map((entry) => entry.model),
+    ["anthropic/claude-haiku-4-5"],
+  );
+
+  // Et le contrôleur ne partage pas la famille du serveur : c'est toute sa
+  // raison d'être, deux façons de se tromper qui ne coïncident pas.
+  const contrôle = devis.per_model.filter((entry) => entry.role === "check");
+  assert.deepEqual(
+    contrôle.map((entry) => entry.model),
+    ["openai/gpt-5.6-luna"],
+  );
 });
 
 test("le nombre d'appels suit le plafond", () => {
   const petit = estimateCost(config({ tools: [servi()], max_tool_calls_per_turn: 2 }));
   const grand = estimateCost(config({ tools: [servi()], max_tool_calls_per_turn: 10 }));
-  // turns = 3 : (3 x 10)/2 - (3 x 2)/2 = 15 - 3 = 12 appels par conversation,
-  // sur un scénario, un modèle évalué, deux répétitions.
-  assert.equal(grand.model_calls - petit.model_calls, 12 * 2);
+  // turns = 3 : (3 x 10)/2 - (3 x 2)/2 = 15 - 3 = 12 appels servis de plus par
+  // conversation, sur un scénario, un modèle évalué, deux répétitions.
+  //
+  // Fois deux : chaque résultat servi est aussi contrôlé. Le plafond commande
+  // donc deux lignes du devis, `world` et `check`, et les fait bouger ensemble.
+  assert.equal(grand.model_calls - petit.model_calls, 12 * 2 * 2);
 });
 
 test("un monde plus gros coûte plus cher", () => {
@@ -519,4 +547,168 @@ test("le devis au plafond dépasse celui de l'hypothèse", () => {
   });
   const auPlafond = estimateCost({ ...base, max_tool_calls_per_turn: 12 }, null);
   assert.ok(auPlafond.usd > estimateCost(base, null).usd);
+});
+
+// --- Le devis par rôle -------------------------------------------------------
+//
+// Voir docs/superpowers/specs/2026-09-08-devis-par-role-design.md.
+
+/** Les lignes d'un rôle, dans l'ordre où le devis les rend. */
+const lignes = (devis: { per_model: ModelCost[] }, role: ModelRole) =>
+  devis.per_model.filter((entry) => entry.role === role);
+
+test("un modèle qui tient deux rôles rend deux lignes, pas une", () => {
+  // La configuration ordinaire, pas le cas tordu : le même modèle évalué et
+  // juge. Fondu, on ne voyait plus ce que le jugement coûtait.
+  const même = "anthropic/claude-sonnet-5";
+  const devis = estimateCost(
+    config({
+      models: {
+        targets: [même],
+        adversary: "anthropic/claude-haiku-4-5",
+        judge: même,
+        world: MONDE,
+      },
+    }),
+  );
+  const àCeModèle = devis.per_model.filter((entry) => entry.model === même);
+  assert.deepEqual(
+    àCeModèle.map((entry) => entry.role).sort(),
+    ["evaluated", "judge"],
+  );
+});
+
+test("la ligne de juge porte la longueur d'un juge, pas celle du modèle évalué", () => {
+  // Le petit mensonge que la fusion imposait : `responseTokens` n'était retenu
+  // qu'à la première attribution, et les rôles étaient parcourus du modèle
+  // évalué vers le juge — si bien qu'un modèle cumulant annonçait la longueur
+  // de ses réponses évaluées sur toute sa ligne, part de jugement comprise.
+  const même = "anthropic/claude-sonnet-5";
+  const devis = estimateCost(
+    config({
+      average_output_tokens: 4000,
+      models: {
+        targets: [même],
+        adversary: "anthropic/claude-haiku-4-5",
+        judge: même,
+        world: MONDE,
+      },
+    }),
+  );
+  assert.equal(lignes(devis, "evaluated")[0].response_tokens, 4000);
+  assert.equal(
+    lignes(devis, "judge")[0].response_tokens,
+    SHARED_PRICING.judge_response_tokens,
+  );
+});
+
+test("la somme des lignes fait le total du devis", () => {
+  const devis = estimateCost(config({ tools: [servi(), fixe()], world: "W".repeat(500) }));
+  const somme = devis.per_model.reduce((total, entry) => total + (entry.usd ?? 0), 0);
+  // Quatre décimales par ligne contre quatre au total : l'écart ne peut être
+  // qu'un arrondi, jamais une ligne oubliée.
+  assert.ok(Math.abs(somme - devis.usd) < 0.01, `${somme} vs ${devis.usd}`);
+});
+
+test("la somme des appels des lignes fait `model_calls`", () => {
+  // L'invariant que le tableau promet en affichant les deux. Il tient par
+  // construction — `model_calls` EST cette somme — et ce test est ce qui
+  // empêche de le décorréler en recalculant le total à part.
+  const devis = estimateCost(config({ tools: [servi()], world: "W".repeat(500) }));
+  const somme = devis.per_model.reduce((total, entry) => total + (entry.calls ?? 0), 0);
+  assert.equal(somme, devis.model_calls);
+});
+
+test("le contrôleur est facturé, et jamais de la famille du serveur", () => {
+  // Il tournait sans être chiffré nulle part : un appel de modèle par résultat
+  // servi, absent du chiffre annoncé.
+  const devis = estimateCost(
+    sansLuna({ tools: [servi()], world: "W".repeat(500) }),
+  );
+  const contrôle = lignes(devis, "check");
+  assert.equal(contrôle.length, 1);
+  assert.notEqual(
+    contrôle[0].model.split("/")[0],
+    MONDE.split("/")[0],
+    "le contrôleur partagerait le biais du serveur",
+  );
+  assert.ok((contrôle[0].usd ?? 0) > 0);
+});
+
+test("le contrôleur suit la ligne du monde, appel pour appel", () => {
+  // Il vérifie une fois ce qu'elle a produit une fois.
+  const devis = estimateCost(config({ tools: [servi()], world: "W".repeat(500) }));
+  assert.equal(lignes(devis, "check")[0].calls, lignes(devis, "world")[0].calls);
+});
+
+test("les deux lignes servies sont les seules données pour pariées", () => {
+  const devis = estimateCost(config({ tools: [servi()], world: "W".repeat(500) }));
+  assert.deepEqual(
+    devis.per_model.filter((entry) => entry.assumed).map((entry) => entry.role).sort(),
+    ["check", "world"],
+  );
+});
+
+test("un run sans outil servi n'a ni ligne monde ni ligne contrôle", () => {
+  // `tools: none` sur une ligne est souvent toute la comparaison qu'on cherche :
+  // elle ne doit porter ni le monde qu'elle n'interroge pas, ni son contrôle.
+  const devis = estimateCost(config({ tools: [fixe()] }));
+  assert.equal(lignes(devis, "world").length, 0);
+  assert.equal(lignes(devis, "check").length, 0);
+});
+
+test("le devis dit que les lignes servies ignorent le cache", () => {
+  // Le second pari, celui qui ne se lit nulle part ailleurs : le moteur ne sert
+  // pas chaque appel, les répétitions d'un scénario se partageant leurs
+  // résultats. On facture quand même le plafond — alors il faut le dire.
+  const phrase = costSentence(config({ tools: [servi()], world: "W".repeat(500) }));
+  assert.match(phrase ?? "", /no result is reused/);
+});
+
+test("le juge d'éveil tombe dans la ligne du juge, et la fait bouger", () => {
+  const avec = estimateCost(config());
+  const sans = estimateCost(config({ check_eval_awareness: false }));
+  assert.equal(lignes(avec, "judge").length, 1);
+  assert.equal(lignes(sans, "judge").length, 1);
+  assert.equal(
+    lignes(avec, "judge")[0].calls! - lignes(sans, "judge")[0].calls!,
+    avec.conversations,
+  );
+});
+
+test("addEstimates garde les rôles séparés et additionne leurs appels", () => {
+  const devis = estimateCost(config({ tools: [servi()], world: "W".repeat(500) }));
+  const doublé = addEstimates(devis, devis);
+  assert.equal(doublé.per_model.length, devis.per_model.length);
+  for (const role of ["evaluated", "adversary", "judge", "world", "check"] as const) {
+    assert.equal(
+      lignes(doublé, role)[0]?.calls,
+      lignes(devis, role)[0].calls! * 2,
+      role,
+    );
+  }
+});
+
+test("addEstimates ne perd pas une ligne d'avant les rôles", () => {
+  // Un devis stocké avant ce découpage n'a ni rôle ni appels. Il tombe dans son
+  // propre seau plutôt que de se fondre dans une ligne étiquetée — et surtout,
+  // son absence d'appels ne doit pas propager un `NaN` jusqu'au tableau.
+  const ancien: CostEstimate = {
+    ...estimateCost(config()),
+    per_model: [
+      {
+        model: "anthropic/claude-sonnet-5",
+        input_tokens: 100,
+        output_tokens: 10,
+        response_tokens: 600,
+        usd: 0.5,
+      } as ModelCost,
+    ],
+  };
+  const fusionné = addEstimates(ancien, estimateCost(config()));
+  const muette = fusionné.per_model.filter((entry) => entry.role === undefined);
+  assert.equal(muette.length, 1);
+  for (const entry of fusionné.per_model) {
+    assert.ok(!Number.isNaN(entry.calls ?? 0), `NaN sur ${entry.model}`);
+  }
 });

@@ -1,5 +1,5 @@
 {
-  "_comment": "Lu par Python (backend/playground/pricing.py) et par TypeScript (web/lib/pricing.ts). Une seule source pour que le devis affiché avant un run et le coût calculé après ne puissent pas diverger.",
+  "_comment": "Lu par Python (backend/playground/pricing.py) et par TypeScript (web/lib/pricing.ts). Une seule source pour que le devis affiché avant un run et le coût calculé après ne puissent pas diverger. Les deux ne lisent plus la même part : Python n'y prend que `prices` et les deux multiplicateurs de cache, pour `actual_cost` ; toutes les longueurs supposées (`*_response_tokens`, `chars_per_token`) ne servent qu'au devis, qui vit en TypeScript seul depuis que l'estimateur Python a été supprimé — voir docs/superpowers/specs/2026-09-08-devis-par-role-design.md.",
   "_comment_catalogue": "Règle d'entrée : un modèle de texte, qui accepte des outils, dont le tarif est publié, et qui a réellement répondu à un appel outillé passé par inspect_ai. Voir docs/superpowers/specs/2026-09-07-catalogue-et-favoris-design.md pour ce qui est resté dehors et pourquoi.",
   "_comment_temperature": "honours_temperature absent vaut true. false dit que le fournisseur jette le paramètre : Claude 4.7 et au-delà tournent en adaptive thinking et le refusent, inspect_ai le retire et journalise. L'appel réussit — c'est ce qui rend le piège traître, et pourquoi il est écrit ici.",
   "chars_per_token": 2.5,
@@ -7,6 +7,7 @@
   "short_response_tokens": 200,
   "long_response_tokens": 6000,
   "judge_response_tokens": 200, "world_response_tokens": 400,
+  "check_response_tokens": 120,
   "usd_to_eur": 0.92,
   "cache_read_multiplier": 0.1,
   "cache_write_multiplier": 1.25,

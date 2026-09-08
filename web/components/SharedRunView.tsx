@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { hasInspectLogs, inspectViewUrl } from "@/lib/api";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
+import { Collapsible } from "@/components/Collapsible";
 import { renderMarkdown } from "@/lib/markdown";
 import {
   DetailModal,
@@ -82,6 +83,22 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
         )}
       </div>
 
+      {/* Avant le juge, comme sur la page privée : les notes disent ce qu'on
+          voulait de ce run, et l'échelle du juge se lit ensuite. */}
+      {run.notes.trim() !== "" && (
+        <Collapsible
+          className="space-y-2 rounded border border-zinc-300 p-3"
+          bodyClassName="space-y-2"
+          title={<h2 className="text-sm font-medium">Notes</h2>}
+        >
+          <div
+            className="notes-prose text-sm"
+            // Sûr : `renderMarkdown` échappe tout le HTML d'entrée.
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(run.notes) }}
+          />
+        </Collapsible>
+      )}
+
       <JudgeBlock detail={detail} />
 
       <ToolsBlock detail={detail} />
@@ -94,26 +111,18 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
         onOpenCell={(scenario, target) => setOpen({ scenario, target })}
       />
 
-      {run.notes.trim() !== "" && (
-        <section className="space-y-2 rounded border border-zinc-300 p-3">
-          <h2 className="text-sm font-medium">Notes</h2>
-          <div
-            className="notes-prose text-sm"
-            // Sûr : `renderMarkdown` échappe tout le HTML d'entrée.
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(run.notes) }}
-          />
-        </section>
-      )}
-
       {run.analysis.trim() !== "" && (
-        <section className="space-y-2 rounded border border-zinc-300 p-3">
-          <h2 className="text-sm font-medium">Run Analysis</h2>
+        <Collapsible
+          className="space-y-2 rounded border border-zinc-300 p-3"
+          bodyClassName="space-y-2"
+          title={<h2 className="text-sm font-medium">Run Analysis</h2>}
+        >
           <div
             className="notes-prose text-sm"
             // Sûr : `renderMarkdown` échappe tout le HTML d'entrée.
             dangerouslySetInnerHTML={{ __html: renderMarkdown(run.analysis) }}
           />
-        </section>
+        </Collapsible>
       )}
 
       {openScenario !== null && (

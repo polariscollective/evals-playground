@@ -704,8 +704,8 @@ class EvalRunConfig(BaseModel):
     c'est l'unité facturée, et `actual_cost` ne facture que `output_tokens`
     précisément parce que le raisonnement y est déjà.
 
-    `None` pour les runs enregistrés avant ce champ : le devis retombe alors
-    sur `DEFAULT_RESPONSE_TOKENS`.
+    `None` pour les runs enregistrés avant ce champ : le devis (TypeScript)
+    retombe alors sur sa propre valeur par défaut.
     """
 
     repetitions: int = Field(ge=1)

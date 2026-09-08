@@ -6,7 +6,7 @@ import pytest
 
 from playground.catalog import known_model_ids
 from playground.eval_schemas import RubricLevel
-from playground.pricing import PRICES, estimate_cost
+from playground.pricing import PRICES
 from playground.scoring import JUDGE_SYSTEM, score_prompt
 from playground.shared_data import SHARED_DIR, load
 
@@ -87,22 +87,20 @@ def test_les_paliers_sont_rendus_dans_l_ordre_des_notes():
     assert rendu.index("- `0`") < rendu.index("- `2`")
 
 
-# --- le devis ----------------------------------------------------------------
+# --- les tarifs, en entier ---------------------------------------------------
 
 
-def test_le_devis_reste_calculable_depuis_le_fichier_partage():
-    from playground.eval_schemas import EvalModels, EvalRunConfig, EvalScenario
+def test_chaque_tarif_du_fichier_arrive_entier_dans_la_table():
+    """Le fumigène qui prouve que Python lit vraiment `shared/pricing.json`.
 
-    config = EvalRunConfig(
-        scenarios=[EvalScenario(title="T", system_prompt="S" * 100,
-                                opening_message="O" * 100)],
-        criterion="C" * 50,
-        rubric=RUBRIC,
-        turns=1,
-        repetitions=2,
-        models=EvalModels(targets=["anthropic/claude-haiku-4-5"],
-                          judge="anthropic/claude-haiku-4-5"),
-    )
-    devis = estimate_cost(config)
-    assert devis.usd > 0
-    assert devis.per_model[0].model == "anthropic/claude-haiku-4-5"
+    Il portait sur `estimate_cost` tant que Python savait estimer ; l'estimation
+    vit désormais dans `web/lib/pricing.ts` seule (voir la docstring de
+    `playground.pricing`), et la garantie s'obtient maintenant sur `PRICES`, qui
+    reste. Ne pas laisser ce test partir avec ce qu'il traversait : sans lui,
+    un fichier partagé mal formé ne se verrait qu'au premier run facturé.
+    """
+    partage = load("pricing")["prices"]
+    assert set(PRICES) == set(partage)
+    for nom, tarif in partage.items():
+        assert PRICES[nom].input_per_mtok == tarif["input_per_mtok"], nom
+        assert PRICES[nom].output_per_mtok == tarif["output_per_mtok"], nom

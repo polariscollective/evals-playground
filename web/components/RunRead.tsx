@@ -29,6 +29,7 @@
 // seulement pour le cas, réel, d'un appelant qui ne l'a pas demandé (un run
 // encore en cours d'ouverture, ou un futur appelant plus léger).
 import { useEffect, useState } from "react";
+import { Collapsible } from "@/components/Collapsible";
 import { Dialog } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ViewControls } from "@/components/ViewControls";
@@ -46,7 +47,7 @@ import type { MatrixSample } from "@/lib/matrix";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
-import { toolsFor } from "@/lib/tools";
+import { served, toolsFor } from "@/lib/tools";
 import {
   cellStyle,
   distribution,
@@ -258,15 +259,64 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
       0,
     );
 
+  // Counted here, like `offert` below: a row whose world is nothing but
+  // whitespace comes from a field somebody opened and left, and teaches
+  // nothing to whoever reads the matrix.
+  const ownWorlds = config.scenarios.filter((scenario) =>
+    scenario.world?.trim(),
+  ).length;
+
   return (
-    <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="eyebrow">Tools the evaluated model could call</h2>
+    <Collapsible
+      className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4"
+      bodyClassName="space-y-3"
+      title={<h2 className="eyebrow">Tools the evaluated model could call</h2>}
+      aside={
         <span className="text-xs text-zinc-500">
           nothing was executed · up to{" "}
           {config.max_tool_calls_per_turn ?? 5} consecutive calls per turn
         </span>
-      </div>
+      }
+    >
+      {/* The world before the tools that read it, and not elsewhere on the
+          page: the three things that only make sense together — what exists,
+          the model that serves it, the tools that query it — are read in one
+          place. The serving model used to live in the judge block, for want of
+          anywhere better; it comes from there. */}
+      {config.world?.trim() && (
+        <div className="space-y-1 border-b border-zinc-200 pb-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm font-medium">
+              The world{" "}
+              <span className="font-normal text-zinc-500">
+                — what the served tools read
+              </span>
+            </span>
+            {config.models.world?.trim() && (
+              <span className="font-mono text-xs text-zinc-500">
+                served by {shortModel(config.models.world)}
+              </span>
+            )}
+          </div>
+          <pre className="max-h-64 overflow-auto rounded border border-zinc-200 bg-white p-3 text-xs whitespace-pre-wrap">
+            {config.world}
+          </pre>
+          {/* Without this line the run's world reads as the last word, while
+              one row in three corrects it. */}
+          {ownWorlds > 0 && (
+            <p className="text-xs text-zinc-500">
+              {ownWorlds} of {config.scenarios.length} scenario
+              {config.scenarios.length > 1 ? "s" : ""}{" "}
+              {/* The verb follows how many of them there are, not how many
+                  scenarios the run holds: "1 of 12 scenarios adds". Agreeing
+                  it with the wrong number of the two reads as a typo. */}
+              {ownWorlds > 1 ? "add to or correct" : "adds to or corrects"} this
+              world — open a scenario to read its own.
+            </p>
+          )}
+        </div>
+      )}
+
       {tools.map((tool) => {
         const offert = config.scenarios.filter((scenario) =>
           toolsFor(config, scenario).some((entry) => entry.name === tool.name),
@@ -293,13 +343,27 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
                   .join(", ")}
               </p>
             )}
-            <p className="text-xs text-zinc-500">
-              returns: <span className="font-mono">{tool.result || "(empty)"}</span>
-            </p>
+            {/* `served(tool)`, never raw `tool.retrieval_rules`: a blank field
+                is truthy there. Without this distinction a served tool — whose
+                `result` is empty by construction, the exclusion `served` names
+                — announced "returns: (empty)" while it had in fact answered
+                from the world on every call. */}
+            {served(tool) ? (
+              <p className="text-xs text-zinc-500">
+                reads the world:{" "}
+                <span className="font-mono whitespace-pre-wrap">
+                  {tool.retrieval_rules}
+                </span>
+              </p>
+            ) : (
+              <p className="text-xs text-zinc-500">
+                returns: <span className="font-mono">{tool.result || "(empty)"}</span>
+              </p>
+            )}
           </div>
         );
       })}
-    </section>
+    </Collapsible>
   );
 }
 
@@ -374,6 +438,18 @@ export function ScenarioModal({
               ))
             )}
           </p>
+        )}
+
+        {scenario.world?.trim() && (
+          <div>
+            <p className="mb-1 text-xs text-zinc-500">
+              This row&rsquo;s world — added to the run&rsquo;s, and winning
+              over it where the two disagree
+            </p>
+            <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs whitespace-pre-wrap">
+              {scenario.world}
+            </pre>
+          </div>
         )}
 
         <div>
@@ -854,9 +930,11 @@ export function JudgeBlock({
 
   return (
     <>
-      <section className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="eyebrow">What the judge was asked</h2>
+      <Collapsible
+        className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4"
+        bodyClassName="space-y-3"
+        title={<h2 className="eyebrow">What the judge was asked</h2>}
+        aside={
           <span className="font-mono text-xs text-zinc-500">
             {viewingPrincipal ? "judged by " : "viewing "}
             {shortModel(judgeModel)}
@@ -864,17 +942,12 @@ export function JudgeBlock({
             {detail.run.rejudged_at && " · re-judged since the run"}
             {detail.run.awareness_judged_at && " · eval-awareness added after the run"}
           </span>
-        </div>
-        {/* Une variable comme le juge ou l'adversaire (§1 du design), mais
-            jamais montrée nulle part sur cet écran avant ceci — voir D dans
-            la revue de branche. Muet quand le run ne sert rien : `world` est
-            alors `null`, et l'afficher inviterait à se demander s'il compte. */}
-        {config.models.world?.trim() && (
-          <p className="font-mono text-xs text-zinc-500">
-            world served by {shortModel(config.models.world)}
-          </p>
-        )}
-
+        }
+      >
+        {/* The model serving the world was announced here for want of
+            anywhere better — under a grading criterion, where nothing said
+            what it was doing. It has moved next to the world it serves, in
+            `ToolsBlock`, and this block now speaks only of the judge. */}
         <p className="whitespace-pre-wrap text-sm text-zinc-800">{criterion}</p>
 
         <table className="text-sm">
@@ -954,7 +1027,7 @@ export function JudgeBlock({
             )}
           </div>
         )}
-      </section>
+      </Collapsible>
 
       {awarenessPhrase && (
         <p

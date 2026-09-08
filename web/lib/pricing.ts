@@ -1,10 +1,18 @@
 // Le devis d'un run, avant de le lancer.
 //
-// Portage de `backend/playground/pricing.py`, dont il partage les tarifs et les
-// longueurs de réponse mesurées — voir `shared/pricing.json`. Le Python garde
-// le coût *réel*, calculé après coup sur les jetons rapportés par les
-// fournisseurs ; celui-ci ne fait que l'estimation, qui doit être affichée
-// avant que le moindre Python ne tourne.
+// **L'unique implémentation de l'estimation.** Elle a été écrite en Python
+// d'abord (`88f90ef`), puis portée ici quand l'application est passée sur
+// Next.js (`ef60372`) ; la copie Python est restée sur place sans jamais être
+// rappelée par le moteur, et chaque changement du devis reposait la question de
+// la porter. Elle a été supprimée plutôt que d'y répondre encore — voir
+// docs/superpowers/specs/2026-09-08-devis-par-role-design.md. Ne pas la
+// recréer : ce fichier n'a plus de jumeau à tenir d'accord.
+//
+// Ce qui reste partagé avec Python est la donnée, pas le calcul :
+// `shared/pricing.json` porte les tarifs, que `backend/playground/pricing.py`
+// lit encore pour `actual_cost` — le coût *réel*, compté après coup sur les
+// jetons rapportés par les fournisseurs. Les longueurs supposées, elles, ne
+// servent qu'ici.
 import {
   SHARED_ADVERSARY_PROMPT as A,
   SHARED_AWARENESS_PROMPT as W,
@@ -25,6 +33,7 @@ import type {
   JudgeSpec,
   LengthAssumption,
   ModelCost,
+  ModelRole,
   RubricLevel,
 } from "./types";
 
@@ -170,10 +179,56 @@ const ADVERSARY_OVERHEAD_TOKENS =
 const AWARENESS_OVERHEAD_TOKENS =
   fixedTokens(W.system) + fixedTokens(W.user_template, "{transcript}");
 
+/** Ce que le contrôleur reçoit en plus du monde et du résultat contrôlé.
+ *
+ * Dérivé du fichier partagé comme les trois au-dessus. Il ne voit **pas** les
+ * `retrieval_rules` : `check_prompt` (`backend/playground/world.py`) les lui
+ * refuse exprès, pour qu'il note une cohérence et non une conformité au
+ * plafond de lignes. Le devis doit refuser ce que le moteur refuse, sans quoi
+ * il chiffre un autre prompt que celui qui part. */
+const CHECK_OVERHEAD_TOKENS =
+  fixedTokens(M.check_system) +
+  fixedTokens(M.check_user_template, "{world}", "{tool}", "{arguments}", "{result}");
+
+/** Le contrôleur d'un run servi par `worldModel` : le premier candidat de
+ *  `check_models` dont le fournisseur diffère du sien.
+ *
+ * Jumeau de `check_model_for` (`backend/playground/world.py`), qui est celui
+ * qui appelle réellement. Deux familles, donc deux façons de se tromper qui ne
+ * coïncident pas — un contrôleur qui partagerait le biais du serveur validerait
+ * exactement les erreurs qu'on cherche.
+ *
+ * Ce jumeau a existé, puis été supprimé comme code mort (`14dd817`) faute
+ * d'appelant. Il en a un maintenant : sans lui, le devis passait sous silence
+ * un appel de modèle par résultat servi. */
+export function checkModelFor(worldModel: string): string {
+  const candidats: string[] = M.check_models;
+  const fournisseur = worldModel.split("/")[0];
+  return (
+    candidats.find((candidat) => candidat.split("/")[0] !== fournisseur) ?? candidats[0]
+  );
+}
+
 interface ModelTokens {
+  role: ModelRole;
+  model: string;
   input: number;
   output: number;
   responseTokens: number;
+  /** Les appels que cette ligne compte. Accumulés ici, au même endroit que les
+   *  jetons, et non recalculés à part : deux façons de compter les mêmes
+   *  appels finiraient par ne plus dire la même chose, et `model_calls` est
+   *  précisément la somme de ces nombres. */
+  calls: number;
+}
+
+/** La clé d'une ligne du devis : un modèle, **à un titre donné**.
+ *
+ * `\0` parce qu'aucun identifiant de modèle ni aucun rôle n'en contient — un
+ * séparateur qu'on ne peut pas écrire est un séparateur qui ne se confond
+ * jamais avec la donnée. */
+export function roleKey(role: ModelRole, model: string): string {
+  return `${role}\0${model}`;
 }
 
 /** Volume total d'un run, réparti par modèle.
@@ -189,16 +244,37 @@ export function estimateTokens(
   const { perScenario, adversary: adversaryLength } = resolve(config, lengths);
   const perModel = new Map<string, ModelTokens>();
 
-  /** `responseTokens` n'est retenu qu'à la première attribution : les rôles
-   * sont parcourus du modèle évalué vers le juge, si bien qu'un modèle qui
-   * cumule garde l'hypothèse de ses réponses de modèle évalué — la seule qui
-   * pèse, celle du juge étant une constante courte. */
-  const add = (model: string, input: number, output: number, answer: number) => {
-    const entry = perModel.get(model) ?? { input: 0, output: 0, responseTokens: 0 };
+  /** `responseTokens` n'est retenu qu'à la première attribution.
+   *
+   * Ce n'est plus un arbitrage entre rôles — chacun a sa ligne, et donc sa
+   * propre hypothèse : la ligne de juge d'un modèle porte désormais
+   * `judge_response_tokens`, là où la fusion lui faisait porter la longueur de
+   * ses réponses de modèle évalué. C'est un arbitrage entre **scénarios**, qui
+   * peuvent déclarer des longueurs différentes et se cumulent sur la même
+   * ligne évaluée : le premier gagne, faute d'une seule valeur qui décrive
+   * honnêtement les deux. */
+  const add = (
+    role: ModelRole,
+    model: string,
+    input: number,
+    output: number,
+    answer: number,
+    calls: number,
+  ) => {
+    const clé = roleKey(role, model);
+    const entry = perModel.get(clé) ?? {
+      role,
+      model,
+      input: 0,
+      output: 0,
+      responseTokens: 0,
+      calls: 0,
+    };
     if (entry.responseTokens === 0) entry.responseTokens = answer;
     entry.input += input;
     entry.output += output;
-    perModel.set(model, entry);
+    entry.calls += calls;
+    perModel.set(clé, entry);
   };
 
   const adversary = config.turns > 1 ? config.models.adversary : null;
@@ -233,7 +309,23 @@ export function estimateTokens(
   // joue pas. Or c'est sur ce chiffre que se prend la décision de lancer.
   const worldTokens = tokens(config.world ?? "");
   const servedCalls = servedCallsPerConversation(config);
-  let servedConversations = 0;
+
+  // Remontés avant la boucle : ils ne dépendent que de `config` et de
+  // `billFrom`, et chaque `add` a maintenant besoin de son nombre d'appels au
+  // moment où il pose ses jetons.
+  //
+  // Les tours d'avant `billFrom` sont déroulés pour l'historique mais pas
+  // facturés : seuls les tours facturés comptent dans les appels du modèle
+  // évalué et de l'adversaire. Chaque juge, lui, reste un appel unique dès
+  // qu'il y a au moins un tour facturé — il relit toute la conversation,
+  // jamais un fragment.
+  const facturés = Math.max(config.turns - billFrom, 0);
+  // Une continuation (`billFrom > 0`) fait parler l'adversaire autant de fois
+  // que la cible : la relance d'ouverture s'ajoute aux relances ordinaires.
+  // Un run neuf (`billFrom === 0`) garde son compte habituel — sa dernière
+  // relance n'a toujours pas lieu.
+  const relancesAdversaire =
+    facturés === 0 ? 0 : billFrom > 0 ? facturés : facturés - 1;
 
   config.scenarios.forEach((scenario, index) => {
     const system = tokens(scenario.system_prompt);
@@ -296,27 +388,49 @@ export function estimateTokens(
 
       const weight = config.repetitions;
 
-      add(target, targetInput * weight, targetOutput * weight, targetResponse);
+      add(
+        "evaluated",
+        target,
+        targetInput * weight,
+        targetOutput * weight,
+        targetResponse,
+        facturés * weight,
+      );
       if (adversary && adversaryInput) {
         add(
+          "adversary",
           adversary,
           adversaryInput * weight,
           adversaryOutput * weight,
           adversaryResponse,
+          relancesAdversaire * weight,
         );
       }
       // Un appel de modèle par juge ordinaire non supprimé : chacun relit la
       // même conversation, avec sa propre question, sa propre échelle et son
       // propre modèle — trois juges, trois fois la dépense de jugement,
       // jamais un seul appel facturé au tarif du principal pour les trois.
-      for (const { model, question } of ordinaryJudges) {
-        const judgeInput = question + system + history + JUDGE_OVERHEAD_TOKENS;
-        add(
-          model,
-          judgeInput * weight,
-          S.judge_response_tokens * weight,
-          S.judge_response_tokens,
-        );
+      //
+      // Ils partagent une ligne par modèle, pas une ligne chacun : leur nombre
+      // est déjà dit au-dessus du tableau, et quatre lignes au même tarif
+      // expliqueraient moins qu'une ligne portant « 4 judges ». La somme, elle,
+      // reste exacte — chacun est chiffré sur sa propre question.
+      //
+      // `facturés > 0` garde les jetons et les appels d'accord. Sans cette
+      // garde, une continuation qui n'ajoute aucun tour facturait des jetons de
+      // juge tout en annonçant zéro appel de juge.
+      if (facturés > 0) {
+        for (const { model, question } of ordinaryJudges) {
+          const judgeInput = question + system + history + JUDGE_OVERHEAD_TOKENS;
+          add(
+            "judge",
+            model,
+            judgeInput * weight,
+            S.judge_response_tokens * weight,
+            S.judge_response_tokens,
+            weight,
+          );
+        }
       }
       // Un scénario qui n'offre aucun outil servi ne paie pas l'environnement.
       // `tools: none` sur une ligne est souvent toute la comparaison qu'on
@@ -324,7 +438,6 @@ export function estimateTokens(
       // n'interroge jamais.
       const servis = toolsFor(config, scenario).filter(served);
       if (servis.length > 0 && servedCalls > 0) {
-        servedConversations += weight;
         const monde =
           worldTokens +
           tokens(scenario.world ?? "") +
@@ -349,21 +462,55 @@ export function estimateTokens(
           // validé la demande. L'aperçu affiché avant qu'un modèle ne soit
           // choisi retombe donc, sciemment, sur ce repli — un devis à 0 $ pour
           // la part servie, le temps que le champ se remplisse.
+          "world",
           config.models.world ?? "",
           monde * servedCalls * weight,
           S.world_response_tokens * servedCalls * weight,
           S.world_response_tokens,
+          servedCalls * weight,
+        );
+        // Le contrôleur relit chaque résultat servi : le monde du run et celui
+        // du scénario — que `batch_job.py` concatène avant l'appel — puis le
+        // résultat produit, dont la longueur supposée est celle que le monde
+        // vient de rendre.
+        //
+        // Autant d'appels que la ligne `world`, et pour cause : il vérifie une
+        // fois ce qu'elle a produit une fois.
+        //
+        // Ni le nom de l'outil, ni ses arguments, ni le schéma de
+        // `submit_check` ne sont comptés — exactement comme la ligne du juge
+        // ignore `submit_score` et comme celle du monde ignore le nom de
+        // l'outil. Trois broutilles du même ordre, traitées pareil : les
+        // chiffrer ici seulement rendrait cette ligne incomparable aux autres.
+        add(
+          "check",
+          checkModelFor(config.models.world ?? ""),
+          (worldTokens +
+            tokens(scenario.world ?? "") +
+            CHECK_OVERHEAD_TOKENS +
+            S.world_response_tokens) *
+            servedCalls *
+            weight,
+          S.check_response_tokens * servedCalls * weight,
+          S.check_response_tokens,
+          servedCalls * weight,
         );
       }
       // Le juge d'éveil relit la même conversation, avec son propre gabarit à
       // la place de la question et de l'échelle de l'utilisateur — toujours
       // au modèle du run, jamais personnalisable : voir `judgesForLaunch`.
-      if (config.check_eval_awareness !== false) {
+      //
+      // Il tombe dans la ligne `judge` de ce modèle, pas dans une ligne à lui :
+      // même tarif, même conversation, un appel de juge de plus. C'est le
+      // libellé de la ligne qui le nomme.
+      if (facturés > 0 && config.check_eval_awareness !== false) {
         add(
+          "judge",
           config.models.judge,
           (system + history + AWARENESS_OVERHEAD_TOKENS) * weight,
           S.judge_response_tokens * weight,
           S.judge_response_tokens,
+          weight,
         );
       }
     }
@@ -371,37 +518,14 @@ export function estimateTokens(
 
   const conversations =
     config.scenarios.length * config.models.targets.length * config.repetitions;
-  // Les tours d'avant `billFrom` sont déroulés pour l'historique mais pas
-  // facturés : seuls les tours facturés comptent dans les appels du modèle
-  // évalué et de l'adversaire. Chaque juge, lui, reste un appel unique dès
-  // qu'il y a au moins un tour facturé — il relit toute la conversation,
-  // jamais un fragment.
-  const facturés = Math.max(config.turns - billFrom, 0);
-  // Une continuation (`billFrom > 0`) fait parler l'adversaire autant de fois
-  // que la cible : la relance d'ouverture s'ajoute aux relances ordinaires.
-  // Un run neuf (`billFrom === 0`) garde son compte habituel — sa dernière
-  // relance n'a toujours pas lieu.
-  const relancesAdversaire =
-    facturés === 0 ? 0 : billFrom > 0 ? facturés : facturés - 1;
-  // Un appel par juge ordinaire non supprimé — le principal, et chacune des
-  // entrées de `config.judges` — dès qu'il y a au moins un tour facturé,
-  // jamais sinon. C'est ici que le contrat se joue : trois juges valent trois
-  // fois cette part, jamais une seule, quel que soit leur modèle chacun.
-  const appelsDeJugesOrdinaires =
-    facturés > 0 ? 1 + (config.judges?.length ?? 0) : 0;
-  // Le juge d'éveil est un appel de juge de plus, compté de la même façon :
-  // une fois par conversation, dès qu'il y a au moins un tour facturé, jamais
-  // sinon.
-  const appelDEveil = facturés > 0 && config.check_eval_awareness !== false ? 1 : 0;
-  const callsPerConversation =
-    facturés + relancesAdversaire + appelsDeJugesOrdinaires + appelDEveil;
 
-  return {
-    conversations,
-    modelCalls:
-      conversations * callsPerConversation + servedConversations * servedCalls,
-    perModel,
-  };
+  // La somme des lignes, et non une seconde formule à côté d'elles. Le total et
+  // le détail ne peuvent donc pas se contredire : c'est l'invariant que le
+  // tableau promet en affichant les deux.
+  let modelCalls = 0;
+  for (const entry of perModel.values()) modelCalls += entry.calls;
+
+  return { conversations, modelCalls, perModel };
 }
 
 function costsFor(
@@ -414,11 +538,11 @@ function costsFor(
   const unpriced: string[] = [];
   let total = 0;
 
-  for (const [model, volume] of perModel) {
-    const price = PRICES[model];
+  for (const volume of perModel.values()) {
+    const price = PRICES[volume.model];
     let usd: number | null = null;
     if (!price) {
-      unpriced.push(model);
+      unpriced.push(volume.model);
     } else {
       usd =
         (volume.input / 1e6) * price.input_per_mtok +
@@ -426,7 +550,16 @@ function costsFor(
       total += usd;
     }
     costs.push({
-      model,
+      model: volume.model,
+      role: volume.role,
+      calls: volume.calls,
+      // Les deux rôles servis, et eux seuls : leur nombre d'appels dépend des
+      // outils que le modèle évalué décidera d'appeler, et le cache
+      // `tool_results` en supprime encore une part. Voir `servedCallsSentence`,
+      // qui nomme les deux paris.
+      ...(volume.role === "world" || volume.role === "check"
+        ? { assumed: true }
+        : {}),
       input_tokens: volume.input,
       output_tokens: volume.output,
       response_tokens: volume.responseTokens,
@@ -582,6 +715,10 @@ export function estimateJudgeAdditionCost(
     per_model: [
       {
         model,
+        // Un juge de plus sur des conversations déjà jouées : un seul rôle en
+        // jeu, et un appel par conversation rattrapée.
+        role: "judge",
+        calls: conversations,
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         response_tokens: S.judge_response_tokens,
@@ -714,7 +851,21 @@ function servedCallsSentence(config: EvalRunConfig): string {
     ` nothing declares how many it will really make. At the cap it is` +
     ` ${money(auPlafond.usd)}, and with no tool call at all ${money(
       estimateCost({ ...config, tools: [] }, null).usd,
-    )}.`
+    )}.` +
+    // Le second pari des lignes servies, et le seul qui ne se lise nulle part
+    // ailleurs. Le moteur ne sert pas chaque appel : `sert_outil`
+    // (`backend/playground/batch_job.py`) lit d'abord `tool_results`, dont la
+    // clé — run, scénario, outil, arguments — ignore le modèle évalué et la
+    // répétition. Les conversations d'un même scénario se partagent donc leurs
+    // résultats, et le contrôle ne repasse pas sur ce qui n'a pas été reservi.
+    //
+    // On facture quand même chaque appel : compter les résultats distincts
+    // donnerait la borne basse, qui ment dès que deux modèles n'appellent pas
+    // leurs outils avec les mêmes arguments. Un devis qui promet moins cher
+    // qu'il ne sera est la seule erreur que ce produit ne peut pas se
+    // permettre — alors on le dit plutôt que de le corriger.
+    ` The world and check lines assume no result is reused; repetitions of a` +
+    ` scenario share theirs, so those two will cost less.`
   );
 }
 
@@ -742,15 +893,31 @@ export function addEstimates(
 ): CostEstimate {
   if (!first) return second;
 
+  // La clé est (rôle, modèle), comme les lignes elles-mêmes : deux dépenses
+  // d'un même modèle à deux titres différents ne se refondent pas ici après
+  // avoir été séparées là-bas.
+  //
+  // `role` absent est sa propre clé, et non un rôle inconnu à deviner : les
+  // devis pris avant ce découpage sont stockés sur les runs et ne sont jamais
+  // recalculés. Un vieux run étendu aujourd'hui porte donc une ligne muette à
+  // côté des lignes étiquetées — vrai, et ça se résorbe de soi-même.
   const parModele = new Map<string, ModelCost>();
   for (const entry of [...first.per_model, ...second.per_model]) {
-    const deja = parModele.get(entry.model);
+    const clé = `${entry.role ?? ""}\0${entry.model}`;
+    const deja = parModele.get(clé);
     if (!deja) {
-      parModele.set(entry.model, { ...entry });
+      parModele.set(clé, { ...entry });
       continue;
     }
-    parModele.set(entry.model, {
+    parModele.set(clé, {
       model: entry.model,
+      role: entry.role,
+      // Les appels s'additionnent, eux : c'est une quantité, pas une hypothèse.
+      // `?? 0` parce qu'une ligne d'un devis stocké avant ce découpage n'en
+      // porte pas, et qu'`undefined` propagerait un `NaN` jusqu'au tableau.
+      calls: (deja.calls ?? 0) + (entry.calls ?? 0),
+      // Un lot parié suffit à rendre le nombre fusionné parié.
+      ...(deja.assumed || entry.assumed ? { assumed: true } : {}),
       input_tokens: deja.input_tokens + entry.input_tokens,
       output_tokens: deja.output_tokens + entry.output_tokens,
       // La longueur supposée est une hypothèse, pas une quantité : la retenir

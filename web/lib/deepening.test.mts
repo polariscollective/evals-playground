@@ -16,15 +16,14 @@ const CONFIG = {
   ],
   turns: 4,
   repetitions: 1,
-  // Le juge porte un modèle différent de celui évalué et de l'adversaire :
-  // `estimateTokens` cumule les jetons d'un modèle qui tient plusieurs rôles
-  // dans une seule entrée de `per_model` (voir son commentaire sur les rôles
-  // qui « cumulent ») — avec un seul et même modèle partout, la ligne du juge
-  // se serait confondue avec celle du modèle évalué, et le test dessous
-  // n'aurait plus isolé ce qu'il prétend isoler. Un couple onéreux (sonnet /
-  // opus, plutôt que haiku partout) évite en prime qu'un arrondi à quatre
-  // décimales sur un montant de quelques centimes ne fausse la comparaison
-  // ×10 du test « le devis suit le nombre de cases ».
+  // Le juge porte un modèle différent de celui évalué et de l'adversaire.
+  // Ce n'est plus une nécessité — `per_model` est clé par (rôle, modèle) depuis
+  // le découpage du devis par rôle, et un modèle qui cumule rend désormais une
+  // ligne par casquette — mais ça reste plus lisible : on lit la ligne du juge
+  // sans avoir à filtrer sur son rôle. Un couple onéreux (sonnet / opus, plutôt
+  // que haiku partout) évite en prime qu'un arrondi à quatre décimales sur un
+  // montant de quelques centimes ne fausse la comparaison ×10 du test « le
+  // devis suit le nombre de cases ».
   models: {
     targets: ["anthropic/claude-sonnet-5"],
     adversary: "anthropic/claude-sonnet-5",
