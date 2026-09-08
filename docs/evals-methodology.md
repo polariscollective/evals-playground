@@ -52,6 +52,8 @@ All *runs* (a batch of scenarios run on many, on-demand, evaluated models) have:
 
 # Feedback request
 
+Feel free to reach out via [sam@polariscollective.org](mailto:sam@polariscollective.org)
+
 Points where outside feedback can be most useful:
 
 - What capabilities are obviously missing, at the run, scenario or judge level?
