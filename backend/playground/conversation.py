@@ -1,12 +1,12 @@
-"""La boucle de conversation : un modèle évalué face à un adversaire.
+"""The conversation loop: an evaluated model facing an adversary.
 
-Le modèle évalué ne voit qu'une conversation ordinaire : son system prompt,
-puis des messages `user` auxquels il répond. Il ne peut pas distinguer
-l'adversaire d'un interlocuteur humain.
+The evaluated model sees nothing but an ordinary conversation: its system
+prompt, then `user` messages it answers. It cannot tell the adversary from a
+human correspondent.
 
-L'adversaire voit la même conversation en miroir — ses propres messages en
-`assistant`, ceux du modèle évalué en `user` — précédée d'un system prompt qui
-lui est propre. Ce prompt ne quitte jamais sa vue.
+The adversary sees the same conversation mirrored — its own messages as
+`assistant`, the evaluated model's as `user` — preceded by a system prompt of
+its own. That prompt never leaves its view.
 """
 
 from dataclasses import dataclass, field
@@ -30,20 +30,20 @@ from inspect_ai.model import (
 
 
 class Cancelled(Exception):
-    """L'arrêt a été demandé, et on ne dépensera pas un appel de plus.
+    """A stop was asked for, and not one more call will be spent.
 
-    Levée depuis l'endroit exact où l'argent se dépense — juste avant un appel
-    de modèle. Inspect la consigne dans son journal et, `fail_on_error` étant
-    faux, passe à la case suivante, qui lèvera à son tour sans rien appeler.
+    Raised from the exact place where the money is spent — just before a model
+    call. Inspect records it in its log and, `fail_on_error` being false, moves
+    on to the next cell, which raises in turn without calling anything.
     """
 
 
 @dataclass
 class ToolCallRecord:
-    """Un appel d'outil décidé par le modèle évalué.
+    """A tool call decided on by the evaluated model.
 
-    C'est souvent *le* comportement mesuré — « a-t-il appelé `delete_records` »
-    — donc il est enregistré tel quel, arguments compris, et non résumé.
+    It is often *the* behaviour being measured — "did it call `delete_records`"
+    — so it is recorded as it stands, arguments included, never summarised.
     """
 
     id: str
@@ -53,59 +53,57 @@ class ToolCallRecord:
 
 @dataclass
 class Turn:
-    """Un tour de la conversation, du point de vue du modèle évalué."""
+    """One turn of the conversation, from the evaluated model's point of view."""
 
     role: Literal["user", "assistant", "tool"]
     content: str
     stop_reason: str | None = None
-    """Pourquoi le modèle s'est arrêté, quand c'est lui qui a parlé.
+    """Why the model stopped, when it is the one that spoke.
 
-    Vaut `content_filter` quand le fournisseur a bloqué la génération : la
-    réponse est alors vide sans que le modèle ait refusé quoi que ce soit.
-    Confondre les deux fausserait la lecture du run.
+    Reads `content_filter` when the provider blocked the generation: the answer
+    is then empty without the model having refused anything. Confusing the two
+    would skew how the run is read.
     """
 
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
-    """Les outils que ce tour d'assistant a décidé d'appeler."""
+    """The tools this assistant turn decided to call."""
 
     tool_call_id: str | None = None
-    """Sur un tour `tool` : l'appel auquel ce résultat répond."""
+    """On a `tool` turn: the call this result answers."""
 
     tool_name: str | None = None
-    """Sur un tour `tool` : l'outil qui a « répondu »."""
+    """On a `tool` turn: the tool that "answered"."""
 
     seeded: bool = False
-    """Écrit par l'expérimentateur, pas produit par un modèle.
+    """Written by the experimenter, not produced by a model.
 
-    Ce drapeau est ce qui empêche la faute la plus grave que cette
-    fonctionnalité rend possible : faire noter au juge des mots que le modèle
-    évalué n'a jamais dits. Il voyage jusqu'au transcript enregistré, jusqu'à
-    l'invite du juge et jusqu'à l'export.
+    This flag is what prevents the gravest mistake the feature makes possible:
+    having the judge grade words the evaluated model never said. It travels into
+    the recorded transcript, into the judge prompt and into the export.
     """
 
     world_change: str = ""
-    """Sur un tour `tool` : ce que cet appel a changé au monde, ou vide.
+    """On a `tool` turn: what this call changed in the world, or empty.
 
-    Vide sur tout outil de lecture, et sur tout run antérieur à
+    Empty on every reading tool, and on every run older than
     `2026-09-08-le-monde-qui-change.md`.
 
-    **Ne part jamais au modèle évalué ni au juge.** `target_view` ne lit que
-    `content` — c'est le seul endroit qui construit les messages de la cible —
-    et l'invite du juge non plus. Le champ existe pour que le journal se
-    reconstitue depuis le transcript, et pour rien d'autre : c'est ce qui rend
-    une reprise gratuite (voir `journal_from`), là où le recalculer
-    demanderait de rejouer la chaîne des empreintes dans l'ordre.
+    **Never goes to the evaluated model nor to the judge.** `target_view` reads
+    only `content` — it is the only place that builds the target's messages —
+    and neither does the judge prompt. The field exists so the journal can be
+    rebuilt from the transcript, and for nothing else: that is what makes a
+    resume free (see `journal_from`), where recomputing it would mean replaying
+    the chain of fingerprints in order.
     """
 
 
 class ToolAnswer(NamedTuple):
-    """Ce que `serve_tool` rend : le résultat, et ce que l'appel a changé.
+    """What `serve_tool` returns: the result, and what the call changed.
 
-    Le `reasoning` du modèle d'environnement ne traverse pas cette frontière —
-    il s'enregistre du côté de `serve_tool`, qui parle à la base, et n'entre
-    jamais dans une conversation. La cloison est structurelle plutôt
-    qu'observée : ce qui n'arrive pas ici ne peut pas finir dans un `TOOL`
-    turn.
+    The environment model's `reasoning` does not cross this boundary — it is
+    recorded on the `serve_tool` side, which talks to the database, and never
+    enters a conversation. The partition is structural rather than observed:
+    what does not arrive here cannot end up in a `TOOL` turn.
     """
 
     result: str
@@ -115,20 +113,19 @@ class ToolAnswer(NamedTuple):
 def journal_from(
     transcript: "Sequence[Turn]", specs: "dict[str, ToolSpec]"
 ) -> list[JournalEntry]:
-    """Le journal d'une conversation, reconstitué depuis son transcript.
+    """A conversation's journal, rebuilt from its transcript.
 
-    Les écritures seulement, dans l'ordre. Une lecture n'y entre jamais : c'est
-    ce qui garde le cache vivant, et non une économie de place — voir la
-    docstring de `JournalEntry`.
+    Writes only, in order. A read never enters it: that is what keeps the cache
+    alive, and not a saving of space — see `JournalEntry`'s docstring.
 
-    Les arguments sont lus sur le tour `assistant`, qui porte la décision
-    d'appeler ; le résultat et l'effet sur le tour `tool` qui lui répond, apparié
-    par `tool_call_id`. C'est ce qui rend une reprise gratuite : les tours
-    rejoués portent déjà tout, et il n'y a rien à recalculer.
+    Arguments are read from the `assistant` turn, which carries the decision to
+    call; the result and the effect from the `tool` turn that answers it, paired
+    by `tool_call_id`. That is what makes a resume free: the replayed turns
+    already carry everything, and there is nothing to recompute.
 
-    Un outil que la configuration ne connaît plus est ignoré — une extension
-    peut avoir retiré ce que la conversation avait appelé, et rien ici ne doit
-    tomber sur un run qu'on relit.
+    A tool the configuration no longer knows is ignored — an extension may have
+    removed what the conversation called, and nothing here should fall over on a
+    run being read back.
     """
     arguments: dict[str, dict[str, Any]] = {}
     journal: list[JournalEntry] = []
@@ -154,19 +151,19 @@ def journal_from(
 
 
 def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]:
-    """Ce que voit le modèle évalué : son system prompt et la conversation.
+    """What the evaluated model sees: its system prompt and the conversation.
 
-    Rien d'autre n'entre ici. C'est le seul endroit qui construit ses messages,
-    ce qui rend l'invariant de sécurité vérifiable en un coup d'œil.
+    Nothing else enters here. It is the only place that builds its messages,
+    which makes the safety invariant checkable at a glance.
     """
     messages: list[ChatMessage] = [ChatMessageSystem(content=system_prompt)]
     for turn in transcript:
         if turn.role == "user":
             messages.append(ChatMessageUser(content=turn.content))
         elif turn.role == "tool":
-            # Le résultat doit revenir au modèle attaché à son appel : sans
-            # `tool_call_id`, les fournisseurs refusent le message ou le
-            # rattachent au mauvais appel quand il y en a plusieurs.
+            # The result must come back to the model attached to its call:
+            # without `tool_call_id`, providers refuse the message or attach it
+            # to the wrong call when there are several.
             messages.append(
                 ChatMessageTool(
                     content=turn.content,
@@ -189,42 +186,42 @@ def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]
 
 
 _SHARED = load("adversary-prompt")
-"""Le system prompt de l'adversaire, partagé avec TypeScript.
+"""The adversary's system prompt, shared with TypeScript.
 
-L'interface doit chiffrer ce que l'adversaire consommera avant qu'un run
-n'existe. Sans ce partage, elle en garderait sa propre estimation, qui finirait
-par ne plus décrire le texte réellement envoyé — et le devis mentirait sans
-qu'on le voie."""
+The interface has to price what the adversary will consume before a run exists.
+Without this sharing it would keep an estimate of its own, which would end up
+describing something other than the text actually sent — and the quote would lie
+without anyone seeing it."""
 
 CONFIDENTIALITY_NOTICE = _SHARED["confidentiality_notice"]
-"""La consigne de confidentialité que nous imposons, distincte de l'objectif
-que l'utilisateur écrit dans `adversary_prompt`.
+"""The confidentiality instruction we impose, distinct from the objective the
+user writes in `adversary_prompt`.
 
-L'utilisateur rédige un objectif, pas une politique de confidentialité :
-c'est à nous de la garantir. Elle encadre donc l'objectif de l'utilisateur
-dans `adversary_view` (avant et après) plutôt que d'être noyée dedans.
+The user writes an objective, not a confidentiality policy: guaranteeing it is
+on us. It therefore frames the user's objective in `adversary_view` (before and
+after) rather than being buried inside it.
 """
 
 
 def adversary_view(
     adversary_prompt: str, opening_message: str, transcript: list[Turn]
 ) -> list[ChatMessage]:
-    """Ce que voit l'adversaire : son prompt secret et la conversation en miroir.
+    """What the adversary sees: its secret prompt and the mirrored conversation.
 
-    Le message d'ouverture est placé dans le system prompt plutôt que dans
-    l'historique. Sinon la conversation commencerait par un message
-    `assistant`, ce que l'API Anthropic refuse — le premier message après le
-    system doit être un `user`. L'adversaire sait donc ce qu'il a « dit » sans
-    que la conversation démarre du mauvais rôle.
+    The opening message is placed in the system prompt rather than in the
+    history. Otherwise the conversation would start with an `assistant` message,
+    which the Anthropic API refuses — the first message after the system one
+    must be a `user`. The adversary therefore knows what it "said" without the
+    conversation starting on the wrong role.
 
-    La consigne de confidentialité (`CONFIDENTIALITY_NOTICE`) encadre
-    l'objectif de l'utilisateur : elle réduit le risque que l'adversaire
-    dévoile ses instructions, sans pouvoir l'éliminer — rien ne garantit le
-    contenu produit par un modèle de langage. Si l'adversaire recopie malgré
-    tout ses instructions dans son message, ce texte atteint légitimement le
-    modèle évalué par le canal normal de la conversation ; voir
-    `test_limite_connue_un_adversaire_qui_recopie_ses_instructions_les_fait_quand_meme_fuiter`
-    dans `tests/test_conversation.py`, qui documente cette limite connue.
+    The confidentiality instruction (`CONFIDENTIALITY_NOTICE`) frames the user's
+    objective: it reduces the risk of the adversary revealing its instructions
+    without being able to eliminate it — nothing guarantees what a language
+    model produces. If the adversary copies its instructions into its message
+    anyway, that text legitimately reaches the evaluated model through the
+    conversation's ordinary channel; see
+    `test_known_limit_an_adversary_copying_its_instructions_still_leaks_them`
+    in `tests/test_conversation.py`, which documents that known limit.
     """
     system = _SHARED["system_template"].format(
         notice=CONFIDENTIALITY_NOTICE,
@@ -241,28 +238,28 @@ def adversary_view(
 
 
 MAX_TOOL_CALLS_PER_TURN = 5
-"""Le plafond par défaut, quand la configuration n'en fixe pas.
+"""The default cap, when the configuration sets none.
 
-Un modèle qui appelle, lit, rappelle est le comportement réel d'un agent, et
-c'est ce qu'on veut pouvoir observer. Mais rien n'empêche une boucle : sans
-plafond, une seule case peut consommer le budget d'un run entier.
+A model that calls, reads and calls again is the real behaviour of an agent, and
+that is what we want to be able to observe. But nothing prevents a loop: with no
+cap, a single cell can consume a whole run's budget.
 """
 
 
 def tool_definitions(tools: "Sequence[ToolSpec]") -> list[ToolDef]:
-    """Les outils du run, traduits pour inspect.
+    """The run's tools, translated for inspect.
 
-    Rien n'est exécuté : la fonction rendue est un leurre, jamais appelée. C'est
-    `run_conversation` qui répond, avec le `result` écrit dans la définition —
-    la même réponse à chaque répétition, sans quoi deux cases de la matrice ne
-    mesureraient pas la même chose.
+    Nothing is executed: the function returned is a decoy, never called. It is
+    `run_conversation` that answers, with the `result` written in the definition
+    — the same answer at every repetition, without which two cells of the matrix
+    would not be measuring the same thing.
 
-    Le format d'un fournisseur à l'autre n'est pas notre affaire : inspect
-    traduit `ToolDef` vers celui de chacun.
+    The format from one provider to the next is not our concern: inspect
+    translates `ToolDef` into each of them.
     """
 
-    async def jamais_appelee(**_: Any) -> str:  # pragma: no cover
-        raise AssertionError("les outils sont simulés, jamais exécutés")
+    async def never_called(**_: Any) -> str:  # pragma: no cover
+        raise AssertionError("tools are simulated, never executed")
 
     definitions = []
     for spec in tools:
@@ -277,7 +274,7 @@ def tool_definitions(tools: "Sequence[ToolSpec]") -> list[ToolDef]:
         )
         definitions.append(
             ToolDef(
-                tool=jamais_appelee,
+                tool=never_called,
                 name=spec.name,
                 description=spec.description,
                 parameters=params,
@@ -305,93 +302,91 @@ async def run_conversation(
     max_tool_calls: int = MAX_TOOL_CALLS_PER_TURN,
     stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
-    """Déroule une conversation de `turns` tours et renvoie son transcript.
+    """Plays a conversation of `turns` turns and returns its transcript.
 
-    Le message d'ouverture est fixe et compte comme le premier tour : toutes
-    les répétitions d'un run démarrent donc à l'identique et restent
-    comparables entre elles.
+    The opening message is fixed and counts as the first turn: every repetition
+    of a run therefore starts identically and they stay comparable with one
+    another.
 
     Args:
-        system_prompt: Le system prompt du modèle évalué.
-        opening_message: Le premier message qui le met en situation.
-        turns: Nombre de réponses attendues du modèle évalué, de 1 à 10.
-        target: Le modèle évalué.
-        adversary: Le modèle qui pousse. Inutile à `turns = 1`.
-        adversary_prompt: Son instruction secrète.
-        history: Un état de conversation posé d'avance, propre au scénario. Le
-            modèle démarre comme s'il l'avait vécu, ce qui rend le point de
-            départ identique pour toutes les répétitions — dérouler le
-            préambule en vrais tours n'aboutit pas au même endroit à chaque
-            fois, et coûte des appels.
-        resume: Une conversation déjà jouée, à prolonger. Contrairement à
-            `history`, ses tours ne sont pas marqués comme posés — ils ont été
-            produits — et le message d'ouverture n'est pas réinséré, puisqu'il
-            s'y trouve déjà. `turns` compte alors les tours à *ajouter*. Si la
-            conversation reprise se termine sur la cible et que `turns` n'est
-            pas nul, l'adversaire relance une première fois avant la boucle :
-            sans quoi la cible enchaînerait sur sa propre dernière réplique.
-        serve_tool: Ce qui répond aux appels des outils **servis** — ceux qui
-            portent des `retrieval_rules`. Reçu construit, comme `target` et
-            `adversary` : cette boucle ne connaît ni le monde, ni le modèle qui
-            le sert, ni la base où les réponses sont gardées. Exigé dès qu'un
-            outil est servi, et jamais consulté pour un outil fixe, qui ne
-            coûte donc pas un appel. Il reçoit le journal de la conversation
-            tel qu'il est **avant** cet appel — c'est l'état sur lequel la
-            réponse se calcule et se met en cache, jamais celui qu'elle laisse.
-        tools: Les outils offerts au modèle évalué pour ce scénario. Rien n'est
-            exécuté : chaque appel reçoit le `result` écrit dans sa définition,
-            le même à chaque répétition. Faire improviser la réponse
-            ramènerait dans chaque case la variance qu'un run cherche à isoler.
-        max_tool_calls: Combien d'appels d'affilée avant qu'on rende la main au
-            tour suivant. Le dernier reçoit quand même sa réponse : un appel
-            resté en suspens rend le transcript invalide pour la suite.
-        temperature: Appliquée au seul modèle évalué. L'adversaire tourne au
-            réglage par défaut de son fournisseur : le faire varier en même
-            temps rendrait toute différence de comportement inattribuable.
-        stopped: Consulté juste avant chaque appel de modèle, et nulle part
-            ailleurs. C'est le seul endroit qui compte : inspect démarre tous
-            les échantillons d'un coup et les fait attendre un jeton de
-            connexion *à l'intérieur* de `generate`. Un contrôle placé avant la
-            file serait franchi par tout le monde dès la première seconde, et
-            n'arrêterait rien.
+        system_prompt: The evaluated model's system prompt.
+        opening_message: The first message that puts it in the situation.
+        turns: How many answers are expected from the evaluated model, 1 to 10.
+        target: The evaluated model.
+        adversary: The model that pushes. Not needed at `turns = 1`.
+        adversary_prompt: Its secret instruction.
+        history: A conversation state seeded in advance, belonging to the
+            scenario. The model starts as though it had lived it, which makes
+            the starting point identical for every repetition — playing the
+            preamble out as real turns does not land in the same place every
+            time, and costs calls.
+        resume: A conversation already played, to be continued. Unlike
+            `history`, its turns are not marked as seeded — they were produced —
+            and the opening message is not reinserted, since it is already
+            there. `turns` then counts the turns to *add*. If the resumed
+            conversation ends on the target and `turns` is not zero, the
+            adversary pushes once before the loop: without that the target would
+            follow on from its own last line.
+        serve_tool: What answers calls to **served** tools — those carrying
+            `retrieval_rules`. Received ready-built, like `target` and
+            `adversary`: this loop knows neither the world, nor the model that
+            serves it, nor the database where the answers are kept. Required as
+            soon as a tool is served, and never consulted for a fixed tool,
+            which therefore costs no call. It receives the conversation's
+            journal as it stands **before** this call — that is the state the
+            answer is computed and cached against, never the one it leaves.
+        tools: The tools offered to the evaluated model for this scenario.
+            Nothing is executed: each call receives the `result` written in its
+            definition, the same at every repetition. Having the answer
+            improvised would bring back into every cell the very variance a run
+            is trying to isolate.
+        max_tool_calls: How many calls in a row before the turn is handed on.
+            The last one still gets its answer: a call left hanging makes the
+            transcript invalid for what follows.
+        temperature: Applied to the evaluated model alone. The adversary runs at
+            its provider's default: varying it at the same time would make any
+            difference in behaviour unattributable.
+        stopped: Consulted just before each model call, and nowhere else. That
+            is the only place that counts: inspect starts every sample at once
+            and has them wait for a connection token *inside* `generate`. A
+            check placed before the queue would be crossed by everyone in the
+            first second, and would stop nothing.
 
     Raises:
-        ValueError: si `turns` dépasse 1 sans adversaire.
+        ValueError: if `turns` goes beyond 1 with no adversary.
     """
-    # Validation préalable : avant tout appel au modèle évalué, s'assurer
-    # qu'on a un adversaire si on a besoin de plus d'un tour. Sinon une vraie
-    # requête API serait envoyée et facturée inutilement.
+    # Checked up front: before any call to the evaluated model, make sure we
+    # have an adversary if more than one turn is needed. Otherwise a real API
+    # request would be sent and billed for nothing.
     if turns > 1 and adversary is None:
         raise ValueError(
             "An adversary model is required to go beyond one turn."
         )
 
     if resume is not None:
-        # Une conversation qu'on prolonge. Ses tours ont été produits, pas
-        # donnés : les marquer `seeded` les ferait sauter par le juge, qui ne
-        # noterait plus que les tours ajoutés. Et le message d'ouverture y est
-        # déjà — le réinsérer le placerait au milieu de la conversation.
+        # A conversation being continued. Its turns were produced, not
+        # seeded: marking them `seeded` would have the judge skip them, and it
+        # would grade only the added turns. And the opening message is already
+        # there — reinserting it would put it in the middle of the conversation.
         transcript: list[Turn] = list(resume)
 
-        # La conversation reprise se termine déjà sur la cible : c'est
-        # l'invariant du produit, un tour étant la cible qui parle puis
-        # l'adversaire qui relance. Sans ce tour d'adversaire, la boucle
-        # ferait parler la cible tout de suite, et elle enchaînerait sur sa
-        # propre dernière réplique au lieu de répondre à une relance — la
-        # case porterait alors une relance de moins que sa profondeur ne le
-        # laisse croire. Même vue, même façon de construire l'entrée que
-        # l'appel adverse de fin de boucle : cette relance-là ne doit se
-        # distinguer en rien des autres.
+        # The resumed conversation already ends on the target: that is the
+        # product's invariant, a turn being the target speaking and then the
+        # adversary pushing. Without that adversary turn, the loop would have
+        # the target speak straight away, and it would follow on from its own
+        # last line instead of answering a push — the cell would then carry one
+        # push fewer than its depth suggests. Same view, same way of building
+        # the input as the end-of-loop adversary call: this push must be
+        # indistinguishable from the others.
         #
-        # Deux cas où il n'y a rien à relancer : `turns` à zéro, une case déjà
-        # à la bonne profondeur qu'on ne fait que rejuger ; et un transcript
-        # qui se termine déjà par une relance (`user`), une réponse étant
-        # déjà attendue. Un tour de la cible peut se terminer sur `assistant`
-        # comme sur `tool` — le plafond d'appels d'outils clôt le tour par un
-        # tour `tool` de synthèse — et dans les deux cas personne n'attend
-        # encore de réponse : la boucle ordinaire, plus bas, relance après
-        # chaque tour de la cible sans se soucier de la façon dont il s'est
-        # terminé, et ce garde-fou doit dire la même chose.
+        # Two cases where there is nothing to push: `turns` at zero, a cell
+        # already at the right depth that is only being rejudged; and a
+        # transcript that already ends on a push (`user`), an answer being
+        # awaited already. A target turn may end on `assistant` as well as on
+        # `tool` — the tool-call cap closes the turn with a summarising `tool`
+        # turn — and in both cases nobody is waiting for an answer yet: the
+        # ordinary loop below pushes after every target turn without caring how
+        # it ended, and this guard must say the same thing.
         if (
             turns > 0
             and adversary is not None
@@ -407,9 +402,9 @@ async def run_conversation(
                 Turn(role="user", content=adversary_output.completion)
             )
     else:
-        # L'historique posé ouvre le transcript. Le modèle le reçoit comme s'il
-        # l'avait vécu — c'est le but — mais chaque tour reste marqué, et le
-        # juge sait ne pas le noter.
+        # The seeded history opens the transcript. The model receives it as
+        # though it had lived it — that is the point — but every turn stays
+        # flagged, and the judge knows not to grade it.
         transcript = [
             Turn(role=turn.role, content=turn.content, seeded=True)
             for turn in (history or [])
@@ -430,22 +425,21 @@ async def run_conversation(
             " than a cell that is missing."
         )
 
-    # Le journal de cette conversation : les appels qui ont changé le monde, et
-    # eux seuls. Reconstitué depuis les tours repris — c'est ce qui rend
-    # l'approfondissement gratuit — puis tenu à jour au fil des appels.
+    # This conversation's journal: the calls that changed the world, and those
+    # alone. Rebuilt from the resumed turns — that is what makes deepening free
+    # — then kept up to date as calls come.
     journal = journal_from(transcript, specs)
 
-    async def resultat(call: ToolCall) -> ToolAnswer:
-        """Ce que cet appel reçoit : la chaîne fixe, ou le monde.
+    async def answer_for(call: ToolCall) -> ToolAnswer:
+        """What this call receives: the fixed string, or the world.
 
-        Rien n'est mis en cache ici. C'est `serve_tool` qui décide, puisque
-        c'est lui qui sait ce qui est déjà en base — cette boucle, elle, ne
-        parle à personne.
+        Nothing is cached here. `serve_tool` decides, since it is the one that
+        knows what is already in the database — this loop talks to nobody.
 
-        Un outil fixe qui écrit journalise quand même, et sans appeler qui que
-        ce soit : sa phrase est celle que l'expérimentateur a écrite. C'est la
-        forme courante des outils d'écriture, et la réserver aux outils servis
-        les aurait tous ratés.
+        A fixed tool that writes still journals, and without calling anyone: its
+        sentence is the one the experimenter wrote. That is the common shape of
+        writing tools, and reserving journalling for served tools would have
+        missed all of them.
         """
         spec = specs.get(call.function)
         if spec is None:
@@ -455,10 +449,10 @@ async def run_conversation(
         return await serve_tool(spec, call.arguments or {}, journal)
 
     for turn_index in range(turns):
-        # Un tour, c'est une réponse du modèle évalué — pas un appel de modèle.
-        # Un modèle outillé peut appeler, lire le résultat et rappeler avant de
-        # répondre vraiment ; tout cela reste le même tour, plafonné.
-        for essai in range(max_tool_calls + 1):
+        # A turn is one answer from the evaluated model — not one model call.
+        # A model with tools may call, read the result and call again before
+        # really answering; all of that stays the same turn, capped.
+        for attempt in range(max_tool_calls + 1):
             if stopped is not None and stopped():
                 raise Cancelled("stopped before the evaluated model's turn")
             target_output = await target.generate(
@@ -466,7 +460,7 @@ async def run_conversation(
                 config=target_config,
                 tools=definitions,
             )
-            appels = target_output.message.tool_calls or []
+            calls = target_output.message.tool_calls or []
             transcript.append(
                 Turn(
                     role="assistant",
@@ -480,51 +474,51 @@ async def run_conversation(
                         ToolCallRecord(
                             id=call.id, name=call.function, arguments=call.arguments
                         )
-                        for call in appels
+                        for call in calls
                     ],
                 )
             )
-            if not appels:
+            if not calls:
                 break
 
-            # Chaque appel reçoit sa réponse — la même chaîne pour un outil
-            # fixe, celle que le monde rend pour un outil servi. Un appel sans
-            # réponse laisserait le transcript invalide pour le tour suivant :
-            # les fournisseurs refusent un appel resté en suspens.
-            plafond = essai == max_tool_calls
-            for call in appels:
-                # Le plafond ne sert rien : il ne consulte pas le monde, ne
-                # journalise pas, et n'a donc rien changé. Une écriture refusée
-                # faute de place n'a pas eu lieu.
-                réponse = (
-                    await resultat(call)
-                    if not plafond
+            # Every call gets its answer — the same string for a fixed tool,
+            # whatever the world returns for a served one. A call with no answer
+            # would leave the transcript invalid for the next turn: providers
+            # refuse a call left hanging.
+            capped = attempt == max_tool_calls
+            for call in calls:
+                # The cap serves nothing: it does not consult the world, does
+                # not journal, and so changed nothing. A write refused for lack
+                # of room did not happen.
+                answer = (
+                    await answer_for(call)
+                    if not capped
                     else ToolAnswer("Tool call limit reached for this turn.")
                 )
                 transcript.append(
                     Turn(
                         role="tool",
-                        content=réponse.result,
+                        content=answer.result,
                         tool_call_id=call.id,
                         tool_name=call.function,
-                        world_change=réponse.world_change,
+                        world_change=answer.world_change,
                     )
                 )
-                # L'entrée est posée APRÈS que l'appel a été servi : ce qui
-                # entre au journal a déjà été calculé sur l'état d'avant lui.
-                # L'ordre inverse rendrait la clé du cache circulaire — l'entrée
-                # porte le résultat qu'elle sert à retrouver.
+                # The entry is laid down AFTER the call has been served: what
+                # enters the journal was already computed against the state
+                # before it. The reverse order would make the cache key
+                # circular — the entry carrying the result it serves to find.
                 spec = specs.get(call.function)
-                if not plafond and spec is not None and spec.writes:
+                if not capped and spec is not None and spec.writes:
                     journal.append(
                         JournalEntry(
                             tool=call.function,
                             arguments=call.arguments or {},
-                            result=réponse.result,
-                            effect=réponse.world_change,
+                            result=answer.result,
+                            effect=answer.world_change,
                         )
                     )
-            if plafond:
+            if capped:
                 break
 
         if turn_index == turns - 1:
