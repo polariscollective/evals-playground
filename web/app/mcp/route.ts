@@ -72,6 +72,7 @@ import {
   extendProblem,
 } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
+import { extendWorldWarnings, worldWarnings } from "@/lib/world-warnings";
 import type { Draft, Judge, JudgeSystemTypeColumn, Profile, RunDetail } from "@/lib/types";
 
 /** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
@@ -998,11 +999,19 @@ const handler = createMcpHandler((server) => {
           "change if other runs launch meanwhile.";
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      // Ce qui mérite d'être dit sans être refusé — voir `worldWarnings` : un
+      // scénario servi sans rien à lire. Design §7 : l'écran les affichait
+      // déjà ; un agent composant le même run par MCP n'en entendait jamais
+      // parler, exactement le cas que cet avertissement existe pour nommer.
+      const warnings = worldWarnings(config);
       return {
         content: [
           {
             type: "text",
-            text: `${verdict.message}\n\n${launchability}\n\n${origin}/runs/drafts/${draftId}`,
+            text:
+              `${verdict.message}` +
+              (warnings.length > 0 ? `\n\n${warnings.join("\n")}` : "") +
+              `\n\n${launchability}\n\n${origin}/runs/drafts/${draftId}`,
           },
         ],
       };
@@ -1625,6 +1634,10 @@ const handler = createMcpHandler((server) => {
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       const address = `${origin}/eval/${input.run_id}?extend=${draftId}`;
+      // Même avertissement que côté écran (§7) : servir depuis un monde vide,
+      // sans que rien ne le refuse — voir `extendWorldWarnings`.
+      const warnings = extendWorldWarnings(request, run.config);
+      const warningsSuffix = warnings.length > 0 ? `\n\n${warnings.join("\n")}` : "";
 
       // Rien à ajouter ni à approfondir : `launch_draft` refuserait ce
       // brouillon pour cette seule raison, avant même de regarder le budget
@@ -1637,7 +1650,7 @@ const handler = createMcpHandler((server) => {
               text:
                 `Saved as a draft extension of "${run.label ?? input.run_id}": nothing to add or ` +
                 "deepen. Not launchable today — Nothing to add: that combination is already covered." +
-                `\n\n${address}`,
+                `${warningsSuffix}\n\n${address}`,
             },
           ],
         };
@@ -1685,7 +1698,7 @@ const handler = createMcpHandler((server) => {
             text:
               `Saved as a draft extension of "${run.label ?? input.run_id}": ` +
               `${summary}, quoted at ${formatUsd(quote)}. Nothing has been spent yet. ${launchability}` +
-              `\n\n${address}`,
+              `${warningsSuffix}\n\n${address}`,
           },
         ],
       };

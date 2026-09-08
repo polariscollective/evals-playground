@@ -8,6 +8,7 @@ import {
   startCatchupPass,
 } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
+import { configProblem } from "@/lib/validate";
 
 /** Remplit les lignes de `judge_scores` encore en attente OU en erreur sur ce
  *  run, pour toute liaison vivante et toute conversation déjà terminée.
@@ -49,6 +50,23 @@ export async function POST(
     return NextResponse.json(
       { error: "This run is still going. Wait for it to finish." },
       { status: 409 },
+    );
+  }
+
+  // Même garde que `retry` (voir B2) : un run lancé avant `models.world`
+  // peut servir des outils sans en nommer un, et le job reconstruit sa
+  // configuration avec le même validateur qu'`extendProblem` — une levée à
+  // froid qui effacerait le coût déjà enregistré plutôt qu'un refus qu'on
+  // peut lire et réparer par une extension.
+  const configIssue = configProblem(detail.run.config);
+  if (configIssue) {
+    return NextResponse.json(
+      {
+        error:
+          `This run's saved configuration can no longer run as is: ${configIssue} ` +
+          "Extend the run to supply what's missing, then retry.",
+      },
+      { status: 422 },
     );
   }
   // `catchup_missing` vient de `loadRun`, qui l'a calculé à l'instant : le

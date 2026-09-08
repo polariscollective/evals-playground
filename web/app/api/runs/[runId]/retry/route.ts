@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, failToStart, loadRun, recordStart, retryFailed } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
+import { configProblem } from "@/lib/validate";
 
 /** Relance les cases en erreur d'un run, dans ce même run.
  *
@@ -32,6 +33,23 @@ export async function POST(
     return NextResponse.json(
       { error: "This run is still going. Wait for it to finish." },
       { status: 409 },
+    );
+  }
+
+  // Un run lancé avant que `models.world` existe peut servir des outils sans
+  // en nommer un : le job reconstruit sa configuration avec le même
+  // validateur qu'`extendProblem` (voir B2), et lèverait à froid, effaçant au
+  // passage le coût déjà enregistré (`check_served_results` avant
+  // `finish_run`). Vérifié ici plutôt que découvert dans les logs du job.
+  const problem = configProblem(detail.run.config);
+  if (problem) {
+    return NextResponse.json(
+      {
+        error:
+          `This run's saved configuration can no longer run as is: ${problem} ` +
+          "Extend the run to supply what's missing, then retry.",
+      },
+      { status: 422 },
     );
   }
 
