@@ -1,6 +1,6 @@
 "use server";
 
-import { signOut } from "@/auth";
+import { signIn, signOut } from "@/auth";
 
 /** Fermer la session, depuis un composant client.
  *
@@ -14,4 +14,22 @@ import { signOut } from "@/auth";
  * visiteur sans session. */
 export async function logout() {
   await signOut({ redirectTo: "/" });
+}
+
+/** Start the Google exchange, and come back where the visitor was heading.
+ *
+ * `signIn` runs on the server only — the same constraint that put `logout`
+ * here rather than in the bar.
+ *
+ * `callbackUrl` arrives through a hidden input because a server action does
+ * not see the request that rendered the page. It cannot become an open
+ * redirect: Auth.js runs every `redirectTo` through its `redirect` callback,
+ * and the default (`@auth/core/lib/init.js`) prefixes a bare path with the
+ * base URL and answers `baseUrl` for any other origin. */
+export async function login(formData: FormData) {
+  const callbackUrl = formData.get("callbackUrl");
+  await signIn("google", {
+    redirectTo:
+      typeof callbackUrl === "string" && callbackUrl ? callbackUrl : "/",
+  });
 }
