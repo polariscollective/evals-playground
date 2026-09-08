@@ -505,8 +505,14 @@ export interface ExtendRequest {
    * Ajouter est permis, redéfinir non : un outil qui reprendrait un nom
    * existant ferait relire les cases déjà jouées comme ayant eu celui-ci. */
   new_tools?: ToolSpec[];
-  /** Le modèle qui sert les outils ajoutés par `new_tools`, quand ce run n'en a
-   *  pas encore un.
+  /** Le modèle qui sert les outils de ce run — ceux qu'il porte déjà comme
+   *  ceux que `new_tools` ajoute — quand ce run n'en a pas encore un.
+   *
+   * Pas seulement les outils ajoutés : un run antérieur à ce champ peut déjà
+   * servir sans le nommer, et une extension qui n'ajoute rien de servi doit
+   * alors le porter tout autant — c'est le cas que la ligne précédente
+   * faisait facilement oublier (voir CRITICAL 2, `ExtendPanel.buildRequest`,
+   * qui l'avait niché sous `new_tools.length > 0`).
    *
    * Trois cas, et le troisième est le seul qui surprenne : un run sans modèle
    * de monde qui reçoit un outil servi doit en nommer un, qui devient celui du

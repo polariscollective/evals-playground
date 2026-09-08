@@ -414,12 +414,19 @@ export function ExtendPanel({
             ...(forExisting !== null
               ? { new_tools_for_existing: forExisting }
               : {}),
-            // Seulement quand il y a quelque chose à nommer : un run qui sert
-            // déjà impose silencieusement son modèle (`extendRun`), et lui en
-            // envoyer un autre serait refusé pour rien.
-            ...(needsWorldModel ? { world: worldModel } : {}),
           }
         : {}),
+      // Indépendant de `newTools` (CRITICAL 2) : un run antérieur à ce champ
+      // peut déjà servir sans le nommer, et alors `needsWorldModel` vaut vrai
+      // sans qu'aucun outil ne soit ajouté — c'est précisément le cas que A1
+      // a ouvert. Nichée sous `newTools.length > 0`, cette clé disparaissait
+      // de la demande dans ce cas précis : l'écran montrait le champ, forçait
+      // à le remplir, puis l'omettait — et le serveur refusait avec le
+      // message même qu'A1 avait réécrit pour lui dire de rouvrir ici. Seul
+      // `needsWorldModel` décide ; un run qui sert déjà impose silencieusement
+      // son modèle (`extendRun`), et lui en envoyer un autre serait refusé
+      // pour rien — d'où la même condition, jamais recalculée.
+      ...(needsWorldModel ? { world: worldModel } : {}),
       // Absent laisse la profondeur telle quelle : envoyer la valeur de
       // départ quand rien n'a changé n'apprendrait rien au serveur qu'il ne
       // sache déjà.
