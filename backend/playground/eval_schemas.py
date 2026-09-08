@@ -1,8 +1,8 @@
-"""Modèles pydantic du moteur d'évaluation.
+"""Pydantic models of the evaluation engine.
 
-Tout ce que le job lit et écrit passe par ici : la configuration d'un run, ses
-cases, ses juges et leurs notes. Les tables Supabase correspondantes sont
-décrites une à une dans `web/lib/supabase.ts`, et les migrations vivent dans
+Everything the job reads and writes goes through here: a run's configuration,
+its cells, its judges and their grades. The corresponding Supabase tables are
+described one by one in `web/lib/supabase.ts`, and the migrations live in
 `polaris-supabase`.
 """
 
@@ -15,129 +15,124 @@ EvalRunStatus = Literal["pending", "running", "done", "error", "cancelled"]
 
 
 class RubricLevel(BaseModel):
-    """Un palier de l'échelle de notation, tel que l'utilisateur l'écrit.
+    """One level of the grading scale, as the user writes it.
 
-    `value` est la note que le juge rendra, `meaning` la phrase qui lui dit ce
-    que cette note veut dire. Les deux voyagent ensemble : une note sans son
-    sens ne se relit pas trois semaines plus tard, et le juge ne saurait pas
-    quand la choisir.
+    `value` is the grade the judge will return, `meaning` the sentence telling
+    it what that grade means. The two travel together: a grade without its
+    meaning cannot be read back three weeks later, and the judge would not know
+    when to choose it.
     """
 
     value: float
     meaning: str = Field(min_length=1)
 
     excluded: bool = False
-    """Ce palier compte-t-il dans la moyenne, ou reste-t-il en dehors ?
+    """Does this level count towards the mean, or stay outside it?
 
-    Pour dire « la question ne s'appliquait pas » : le juge a bien tranché, mais
-    la note n'a pas de sens sur l'échelle. La faire entrer dans la moyenne
-    tirerait la case vers le bas pour une raison qui n'a rien à voir avec ce
-    qu'on mesure.
+    For saying "the question did not apply": the judge did decide, but the grade
+    has no meaning on the scale. Letting it into the mean would pull the cell
+    down for a reason that has nothing to do with what is being measured.
 
-    Distinct d'une case sans note : là, le juge n'a rien pu dire. Ici, il a dit
-    « sans objet », ce qui est une réponse.
+    Distinct from a cell with no grade: there, the judge could say nothing. Here
+    it said "not applicable", which is an answer.
     """
 
 
-# --- Juges multiples --------------------------------------------------------
+# --- Multiple judges ---------------------------------------------------------
 #
-# Trois tables en base, chacune son modèle : `Judge` la configuration d'un
-# juge, `RunJudge` sa liaison à un run donné, `JudgeScore` ce qu'il a trouvé
-# sur une conversation. Voir la migration
-# `evals/supabase/migrations/20260906092100_create_judges_tables.sql` (dépôt
-# polaris-supabase) et docs/superpowers/specs/2026-09-06-juges-multiples.md
-# pour le détail du raisonnement — ce qui suit n'en est qu'un miroir typé.
+# Three tables in the database, each with its model: `Judge` a judge's
+# configuration, `RunJudge` its link to a given run, `JudgeScore` what it found
+# on one conversation. See the migration
+# `evals/supabase/migrations/20260906092100_create_judges_tables.sql`
+# (polaris-supabase repository) and
+# docs/superpowers/specs/2026-09-06-juges-multiples.md for the reasoning in
+# detail — what follows is only a typed mirror of it.
 #
-# `JudgeSpec`, en bas de cette section, n'est pas un miroir de table : c'est
-# ce qu'un run porte en configuration, avant qu'aucune ligne n'existe.
+# `JudgeSpec`, at the bottom of this section, is not a mirror of a table: it is
+# what a run carries in its configuration, before any row exists.
 
 JudgeSystemType = Literal["ordinary", "awake"]
-"""Le domaine exact de la colonne `system_type`, dans `judges` comme dans
-`run_judges` — celui du CHECK `judges_system_type_check` en base.
+"""The exact domain of the `system_type` column, in `judges` as in
+`run_judges` — that of the `judges_system_type_check` CHECK in the database.
 
-`"ordinary"` est un sentinelle, pas un type système : il ne désigne aucun
-juge système, il dit seulement qu'il n'y en a pas. La colonne est NOT NULL
-des deux côtés, sans valeur par défaut, depuis la migration
-`20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql` (dépôt
-polaris-supabase) — avant elle, l'absence (`NULL`) jouait ce rôle, mais
-désarmait au passage la clé étrangère composée de `run_judges` (voir
-`RunJudge.system_type`). `"awake"`, le contrôle d'éveil, est le seul vrai
-type système aujourd'hui. D'autres viendront sans nouvelle migration ; ils
-s'ajoutent ici."""
+`"ordinary"` is a sentinel, not a system type: it names no system judge, it only
+says there is none. The column is NOT NULL on both sides, with no default, since
+migration `20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql`
+(polaris-supabase repository) — before it, absence (`NULL`) played that role, but
+disarmed `run_judges`'s composite foreign key on the way (see
+`RunJudge.system_type`). `"awake"`, the awareness check, is the only real system
+type today. Others will come without a new migration; they are added here."""
 
 
 class Judge(BaseModel):
-    """Une ligne de `judges` : la configuration d'un juge, indépendante des
-    runs qui l'utilisent — voir `RunJudge` pour la liaison à un run donné.
+    """A row of `judges`: a judge's configuration, independent of the runs
+    that use it — see `RunJudge` for the link to a given run.
 
-    Un juge ordinaire porte sa question et son échelle, écrites par
-    l'utilisateur : `criterion` et `rubric` sont alors renseignés. Un juge
-    système (`system_type` différent de `"ordinary"`) ne porte que son
-    identité : sa question, son échelle et son prompt vivent dans le code,
-    retrouvés par ce type — jamais en base. Les y mettre perdrait les trois garanties de git sur ce
-    texte : le même partout, une relecture quand il change, un historique de
-    qui l'a changé — et deux runs pourraient être notés par deux versions du
-    texte sans que rien ne le dise.
+    An ordinary judge carries its question and its scale, written by the user:
+    `criterion` and `rubric` are then filled in. A system judge (`system_type`
+    other than `"ordinary"`) carries only its identity: its question, its scale
+    and its prompt live in the code, found by that type — never in the database.
+    Putting them there would lose the three guarantees git gives that text: the
+    same everywhere, a review when it changes, a history of who changed it — and
+    two runs could be graded by two versions of the text without anything saying
+    so.
 
-    Ces deux formes s'excluent : `_ordinaire_ou_systeme` le fait respecter
-    ici, comme la contrainte `judges_ordinary_or_system_check` le fait en
-    base.
+    The two shapes exclude each other: `_ordinary_or_system` enforces that here,
+    as the `judges_ordinary_or_system_check` constraint does in the database.
     """
 
     id: str
     criterion: str | None = None
-    """La question posée au juge, telle que l'utilisateur l'a écrite. `None`
-    pour un juge système — voir la docstring de la classe."""
+    """The question put to the judge, as the user wrote it. `None` for a
+    system judge — see the class docstring."""
 
     rubric: list[RubricLevel] | None = None
-    """L'échelle du juge, telle que l'utilisateur l'a écrite. `None` pour un
-    juge système — voir la docstring de la classe."""
+    """The judge's scale, as the user wrote it. `None` for a system judge —
+    see the class docstring."""
 
     model: str
-    """Le modèle qui juge."""
+    """The model that grades."""
 
     system_type: JudgeSystemType
-    """`"ordinary"` pour un juge ordinaire — sentinelle, jamais absent : la
-    colonne est NOT NULL en base, sans valeur par défaut, donc ce champ n'a
-    pas de valeur par défaut non plus ici ; toute construction d'un juge doit
-    la poser explicitement. `"awake"` : le contrôle d'éveil — le modèle
-    évalué a-t-il montré qu'il se savait testé ? Sa question n'appartient pas
-    à l'utilisateur, son échelle est fixe de 1 à 10, et sa panne ne coûte
-    jamais sa note au juge principal — ces trois propriétés vivent dans le
-    code qui construit ce juge, pas ici."""
+    """`"ordinary"` for an ordinary judge — a sentinel, never absent: the
+    column is NOT NULL in the database with no default, so this field has no
+    default here either; every construction of a judge must set it explicitly.
+    `"awake"`: the awareness check — did the evaluated model show it knew it was
+    being tested? Its question does not belong to the user, its scale is fixed
+    from 1 to 10, and its failure never costs the principal judge its grade —
+    those three properties live in the code that builds this judge, not here."""
 
     created_by: str
-    """Qui a créé ce juge — l'adresse de la session, jamais ce que le client
-    prétend."""
+    """Who created this judge — the session's address, never what the client
+    claims."""
 
     created_at: str
 
     @model_validator(mode="after")
-    def _ordinaire_ou_systeme(self) -> "Judge":
-        """Miroir de `judges_ordinary_or_system_check` : un juge système ne
-        porte ni critère ni échelle ; un juge ordinaire porte les deux.
+    def _ordinary_or_system(self) -> "Judge":
+        """Mirror of `judges_ordinary_or_system_check`: a system judge carries
+        neither criterion nor scale; an ordinary judge carries both.
 
-        « Ce juge est-il système ? » se lisait par une absence
-        (`system_type is None`) ; depuis le sentinelle `"ordinary"`
-        (migration `20260906113533`, dépôt polaris-supabase), elle se lit
-        par une valeur : la comparaison doit rester `!= "ordinary"` /
-        `== "ordinary"`, jamais `is not None` / `is None`. Ne jamais revenir
-        à un test de nullité pour « simplifier » — `"ordinary"` n'est pas
-        nul, un tel test serait toujours faux, et tous les juges
-        deviendraient silencieusement des juges système.
+        "Is this judge a system one?" used to be read by an absence
+        (`system_type is None`); since the `"ordinary"` sentinel (migration
+        `20260906113533`, polaris-supabase repository) it is read by a value:
+        the comparison must stay `!= "ordinary"` / `== "ordinary"`, never `is
+        not None` / `is None`. Never go back to a null test to "simplify" —
+        `"ordinary"` is not null, such a test would always be false, and every
+        judge would silently become a system judge.
         """
-        porte_criterion = self.criterion is not None
-        porte_rubric = self.rubric is not None
-        if porte_criterion != porte_rubric:
+        has_criterion = self.criterion is not None
+        has_rubric = self.rubric is not None
+        if has_criterion != has_rubric:
             raise ValueError(
                 "criterion and rubric must be both present or both absent."
             )
-        if self.system_type != "ordinary" and porte_criterion:
+        if self.system_type != "ordinary" and has_criterion:
             raise ValueError(
                 "A system judge carries no criterion or rubric — its text"
                 " lives in the code, retrieved by system_type."
             )
-        if self.system_type == "ordinary" and not porte_criterion:
+        if self.system_type == "ordinary" and not has_criterion:
             raise ValueError(
                 "An ordinary judge (system_type == 'ordinary') must carry a"
                 " criterion and a rubric."
@@ -146,18 +141,17 @@ class Judge(BaseModel):
 
 
 class RunJudge(BaseModel):
-    """Une ligne de `run_judges` : ce juge, dans ce run, à ce titre.
+    """A row of `run_judges`: this judge, in this run, in this capacity.
 
-    La liaison existe avant la moindre conversation jugée — au lancement, ou
-    le jour où on ajoute un juge à un run terminé. `is_principal` et
-    `deleted_at` n'ont de sens que pour ce run : les poser sur `Judge` serait
-    faux, puisque le même juge peut être principal ici et secondaire ailleurs.
+    The link exists before a single conversation is graded — at launch, or on
+    the day a judge is added to a finished run. `is_principal` and `deleted_at`
+    make sense only for this run: putting them on `Judge` would be wrong, since
+    the same judge can be principal here and secondary elsewhere.
 
-    Le piège de ce dessin, et il est réel : le filtre « non supprimé »
-    (`deleted_at is None`) doit vivre à un seul endroit, dans la fonction qui
-    charge les juges d'un run. Le recopier dans deux lectures, c'est
-    l'oublier dans une troisième — ce chantier a déjà produit deux exemples
-    de cet oubli.
+    The trap in this design, and it is a real one: the "not deleted" filter
+    (`deleted_at is None`) must live in a single place, in the function that
+    loads a run's judges. Copying it into two reads means forgetting it in a
+    third — this work has already produced two instances of that omission.
     """
 
     id: str
@@ -165,154 +159,146 @@ class RunJudge(BaseModel):
     judge_id: str
 
     system_type: JudgeSystemType
-    """Copie de `Judge.system_type` au moment de la liaison. `"ordinary"`
-    pour une liaison ordinaire — sentinelle, jamais absent : NOT NULL en
-    base des deux côtés, sans valeur par défaut, depuis la migration
-    `20260906113533` (dépôt polaris-supabase) ; toute construction d'une
-    liaison doit la poser explicitement, recopiée depuis le `Judge` visé,
-    jamais écrite indépendamment de lui.
+    """A copy of `Judge.system_type` at the moment of linking. `"ordinary"`
+    for an ordinary link — a sentinel, never absent: NOT NULL in the database on
+    both sides, with no default, since migration `20260906113533`
+    (polaris-supabase repository); every construction of a link must set it
+    explicitly, copied from the `Judge` it points at, never written
+    independently of it.
 
-    Épinglée par la clé étrangère composée `(judge_id, system_type) ->
-    judges (id, system_type)`, qui interdit toute divergence entre les deux
-    copies — et, depuis la même migration, par une seconde clé étrangère
-    portant sur `judge_id` seul, qui garantit à elle seule l'existence du
-    juge visé : la composée ne le garantissait pas tant que `system_type`
-    pouvait être `NULL` (`MATCH SIMPLE` la considère satisfaite dès qu'une
-    colonne référençante est nulle, ce qui était le cas de la quasi-totalité
-    des liaisons avant le sentinelle).
+    Pinned by the composite foreign key `(judge_id, system_type) -> judges (id,
+    system_type)`, which forbids any divergence between the two copies — and,
+    since the same migration, by a second foreign key on `judge_id` alone, which
+    on its own guarantees the target judge exists: the composite one did not
+    guarantee it while `system_type` could be `NULL` (`MATCH SIMPLE` considers
+    it satisfied as soon as one referencing column is null, which was the case
+    for nearly every link before the sentinel).
 
-    N'existe ici que parce qu'un index unique partiel ne peut pas lire une
-    colonne d'une autre table : l'invariant « au plus une liaison vivante
-    d'un `system_type` donné (différent de `"ordinary"`) par run » porte sur
-    cette table-ci, il lui faut donc sa propre colonne."""
+    Exists here only because a partial unique index cannot read a column from
+    another table: the invariant "at most one live link of a given
+    `system_type` (other than `"ordinary"`) per run" bears on this table, so it
+    needs a column of its own."""
 
     is_principal: bool = False
-    """Le juge que la matrice affiche. Deux garanties distinctes, en base,
-    composent l'« exactement une » que la conception vise pour tout run
-    ayant au moins une liaison vivante — ni l'une ni l'autre ne le fait
-    seule. L'index unique partiel `run_judges_single_principal_idx` ne
-    garantit qu'**au plus une** liaison vivante principale par run ; il ne
-    dit rien sur l'absence de principal. C'est le déclencheur différé
-    `run_judges_require_principal_trg` (migration `20260906102248`) qui
-    referme l'autre bord, et seulement pour les UPDATE qui retirent le
-    principal à une liaison qui le portait déjà — un INSERT n'est jamais
-    couvert, voir le commentaire de la migration pour ce trou de portée
-    assumé."""
+    """The judge the matrix shows. Two distinct guarantees, in the database,
+    compose the "exactly one" the design aims at for any run with at least one
+    live link — neither does it alone. The partial unique index
+    `run_judges_single_principal_idx` guarantees only **at most one** live
+    principal link per run; it says nothing about the absence of a principal. It
+    is the deferred trigger `run_judges_require_principal_trg` (migration
+    `20260906102248`) that closes the other side, and only for UPDATEs that take
+    the principal away from a link that already carried it — an INSERT is never
+    covered, see the migration's comment for that accepted gap in scope."""
 
     deleted_at: str | None = None
-    """`None` tant que la liaison est vivante. On supprime la liaison, jamais
-    le juge : la ligne reste, marquée, pour qu'on sache encore que ce run a
-    été jugé par celui-là, à un moment. La suppression est douce — un UPDATE
-    qui pose cette colonne, jamais un DELETE : `judge_scores` porte bien une
-    clé étrangère `on delete cascade` vers cette liaison, mais rien ne la
-    déclenche jamais en pratique, et `service_role` n'a même pas le droit de
-    supprimer une ligne de `run_judges` (seuls `select`, `insert`, `update`
-    lui sont accordés — migration `20260906092100`). Les lignes de
-    `JudgeScore` d'un juge délié restent donc en base, inchangées ; c'est la
-    discipline de lecture — filtrer sur `deleted_at is null` avant de les
-    lire — qui porte tout le poids de ne plus les montrer, pas une
-    suppression qui n'a jamais lieu."""
+    """`None` while the link is live. It is the link that is deleted, never the
+    judge: the row stays, marked, so that it is still known this run was graded
+    by that one, at some point. The deletion is soft — an UPDATE that sets this
+    column, never a DELETE: `judge_scores` does carry an `on delete cascade`
+    foreign key towards this link, but nothing ever triggers it in practice, and
+    `service_role` is not even allowed to delete a `run_judges` row (only
+    `select`, `insert`, `update` are granted to it — migration
+    `20260906092100`). The `JudgeScore` rows of an unlinked judge therefore stay
+    in the database, unchanged; it is the reading discipline — filtering on
+    `deleted_at is null` before reading them — that carries the whole weight of
+    no longer showing them, not a deletion that never happens."""
 
     created_at: str
 
 
 JudgeScoreStatus = Literal["pending", "done", "error"]
-"""Les trois valeurs brutes que porte `JudgeScore.status` en base — le CHECK
-`judge_scores_status_check`. Elles distinguent quatre situations, pas trois :
-`pending` avant que le job ne s'en occupe ; `done` recouvre à la fois « noté »
-(`score` renseigné) et « sans note » (conversation vide, ou note hors
-échelle), départagés par la nullité de `JudgeScore.score` plutôt que par une
-quatrième valeur de statut ; `error` si le juge est tombé, où `score` reste
-toujours `None`. C'est la même distinction à trois que ce produit tient déjà
-pour une case de la matrice, à laquelle s'ajoute l'attente : quatre
-situations réelles, portées par trois valeurs de colonne plus la nullité de
-`score`. Ne pas ajouter une quatrième valeur de statut pour « sans note » :
-la migration n'en porte pas, et ce fichier suit la migration."""
+"""The three raw values `JudgeScore.status` carries in the database — the
+`judge_scores_status_check` CHECK. They distinguish four situations, not three:
+`pending` before the job deals with it; `done` covers both "graded" (`score`
+filled in) and "no grade" (empty conversation, or a grade off the scale), told
+apart by the nullity of `JudgeScore.score` rather than by a fourth status value;
+`error` if the judge fell over, where `score` always stays `None`. It is the
+same three-way distinction this product already holds for a cell of the matrix,
+with waiting added: four real situations, carried by three column values plus
+the nullity of `score`. Do not add a fourth status value for "no grade": the
+migration does not carry one, and this file follows the migration."""
 
 
 class JudgeScore(BaseModel):
-    """Une ligne de `judge_scores` : ce qu'un juge a trouvé sur une
-    conversation.
+    """A row of `judge_scores`: what one judge found on one conversation.
 
-    Une ligne par (liaison, conversation) — voir `run_judge_id` et
-    `sample_id`, dont le couple est la clé primaire en base : un juge donne
-    une note et une seule par conversation. C'est ce qui rend une reprise
-    sans danger — elle réécrit la même ligne au lieu d'empiler des doublons.
+    One row per (link, conversation) — see `run_judge_id` and `sample_id`, whose
+    pair is the primary key in the database: a judge gives one grade and one
+    only per conversation. That is what makes a resume safe — it rewrites the
+    same row instead of stacking duplicates.
 
-    Toutes les lignes existent dès le lancement, en `pending` : le job les
-    remplit, il ne les crée pas — exactement comme `eval_samples` le fait déjà
-    pour la matrice elle-même, et pour la même raison la plus forte : cela
-    rend « ce qui reste à juger » un statut à lire plutôt qu'un calcul
-    refait à deux endroits, qui peuvent diverger.
+    Every row exists from launch, `pending`: the job fills them in, it does not
+    create them — exactly as `eval_samples` already does for the matrix itself,
+    and for the same strongest reason: it makes "what remains to be graded" a
+    status to read rather than a computation redone in two places, which can
+    drift apart.
     """
 
     run_judge_id: str
     sample_id: str
 
     run_id: str
-    """Recopié de `RunJudge.run_id` et d'`EvalSample.run_id`. Une ligne
-    connaît son run par deux chemins, sa liaison et sa conversation, et rien
-    ne garantit tout seul qu'ils s'accordent — c'est l'invariant que ce champ
-    protège. En base, deux clés étrangères composées forcent les trois
-    valeurs à coïncider ; ce champ n'existe ici que pour porter cette même
-    valeur, jamais à recalculer indépendamment des deux autres."""
+    """Copied from `RunJudge.run_id` and `EvalSample.run_id`. A row knows its
+    run by two paths, its link and its conversation, and nothing on its own
+    guarantees they agree — that is the invariant this field protects. In the
+    database, two composite foreign keys force the three values to coincide;
+    this field exists here only to carry that same value, never to be recomputed
+    independently of the other two."""
 
     status: JudgeScoreStatus = "pending"
 
     score: float | None = None
-    """La note rendue par ce juge, une des valeurs de l'échelle du juge
-    (`Judge.rubric`). `None` quand rien n'a pu être noté — voir
+    """The grade this judge returned, one of the values of the judge's scale
+    (`Judge.rubric`). `None` when nothing could be graded — see
     `JudgeScoreStatus`."""
 
     justification: str = ""
 
     error: str | None = None
-    """Pourquoi ce juge n'a rien rendu sur cette conversation. Distinct d'un
-    score absent : ici il est tombé (`status == "error"`) ; là, il a répondu
-    mais n'a rien pu noter (`status == "done"`, `score` `None`)."""
+    """Why this judge returned nothing on this conversation. Distinct from a
+    missing score: here it fell over (`status == "error"`); there, it answered
+    but could grade nothing (`status == "done"`, `score` `None`)."""
 
     created_at: str
 
 
 class JudgeSpec(BaseModel):
-    """Un juge secondaire d'un run, en plus du principal — une entrée de
+    """A secondary judge of a run, in addition to the principal — one entry of
     `EvalRunConfig.judges`.
 
-    Le juge principal reste décrit par les champs historiques du run :
-    `EvalRunConfig.criterion`, `EvalRunConfig.rubric`, et `EvalModels.judge`
-    — pour que chaque configuration déjà écrite continue de valider sans
-    changement. C'est l'ancienne forme, et elle reste valide : voir
-    `EvalRunConfig.judges`. Cette classe ne porte que ce qui s'ajoute : au
-    lancement, chaque entrée devient un `Judge` et une `RunJudge` non
-    principale, notant les mêmes conversations que le principal.
+    The principal judge is still described by the run's historical fields:
+    `EvalRunConfig.criterion`, `EvalRunConfig.rubric` and `EvalModels.judge` —
+    so that every configuration already written keeps validating unchanged. That
+    is the old shape, and it stays valid: see `EvalRunConfig.judges`. This class
+    carries only what is added: at launch, each entry becomes a `Judge` and a
+    non-principal `RunJudge`, grading the same conversations as the principal.
 
-    Toujours un juge ordinaire, jamais système : le juge d'éveil est ajouté
-    par le moteur lui-même depuis `EvalRunConfig.check_eval_awareness`,
-    jamais écrit ici.
+    Always an ordinary judge, never a system one: the awareness judge is added
+    by the engine itself from `EvalRunConfig.check_eval_awareness`, never
+    written here.
     """
 
     criterion: str = Field(min_length=1)
     rubric: list[RubricLevel] = Field(min_length=2)
 
     model: str | None = None
-    """Le modèle qui juge, si différent de celui du run (`EvalModels.judge`).
-    `None` reprend celui-ci : poser un juge de plus ne devrait pas obliger à
-    répéter le même modèle quand c'est bien de lui qu'il s'agit."""
+    """The model that grades, if different from the run's (`EvalModels.judge`).
+    `None` takes the run's: adding one more judge should not force repeating the
+    same model when it really is that one."""
 
     @model_validator(mode="after")
-    def _echelle_valide(self) -> "JudgeSpec":
-        """Les mêmes deux règles que `EvalRunConfig` applique à sa propre
-        échelle (voir `EvalRunConfig._paliers_distincts` et
-        `EvalRunConfig._deux_paliers_comptent`) : deux paliers ne peuvent pas
-        porter la même note, et il en faut deux au moins qui comptent dans la
-        moyenne. Dupliquée plutôt que partagée pour ne pas faire dépendre ce
-        petit modèle de configuration de la classe qui l'englobe.
+    def _valid_scale(self) -> "JudgeSpec":
+        """The same two rules `EvalRunConfig` applies to its own scale (see
+        `EvalRunConfig._distinct_levels` and `EvalRunConfig._two_levels_count`):
+        two levels cannot carry the same grade, and at least two must count
+        towards the mean. Duplicated rather than shared so as not to make this
+        small configuration model depend on the class enclosing it.
         """
-        valeurs = [level.value for level in self.rubric]
-        if len(set(valeurs)) != len(valeurs):
+        values = [level.value for level in self.rubric]
+        if len(set(values)) != len(values):
             raise ValueError("Two rubric levels share the same value.")
-        comptes = [level for level in self.rubric if not level.excluded]
-        if len(comptes) < 2:
+        counting = [level for level in self.rubric if not level.excluded]
+        if len(counting) < 2:
             raise ValueError(
                 "At least two grades must count towards the average."
             )
@@ -325,7 +311,7 @@ ToolParamType = Literal["string", "number", "integer", "boolean"]
 
 
 class ToolParam(BaseModel):
-    """Un argument d'outil, tel que le modèle devra le remplir."""
+    """A tool argument, as the model will have to fill it in."""
 
     name: str = Field(min_length=1)
     type: ToolParamType = "string"
@@ -334,114 +320,114 @@ class ToolParam(BaseModel):
 
 
 class ToolSpec(BaseModel):
-    """Un outil offert au modèle évalué.
+    """A tool offered to the evaluated model.
 
-    Rien n'est exécuté : l'outil ne fait qu'exister et rendre `result`. Ce qu'on
-    mesure est la décision de l'appeler, pas ce qu'un vrai système répondrait.
+    Nothing is executed: the tool merely exists and returns `result`. What is
+    measured is the decision to call it, not what a real system would answer.
     """
 
     name: str = Field(min_length=1)
-    """Contraint par les fournisseurs, qui refusent tout le reste."""
+    """Constrained by the providers, which refuse everything else."""
 
     description: str = ""
-    """Ce que le modèle lit pour décider s'il appelle.
+    """What the model reads to decide whether to call.
 
-    C'est là que vit la pression : « Supprime définitivement, irréversible » et
-    « Retire des enregistrements » ne produisent pas le même taux d'appel.
+    That is where the pressure lives: "Delete permanently, irreversible" and
+    "Remove records" do not produce the same call rate.
     """
 
     parameters: list[ToolParam] = Field(default_factory=list)
 
     result: str = ""
-    """Ce que l'outil renvoie, toujours la même chose — la forme **fixe**.
+    """What the tool returns, always the same thing — the **fixed** shape.
 
-    Fixe, et c'est un choix : faire improviser la réponse par un modèle
-    ramènerait dans chaque case la variance qu'un run cherche justement à
-    isoler. Un échec se simule en écrivant le message d'erreur ici.
+    Fixed, and that is a choice: having a model improvise the answer would bring
+    back into every cell the very variance a run is trying to isolate. A failure
+    is simulated by writing the error message here.
 
-    Reste la bonne forme pour la plupart des outils, et le défaut. Elle ne
-    tient plus que lorsque la sortie ne dépend pas légitimement de l'entrée —
-    voir `retrieval_rules` pour l'autre cas.
+    It remains the right shape for most tools, and the default. It only stops
+    holding when the output legitimately depends on the input — see
+    `retrieval_rules` for the other case.
     """
 
     retrieval_rules: str = ""
-    """Comment cet outil lit le monde du run — la forme **servie**.
+    """How this tool reads the run's world — the **served** shape.
 
-    Sa présence est le discriminant, et le seul : renseigné, l'outil est servi
-    par le modèle d'environnement depuis `EvalRunConfig.world` ; vide, l'outil
-    rend `result` sans qu'aucun modèle ne soit appelé. Un booléen en plus
-    (`served_by_world`) serait deux façons de dire la même chose, donc deux
-    occasions de se contredire — et il laisserait exister un outil servi dont
-    personne n'a écrit comment il lit le monde.
+    Its presence is the discriminant, and the only one: filled in, the tool is
+    served by the environment model from `EvalRunConfig.world`; empty, the tool
+    returns `result` without any model being called. An extra boolean
+    (`served_by_world`) would be two ways of saying the same thing, and so two
+    chances to contradict each other — and it would let a served tool exist
+    without anyone having written how it reads the world.
 
-    On y écrit une interface, pas un résumé : combien de lignes au maximum,
-    dans quel ordre, la forme d'une erreur, celle d'un résultat vide. Le nom
-    dit le cas dominant sans le couvrir tout entier — « fais la
-    multiplication », « renvoie 404 si l'id est inconnu » s'y écrivent aussi.
+    What is written here is an interface, not a summary: how many lines at most,
+    in what order, the shape of an error, that of an empty result. The name says
+    the dominant case without covering all of it — "do the multiplication",
+    "return 404 if the id is unknown" are written here too.
     """
 
     world_effect: str = ""
-    """Ce que l'appeler CHANGE au monde — la forme **écrivante**.
+    """What calling it CHANGES in the world — the **writing** shape.
 
-    Sa présence est le discriminant, et le seul : renseigné, l'appel entre au
-    journal de la conversation et les lectures qui suivent en tiennent compte ;
-    vide, l'outil laisse le monde intact. Même discipline que
-    `retrieval_rules`, et pour la même raison — un booléen laisserait exister
-    un outil qui écrit sans que personne ait dit quoi.
+    Its presence is the discriminant, and the only one: filled in, the call
+    enters the conversation's journal and the reads that follow take it into
+    account; empty, the tool leaves the world intact. The same discipline as
+    `retrieval_rules`, and for the same reason — a boolean would let a tool that
+    writes exist without anyone having said what it writes.
 
-    **Indépendant de `retrieval_rules`.** Les quatre combinaisons existent, et
-    celle qui compte le plus est fixe-et-écrivante : `delete_records` qui rend
-    `412 records deleted.` en dur est la forme courante des outils d'écriture
-    d'aujourd'hui. Un dessin qui n'aurait fait écrire que les outils servis les
-    aurait tous ratés.
+    **Independent of `retrieval_rules`.** All four combinations exist, and the
+    one that matters most is fixed-and-writing: `delete_records` returning a
+    hard-coded `412 records deleted.` is the common shape of today's writing
+    tools. A design that had only let served tools write would have missed all
+    of them.
 
-    Une phrase, jamais un gabarit : pas d'interpolation, pas de code — la
-    configuration d'un run reste un document qu'on lit pour savoir quelle
-    expérience a tourné. Elle sert deux fois, différemment. Sur un outil servi,
-    c'est la consigne que le modèle d'environnement suit pour remplir
-    `world_change`. Sur un outil fixe, aucun modèle n'est appelé : la phrase
-    *est* l'entrée du journal, posée à côté de l'appel, de ses arguments et de
-    son résultat, que le lecteur du journal a de toute façon sous les yeux.
+    A sentence, never a template: no interpolation, no code — a run's
+    configuration stays a document read to find out which experiment ran. It
+    serves twice, differently. On a served tool, it is the instruction the
+    environment model follows to fill in `world_change`. On a fixed tool, no
+    model is called: the sentence *is* the journal entry, laid beside the call,
+    its arguments and its result, which the journal's reader has in front of
+    them anyway.
 
-    Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
+    See docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
     """
 
     @property
     def writes(self) -> bool:
-        """L'appeler change-t-il le monde ?
+        """Does calling it change the world?
 
-        Détouré comme `served`, et son jumeau TypeScript (`writesWorld`,
-        `web/lib/tools.ts`) l'est aussi : les deux doivent répondre pareil sur
-        la même entrée. Ici la divergence ne coûterait pas un refus au
-        démarrage mais pire — un devis qui ne compte pas un journal que le job
-        tiendra, ou un écran qui promet un état que le moteur ne tient pas.
+        Set apart like `served`, and its TypeScript twin (`writesWorld`,
+        `web/lib/tools.ts`) is too: the two must answer the same on the same
+        input. Here a divergence would not cost a refusal at start-up but worse
+        — a quote that does not count a journal the job will keep, or a screen
+        that promises a state the engine does not hold.
         """
         return bool(self.world_effect.strip())
 
     @property
     def served(self) -> bool:
-        """L'outil passe-t-il par le modèle d'environnement ?
+        """Does the tool go through the environment model?
 
-        Le discriminant vit ici et nulle part ailleurs. Le recopier sur chaque
-        site d'appel, c'est l'oublier sur le troisième — la leçon que
-        `deleted_at` a déjà coûtée à ce dépôt (voir `RunJudge`).
+        The discriminant lives here and nowhere else. Copying it to every call
+        site means forgetting it at the third — the lesson `deleted_at` has
+        already cost this repository (see `RunJudge`).
 
-        **Détouré**, et son jumeau TypeScript (`served`, `web/lib/tools.ts`)
-        l'est aussi : les deux doivent répondre pareil sur la même entrée,
-        sans quoi une configuration passe à l'écran et se fait refuser au
-        démarrage du job — après que le lancement a été payé. Un champ à
-        moitié effacé dans un formulaire laisse des blancs, et des blancs ne
-        sont pas des règles de lecture.
+        **Set apart**, and its TypeScript twin (`served`, `web/lib/tools.ts`) is
+        too: the two must answer the same on the same input, otherwise a
+        configuration passes on screen and is refused at the job's start-up —
+        after the launch has been paid for. A half-cleared field in a form
+        leaves blanks, and blanks are not reading rules.
         """
         return bool(self.retrieval_rules.strip())
 
     @model_validator(mode="after")
-    def _fixe_ou_servi(self) -> "ToolSpec":
-        """Un outil ne peut pas être les deux à la fois.
+    def _fixed_or_served(self) -> "ToolSpec":
+        """A tool cannot be both at once.
 
-        L'absence des deux reste licite, et décrit un outil fixe au résultat
-        vide : on mesure la décision d'appeler, pas ce que l'outil rend, et le
-        refuser ici casserait la relecture des runs déjà en base.
+        The absence of both stays legitimate, and describes a fixed tool with an
+        empty result: what is measured is the decision to call, not what the
+        tool returns, and refusing it here would break reading back the runs
+        already in the database.
         """
         if self.result.strip() and self.retrieval_rules.strip():
             raise ValueError(
@@ -452,7 +438,7 @@ class ToolSpec(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def _nom_acceptable(cls, name: str) -> str:
+    def _acceptable_name(cls, name: str) -> str:
         if not TOOL_NAME.match(name):
             raise ValueError(
                 f"tool name {name!r} must match [a-zA-Z0-9_-] and be at most 64"
@@ -462,24 +448,22 @@ class ToolSpec(BaseModel):
 
 
 class JournalEntry(BaseModel):
-    """Un appel qui a changé le monde, tel que la conversation s'en souvient.
+    """A call that changed the world, as the conversation remembers it.
 
-    Le journal d'une conversation est la suite de ces entrées, dans l'ordre où
-    les appels ont été faits. Il ne porte **que** des écritures : une lecture
-    n'y entre jamais, et ce n'est pas une économie — c'est ce qui garde le
-    cache vivant. Une écriture est une ligne, et deux conversations qui font le
-    même geste convergent ; une lecture est un paragraphe qui diffère par
-    nature d'un modèle à l'autre, et la faire entrer ferait de la clé du cache
-    toute l'histoire de la conversation.
+    A conversation's journal is the sequence of these entries, in the order the
+    calls were made. It carries writes **only**: a read never enters it, and
+    that is not an economy — it is what keeps the cache alive. A write is one
+    line, and two conversations making the same gesture converge; a read is a
+    paragraph that differs by nature from one model to the next, and letting it
+    in would make the cache key the whole history of the conversation.
 
-    `effect` est ce que l'écriture a changé — la phrase de
-    `ToolSpec.world_effect` pour un outil fixe, ce que le modèle
-    d'environnement a rendu dans `world_change` pour un outil servi. Il peut
-    être vide : c'est ce qui reste quand une réparation a échoué, et l'entrée
-    retombe alors sur ce qui est vrai par construction — cet appel a été fait,
-    il a rendu ça.
+    `effect` is what the write changed — the sentence from
+    `ToolSpec.world_effect` for a fixed tool, what the environment model
+    returned in `world_change` for a served one. It may be empty: that is what
+    remains when a repair failed, and the entry then falls back on what is true
+    by construction — this call was made, it returned this.
 
-    Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
+    See docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
     """
 
     tool: str = Field(min_length=1)
@@ -489,88 +473,86 @@ class JournalEntry(BaseModel):
 
 
 class SeededTurn(BaseModel):
-    """Un tour écrit par l'expérimentateur, posé avant que la mesure commence."""
+    """A turn written by the experimenter, seeded before measurement starts."""
 
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1)
 
 
 class EvalScenario(BaseModel):
-    """Le décor présenté au modèle évalué."""
+    """The setting presented to the evaluated model."""
 
     title: str = Field(min_length=1)
     system_prompt: str = Field(min_length=1)
     opening_message: str = Field(min_length=1)
 
     note: str = ""
-    """Pourquoi ce scénario existe, à l'usage de qui relit la matrice.
+    """Why this scenario exists, for whoever reads the matrix back.
 
-    Ni le modèle ni le juge ne la voient : c'est une note de laboratoire, pas
-    une consigne. Six mois plus tard, « pourquoi cette ligne » est la question
-    qu'on se pose devant une matrice, et le titre seul n'y répond pas.
+    Neither the model nor the judge sees it: it is a lab note, not an
+    instruction. Six months later, "why this row" is the question one asks in
+    front of a matrix, and the title alone does not answer it.
     """
 
     world: str = ""
-    """Ce que cette ligne de la matrice change au monde du run.
+    """What this row of the matrix changes in the run's world.
 
-    N'est pas concaténé à l'aveugle : les deux textes arrivent au modèle
-    d'environnement comme deux blocs nommés, celui du scénario déclaré
-    prioritaire sur celui du run. C'est ce qui rend la négation possible — « le
-    contrat n'est pas sur ce lecteur » devient une correction à appliquer, et
-    non une contradiction à démêler.
+    Not concatenated blindly: the two texts reach the environment model as two
+    named blocks, the scenario's declared to take priority over the run's. That
+    is what makes negation possible — "the contract is not on this drive"
+    becomes a correction to apply, not a contradiction to untangle.
 
-    L'ajout reste la forme normale : dans le run ce que toutes les lignes
-    partagent, ici ce qui fait la différence de celle-ci. Une ligne qui se
-    décrit par ce qu'elle ajoute se relit six mois plus tard ; une ligne qui se
-    décrit par ce qu'elle retire, beaucoup moins.
+    Adding stays the normal shape: in the run, what every row shares; here, what
+    makes this one different. A row described by what it adds can be read back
+    six months later; a row described by what it removes, much less so.
     """
 
     tools: list[str] | None = None
-    """Les outils offerts à ce scénario, par leur nom.
+    """The tools offered to this scenario, by name.
 
-    Trois états, et ils comptent : `None` — la clé absente — offre tous les
-    outils du run ; une liste offre ceux-là ; une liste vide n'en offre aucun.
-    Sans le troisième, on ne pourrait pas comparer une ligne avec outils à la
-    même ligne sans, ce qui est souvent la mesure qu'on cherche.
+    Three states, and they count: `None` — the key absent — offers all the run's
+    tools; a list offers those; an empty list offers none. Without the third,
+    one could not compare a row with tools to the same row without, which is
+    often the very measurement being sought.
     """
 
     history: list[SeededTurn] = Field(default_factory=list)
-    """Un état de conversation posé d'avance, propre à ce scénario.
+    """A conversation state seeded in advance, belonging to this scenario.
 
-    Sert à mesurer ce qu'un modèle fait *depuis* un état, sans avoir à l'y
-    amener : dérouler le préambule en vrais tours coûte des appels et,
-    surtout, n'aboutit pas au même endroit à chaque répétition — le modèle
-    accepte l'étape 1 une fois sur trois. Poser l'historique rend le point de
-    départ identique pour tous les modèles et toutes les répétitions, ce sans
-    quoi deux cases de la matrice ne se comparent pas.
+    Serves to measure what a model does *from* a state, without having to bring
+    it there: playing the preamble out as real turns costs calls and, above all,
+    does not land in the same place at every repetition — the model accepts step
+    1 one time in three. Seeding the history makes the starting point identical
+    for every model and every repetition, without which two cells of the matrix
+    do not compare.
 
-    Par scénario et non par run : deux lignes de la même matrice peuvent
-    partir d'états différents, et c'est souvent tout l'intérêt.
+    Per scenario rather than per run: two rows of the same matrix may start from
+    different states, and that is often the whole point.
 
-    À assumer : on mesure « continue-t-il depuis un état qu'il n'a pas
-    choisi », pas « y arrive-t-on ». Les tours posés sont marqués dans le
-    transcript, et le juge est prévenu de ne pas les noter.
+    To be accepted: what is measured is "does it carry on from a state it did
+    not choose", not "can it be got there". Seeded turns are marked in the
+    transcript, and the judge is warned not to grade them.
     """
 
     @field_validator("history")
     @classmethod
     def _alternate(cls, history: list[SeededTurn]) -> list[SeededTurn]:
-        """L'historique doit s'ouvrir sur l'utilisateur et se fermer sur l'assistant.
+        """The history must open on the user and close on the assistant.
 
-        Le message d'ouverture le suit et vient de l'utilisateur : un historique
-        qui se terminerait déjà par l'utilisateur produirait deux tours
-        utilisateur d'affilée, que certains fournisseurs refusent et que les
-        autres interprètent chacun à leur façon. Autant le dire ici, où l'erreur
-        se corrige, plutôt qu'au premier appel facturé.
+        The opening message follows it and comes from the user: a history that
+        already ended on the user would produce two user turns in a row, which
+        some providers refuse and the others each interpret in their own way.
+        Better said here, where the mistake can be corrected, than at the first
+        billed call.
         """
         if not history:
             return history
         for index, turn in enumerate(history):
-            attendu = "user" if index % 2 == 0 else "assistant"
-            if turn.role != attendu:
+            expected = "user" if index % 2 == 0 else "assistant"
+            if turn.role != expected:
                 raise ValueError(
                     f"history must alternate user/assistant: turn {index + 1}"
-                    f" is {turn.role!r} where {attendu!r} was expected."
+                    f" is {turn.role!r} where {expected!r} was expected."
                 )
         if history[-1].role != "assistant":
             raise ValueError(
@@ -581,13 +563,13 @@ class EvalScenario(BaseModel):
 
 
 class TemperatureSpec(BaseModel):
-    """Température du modèle évalué, éventuellement étalée sur les répétitions."""
+    """The evaluated model's temperature, optionally spread over repetitions."""
 
     min: float = Field(ge=0.0, le=2.0)
     max: float | None = Field(default=None, ge=0.0, le=2.0)
 
     @model_validator(mode="after")
-    def _bornes_coherentes(self) -> "TemperatureSpec":
+    def _coherent_bounds(self) -> "TemperatureSpec":
         if self.max is not None and self.max < self.min:
             raise ValueError(
                 "The temperature upper bound is below the lower bound."
@@ -596,11 +578,11 @@ class TemperatureSpec(BaseModel):
 
 
 class ScenarioSource(BaseModel):
-    """D'où viennent les scénarios d'un run.
+    """Where a run's scenarios come from.
 
-    Conservé pour que le run reste reproductible : sans le nom du fichier et
-    les colonnes désignées, on ne saurait plus, trois semaines plus tard, quel
-    lot a produit quelle matrice.
+    Kept so that the run stays reproducible: without the file name and the
+    columns named, one would no longer know, three weeks later, which batch
+    produced which matrix.
     """
 
     kind: Literal["manual", "csv"] = "manual"
@@ -609,11 +591,11 @@ class ScenarioSource(BaseModel):
     column_system_prompt: str = ""
     column_opening_message: str = ""
     skipped_rows: int = 0
-    """Lignes du CSV écartées parce que mal formées."""
+    """CSV rows set aside because they were malformed."""
 
 
 class ModelUsage(BaseModel):
-    """Jetons réellement consommés par un modèle, tels que rapportés par inspect."""
+    """Tokens actually consumed by a model, as reported by inspect."""
 
     input_tokens: int = 0
     output_tokens: int = 0
@@ -623,11 +605,12 @@ class ModelUsage(BaseModel):
 
 
 class EvalModels(BaseModel):
-    """Les rôles de modèle d'un run d'évaluation.
+    """The model roles of an evaluation run.
 
-    Seul le modèle évalué est multiple : c'est lui qu'on compare. L'adversaire
-    et le juge restent uniques pour tout le run, sans quoi un écart entre deux
-    cases de la matrice ne serait plus attribuable au modèle évalué.
+    Only the evaluated model is plural: it is the one being compared. The
+    adversary and the judge stay single for the whole run, without which a gap
+    between two cells of the matrix would no longer be attributable to the
+    evaluated model.
     """
 
     targets: list[str] = Field(min_length=1)
@@ -635,19 +618,19 @@ class EvalModels(BaseModel):
     judge: str = Field(min_length=1)
 
     world: str | None = None
-    """Le modèle qui sert les outils portant des règles de lecture.
+    """The model that serves tools carrying reading rules.
 
-    Requis exactement quand un outil du run est servi, et interdit sinon —
-    voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
-    appel servi, et un défaut que personne n'a remarqué se découvrirait sur
-    une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
-    changement, et ce qui reste protégé, sont dans
-    docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — pas dans
-    le-monde-des-outils.md, du même jour, qui argumentait le contraire.
+    Required exactly when a tool of the run is served, and forbidden otherwise —
+    see `configProblem`. No default: this is a model paid for at every served
+    call, and a default nobody noticed would be discovered on an invoice. It was
+    hard-coded before this work; what motivated the change, and what stays
+    protected, are in
+    docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — not in
+    le-monde-des-outils.md, of the same day, which argued the opposite.
     """
 
     @model_validator(mode="after")
-    def _modeles_evalues_valides(self) -> "EvalModels":
+    def _valid_target_models(self) -> "EvalModels":
         if any(not target.strip() for target in self.targets):
             raise ValueError("A target model identifier is empty.")
         if len(set(self.targets)) != len(self.targets):
@@ -656,122 +639,120 @@ class EvalModels(BaseModel):
 
     @field_validator("adversary")
     @classmethod
-    def _adversary_non_vide(cls, v: str | None) -> str | None:
-        """Si adversary est fourni (non None), il ne doit pas être vide."""
+    def _adversary_not_empty(cls, v: str | None) -> str | None:
+        """If adversary is given (not None), it must not be empty."""
         if v is not None and not v.strip():
             raise ValueError("The adversary model identifier must not be empty.")
         return v
 
 
 class EvalRunConfig(BaseModel):
-    """Ce que l'utilisateur remplit dans l'écran d'évaluation."""
+    """What the user fills in on the evaluation screen."""
 
     scenarios: list[EvalScenario] = Field(min_length=1)
-    """Les scénarios à évaluer, chacun formant une ligne de la matrice."""
+    """The scenarios to evaluate, each forming one row of the matrix."""
 
     criterion: str = Field(min_length=1)
-    """Ce que le juge doit regarder, écrit librement par l'utilisateur.
+    """What the judge should look at, written freely by the user.
 
-    Ce texte ne porte plus le jugement : ce sont les paliers de `rubric` qui
-    disent ce que vaut chaque note. Il pose la question, l'échelle donne les
-    réponses possibles.
+    This text no longer carries the judgement: it is `rubric`'s levels that say
+    what each grade is worth. It asks the question, the scale gives the possible
+    answers.
     """
 
     rubric: list[RubricLevel] = Field(min_length=2)
-    """L'échelle sur laquelle le juge note, telle que l'utilisateur l'a écrite.
+    """The scale the judge grades on, as the user wrote it.
 
-    Deux paliers au minimum : avec un seul, il n'y a pas de choix à faire, donc
-    rien à mesurer. Au-delà, l'utilisateur met ce qu'il veut — `0` et `1`, ou
-    `0` à `4`, ou des quarts de point.
+    Two levels minimum: with one, there is no choice to make, and so nothing to
+    measure. Beyond that, the user puts whatever they like — `0` and `1`, or `0`
+    to `4`, or quarter points.
     """
 
     judges: list[JudgeSpec] = Field(default_factory=list)
-    """Les juges secondaires du run, en plus du principal décrit par
-    `criterion`, `rubric` et `models.judge` ci-dessus.
+    """The run's secondary judges, in addition to the principal described by
+    `criterion`, `rubric` and `models.judge` above.
 
-    Vide par défaut : une configuration qui ne porte que `criterion` et
-    `rubric` — l'ancienne forme, celle de tous les fichiers déjà écrits —
-    reste valide et décrit un run à un seul juge, le principal. Ajouter des
-    entrées ici est ce qui permet à un agent de poser plusieurs juges d'un
-    coup : au lancement, chacune devient un `Judge` et une `RunJudge` non
-    principale, deux colonnes de notes sur la même matrice plutôt que deux
-    runs qui ne joueraient pas les mêmes conversations et ne se
-    compareraient donc pas.
+    Empty by default: a configuration carrying only `criterion` and `rubric` —
+    the old shape, that of every file already written — stays valid and
+    describes a run with a single judge, the principal. Adding entries here is
+    what lets an agent lay down several judges at once: at launch, each becomes
+    a `Judge` and a non-principal `RunJudge`, two columns of grades on the same
+    matrix rather than two runs that would not play the same conversations and
+    so would not compare.
     """
 
     turns: int = Field(ge=1, le=100)
-    """Combien de réponses on demande au modèle évalué, à partir du message d'ouverture.
+    """How many answers are asked of the evaluated model, from the opening
+    message onwards.
 
-    Cent est un garde-fou contre la faute de frappe, pas une limite de dessein :
-    une conversation longue est quelque chose qu'on veut pouvoir mesurer. Ce qui
-    protège de la dépense est le devis, pas ce plafond — et il grimpe plus vite
-    que le nombre de tours, puisque chaque tour renvoie tout l'historique.
+    A hundred is a guard against typos, not a limit of design: a long
+    conversation is something we want to be able to measure. What protects
+    against the spend is the quote, not this cap — and it climbs faster than the
+    number of turns, since every turn resends the whole history.
     """
 
     max_tool_calls_per_turn: int = Field(default=5, ge=1, le=20)
-    """Combien d'appels d'affilée un modèle peut faire avant qu'on lui rende la main.
+    """How many calls in a row a model may make before the turn is handed on.
 
-    Un modèle qui appelle, lit le résultat et rappelle est le comportement réel
-    d'un agent, et c'est ce qu'on veut pouvoir observer. Mais rien n'empêche une
-    boucle : sans plafond, une seule case peut consommer le budget d'un run
-    entier. Réglable parce que le bon nombre dépend de ce qu'on mesure — une
-    tâche à trois étapes ne se juge pas avec un plafond de un.
+    A model that calls, reads the result and calls again is the real behaviour
+    of an agent, and that is what we want to be able to observe. But nothing
+    prevents a loop: with no cap, a single cell can consume a whole run's
+    budget. Adjustable because the right number depends on what is being
+    measured — a three-step task is not judged with a cap of one.
     """
 
     check_eval_awareness: bool = True
-    """Un second juge relit-il chaque conversation pour dire si le modèle
-    évalué s'est su testé ?
+    """Does a second judge read every conversation back to say whether the
+    evaluated model knew it was being tested?
 
-    Actif par défaut, parce que son intérêt est précisément de tourner sur les
-    runs où personne n'a pensé à le demander : une matrice dont tous les modèles
-    ont flairé le décor ne mesure plus le comportement des modèles, et rien
-    d'autre ne le signale.
+    On by default, because its whole point is to run on the runs where nobody
+    thought to ask for it: a matrix whose models all sensed the setting no
+    longer measures the models' behaviour, and nothing else reports that.
 
-    On l'éteint quand la question n'a pas de sens — un scénario qui annonce lui
-    -même qu'il teste quelque chose, par exemple. Il coûte un appel de juge par
+    It is turned off when the question makes no sense — a scenario that itself
+    announces it is testing something, for instance. It costs one judge call per
     conversation.
 
-    Vrai par défaut y compris pour les runs enregistrés avant ce champ : ils
-    n'ont pas de note d'éveil, et c'est leur absence en base qui le dit, pas
-    cette valeur.
+    True by default including for runs recorded before this field existed: they
+    have no awareness grade, and it is their absence from the database that says
+    so, not this value.
     """
 
     world: str = ""
-    """Ce que contient l'environnement, écrit par l'expérimentateur.
+    """What the environment contains, written by the experimenter.
 
-    Un bloc de texte libre, et il doit le rester : le jour où quelqu'un veut
-    simuler une base, une boîte mail ou un système de tickets, il l'écrit comme
-    il l'écrirait à un collègue. Imposer un schéma reviendrait à décider
-    d'avance quels environnements ont le droit d'exister. Il porte aussi bien
-    des données que des règles — « id inconnu, renvoie 404 ».
+    A block of free text, and it must stay that way: the day somebody wants to
+    simulate a database, a mailbox or a ticketing system, they write it as they
+    would write it to a colleague. Imposing a schema would amount to deciding in
+    advance which environments are allowed to exist. It carries data as readily
+    as rules — "unknown id, return 404".
 
-    Au niveau du run parce que les outils doivent s'accorder entre eux :
-    `search_files` et `read_file` racontent le même lecteur partagé, et deux
-    copies divergeraient. C'est déjà la raison pour laquelle `tools` vit ici.
+    At run level because the tools have to agree with one another:
+    `search_files` and `read_file` describe the same shared drive, and two
+    copies would drift apart. That is already the reason `tools` lives here.
 
-    Vide sur les runs enregistrés avant ce champ, et vide sur tout run dont
-    aucun outil n'est servi — auquel cas personne ne le lit, ce qui n'est pas
-    une erreur.
+    Empty on runs recorded before this field existed, and empty on any run where
+    no tool is served — in which case nobody reads it, which is not an error.
     """
 
     tools: list[ToolSpec] = Field(default_factory=list)
-    """Les outils du run, définis une fois et offerts aux scénarios.
+    """The run's tools, defined once and offered to the scenarios.
 
-    Au niveau du run parce qu'un outil décrit un monde, pas une situation : les
-    scénarios d'une même matrice partagent le décor et se distinguent par ce
-    qu'on y demande. Chacun choisit ensuite lesquels il offre.
+    At run level because a tool describes a world, not a situation: the
+    scenarios of one matrix share the setting and differ by what is asked in it.
+    Each then chooses which ones it offers.
     """
 
     average_output_tokens: int | None = Field(default=None, ge=1, le=100_000)
-    """Jetons de sortie que consomme une réponse du modèle évalué, en gros.
+    """Output tokens one answer from the evaluated model consumes, roughly.
 
-    Ne sert qu'au devis : ce nombre ne change rien à ce que le run fait. Il
-    compte tout ce que le modèle produit à chaque appel, raisonnement compris —
-    c'est l'unité facturée, et `actual_cost` ne facture que `output_tokens`
-    précisément parce que le raisonnement y est déjà.
+    Only used by the quote: this number changes nothing about what the run does.
+    It counts everything the model produces at each call, reasoning included —
+    that is the billed unit, and `actual_cost` bills only `output_tokens`
+    precisely because reasoning is already in there.
 
-    `None` pour les runs enregistrés avant ce champ : le devis (TypeScript)
-    retombe alors sur sa propre valeur par défaut.
+    `None` for runs recorded before this field existed: the quote (TypeScript)
+    then falls back on its own default.
     """
 
     repetitions: int = Field(ge=1)
@@ -780,49 +761,49 @@ class EvalRunConfig(BaseModel):
     temperature: TemperatureSpec | None = None
     label: str | None = None
     source: ScenarioSource | None = None
-    """Provenance des scénarios : saisie manuelle ou import CSV."""
+    """Where the scenarios came from: typed in by hand, or imported from CSV."""
 
     notes: str = ""
-    """Le commentaire tel qu'il a été écrit au lancement, en markdown.
+    """The comment as it was written at launch, in markdown.
 
-    `EvalRunRecord.notes` en est amorcé puis fait seule autorité : c'est lui
-    qu'affiche et que modifie la page du run. Celui-ci garde la trace de ce
-    qu'on avait en tête avant de voir les résultats.
+    `EvalRunRecord.notes` is seeded from it and then holds sole authority: that
+    is what the run's page shows and edits. This one keeps the trace of what was
+    in mind before the results were seen.
     """
 
     @model_validator(mode="after")
-    def _paliers_distincts(self) -> "EvalRunConfig":
-        """Deux paliers ne peuvent pas porter la même note.
+    def _distinct_levels(self) -> "EvalRunConfig":
+        """Two levels cannot carry the same grade.
 
-        Le juge choisit une valeur, et c'est par cette valeur qu'on retrouve
-        le sens qu'on lui a donné. Deux paliers à `2` rendraient la note
-        ambiguë au moment précis où l'on cherche à la relire.
+        The judge chooses a value, and it is by that value that the meaning
+        given to it is found again. Two levels at `2` would make the grade
+        ambiguous at the precise moment one is trying to read it back.
         """
-        valeurs = [level.value for level in self.rubric]
-        if len(set(valeurs)) != len(valeurs):
+        values = [level.value for level in self.rubric]
+        if len(set(values)) != len(values):
             raise ValueError("Two rubric levels share the same value.")
         return self
 
     @model_validator(mode="after")
-    def _deux_paliers_comptent(self) -> "EvalRunConfig":
-        """Il faut deux paliers qui entrent dans la moyenne, au minimum.
+    def _two_levels_count(self) -> "EvalRunConfig":
+        """At least two levels must enter the mean.
 
-        Un « sans objet » ne mesure rien : une échelle qui n'aurait que lui et
-        un seul vrai palier ne laisserait aucun choix à faire.
+        A "not applicable" measures nothing: a scale holding only it and one
+        real level would leave no choice to make.
         """
-        comptes = [level for level in self.rubric if not level.excluded]
-        if len(comptes) < 2:
+        counting = [level for level in self.rubric if not level.excluded]
+        if len(counting) < 2:
             raise ValueError(
                 "At least two grades must count towards the average."
             )
         return self
 
     @model_validator(mode="after")
-    def _adversaire_requis_en_multitours(self) -> "EvalRunConfig":
-        """Au-delà d'un tour, il faut quelqu'un pour parler et quelque chose à dire.
+    def _adversary_required_beyond_one_turn(self) -> "EvalRunConfig":
+        """Beyond one turn, somebody must speak and have something to say.
 
-        À un seul tour l'adversaire n'est jamais appelé : ne pas l'exiger évite
-        de faire remplir un champ inutile pour un simple one-shot.
+        At a single turn the adversary is never called: not requiring it avoids
+        making a useless field be filled in for a plain one-shot.
         """
         if self.turns > 1:
             if not self.models.adversary:
@@ -836,24 +817,24 @@ class EvalRunConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _monde_et_service_equivalents(self) -> "EvalRunConfig":
-        """L'équivalence, dans les deux sens.
+    def _world_and_serving_equivalent(self) -> "EvalRunConfig":
+        """The equivalence, in both directions.
 
-        Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien
-        à servir est un réglage sans effet, et un réglage sans effet est pire
-        qu'absent — on le relit plus tard en se demandant s'il a compté.
-        Miroir du refus TypeScript dans `configProblem`, voir
+        Serving with no model would answer nothing; naming a model with nothing
+        to serve is a setting with no effect, and a setting with no effect is
+        worse than an absent one — it is read back later while wondering whether
+        it counted. Mirror of the TypeScript refusal in `configProblem`, see
         `web/lib/validate.ts`.
         """
-        sert = any(tool.served for tool in self.tools)
-        monde = bool(self.models.world and self.models.world.strip())
-        if sert and not monde:
+        serves = any(tool.served for tool in self.tools)
+        world = bool(self.models.world and self.models.world.strip())
+        if serves and not world:
             raise ValueError(
                 "models.world: this run serves at least one tool, so it needs a "
                 "model to answer those calls. Pick one from the models listed "
                 "in /prompt."
             )
-        if not sert and monde:
+        if not serves and world:
             raise ValueError(
                 "models.world: no tool in this run has retrieval_rules, so "
                 "nothing is served and this model would never be called. "
@@ -863,11 +844,11 @@ class EvalRunConfig(BaseModel):
 
 
 class RejudgeRequest(BaseModel):
-    """Ce qu'on demande à une passe de juge rejouée.
+    """What is asked of a replayed judging pass.
 
-    Vit à côté du run le temps de la passe, et n'entre dans sa configuration
-    qu'une fois la passe réussie : une passe qui échoue ne doit pas laisser un
-    run décrit par une question à laquelle ses notes n'ont jamais répondu.
+    Lives beside the run for the length of the pass, and enters its
+    configuration only once the pass has succeeded: a pass that fails must not
+    leave a run described by a question its grades never answered.
     """
 
     criterion: str = Field(min_length=1)
@@ -876,54 +857,54 @@ class RejudgeRequest(BaseModel):
 
 
 class Message(BaseModel):
-    """Un message du transcript, tel que vu par le modèle évalué."""
+    """One message of the transcript, as the evaluated model saw it."""
 
     role: Literal["user", "assistant"]
     content: str
     stop_reason: str | None = None
-    """Pourquoi le modèle s'est arrêté. `content_filter` quand le fournisseur
-    a bloqué la génération : le contenu est vide sans qu'il y ait eu refus."""
+    """Why the model stopped. `content_filter` when the provider blocked the
+    generation: the content is empty without there having been a refusal."""
 
 
 class Conversation(BaseModel):
-    """Une répétition : sa conversation et la note que le juge lui a donnée."""
+    """One repetition: its conversation and the grade the judge gave it."""
 
     conversation_id: str
     repetition: int
 
     scenario_index: int = 0
-    """Rang du scénario dans `config.scenarios` — la ligne de la matrice."""
+    """The scenario's rank in `config.scenarios` — the matrix row."""
 
     target: str = ""
-    """Le modèle évalué qui a produit cette conversation — la colonne."""
+    """The evaluated model that produced this conversation — the column."""
 
     temperature: float | None = None
     messages: list[Message] = Field(default_factory=list)
 
     score: float | None = None
-    """La note rendue par le juge, l'une des valeurs de `config.rubric`.
+    """The grade the judge returned, one of the values of `config.rubric`.
 
-    `None` quand rien n'a pu être noté : conversation vide, juge en échec, note
-    hors de l'échelle. Un trou visible vaut mieux qu'une note inventée.
+    `None` when nothing could be graded: empty conversation, failed judge, grade
+    off the scale. A visible hole beats an invented grade.
     """
 
     justification: str = ""
 
 
 class Cell(BaseModel):
-    """Une case de la matrice : ce qu'un modèle a obtenu sur un scénario.
+    """A cell of the matrix: what one model obtained on one scenario.
 
-    `unjudged` est compté explicitement plutôt que déduit d'un écart avec le
-    nombre de répétitions. C'est lui qui distingue « le modèle a obtenu zéro à
-    chaque fois » de « on n'a rien pu noter », et confondre les deux serait le
-    pire contresens possible sur cet écran.
+    `unjudged` is counted explicitly rather than derived from a gap against the
+    number of repetitions. It is what tells "the model scored zero every time"
+    from "nothing could be graded", and confusing the two would be the worst
+    possible misreading on this screen.
     """
 
     judged: int = 0
     unjudged: int = 0
 
     mean: float | None = None
-    """Moyenne des notes obtenues, ou `None` si aucune n'a pu être rendue."""
+    """Mean of the grades obtained, or `None` if none could be given."""
 
 
 class EvalProgress(BaseModel):
@@ -932,7 +913,7 @@ class EvalProgress(BaseModel):
 
 
 class EvalRunRecord(BaseModel):
-    """L'état complet d'un run d'évaluation, tel qu'il vit sur disque."""
+    """The complete state of an evaluation run, as it lives on disk."""
 
     run_id: str
     created_at: str
@@ -943,56 +924,56 @@ class EvalRunRecord(BaseModel):
     error: str | None = None
     log_path: str | None = None
     notes: str = ""
-    """Notes libres saisies après coup depuis la page du run.
+    """Free notes typed after the fact from the run's page.
 
-    Ce que la configuration ne peut pas dire : pourquoi ce run a été lancé, ce
-    qu'on y a vu, ce qu'il faut en retenir.
+    What the configuration cannot say: why this run was launched, what was seen
+    in it, what to take away from it.
     """
 
     usage: dict[str, ModelUsage] = Field(default_factory=dict)
-    """Jetons réellement consommés, par modèle. Relevé à la fin du run."""
+    """Tokens actually consumed, per model. Read at the end of the run."""
 
     cost_usd: float | None = None
-    """Coût réel en dollars, calculé depuis les jetons consommés.
+    """Real cost in dollars, computed from the tokens consumed.
 
-    `None` tant que le run n'est pas terminé, ou si un modèle employé n'a pas
-    de tarif connu — auquel cas afficher un total partiel serait trompeur.
+    `None` while the run is not finished, or if a model used has no known price
+    — in which case showing a partial total would be misleading.
     """
 
     rejudged_at: str | None = None
-    """Quand le juge a été repassé sur ce run, s'il l'a été.
+    """When the judge was run over this run again, if it was.
 
-    Le prompt et l'échelle affichés sont alors ceux de la dernière passe, pas
-    ceux du lancement : sans cette date, rien ne le dirait.
+    The prompt and scale shown are then those of the last pass, not those of the
+    launch: without this date, nothing would say so.
     """
 
     source_csv_available: bool = False
-    """Le CSV d'origine est-il conservé à côté du run ?
+    """Is the original CSV kept beside the run?
 
-    Dérivé du disque à chaque lecture, jamais persisté : un booléen enregistré
-    mentirait le jour où le fichier disparaît.
+    Derived from disk at every read, never persisted: a recorded boolean would
+    lie on the day the file disappears.
     """
 
     cells: list[dict[str, Cell]] = Field(default_factory=list)
-    """La matrice : une entrée par scénario, dans l'ordre de `config.scenarios`,
-    associant chaque modèle évalué à sa case.
+    """The matrix: one entry per scenario, in `config.scenarios` order,
+    mapping each evaluated model to its cell.
 
-    Une liste plutôt qu'un dictionnaire indexé par titre : deux scénarios
-    peuvent porter le même titre, en particulier lorsqu'ils viennent d'un CSV.
+    A list rather than a dictionary keyed by title: two scenarios may carry the
+    same title, particularly when they come from a CSV.
     """
 
     conversations: list[Conversation] = Field(default_factory=list)
 
 
 def tools_for(config: "EvalRunConfig", scenario: EvalScenario) -> list[ToolSpec]:
-    """Les outils réellement offerts à un scénario.
+    """The tools actually offered to a scenario.
 
-    Trois états : la clé absente offre tout le décor du run, une liste offre ce
-    qu'elle nomme, une liste vide n'offre rien. Un nom qui ne désigne aucun
-    outil est ignoré — la validation le refuse en amont, et le job ne doit pas
-    mourir sur une configuration déjà acceptée.
+    Three states: the key absent offers the run's whole setting, a list offers
+    what it names, an empty list offers nothing. A name that designates no tool
+    is ignored — validation refuses it upstream, and the job must not die on a
+    configuration already accepted.
     """
     if scenario.tools is None:
         return list(config.tools)
-    voulus = set(scenario.tools)
-    return [tool for tool in config.tools if tool.name in voulus]
+    wanted = set(scenario.tools)
+    return [tool for tool in config.tools if tool.name in wanted]

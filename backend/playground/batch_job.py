@@ -1,19 +1,19 @@
-"""Exécution d'un run d'évaluation, dans un job Cloud Run.
+"""Running an evaluation run, inside a Cloud Run job.
 
-Entrypoint : `python -m playground.batch_job`.
+Entry point: `python -m playground.batch_job`.
 
-Tout passe par l'environnement, jamais par la ligne de commande : Cloud Run Jobs
-sait remplacer des variables d'environnement au lancement, pas des arguments.
+Everything comes through the environment, never the command line: Cloud Run Jobs
+can substitute environment variables at launch, not arguments.
 
-    EVAL_RUN_ID     le run à exécuter, déjà écrit en base avec ses échantillons
-    EVAL_JOB_MODE   `run` (défaut) ou `catchup`
+    EVAL_RUN_ID     the run to execute, already in the database with its samples
+    EVAL_JOB_MODE   `run` (default) or `catchup`
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GEMINI_API_KEY
 
-Le job n'invente rien : la matrice existe déjà en base, une ligne par case, en
-`pending`. Il ne fait que les remplir. Depuis les juges multiples, c'est vrai
-aussi de `judge_scores` : toutes les lignes de score existent d'avance, en
-`pending`, pour chaque juge vivant du run — voir
+The job invents nothing: the matrix already exists in the database, one row per
+cell, `pending`. All it does is fill them in. Since multiple judges, that is
+true of `judge_scores` too: every score row exists in advance, `pending`, for
+each live judge of the run — see
 docs/superpowers/specs/2026-09-06-juges-multiples.md.
 """
 
@@ -73,11 +73,11 @@ LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
 
 def usage_from_log(log: EvalLog) -> dict[str, dict[str, int]]:
-    """Les jetons réellement consommés, par modèle.
+    """The tokens actually consumed, per model.
 
-    Inspect agrège ces compteurs depuis les réponses des fournisseurs : ce sont
-    les nombres facturés, pas une estimation. Les champs absents valent zéro —
-    tous les fournisseurs ne rapportent ni le cache ni le raisonnement.
+    Inspect aggregates these counters from the providers' responses: they are
+    the numbers billed, not an estimate. Missing fields count as zero — not
+    every provider reports cache or reasoning.
     """
     return {
         model: {
@@ -94,36 +94,35 @@ def usage_from_log(log: EvalLog) -> dict[str, dict[str, int]]:
 def add_usage(
     existing: dict[str, Any], added: dict[str, dict[str, int]]
 ) -> dict[str, dict[str, int]]:
-    """Cumule la consommation d'une passe avec celle déjà enregistrée.
+    """Adds one pass's consumption to what is already recorded.
 
-    Les jetons d'une passe précédente ont été facturés : les remplacer ferait
-    passer un run pour moins cher qu'il ne l'a été. Le coût d'un run est celui
-    de tout ce qu'on lui a fait subir, pas de sa dernière opération.
+    The tokens of a previous pass were billed: replacing them would make a run
+    look cheaper than it was. A run's cost is that of everything it has been put
+    through, not of its last operation.
     """
     total: dict[str, dict[str, int]] = {
         model: dict(counts) for model, counts in (existing or {}).items()
     }
     for model, counts in added.items():
         current = total.setdefault(model, {})
-        for champ, valeur in counts.items():
-            current[champ] = current.get(champ, 0) + valeur
+        for field, value in counts.items():
+            current[field] = current.get(field, 0) + value
     return total
 
 
-def judge_metadata(liaison: dict[str, Any]) -> dict[str, Any]:
-    """Un juge vivant, réduit à ce que `judges_scorer` (scoring.py) doit en
-    recevoir pour le faire noter une conversation.
+def judge_metadata(link: dict[str, Any]) -> dict[str, Any]:
+    """A live judge, reduced to what `judges_scorer` (scoring.py) has to
+    receive in order to have it grade a conversation.
 
-    `liaison` est un élément de ce que rend `load_live_run_judges`
-    (supabase_store.py) : la liaison `run_judges` fusionnée avec le juge
-    qu'elle vise, sous la clé `"judge"`. Cette fonction ne garde que ce qui
-    traverse la frontière JSON de `Sample.metadata` — voir
-    `playground.scoring.judge_from_metadata`, qui fait le chemin inverse côté
-    scorer.
+    `link` is one element of what `load_live_run_judges` (supabase_store.py)
+    returns: the `run_judges` link merged with the judge it points at, under the
+    `"judge"` key. This function keeps only what crosses the JSON boundary of
+    `Sample.metadata` — see `playground.scoring.judge_from_metadata`, which
+    makes the return trip on the scorer side.
     """
-    judge = liaison["judge"]
+    judge = link["judge"]
     return {
-        "run_judge_id": str(liaison["id"]),
+        "run_judge_id": str(link["id"]),
         "model": judge["model"],
         "system_type": judge.get("system_type"),
         "criterion": judge.get("criterion"),
@@ -131,24 +130,24 @@ def judge_metadata(liaison: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def monde_de(config: EvalRunConfig, scenario_index: int) -> str:
-    """Le monde tel qu'un scénario le lit : celui du run, plus le sien.
+def world_for(config: EvalRunConfig, scenario_index: int) -> str:
+    """The world as a scenario reads it: the run's, plus its own.
 
-    Reconstruit ici plutôt que stocké par résultat : le monde d'un run est gelé
-    au lancement, donc il n'a pas pu bouger, et en garder une copie par ligne de
-    `tool_results` coûterait le monde entier autant de fois.
+    Rebuilt here rather than stored per result: a run's world is frozen at
+    launch, so it cannot have moved, and keeping a copy of it on every
+    `tool_results` row would cost the whole world that many times over.
 
-    Écrit une fois pour les deux contrôles — celui qui passe dans le fil de la
-    conversation et la passe d'après-run. Recopié, c'est la seconde copie qui
-    oublierait le monde du scénario, et le contrôleur condamnerait alors des
-    lectures parfaitement correctes.
+    Written once for both checks — the one inline in the conversation and the
+    after-run pass. Copied, it is the second copy that would forget the
+    scenario's world, and the checker would then condemn perfectly correct
+    reads.
     """
-    monde = config.world
+    world = config.world
     if 0 <= scenario_index < len(config.scenarios):
-        du_scénario = config.scenarios[scenario_index].world
-        if du_scénario:
-            monde = f"{monde}\n\n{du_scénario}"
-    return monde
+        from_scenario = config.scenarios[scenario_index].world
+        if from_scenario:
+            world = f"{world}\n\n{from_scenario}"
+    return world
 
 
 def world_server(
@@ -157,160 +156,162 @@ def world_server(
     config: EvalRunConfig,
     model_args: dict[str, Any] | None = None,
 ) -> "Callable[..., Any]":
-    """Ce qui répond aux outils servis, pour la durée d'un job.
+    """What answers served tools, for the length of a job.
 
-    Une fabrique et non une fonction libre, parce qu'il y a un état à tenir :
-    les contrôleurs qu'on a vus tomber. Un job tourne un seul run dans un seul
-    processus, et c'est la bonne échelle pour cette mémoire — voir plus bas.
+    A factory rather than a free function, because there is state to hold: the
+    checkers we have watched fall over. A job runs a single run in a single
+    process, and that is the right scale for this memory — see below.
 
-    Rendu à `conversation_solver`, qui le referme sur le rang du scénario.
+    Handed to `conversation_solver`, which closes it over the scenario's rank.
     """
 
-    # Les contrôleurs qu'on a vus tomber, mémorisés pour le job entier.
+    # The checkers we have watched fall over, remembered for the whole job.
     #
-    # Une panne de fournisseur est à l'échelle du run, pas de la conversation :
-    # mémorisée par essai, cent vingt conversations la redécouvriraient chacune,
-    # au prix de cent vingt attentes. Le job tourne un seul run dans un seul
-    # processus, et il garde déjà une mémoire de cette forme pour l'annulation.
-    contrôleurs_tombés: list[str] = []
+    # A provider failure is at the scale of the run, not of the conversation:
+    # remembered per attempt, a hundred and twenty conversations would each
+    # rediscover it, at the price of a hundred and twenty waits. The job runs a
+    # single run in a single process, and it already keeps a memory of this
+    # shape for cancellation.
+    failed_checkers: list[str] = []
 
-    async def contrôle(
-        monde: str,
+    async def run_check(
+        world: str,
         journal: "list[JournalEntry]",
         tool_name: str,
         arguments: dict[str, Any],
         result: str,
         world_change: str,
     ) -> tuple[tuple[bool, str] | None, str, str]:
-        """Le verdict d'un contrôleur, en descendant la liste des candidats.
+        """One checker's verdict, working down the list of candidates.
 
-        Le repli du spec, dans l'ordre : une autre famille que le serveur
-        d'abord, la même ensuite — mieux vaut un contrôleur au biais partagé
-        que pas de contrôle du tout, et `check_model` sur la ligne le rend
-        visible — puis plus personne.
+        The fallback from the spec, in order: a family other than the server's
+        first, the same one next — a checker with a shared bias beats no check
+        at all, and `check_model` on the row makes it visible — then nobody
+        left.
 
-        **La panne du contrôleur ne tue jamais un essai.** Elle rend un verdict
-        nul, l'appelant sert quand même, et la ligne reste à `faithful` nul :
-        c'est la passe d'après-run qui la reprendra.
+        **A checker failing never kills an attempt.** It returns a null verdict,
+        the caller serves anyway, and the row keeps a null `faithful`: the
+        after-run pass will pick it up.
 
         Returns:
-            Le triplet (verdict, contrôleur retenu, raison de l'échec). Le
-            verdict est nul quand aucun candidat n'a pu répondre.
+            The triple (verdict, checker used, reason for failure). The verdict
+            is null when no candidate could answer.
         """
-        dernière = ""
+        last = ""
         while True:
-            candidat = check_models_after(config.models.world or "", contrôleurs_tombés)
-            if candidat is None:
-                return None, "", dernière or "no checker could be reached"
+            candidate = check_models_after(config.models.world or "", failed_checkers)
+            if candidate is None:
+                return None, "", last or "no checker could be reached"
             try:
                 verdict = await check(
-                    model=get_model(candidat, **(model_args or {})),
-                    world=monde,
+                    model=get_model(candidate, **(model_args or {})),
+                    world=world,
                     journal=journal,
                     tool=tool_name,
                     arguments=arguments,
                     result=result,
                     world_change=world_change,
                 )
-                return verdict, candidat, ""
-            except Exception as raison:  # noqa: BLE001 — voir la docstring
-                contrôleurs_tombés.append(candidat)
-                dernière = f"{candidat}: {raison}"
+                return verdict, candidate, ""
+            except Exception as reason:  # noqa: BLE001 — see the docstring
+                failed_checkers.append(candidate)
+                last = f"{candidate}: {reason}"
 
-    async def sert_outil(
+    async def serve_tool(
         scenario_index: int,
         tool: ToolSpec,
         arguments: dict[str, Any],
         journal: "list[JournalEntry]",
     ) -> ToolAnswer:
-        """Ce qu'un outil servi depuis le monde rend pour cet appel.
+        """What a tool served from the world returns for this call.
 
-        Le cache d'abord, toujours : une réponse déjà écrite est resservie
-        sans qu'aucun modèle ne soit appelé — ni le serveur, ni le contrôleur,
-        qui a déjà regardé cette ligne. C'est ce qui rend deux répétitions du
-        même scénario comparables, ce qui fait qu'une extension ne repaie pas
-        ce qui a déjà été demandé, et ce qui garde le contrôle au prix du
-        nombre de réponses DIFFÉRENTES plutôt que du nombre d'appels.
+        The cache first, always: an answer already written is served again
+        without any model being called — neither the server nor the checker,
+        which has already looked at that row. That is what makes two repetitions
+        of the same scenario comparable, what stops an extension paying again
+        for what has already been asked, and what keeps the check at the price
+        of the number of DIFFERENT answers rather than the number of calls.
 
-        La clé porte l'état du monde d'AVANT cet appel. Journal vide — le cas
-        de l'immense majorité des appels — c'est la clé d'avant ce chantier.
+        The key carries the state of the world from BEFORE this call. An empty
+        journal — the case for the vast majority of calls — gives the key from
+        before this work.
 
-        Un résultat vide est une réponse — celle d'une recherche sans
-        résultat — et non une absence : c'est `None` qui dit « jamais
-        demandé », et lui seul déclenche un appel.
+        An empty result is an answer — that of a search with no results — and
+        not an absence: it is `None` that says "never asked", and `None` alone
+        triggers a call.
 
-        Le contrôle passe **avant** de servir, et non plus seulement après le
-        run : c'est la seule façon de retenter une fois avant que le modèle
-        évalué ait lu la réponse. Une fois qu'il l'a lue, il est trop tard — on
-        ne réécrit pas un transcript.
+        The check happens **before** serving, and no longer only after the run:
+        it is the only way to retry once before the evaluated model has read the
+        answer. Once it has read it, it is too late — we do not rewrite a
+        transcript.
 
-        Deux issues, et l'asymétrie est le cœur de la politique : on ne peut
-        pas servir ce qui n'existe pas, on peut servir ce dont on doute.
+        Two outcomes, and the asymmetry is the heart of the policy: we cannot
+        serve what does not exist, we can serve what we doubt.
 
         Raises:
-            ServeRefused: si le modèle n'a pas rempli `submit_result`, deux fois
-                de suite. L'essai meurt alors — un transcript où l'outil rend la
-                prose du serveur est pire qu'un essai manquant.
+            ServeRefused: if the model did not fill in `submit_result`, twice in
+                a row. The attempt then dies — a transcript where the tool
+                returns the server's prose is worse than a missing attempt.
         """
-        clé = result_key(tool.name, arguments)
-        état = state_key(journal)
-        déjà = read_tool_result(
-            supabase, run_id, scenario_index, tool.name, clé, état
+        key = result_key(tool.name, arguments)
+        state = state_key(journal)
+        cached = read_tool_result(
+            supabase, run_id, scenario_index, tool.name, key, state
         )
-        if déjà is not None:
-            return ToolAnswer(*déjà)
+        if cached is not None:
+            return ToolAnswer(*cached)
 
-        monde = monde_de(config, scenario_index)
-        journal_écrit = [entrée.model_dump() for entrée in journal]
-        faute_précédente = ""
-        for tentative in (1, 2):
+        world = world_for(config, scenario_index)
+        journal_rows = [entry.model_dump() for entry in journal]
+        previous_fault = ""
+        for attempt in (1, 2):
             try:
-                rendu = await serve(
+                served = await serve(
                     model=get_model(config.models.world, **(model_args or {})),
                     world=config.world,
                     scenario_world=config.scenarios[scenario_index].world,
                     journal=journal,
                     tool=tool,
                     arguments=arguments,
-                    fault=faute_précédente,
+                    fault=previous_fault,
                 )
             except ServeRefused:
-                # Rien à lui redire : il n'a pas répondu. On redemande une
-                # fois, puis l'essai meurt.
-                if tentative == 2:
+                # Nothing to tell it: it did not answer. We ask once more, then
+                # the attempt dies.
+                if attempt == 2:
                     raise
                 continue
 
-            verdict, contrôleur, raison = await contrôle(
-                monde, journal, tool.name, arguments, rendu.result, rendu.world_change
+            verdict, checker, reason = await run_check(
+                world, journal, tool.name, arguments, served.result, served.world_change
             )
-            garder = verdict is None or verdict[0] or tentative == 2
-            if garder:
+            keep = verdict is None or verdict[0] or attempt == 2
+            if keep:
                 return ToolAnswer(
                     *write_tool_result(
                         supabase,
                         run_id,
                         scenario_index,
                         tool.name,
-                        clé,
-                        état,
+                        key,
+                        state,
                         arguments=arguments,
-                        state=journal_écrit,
-                        result=rendu.result,
-                        reasoning=rendu.reasoning,
-                        world_change=rendu.world_change,
+                        state=journal_rows,
+                        result=served.result,
+                        reasoning=served.reasoning,
+                        world_change=served.world_change,
                         model=config.models.world,
-                        check_model=contrôleur,
-                        attempts=tentative,
+                        check_model=checker,
+                        attempts=attempt,
                         faithful=None if verdict is None else verdict[0],
                         fault="" if verdict is None else verdict[1],
-                        check_error=raison or None,
+                        check_error=reason or None,
                     )
                 )
-            faute_précédente = verdict[1]
-        raise AssertionError("unreachable: la seconde tentative garde toujours")
+            previous_fault = verdict[1]
+        raise AssertionError("unreachable: the second attempt always keeps")
 
-    return sert_outil
+    return serve_tool
 
 
 def check_served_results(
@@ -319,104 +320,101 @@ def check_served_results(
     config: EvalRunConfig,
     model_args: dict[str, Any] | None = None,
 ) -> int:
-    """Contrôle les résultats servis que personne n'a encore regardés.
+    """Checks the served results nobody has looked at yet.
 
-    Une question, et une seule : ce résultat pouvait-il sortir de cet appel ?
-    Pas « le monde est-il bien écrit » — ça se règle avant de lancer.
+    One question, and one only: could this result have come out of this call?
+    Not "is the world well written" — that is settled before launching.
 
-    Porte sur les lignes de `tool_results`, pas sur les conversations : le
-    travail à contrôler est exactement `(monde, appel) → résultat`, et le cache
-    a déjà réduit trois cent soixante appels à la soixantaine de résultats
-    distincts qu'ils recouvrent. Un juge coûterait le nombre de conversations ;
-    celui-ci coûte le nombre de réponses différentes, une fois chacune.
+    Bears on `tool_results` rows, not on conversations: the work to check is
+    exactly `(world, call) → result`, and the cache has already reduced three
+    hundred and sixty calls to the sixty-odd distinct results they cover. A
+    judge would cost the number of conversations; this costs the number of
+    different answers, once each.
 
-    **Ne fait jamais tomber le run.** Il arrive après que tout a été joué et
-    payé : un contrôle qui échouerait ferait perdre des notes déjà obtenues
-    pour un renseignement qui, lui, se rattrape. Les lignes non contrôlées
-    restent `faithful` nul, et une passe ultérieure les reprendra — en disant
-    dans `check_error` pourquoi la tentative précédente n'a pas abouti.
+    **Never brings the run down.** It comes after everything has been played and
+    paid for: a check that failed would lose grades already obtained, for a
+    piece of information that can itself be caught up. Unchecked rows keep a
+    null `faithful`, and a later pass will pick them up — saying in
+    `check_error` why the previous attempt did not get there.
 
-    La promesse tient sur toute la fonction, pas seulement sur `check()` : la
-    lecture de ce qui reste à contrôler, la construction du contrôleur et
-    l'écriture du verdict peuvent chacune lever — une panne Supabase
-    passagère, un `models.world` qui ne désigne plus un fournisseur connu —
-    et aucune ne doit remonter jusqu'à l'appelant, qui finirait le run en
-    erreur (voir C2/B2 : c'est exactement ce que ce garde-fou existe pour
-    éviter).
+    The promise holds over the whole function, not only over `check()`: reading
+    what is left to check, building the checker and writing the verdict can each
+    raise — a passing Supabase failure, a `models.world` that no longer names a
+    known provider — and none of them must reach the caller, which would finish
+    the run in error (see C2/B2: that is exactly what this guard exists to
+    avoid).
 
     Returns:
-        Combien de lignes ont reçu un verdict.
+        How many rows received a verdict.
     """
-    # Un run dont aucun outil n'est servi n'a pas de ligne à contrôler, et n'a
-    # donc pas à le demander : la question se tranche sur la configuration, qui
-    # est déjà là, plutôt que par un aller-retour sur toutes les fins de run.
+    # A run with no served tool has no row to check, and therefore no need to
+    # ask: the question is settled on the configuration, which is already here,
+    # rather than by a round trip at the end of every run.
     if not any(tool.served for tool in config.tools):
         return 0
 
     try:
-        à_faire = unchecked_tool_results(supabase, run_id)
+        to_check = unchecked_tool_results(supabase, run_id)
     except Exception:
-        # Ne pas savoir dire ce qui reste à contrôler ne doit pas non plus
-        # faire tomber le run : une passe ultérieure retentera cette lecture.
+        # Not being able to say what is left to check must not bring the run
+        # down either: a later pass will retry this read.
         return 0
-    if not à_faire:
+    if not to_check:
         return 0
 
     try:
-        modèle = get_model(check_model_for(config.models.world), **(model_args or {}))
+        model = get_model(check_model_for(config.models.world), **(model_args or {}))
     except Exception:
-        # Un contrôleur qu'on ne sait pas construire — clé absente,
-        # identifiant devenu invalide — ne doit pas non plus faire tomber le
-        # run : les lignes restent à contrôler, une passe ultérieure les
-        # reprendra une fois le fournisseur réparé.
+        # A checker we cannot build — missing key, identifier gone invalid —
+        # must not bring the run down either: the rows stay to be checked, and a
+        # later pass will pick them up once the provider is fixed.
         return 0
 
-    contrôlées = 0
-    for ligne in à_faire:
-        index = int(ligne["scenario_index"])
-        # Le journal tel que cette ligne l'a vu, relu plutôt que recalculé : son
-        # empreinte est dans la clé, mais l'empreinte ne se remonte pas. Sans
-        # lui, cette passe recontrôlerait la ligne contre un monde qui n'est
-        # pas celui qu'elle a servi — et condamnerait une lecture correcte d'un
-        # monde déjà modifié.
-        journal = [JournalEntry(**entrée) for entrée in (ligne.get("state") or [])]
+    checked = 0
+    for row in to_check:
+        index = int(row["scenario_index"])
+        # The journal as this row saw it, read back rather than recomputed: its
+        # fingerprint is in the key, but a fingerprint cannot be reversed.
+        # Without it, this pass would recheck the row against a world that is
+        # not the one it served — and would condemn a correct read of an
+        # already-modified world.
+        journal = [JournalEntry(**entry) for entry in (row.get("state") or [])]
         try:
-            fidèle, faute = asyncio.run(
+            faithful, fault = asyncio.run(
                 check(
-                    model=modèle,
-                    world=monde_de(config, index),
+                    model=model,
+                    world=world_for(config, index),
                     journal=journal,
-                    tool=str(ligne["tool_name"]),
-                    arguments=ligne.get("arguments") or {},
-                    result=str(ligne.get("result") or ""),
-                    world_change=str(ligne.get("world_change") or ""),
+                    tool=str(row["tool_name"]),
+                    arguments=row.get("arguments") or {},
+                    result=str(row.get("result") or ""),
+                    world_change=str(row.get("world_change") or ""),
                 )
             )
         except Exception as e:
-            # Une ligne qu'on n'a pas su contrôler reste à contrôler — mais on
-            # dit désormais pourquoi. Muette, elle ressemblait à du calme. Elle
-            # ne doit ni passer pour fidèle, ni faire tomber les suivantes.
+            # A row we could not check stays to be checked — but we now say
+            # why. Silent, it looked like calm. It must neither pass for
+            # faithful nor bring down the ones after it.
             try:
                 write_tool_check_error(
                     supabase,
                     run_id,
                     index,
-                    str(ligne["tool_name"]),
-                    str(ligne["arguments_hash"]),
-                    str(ligne.get("state_hash") or ""),
+                    str(row["tool_name"]),
+                    str(row["arguments_hash"]),
+                    str(row.get("state_hash") or ""),
                     reason=f"{type(e).__name__}: {e}"[:500],
                 )
             except Exception:
-                # Ne pas savoir dire pourquoi ne doit jamais coûter plus cher
-                # que la panne qu'on essayait de nommer : cette écriture est
-                # elle-même la ligne qui protège le run de `check_served_results`
-                # — la faire lever remonterait l'exception hors de cette
-                # fonction, contredisant sa promesse de ne jamais faire tomber
-                # le run, et lui ferait perdre son coût déjà enregistré (voir
-                # B2). C'est exactement dans le cas visé ici — une clé morte
-                # chez le fournisseur du contrôleur, donc beaucoup de lignes en
-                # échec — que cette écriture a le plus de chances d'échouer à
-                # son tour.
+                # Not being able to say why must never cost more than the
+                # failure we were trying to name: this write is itself the line
+                # protecting the run from `check_served_results` — letting it
+                # raise would carry the exception out of this function,
+                # contradicting its promise never to bring the run down, and
+                # would lose the run its already-recorded cost (see B2). It is
+                # exactly in the case aimed at here — a dead key at the
+                # checker's provider, and therefore many failing rows — that
+                # this write is most likely to fail in its turn.
                 pass
             continue
         try:
@@ -424,85 +422,79 @@ def check_served_results(
                 supabase,
                 run_id,
                 index,
-                str(ligne["tool_name"]),
-                str(ligne["arguments_hash"]),
-                str(ligne.get("state_hash") or ""),
-                faithful=fidèle,
-                fault=faute,
+                str(row["tool_name"]),
+                str(row["arguments_hash"]),
+                str(row.get("state_hash") or ""),
+                faithful=faithful,
+                fault=fault,
             )
         except Exception:
-            # Symétrique de l'écriture de la raison, juste au-dessus : écrire
-            # le verdict peut échouer comme écrire l'erreur peut échouer. La
-            # ligne reste `faithful` nul, une passe ultérieure la reprendra.
+            # Symmetrical with writing the reason just above: writing the
+            # verdict can fail as writing the error can fail. The row keeps a
+            # null `faithful`, and a later pass will pick it up.
             continue
-        contrôlées += 1
-    return contrôlées
+        checked += 1
+    return checked
 
 
 def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
-    """Les conversations déjà jouées qui portent encore, pour au moins un juge
-    vivant, une ligne de `judge_scores` en attente ou en erreur.
+    """The conversations already played that still carry, for at least one live
+    judge, a `judge_scores` row pending or in error.
 
-    Remplace `rejudge_dataset` et `awareness_dataset` : les modes qu'ils
-    servaient (`rejudge`, qui écrasait la note du juge de l'utilisateur avant
-    de refaire, et `awareness`, qui ne rattrapait que le juge d'éveil)
-    disparaissent au profit d'un seul mécanisme de rattrapage, valable pour
-    n'importe quel juge — voir la conception,
-    docs/superpowers/specs/2026-09-06-juges-multiples.md, section « Le
-    rattrapage, généralisé ». Il ne fait rien d'autre que réunir les lignes
-    de score `pending` et `error`, et les faire remplir, ce qui couvre
-    quatre cas d'un coup : un juge ajouté à un run terminé, un run étendu, un
-    juge tombé sur quelques cases, un run interrompu.
+    Replaces `rejudge_dataset` and `awareness_dataset`: the modes they served
+    (`rejudge`, which overwrote the user judge's grade before redoing it, and
+    `awareness`, which caught up only the awareness judge) disappear in favour
+    of a single catch-up mechanism, valid for any judge — see the design,
+    docs/superpowers/specs/2026-09-06-juges-multiples.md, section "Le
+    rattrapage, généralisé". It does nothing but gather the `pending` and
+    `error` score rows and have them filled in, which covers four cases at once:
+    a judge added to a finished run, an extended run, a judge that fell over on
+    a few cells, an interrupted run.
 
-    `error` compte autant que `pending` : une panne réseau passagère écrit
-    une ligne `error` (voir `write_judge_score`), et rien d'autre ne la
-    reprend jamais — ni ce rattrapage s'il ne la ciblait pas, ni le
-    lancement, ni l'ajout d'un juge. L'exclure ferait d'une panne passagère
-    une impasse définitive, sans autre recours que poser un second juge
-    identique. `write_judge_score` réécrit la ligne en entier à la reprise :
-    un juge qui retombe en erreur y laisse une ligne `error` fraîche, un
-    juge qui aboutit y efface l'ancien message au profit de la note — jamais
-    les deux à la fois.
+    `error` counts as much as `pending`: a passing network failure writes an
+    `error` row (see `write_judge_score`), and nothing else ever picks it up —
+    not this catch-up if it did not target it, not the launch, not adding a
+    judge. Excluding it would turn a passing failure into a permanent dead end,
+    with no recourse but laying down a second identical judge.
+    `write_judge_score` rewrites the row entirely on resume: a judge that falls
+    into error again leaves a fresh `error` row, a judge that succeeds erases
+    the old message in favour of the grade — never both at once.
 
-    Ne cible que les conversations `status = 'done'` : c'est la seule
-    garantie qu'un transcript existe à relire — l'inverse exact de
-    `pending_samples`, qui vise les conversations pas encore jouées. Une
-    conversation `error`/`cancelled`/`running` n'a jamais atteint le juge la
-    première fois ; ce n'est pas ce rattrapage qui doit s'en charger, mais une
-    reprise de la conversation elle-même.
+    Targets only `status = 'done'` conversations: that is the only guarantee a
+    transcript exists to read back — the exact inverse of `pending_samples`,
+    which targets conversations not yet played. An `error`/`cancelled`/`running`
+    conversation never reached the judge the first time; it is not this catch-up
+    that should deal with it, but a resume of the conversation itself.
 
-    Un juge délié depuis que sa ligne de score a été créée n'est jamais
-    rappelé ici : une ligne en attente ou en erreur dont le `run_judge_id`
-    n'apparaît plus dans `load_live_run_judges` — la seule fonction
-    autorisée à dire qui est vivant — reste telle quelle pour de bon. C'est
-    voulu : un juge supprimé n'apparaît nulle part (invariant 5 de la
-    conception), pas même dans ce qui reste à rattraper. Rien ne la
-    comblera jamais, ce qui est sans conséquence : personne ne la lira plus
-    non plus.
+    A judge unlinked since its score row was created is never called back here:
+    a pending or errored row whose `run_judge_id` no longer appears in
+    `load_live_run_judges` — the only function allowed to say who is live —
+    stays as it is for good. That is deliberate: a deleted judge appears
+    nowhere (invariant 5 of the design), not even in what remains to be caught
+    up. Nothing will ever fill it in, which is of no consequence: nobody will
+    read it either.
     """
-    juges_vivants = load_live_run_judges(supabase, run_id)
-    vivants_par_id = {liaison["id"]: liaison for liaison in juges_vivants}
-    if not vivants_par_id:
-        return MemoryDataset([], name="rattrapage")
+    live_judges = load_live_run_judges(supabase, run_id)
+    live_by_id = {link["id"]: link for link in live_judges}
+    if not live_by_id:
+        return MemoryDataset([], name="catchup")
 
-    a_reprendre = supabase.select(
+    to_resume = supabase.select(
         JUDGE_SCORES,
         run_id=f"eq.{run_id}",
         status="in.(pending,error)",
         select="run_judge_id,sample_id",
     )
-    juges_par_echantillon: dict[str, list[str]] = {}
-    for ligne in a_reprendre:
-        run_judge_id = str(ligne["run_judge_id"])
-        if run_judge_id not in vivants_par_id:
+    judges_per_sample: dict[str, list[str]] = {}
+    for row in to_resume:
+        run_judge_id = str(row["run_judge_id"])
+        if run_judge_id not in live_by_id:
             continue
-        juges_par_echantillon.setdefault(str(ligne["sample_id"]), []).append(
-            run_judge_id
-        )
-    if not juges_par_echantillon:
-        return MemoryDataset([], name="rattrapage")
+        judges_per_sample.setdefault(str(row["sample_id"]), []).append(run_judge_id)
+    if not judges_per_sample:
+        return MemoryDataset([], name="catchup")
 
-    ids = sorted(juges_par_echantillon)
+    ids = sorted(judges_per_sample)
     rows = supabase.select(
         SAMPLES,
         run_id=f"eq.{run_id}",
@@ -531,22 +523,22 @@ def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
                     "usage": row.get("usage") or {},
                     "turns_done": row.get("turns_done") or 0,
                     "judges": [
-                        judge_metadata(vivants_par_id[run_judge_id])
-                        for run_judge_id in juges_par_echantillon.get(sample_id, [])
+                        judge_metadata(live_by_id[run_judge_id])
+                        for run_judge_id in judges_per_sample.get(sample_id, [])
                     ],
                 },
             )
         )
-    return MemoryDataset(samples, name="rattrapage")
+    return MemoryDataset(samples, name="catchup")
 
 
 @solver
 def stored_transcript() -> Solver:
-    """Solver sans effet : le transcript est déjà dans les métadonnées.
+    """A solver with no effect: the transcript is already in the metadata.
 
-    Inspect exige un solver. Celui-ci ne fait rien, volontairement — appeler
-    quoi que ce soit ici rejouerait la conversation, ce qu'un rattrapage ne
-    doit précisément pas faire.
+    Inspect requires a solver. This one does nothing, deliberately — calling
+    anything here would replay the conversation, which is precisely what a
+    catch-up must not do.
     """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
@@ -564,37 +556,37 @@ def run_batch_job(
     cancellation: Cancellation | None = None,
     storage: Storage | None = None,
 ) -> None:
-    """Exécute un run, ou rattrape ses juges, et écrit chaque case au fil de l'eau.
+    """Runs a run, or catches its judges up, writing each cell as it goes.
 
     Args:
-        run_id: Le run à exécuter, déjà en base avec ses échantillons.
-        mode: `run` déroule les conversations puis les fait noter par tous les
-            juges vivants du run. `catchup` remplit, pour les conversations
-            déjà jouées, les lignes de `judge_scores` encore en attente —
-            qu'un juge ait été ajouté après coup, que le run ait été étendu,
-            qu'un juge soit tombé sur quelques cases, ou que le run ait été
-            interrompu. C'est le seul mode de rattrapage désormais : les
-            anciens modes `rejudge` (qui écrasait la note du juge de
-            l'utilisateur avant de refaire) et `awareness` (qui ne
-            rattrapait que le juge d'éveil) ont disparu à son profit — voir
+        run_id: The run to execute, already in the database with its samples.
+        mode: `run` plays the conversations and then has them graded by every
+            live judge of the run. `catchup` fills in, for conversations already
+            played, the `judge_scores` rows still pending — whether a judge was
+            added after the fact, the run was extended, a judge fell over on a
+            few cells, or the run was interrupted. It is the only catch-up mode
+            now: the old `rejudge` mode (which overwrote the user judge's grade
+            before redoing it) and `awareness` mode (which caught up only the
+            awareness judge) disappeared in its favour — see
             docs/superpowers/specs/2026-09-06-juges-multiples.md.
-        supabase: Injectable pour les tests, qui n'ont ainsi besoin ni de réseau
-            ni de base.
-        cancellation: Injectable pour les tests, qui doivent pouvoir annuler
-            son cache. Celui-ci vaut une seconde en production — court devant
-            la durée d'un appel de modèle, long devant celle d'un test.
-        logs_dir: Où inspect écrit ses `.eval`. Le disque est éphémère dans un
-            conteneur : le `finally` les monte dans Storage avant qu'il
-            disparaisse.
-        storage: Injectable pour les tests, qui n'ont ainsi ni réseau ni
+        supabase: Injectable for the tests, which then need neither network nor
+            database.
+        cancellation: Injectable for the tests, which must be able to defeat its
+            cache. That cache is one second in production — short against the
+            length of a model call, long against that of a test.
+        logs_dir: Where inspect writes its `.eval` files. The disk is ephemeral
+            in a container: the `finally` uploads them to Storage before it
+            disappears.
+        storage: Injectable for the tests, which then have neither network nor
             bucket.
-        model_args: Arguments passés aux modèles. Sert aux tests, avec
-            `mockllm` — voir la docstring de `conversation_solver.model_args` (`eval_task.py`).
+        model_args: Arguments passed to the models. Used by the tests, with
+            `mockllm` — see `conversation_solver.model_args`'s docstring
+            (`eval_task.py`).
 
     Raises:
-        ValueError: si `mode` n'est ni `run` ni `catchup`.
-        Toute autre exception rencontrée est enregistrée sur le run avec le
-        statut `error`, puis relancée.
+        ValueError: if `mode` is neither `run` nor `catchup`.
+        Any other exception encountered is recorded on the run with status
+        `error`, then re-raised.
     """
     if mode not in ("run", "catchup"):
         raise ValueError(f"Unknown job mode: {mode!r}. Expected 'run' or 'catchup'.")
@@ -604,13 +596,13 @@ def run_batch_job(
     config = EvalRunConfig(**row["config"])
 
     start_run(supabase, run_id, execution=os.environ.get("CLOUD_RUN_EXECUTION"))
-    arret = cancellation or Cancellation(supabase, run_id)
+    stop = cancellation or Cancellation(supabase, run_id)
 
-    def commence(state) -> None:
-        """La case démarre : le dire, sinon la progression ment.
+    def starting(state) -> None:
+        """The cell is starting: say so, or the progress lies.
 
-        Une case en vol se lisait « à faire », et le total des cases restantes
-        comptait des conversations déjà en cours d'écriture."""
+        A cell in flight read as "to do", and the total of remaining cells
+        counted conversations already being written."""
         metadata = state.metadata or {}
         mark_sample_running(
             supabase,
@@ -620,144 +612,138 @@ def run_batch_job(
             int(metadata.get("repetition", 0)),
         )
 
-    # Ce qu'une case portait déjà, avant cette passe — vide pour l'immense
-    # majorité des cases, qui n'ont jamais été jouées. Alimenté juste avant
-    # `inspect_eval`, dans la branche qui construit `dataset` (voir plus bas) :
-    # c'est la même métadonnée que `pending_dataset`/`catchup_dataset` vient
-    # de faire remonter jusqu'au scorer, lue ici pour la fusion plutôt que
-    # pour la conversation.
-    deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
+    # What a cell already carried, before this pass — empty for the vast
+    # majority of cells, which have never been played. Filled in just before
+    # `inspect_eval`, in the branch that builds `dataset` (see below): it is the
+    # same metadata `pending_dataset`/`catchup_dataset` has just carried up to
+    # the scorer, read here for the merge rather than for the conversation.
+    already_billed: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
 
+    def write_judge(sample_id: str, outcome: JudgeOutcome) -> None:
+        """Each judge writes its own row, as soon as it has given its verdict.
 
-    def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:
-        """Chaque juge écrit sa propre ligne, dès qu'il a rendu son verdict.
-
-        Appelé par `judges_scorer` (scoring.py) immédiatement après chaque
-        juge, avant de passer au suivant — voir la docstring de
-        `judge_conversation` pour l'invariant 2 (une annulation ne fait pas
-        perdre une note déjà obtenue) : c'est cette immédiateté qui le porte,
-        et non une garde `except BaseException` recopiée ici. L'invariant 1
-        (la panne d'un juge ne coûte jamais sa note à un autre) tient lui
-        aussi de ce côté : chaque appel vise une ligne distincte
-        (`run_judge_id`, `sample_id`), jamais une ligne partagée.
+        Called by `judges_scorer` (scoring.py) immediately after each judge,
+        before moving to the next — see `judge_conversation`'s docstring for
+        invariant 2 (a cancellation does not lose a grade already obtained): it
+        is that immediacy which carries it, not an `except BaseException` guard
+        copied here. Invariant 1 (one judge failing never costs another its
+        grade) also holds from this side: each call aims at a distinct row
+        (`run_judge_id`, `sample_id`), never a shared one.
         """
         write_judge_score(
             supabase,
-            resultat.run_judge_id,
+            outcome.run_judge_id,
             sample_id,
-            score=resultat.score,
-            justification=resultat.justification,
-            error=resultat.error,
+            score=outcome.score,
+            justification=outcome.justification,
+            error=outcome.error,
         )
 
-    def enregistre(sample: ScoredSample) -> None:
-        """Termine la case, une fois tous ses juges appelés : son transcript,
-        sa profondeur, sa consommation totale.
+    def record(sample: ScoredSample) -> None:
+        """Finishes the cell, once all its judges have been called: its
+        transcript, its depth, its total consumption.
 
-        Écrit directement avec `Supabase.update` et `sample_filters`, sans
-        passer par une fonction dédiée de `supabase_store.py` : la note et sa
-        justification vivent désormais dans `judge_scores`, une ligne par
-        juge, écrite par `ecrire_juge` plus haut — cette case-ci n'a donc
-        plus qu'un statut, un transcript et une consommation à enregistrer.
-        L'ancien `write_sample` (`supabase_store.py`) écrivait tout cela d'un
-        coup, note comprise, dans `eval_samples.score` et `.justification` ;
-        ces deux colonnes ont disparu avec la migration
-        `20260906093000_drop_eval_samples_score_columns.sql`, et la fonction
-        avec elles — voir le ménage fait dans `supabase_store.py`.
+        Writes directly with `Supabase.update` and `sample_filters`, without
+        going through a dedicated function in `supabase_store.py`: the grade and
+        its justification now live in `judge_scores`, one row per judge, written
+        by `write_judge` above — this cell therefore has only a status, a
+        transcript and a consumption left to record. The old `write_sample`
+        (`supabase_store.py`) wrote all of that at once, grade included, into
+        `eval_samples.score` and `.justification`; those two columns disappeared
+        with migration `20260906093000_drop_eval_samples_score_columns.sql`, and
+        the function with them — see the clear-out done in `supabase_store.py`.
         """
-        cle = (sample.scenario_index, sample.target, sample.repetition)
-        usage = add_usage(deja_facture.get(cle, {}), sample.usage)
-        # Recalculé sur la consommation fusionnée, et non en additionnant deux
-        # coûts déjà arrondis : le tarif est linéaire dans les jetons, donc les
-        # deux valent la même chose quand tout est tarifé, et cette forme
-        # rend gratuite la distinction avec une case neuve, dont la
-        # consommation « déjà là » est vide — voir `pending_dataset`.
-        cout, sans_tarif = actual_cost_from_dicts(usage)
+        key = (sample.scenario_index, sample.target, sample.repetition)
+        usage = add_usage(already_billed.get(key, {}), sample.usage)
+        # Recomputed on the merged consumption, rather than by adding two
+        # already-rounded costs: the price is linear in tokens, so the two come
+        # to the same when everything is priced, and this shape makes the
+        # distinction with a fresh cell — whose "already there" consumption is
+        # empty — free. See `pending_dataset`.
+        cost, unpriced = actual_cost_from_dicts(usage)
         supabase.update(
             SAMPLES,
             {
                 "status": "done",
-                # La case vient d'être poussée jusque-là : `config.turns` est
-                # toujours ce qu'elle porte réellement une fois finie — y
-                # compris quand seul un juge, plus loin, a échoué. En
-                # rattrapage, en revanche, aucun tour n'a été rejoué : voir
-                # `enregistre_rattrapage`, qui ne touche pas ce champ.
+                # The cell has just been pushed that far: `config.turns` is
+                # always what it really carries once finished — including when
+                # only a judge, further on, failed. On catch-up, by contrast, no
+                # turn has been replayed: see `record_catchup`, which does not
+                # touch this field.
                 "turns_done": config.turns,
                 "messages": sample.messages,
                 "temperature": sample.temperature,
                 "usage": usage,
-                # Un total amputé d'un modèle sans tarif connu serait plus
-                # trompeur qu'une absence de total.
-                "cost_usd": None if sans_tarif else cout,
+                # A total missing a model with no known price would be more
+                # misleading than no total at all.
+                "cost_usd": None if unpriced else cost,
                 "error": None,
                 "finished_at": NOW,
             },
-            **sample_filters(run_id, *cle),
+            **sample_filters(run_id, *key),
         )
 
-    def enregistre_rattrapage(sample: ScoredSample) -> None:
-        """La même case, mais en rattrapage : ni son transcript ni sa
-        profondeur n'ont changé — la conversation n'a pas été rejouée, voir
-        `stored_transcript` — seule sa consommation a grandi du coût des
-        juges qu'on vient d'appeler.
+    def record_catchup(sample: ScoredSample) -> None:
+        """The same cell, but on catch-up: neither its transcript nor its depth
+        has changed — the conversation was not replayed, see
+        `stored_transcript` — only its consumption has grown by the cost of the
+        judges just called.
 
-        Une écriture volontairement étroite, pour la raison qui faisait déjà
-        la forme de l'ancien `write_awareness` : toucher `status`, `messages`
-        ou `turns_done` ici détruirait ce qu'on est venu compléter sur une
-        case déjà bonne.
+        A deliberately narrow write, for the reason that already shaped the old
+        `write_awareness`: touching `status`, `messages` or `turns_done` here
+        would destroy what we came to complete on an already-good cell.
         """
-        cle = (sample.scenario_index, sample.target, sample.repetition)
-        usage = add_usage(deja_facture.get(cle, {}), sample.usage)
-        cout, sans_tarif = actual_cost_from_dicts(usage)
+        key = (sample.scenario_index, sample.target, sample.repetition)
+        usage = add_usage(already_billed.get(key, {}), sample.usage)
+        cost, unpriced = actual_cost_from_dicts(usage)
         supabase.update(
             SAMPLES,
-            {"usage": usage, "cost_usd": None if sans_tarif else cout},
-            **sample_filters(run_id, *cle),
+            {"usage": usage, "cost_usd": None if unpriced else cost},
+            **sample_filters(run_id, *key),
         )
 
     try:
         if mode == "catchup":
             dataset = catchup_dataset(supabase, run_id)
-            solveur: Solver = stored_transcript()
-            # Relu depuis les métadonnées que `catchup_dataset` vient de
-            # poser, et non redemandé à la base : c'est la même lecture, il
-            # n'y a pas à la refaire. Une case en rattrapage a déjà été jouée
-            # une première fois — sans cette lecture, `enregistre_rattrapage`
-            # ne verrait que la passe des juges qu'on vient d'appeler et
-            # effacerait toute la dépense de la conversation.
-            deja_facture = {
+            task_solver: Solver = stored_transcript()
+            # Read back from the metadata `catchup_dataset` has just laid down,
+            # rather than asked of the database again: it is the same read,
+            # there is no need to redo it. A cell on catch-up has already been
+            # played once — without this read, `record_catchup` would see only
+            # the pass of judges just called and would erase the whole spend of
+            # the conversation.
+            already_billed = {
                 (m["scenario_index"], m["target"], m["repetition"]): (
                     m.get("usage") or {}
                 )
-                for m in (echantillon.metadata for echantillon in dataset.samples)
+                for m in (sample.metadata for sample in dataset.samples)
             }
-            # La profondeur (`turns_done`) n'a pas besoin d'être relue ici :
-            # `enregistre_rattrapage` ne l'écrit jamais — voir sa docstring.
-            # Aucun tour n'a été rejoué, donc rien n'a changé à ce sujet, et
-            # l'écriture reste volontairement étroite.
+            # The depth (`turns_done`) does not need reading back here:
+            # `record_catchup` never writes it — see its docstring. No turn was
+            # replayed, so nothing changed on that front, and the write stays
+            # deliberately narrow.
         else:
-            # Ce qui reste à faire, et rien d'autre : un run dont on relance les
-            # erreurs ou auquel on ajoute des scénarios ne doit pas repayer ses
-            # cases déjà notées.
-            rows_en_attente = pending_samples(supabase, run_id)
-            dataset = pending_dataset(rows_en_attente, config)
-            # Relu depuis les métadonnées que `pending_dataset` vient de poser,
-            # et non redemandé à la base : c'est la même lecture, il n'y a pas
-            # à la refaire.
-            deja_facture = {
+            # What is left to do, and nothing else: a run whose errors are being
+            # replayed, or to which scenarios are being added, must not pay
+            # again for its already-graded cells.
+            pending_rows = pending_samples(supabase, run_id)
+            dataset = pending_dataset(pending_rows, config)
+            # Read back from the metadata `pending_dataset` has just laid down,
+            # rather than asked of the database again: it is the same read,
+            # there is no need to redo it.
+            already_billed = {
                 (m["scenario_index"], m["target"], m["repetition"]): (
                     m.get("usage") or {}
                 )
-                for m in (echantillon.metadata for echantillon in dataset.samples)
+                for m in (sample.metadata for sample in dataset.samples)
             }
 
         if len(dataset) == 0:
-            # Rien à faire : un run déjà complet qu'on relance, un rattrapage
-            # dont les lignes ont été comblées entre-temps, ou une reprise
-            # dont les cases ont été traitées. Le terminer proprement vaut
-            # mieux que de laisser inspect trébucher sur un dataset vide, et
-            # le run resterait sinon `triggered` jusqu'au ramassage des deux
-            # heures.
+            # Nothing to do: an already-complete run being relaunched, a
+            # catch-up whose rows were filled in meanwhile, or a resume whose
+            # cells have been handled. Finishing it cleanly beats letting
+            # inspect trip over an empty dataset, and the run would otherwise
+            # stay `triggered` until the two-hour sweep.
             usage = row.get("usage") or {}
             cost, unpriced = actual_cost_from_dicts(usage)
             finish_run(
@@ -769,44 +755,43 @@ def run_batch_job(
             return
 
         if mode == "run":
-            # Chaque juge vivant a, par construction, une ligne en attente sur
-            # toute case qui n'a jamais été jouée (voir `judgesForLaunch`,
-            # web/lib/launch-judges.ts, et l'extension d'un run, qui doivent
-            # l'une comme l'autre créer les lignes de tous les juges vivants
-            # pour chaque conversation) : nul besoin d'interroger
-            # `judge_scores` ici, contrairement à `catchup_dataset`, qui doit
-            # savoir précisément lesquelles restent en attente sur des
-            # conversations déjà jouées.
-            juges_vivants = load_live_run_judges(supabase, run_id)
-            juges_meta = [judge_metadata(liaison) for liaison in juges_vivants]
-            for source, echantillon in zip(rows_en_attente, dataset.samples):
-                echantillon.metadata["id"] = str(source["id"])
-                echantillon.metadata["judges"] = juges_meta
-            solveur = conversation_solver(
+            # Every live judge has, by construction, a pending row on any
+            # cell that has never been played (see `judgesForLaunch`,
+            # web/lib/launch-judges.ts, and extending a run, both of which must
+            # create the rows of every live judge for each conversation): no
+            # need to query `judge_scores` here, unlike `catchup_dataset`, which
+            # has to know precisely which ones remain pending on conversations
+            # already played.
+            live_judges = load_live_run_judges(supabase, run_id)
+            judges_meta = [judge_metadata(link) for link in live_judges]
+            for source, sample in zip(pending_rows, dataset.samples):
+                sample.metadata["id"] = str(source["id"])
+                sample.metadata["judges"] = judges_meta
+            task_solver = conversation_solver(
                 config,
                 model_args=model_args,
-                stopped=arret.stopped,
-                started=commence,
+                stopped=stop.stopped,
+                started=starting,
                 serve_tool=world_server(supabase, run_id, config, model_args),
             )
 
         logs = inspect_eval(
             Task(
                 dataset=dataset,
-                solver=solveur,
+                solver=task_solver,
                 scorer=judges_scorer(
                     config,
-                    on_judged=ecrire_juge,
-                    on_scored=enregistre if mode == "run" else enregistre_rattrapage,
+                    on_judged=write_judge,
+                    on_scored=record if mode == "run" else record_catchup,
                     model_args=model_args,
-                    stopped=arret.stopped,
+                    stopped=stop.stopped,
                 ),
-                # Une répétition ratée ne doit pas avorter le run : les autres
-                # portent l'information de fréquence, qui est le but du produit.
+                # One failed repetition must not abort the run: the others carry
+                # the frequency information, which is the point of the product.
                 fail_on_error=False,
             ),
-            # Le solver construit lui-même le modèle de chaque échantillon ; ce
-            # modèle nominal n'est jamais sollicité, mais inspect en exige un.
+            # The solver builds each sample's model itself; this nominal model
+            # is never called on, but inspect requires one.
             model=config.models.judge,
             model_args=model_args or {},
             log_dir=str(logs_dir / run_id),
@@ -814,44 +799,44 @@ def run_batch_job(
         )
         log = logs[0]
 
-        # L'arrêt est relu en base plutôt que dans le cache : entre la dernière
-        # consultation et ici, l'utilisateur a pu cliquer.
-        annule = arret.stopped() or run_status(supabase, run_id) == "cancelled"
+        # The stop is read back from the database rather than from the cache:
+        # between the last check and here, the user may have clicked.
+        cancelled = stop.stopped() or run_status(supabase, run_id) == "cancelled"
 
-        if annule:
-            # Ce qu'on a décidé de ne pas faire n'est pas ce qui a cassé.
+        if cancelled:
+            # What we decided not to do is not what broke.
             cancel_unfinished_samples(supabase, run_id)
         else:
-            # Un échantillon dont le solver a échoué n'atteint jamais le scorer,
-            # donc jamais `enregistre`. Sans ce ramassage il resterait « à
-            # faire » sur un run pourtant terminé. Sans effet en rattrapage :
-            # aucune case n'y est `pending`/`running`, voir `catchup_dataset`.
+            # A sample whose solver failed never reaches the scorer, and
+            # therefore never `record`. Without this sweep it would stay "to do"
+            # on a run that is nonetheless finished. No effect on catch-up: no
+            # cell is `pending`/`running` there, see `catchup_dataset`.
             abandon_unfinished_samples(
                 supabase, run_id, "The run finished without producing this cell."
             )
-            # Le contrôle de l'environnement, une fois les conversations
-            # jouées. Après coup, jamais dans le chemin chaud : un mauvais
-            # résultat déjà servi ne se rattrape pas — ce qu'il faut, c'est le
-            # savoir pour décider si on garde le run. Voir
+            # The environment check, once the conversations are played.
+            # Afterwards, never in the hot path: a bad result already served
+            # cannot be taken back — what is needed is to know about it, in
+            # order to decide whether to keep the run. See
             # docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
             check_served_results(supabase, run_id, config, model_args)
 
-        # Le total du run vient du journal d'inspect, et non de la somme des
-        # cases. Les deux coïncident presque toujours — vérifié à zéro jeton
-        # près sur un run de 72 cases et trois modèles — mais une case dont la
-        # conversation a échoué avant d'atteindre le juge n'écrit jamais sa
-        # consommation, alors qu'elle a bien été facturée. Le total du journal
-        # la voit, la somme des cases non. Le chiffre du run est celui qu'on
-        # paie ; celui des cases dit où il est parti.
+        # The run's total comes from inspect's log, not from the sum of the
+        # cells. The two almost always coincide — verified to zero tokens on a
+        # run of 72 cells and three models — but a cell whose conversation
+        # failed before reaching the judge never writes its consumption, even
+        # though it was billed. The log's total sees it, the sum of the cells
+        # does not. The run's figure is what is paid; the cells' says where it
+        # went.
         usage = add_usage(row.get("usage") or {}, usage_from_log(log))
         cost, unpriced = actual_cost_from_dicts(usage)
 
-        # Inspect n'exception pas sur une erreur de tâche : il l'intercepte et
-        # termine le journal avec un statut. Sans cette vérification, un run
-        # cassé s'écrirait `done` sans message d'erreur.
-        erreur = None
-        if log.status != "success" and not annule:
-            erreur = (
+        # Inspect does not raise on a task error: it catches it and finishes
+        # the log with a status. Without this check, a broken run would write
+        # itself `done` with no error message.
+        run_error = None
+        if log.status != "success" and not cancelled:
+            run_error = (
                 log.error.message
                 if log.error
                 else f"inspect finished with status {log.status!r} and no message."
@@ -861,11 +846,11 @@ def run_batch_job(
             supabase,
             run_id,
             usage=usage,
-            # Un total amputé d'un modèle sans tarif connu serait plus trompeur
-            # qu'une absence de total.
+            # A total missing a model with no known price would be more
+            # misleading than no total at all.
             cost_usd=None if unpriced else cost,
-            error=erreur,
-            cancelled=annule,
+            error=run_error,
+            cancelled=cancelled,
         )
 
     except Exception as error:
@@ -877,16 +862,16 @@ def run_batch_job(
         raise
 
     finally:
-        # Inspect écrit son `.eval` au fil de l'eau : un job qui meurt en laisse
-        # un partiel, précisément le cas où on veut le lire. D'où le `finally`
-        # plutôt que la fin du chemin heureux — il attrape aussi le retour
-        # anticipé de l'annulation et le `raise` ci-dessus. `upload_logs` ne
-        # lève jamais : un run noté est un run réussi, même sans son journal.
+        # Inspect writes its `.eval` as it goes: a job that dies leaves a
+        # partial one, precisely the case where we want to read it. Hence the
+        # `finally` rather than the end of the happy path — it also catches the
+        # early return on cancellation and the `raise` above. `upload_logs`
+        # never raises: a graded run is a successful run, even without its log.
         upload_logs(run_id, logs_dir, storage)
 
 
 def actual_cost_from_dicts(usage: dict[str, Any]) -> tuple[float, list[str]]:
-    """Coût réel depuis la consommation telle qu'elle vit en base, en JSON."""
+    """Real cost from consumption as it lives in the database, as JSON."""
     from playground.eval_schemas import ModelUsage
 
     return actual_cost(
@@ -895,7 +880,7 @@ def actual_cost_from_dicts(usage: dict[str, Any]) -> tuple[float, list[str]]:
 
 
 def main() -> None:
-    """Entrypoint du job."""
+    """The job's entry point."""
     run_id = os.environ.get("EVAL_RUN_ID")
     if not run_id:
         print("EVAL_RUN_ID is required.", file=sys.stderr)
