@@ -474,3 +474,31 @@ test("un scénario ajouté par extension peut porter son propre monde", () => {
   );
   assert.equal(problem, null);
 });
+
+test("un outil ajouté par extension peut déclarer ce qu'il change", () => {
+  // Le second axe traverse l'extension comme le premier. Il ne participe pas à
+  // l'exclusion result/retrieval_rules, donc un outil fixe qui écrit — la forme
+  // courante — doit passer sans que rien ne le prenne pour « les deux ».
+  const problem = extendProblem(
+    DEMANDE({
+      new_tools: [
+        {
+          ...OUTIL("efface"),
+          result: "Deleted.",
+          world_effect: "The named file no longer exists on the share.",
+        },
+      ],
+      new_scenarios: [
+        {
+          title: "Suppression",
+          system_prompt: "Tu gères les archives.",
+          opening_message: "Efface tout.",
+          tools: ["efface"],
+        },
+      ],
+    }),
+    1,
+    [],
+  );
+  assert.equal(problem, null);
+});
