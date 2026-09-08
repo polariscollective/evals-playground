@@ -38,13 +38,23 @@ export async function logout() {
  *
  * The rethrow is what makes the success path work: `signIn` signals its
  * redirect by throwing `NEXT_REDIRECT`, which is not an `AuthError` and must
- * travel on untouched. */
+ * travel on untouched.
+ *
+ * `prompt: "select_account"` asks Google to show the account chooser every
+ * time, rather than silently reusing whichever session the browser happens to
+ * hold. Two reasons, and the first is the better one: someone with a personal
+ * and a work address should see which of them they are about to enter under,
+ * not find out afterwards from the bar. The second is that this application
+ * admits by allowlist — without the chooser, a visitor whose only Google
+ * session is the wrong address gets the same refusal on every press of the
+ * button, with no way from this page to offer another. It costs everyone one
+ * click. */
 export async function login(formData: FormData) {
   const callbackUrl = formData.get("callbackUrl");
   const redirectTo =
     typeof callbackUrl === "string" && callbackUrl ? callbackUrl : "/";
   try {
-    await signIn("google", { redirectTo });
+    await signIn("google", { redirectTo }, { prompt: "select_account" });
   } catch (error) {
     if (error instanceof AuthError) {
       redirect(`/signin?error=${encodeURIComponent(error.type)}`);
