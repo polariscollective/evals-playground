@@ -29,7 +29,7 @@ from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
 
 from playground.eval_schemas import EvalRunConfig, JudgeSystemType, RubricLevel
-from playground.generation import tool_call_arguments
+from playground.tool_calls import tool_call_arguments
 from playground.shared_data import load
 
 _SHARED = load("judge-prompt")
@@ -633,7 +633,7 @@ def judges_scorer(
             L'arrêt agit là où l'argent se dépense encore, c'est-à-dire avant
             les tours du modèle évalué — voir `run_conversation`.
         model_args: Arguments de construction transmis à `get_model`. Voir la
-            docstring de `scenario_solver.model_args` (`generation.py`) pour
+            docstring de `conversation_solver.model_args` (`eval_task.py`) pour
             la raison de ce fil explicite : `get_model(nom)` seul ne les
             reçoit pas, puisque `mockllm` est exclu de la mémoïsation par
             inspect.

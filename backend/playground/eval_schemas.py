@@ -1,8 +1,9 @@
 """Modèles pydantic du moteur d'évaluation.
 
-Séparés de `schemas.py`, qui décrit la génération de scénarios : les deux
-phases ne partagent aucune structure, et les mélanger rendrait chaque fichier
-plus difficile à tenir en tête.
+Tout ce que le job lit et écrit passe par ici : la configuration d'un run, ses
+cases, ses juges et leurs notes. Les tables Supabase correspondantes sont
+décrites une à une dans `web/lib/supabase.ts`, et les migrations vivent dans
+`polaris-supabase`.
 """
 
 import re

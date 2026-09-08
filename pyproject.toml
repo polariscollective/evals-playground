@@ -7,7 +7,6 @@ dependencies = [
     # 0.3.263 et pas moins : en 0.3.259, `gpt-6-astra` part en Chat Completions
     # avec `max_tokens` et OpenAI le refuse (« use max_completion_tokens »).
     "inspect-ai>=0.3.263",
-    "inspect-petri>=3.0.11",
     # Providers d'inspect : chacun exige son SDK, sans quoi le modèle
     # échoue silencieusement au premier appel — une colonne vide dans la
     # matrice, sans message d'erreur.
@@ -22,7 +21,6 @@ dependencies = [
     # propre client, sa gestion d'authentification et son moteur de requêtes
     # pour la poignée d'opérations que fait le job.
     "httpx>=0.27",
-    "pyyaml>=6.0",
     "python-dotenv>=1.0",
 ]
 

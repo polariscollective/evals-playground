@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from playground.catalog import known_model_ids
 from playground.eval_schemas import RubricLevel
 from playground.pricing import PRICES
 from playground.scoring import JUDGE_SYSTEM, score_prompt
@@ -35,10 +34,6 @@ def test_un_fichier_partage_manquant_echoue_franchement():
 
 
 # --- les tarifs --------------------------------------------------------------
-
-
-def test_chaque_modele_du_catalogue_a_un_tarif():
-    assert known_model_ids() <= set(PRICES)
 
 
 def test_les_constantes_python_viennent_bien_du_fichier():

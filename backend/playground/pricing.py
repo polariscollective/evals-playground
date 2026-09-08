@@ -8,10 +8,10 @@ jamais être rappelée par le moteur, et chaque changement du devis reposait la
 question de la porter. Elle est partie plutôt que d'y répondre une fois de plus
 — voir `docs/superpowers/specs/2026-09-08-devis-par-role-design.md`.
 
-Ce qui reste tourne vraiment dans le job : la table des tarifs, que `catalog.py`
-lit aussi, et `actual_cost`, qui chiffre les jetons réellement consommés une
-fois le run joué. Aucune hypothèse ici, donc : que des compteurs rapportés par
-les fournisseurs.
+Ce qui reste tourne vraiment dans le job : la table des tarifs, et
+`actual_cost`, qui chiffre les jetons réellement consommés une fois le run
+joué. Aucune hypothèse ici, donc : que des compteurs rapportés par les
+fournisseurs.
 
 Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des quatre
 fournisseurs. Ils changent : `shared/pricing.json` est le seul endroit à mettre

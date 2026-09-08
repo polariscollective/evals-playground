@@ -123,9 +123,9 @@ def conversation_solver(
         started: Appelé quand la case commence réellement, une fois le premier
             jeton de connexion obtenu. Sans lui, une case en vol se lit « à
             faire » et la progression ment.
-        model_args: Arguments de construction transmis à `get_model`. Voir la
-            docstring de `scenario_solver.model_args` (`generation.py`) pour
-            la raison de ce fil explicite : `get_model(nom)` seul ne les
+        model_args: Arguments de construction transmis à `get_model`. C'est
+            ici, et nulle part ailleurs, qu'est écrite la raison de ce fil
+            explicite : `get_model(nom)` seul ne les
             reçoit pas, puisque `mockllm` est exclu de la mémoïsation par
             inspect (les sorties personnalisées peuvent être un générateur à
             état), et qu'un nom de modèle explicite — par opposition à

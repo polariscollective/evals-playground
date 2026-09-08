@@ -589,7 +589,7 @@ def run_batch_job(
         storage: Injectable pour les tests, qui n'ont ainsi ni réseau ni
             bucket.
         model_args: Arguments passés aux modèles. Sert aux tests, avec
-            `mockllm` — voir la docstring de `scenario_solver.model_args`.
+            `mockllm` — voir la docstring de `conversation_solver.model_args` (`eval_task.py`).
 
     Raises:
         ValueError: si `mode` n'est ni `run` ni `catchup`.

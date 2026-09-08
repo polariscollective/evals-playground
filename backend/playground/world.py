@@ -32,7 +32,7 @@ from inspect_ai.model import ChatMessageSystem, ChatMessageUser, Model
 from inspect_ai.tool import Tool, ToolFunction, tool
 
 from playground.eval_schemas import JournalEntry, ToolSpec
-from playground.generation import tool_call_arguments
+from playground.tool_calls import tool_call_arguments
 from playground.shared_data import load
 
 _SHARED = load("world-prompt")
