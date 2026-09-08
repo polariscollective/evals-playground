@@ -9,7 +9,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readConfigFile } from "./config-file.ts";
-import { alreadyAppliedProblem, configProblem, extendProblem, extensionDraftProblem } from "./validate.ts";
+import {
+  alreadyAppliedProblem,
+  configProblem,
+  extendProblem,
+  extensionDraftProblem,
+  worldEquivalenceProblem,
+} from "./validate.ts";
 import { knownModelIds } from "./catalog.ts";
 import type { Draft, EvalRunConfig, ExtendDraft, ExtendRequest } from "./types.ts";
 
@@ -371,6 +377,61 @@ test("models.world hors catalogue est refusé, avant même le premier appel serv
 
 test("aucun outil servi et pas de models.world passe", () => {
   assert.equal(configProblem(configSansOutilServi()), null);
+});
+
+// --- worldEquivalenceProblem, extraite pour retry/catchup (CRITICAL 1) -----
+//
+// `configProblem` refuse une configuration bien plus large — targets,
+// average_output_tokens, l'adversaire — qu'un run enregistré peut violer pour
+// des raisons qui n'ont rien à voir avec `models.world`, et que `retry` et
+// `catchup` ne peuvent de toute façon pas réparer (`ExtendRequest` ne porte
+// pas `average_output_tokens`). Ces deux routes n'ont besoin que de cette
+// équivalence-là, désormais une fonction à part — mêmes cas que
+// `configProblem` ci-dessus, pour vérifier qu'extraire n'a rien changé au
+// jugement lui-même.
+
+test("worldEquivalenceProblem : un outil servi sans models.world est refusé", () => {
+  const config = configAvecOutilServi();
+  delete (config.models as { world?: string }).world;
+  const problem = worldEquivalenceProblem(config);
+  assert.ok(problem?.includes("models.world"));
+});
+
+test("worldEquivalenceProblem : models.world sans outil servi est refusé", () => {
+  const config = configSansOutilServi();
+  (config.models as { world?: string }).world = "openai/gpt-5.6-luna";
+  assert.ok(worldEquivalenceProblem(config)?.includes("models.world"));
+});
+
+test("worldEquivalenceProblem : un outil servi avec models.world passe", () => {
+  assert.equal(worldEquivalenceProblem(configAvecOutilServi()), null);
+});
+
+test("worldEquivalenceProblem : aucun outil servi et pas de models.world passe", () => {
+  assert.equal(worldEquivalenceProblem(configSansOutilServi()), null);
+});
+
+test("worldEquivalenceProblem : un modèle hors catalogue passe — ce n'est pas sa question", () => {
+  // CRITICAL 1 : la validation de lancement entière refuserait ce document
+  // (voir plus haut, "models.world hors catalogue..."), mais un run déjà en
+  // base avec un identifiant devenu invalide n'a besoin que d'être laissé
+  // retenter ou rattraper — la question du catalogue ne regarde que le
+  // lancement et l'extension, pas `retry`/`catchup`.
+  const config = configAvecOutilServi();
+  (config.models as { world?: string }).world = "openai/gpt-5.6-lunar";
+  assert.equal(worldEquivalenceProblem(config), null);
+});
+
+test("worldEquivalenceProblem : un run par ailleurs invalide (average_output_tokens manquant) passe quand même", () => {
+  // C'est exactement le run que CRITICAL 1 vise à débloquer : `configProblem`
+  // le refuse (voir average_output_tokens plus haut), le job l'accepte
+  // (`average_output_tokens: int | None = None`, eval_schemas.py), et
+  // `worldEquivalenceProblem` — la seule question que `retry`/`catchup`
+  // posent — ne doit pas emprunter le refus de l'autre.
+  const config = configAvecOutilServi();
+  delete (config as { average_output_tokens?: number }).average_output_tokens;
+  assert.ok(configProblem(config)?.includes("average_output_tokens"));
+  assert.equal(worldEquivalenceProblem(config), null);
 });
 
 // --- les brouillons d'extension -------------------------------------------

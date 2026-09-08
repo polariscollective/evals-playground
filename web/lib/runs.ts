@@ -1152,12 +1152,8 @@ export async function failToStart(runId: string, reason: string): Promise<void> 
  *
  * Renvoie le nombre de cases remises en jeu, zéro s'il n'y en avait aucune. */
 export async function retryFailed(runId: string): Promise<number> {
-  const failed = await select<{ id: string }>(SAMPLES, {
-    select: "id",
-    run_id: `eq.${runId}`,
-    status: "eq.error",
-  });
-  if (failed.length === 0) return 0;
+  const count = await failedCellCount(runId);
+  if (count === 0) return 0;
 
   await update(
     SAMPLES,
@@ -1175,6 +1171,23 @@ export async function retryFailed(runId: string): Promise<number> {
     { status: "triggered", error: null, finished_at: null },
     { id: `eq.${runId}` },
   );
+  return count;
+}
+
+/** Combien de cases de ce run sont en erreur — sans rien changer.
+ *
+ * Séparée de `retryFailed` (CRITICAL 1) : la route doit savoir s'il y a
+ * quelque chose à retenter *avant* de décider si la configuration du run le
+ * permet encore, et `retryFailed` mute dès qu'elle rend un compte non nul —
+ * l'appeler seulement pour compter aurait déjà remis les cases en `pending`
+ * et le run en `triggered` avant même de savoir si le job pourrait démarrer,
+ * laissant un run coincé `triggered` si le refus tombait ensuite. */
+export async function failedCellCount(runId: string): Promise<number> {
+  const failed = await select<{ id: string }>(SAMPLES, {
+    select: "id",
+    run_id: `eq.${runId}`,
+    status: "eq.error",
+  });
   return failed.length;
 }
 

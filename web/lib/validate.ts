@@ -263,6 +263,44 @@ export function historyProblem(history: unknown, where: string): string | null {
   return null;
 }
 
+/** Ce qui cloche dans l'équivalence outil-servi / `models.world`, ou null si
+ *  elle tient.
+ *
+ * Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien à
+ * servir est un réglage sans effet, et un réglage sans effet est pire
+ * qu'absent — on le relit plus tard en se demandant s'il a compté. Miroir du
+ * refus Python dans `_monde_et_service_equivalents`, voir
+ * `backend/playground/eval_schemas.py`.
+ *
+ * Extraite de `configProblem` (CRITICAL 1) : `retry` et `catchup` doivent
+ * refuser exactement ce que le job refuserait au même titre — cette
+ * équivalence-là, et rien de plus — plutôt que la validation de lancement
+ * entière, bien plus stricte (`average_output_tokens`, notamment, que le job
+ * accepte absent sur un run enregistré avant ce champ). `configProblem` reste
+ * l'unique appelant qui doit tout vérifier ; `retry` et `catchup` n'ont besoin
+ * que de celle-ci, et l'appellent désormais directement — une définition,
+ * trois appelants. */
+export function worldEquivalenceProblem(
+  config: Pick<EvalRunConfig, "tools" | "models">,
+): string | null {
+  const sert = servesTools(config.tools ?? []);
+  const monde = isFilled(config.models?.world);
+  if (sert && !monde) {
+    return (
+      "models.world: this run serves at least one tool, so it needs a model to " +
+      "answer those calls. Pick one from the models listed in /prompt."
+    );
+  }
+  if (!sert && monde) {
+    return (
+      "models.world: no tool in this run has retrieval_rules, so nothing is " +
+      "served and this model would never be called. Remove it, or give a tool " +
+      "reading rules."
+    );
+  }
+  return null;
+}
+
 /** Ce qui cloche dans une configuration de run, ou null si elle tient. */
 export function configProblem(config: unknown): string | null {
   if (!config || typeof config !== "object") return "config must be an object";
@@ -373,25 +411,10 @@ export function configProblem(config: unknown): string | null {
   const worldModel = modelProblem(c.models?.world, "world model");
   if (worldModel) return worldModel;
 
-  // L'équivalence, dans les deux sens. Servir sans modèle ne répondrait à
-  // rien ; nommer un modèle sans rien à servir est un réglage sans effet, et
-  // un réglage sans effet est pire qu'absent — on le relit plus tard en se
-  // demandant s'il a compté.
-  const sert = servesTools(c.tools ?? []);
-  const monde = isFilled(c.models?.world);
-  if (sert && !monde) {
-    return (
-      "models.world: this run serves at least one tool, so it needs a model to " +
-      "answer those calls. Pick one from the models listed in /prompt."
-    );
-  }
-  if (!sert && monde) {
-    return (
-      "models.world: no tool in this run has retrieval_rules, so nothing is " +
-      "served and this model would never be called. Remove it, or give a tool " +
-      "reading rules."
-    );
-  }
+  // L'équivalence, dans les deux sens — voir `worldEquivalenceProblem`, qui
+  // porte seule cette règle désormais.
+  const worldEquivalence = worldEquivalenceProblem(c);
+  if (worldEquivalence) return worldEquivalence;
 
   const temperature = temperatureProblem(c.temperature);
   if (temperature) return temperature;
