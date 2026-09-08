@@ -105,9 +105,15 @@ export interface ServedSummary {
 
 /** Le voyant du run, compté sur les lignes elles-mêmes.
  *
- * Quatre issues séparées et jamais fondues, comme partout ailleurs dans ce
- * produit : contrôlé et conforme, contrôlé et fautif, jamais tenté, tenté
- * sans aboutir. */
+ * Cinq issues séparées et jamais fondues, comme partout ailleurs dans ce
+ * produit : contrôlé et conforme, contrôlé et fautif, jamais tenté, tenté sans
+ * aboutir, et — depuis le monde qui change — servi malgré une réparation
+ * échouée. La cinquième est un sous-ensemble de la deuxième, et c'est la seule
+ * qui le soit : `repaired` compte des lignes que `unfaithful` compte aussi. La
+ * confondre avec une sixième catégorie ferait annoncer deux fois la même faute.
+ *
+ * `sameFamily` n'est pas une issue mais une circonstance : elle dit dans quelles
+ * conditions le verdict a été rendu, pas ce qu'il vaut. */
 export function servedSummary(rows: ToolResultRow[]): ServedSummary {
   const échouées = rows.filter(
     (row) => row.faithful === null && Boolean(row.check_error),
