@@ -145,6 +145,14 @@ def check_served_results(
     restent `faithful` nul, et une passe ultérieure les reprendra — en disant
     dans `check_error` pourquoi la tentative précédente n'a pas abouti.
 
+    La promesse tient sur toute la fonction, pas seulement sur `check()` : la
+    lecture de ce qui reste à contrôler, la construction du contrôleur et
+    l'écriture du verdict peuvent chacune lever — une panne Supabase
+    passagère, un `models.world` qui ne désigne plus un fournisseur connu —
+    et aucune ne doit remonter jusqu'à l'appelant, qui finirait le run en
+    erreur (voir C2/B2 : c'est exactement ce que ce garde-fou existe pour
+    éviter).
+
     Returns:
         Combien de lignes ont reçu un verdict.
     """
@@ -154,11 +162,24 @@ def check_served_results(
     if not any(tool.served for tool in config.tools):
         return 0
 
-    à_faire = unchecked_tool_results(supabase, run_id)
+    try:
+        à_faire = unchecked_tool_results(supabase, run_id)
+    except Exception:
+        # Ne pas savoir dire ce qui reste à contrôler ne doit pas non plus
+        # faire tomber le run : une passe ultérieure retentera cette lecture.
+        return 0
     if not à_faire:
         return 0
 
-    modèle = get_model(check_model_for(config.models.world), **(model_args or {}))
+    try:
+        modèle = get_model(check_model_for(config.models.world), **(model_args or {}))
+    except Exception:
+        # Un contrôleur qu'on ne sait pas construire — clé absente,
+        # identifiant devenu invalide — ne doit pas non plus faire tomber le
+        # run : les lignes restent à contrôler, une passe ultérieure les
+        # reprendra une fois le fournisseur réparé.
+        return 0
+
     contrôlées = 0
     for ligne in à_faire:
         index = int(ligne["scenario_index"])
@@ -205,15 +226,21 @@ def check_served_results(
                 # son tour.
                 pass
             continue
-        write_tool_verdict(
-            supabase,
-            run_id,
-            index,
-            str(ligne["tool_name"]),
-            str(ligne["arguments_hash"]),
-            faithful=fidèle,
-            fault=faute,
-        )
+        try:
+            write_tool_verdict(
+                supabase,
+                run_id,
+                index,
+                str(ligne["tool_name"]),
+                str(ligne["arguments_hash"]),
+                faithful=fidèle,
+                fault=faute,
+            )
+        except Exception:
+            # Symétrique de l'écriture de la raison, juste au-dessus : écrire
+            # le verdict peut échouer comme écrire l'erreur peut échouer. La
+            # ligne reste `faithful` nul, une passe ultérieure la reprendra.
+            continue
         contrôlées += 1
     return contrôlées
 

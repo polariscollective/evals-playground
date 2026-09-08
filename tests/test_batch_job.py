@@ -1420,3 +1420,68 @@ def test_une_ecriture_de_raison_qui_leve_ne_fait_pas_tomber_le_controle(monkeypa
 
     # Ne doit pas lever, malgré l'échec de `write_tool_check_error` lui-même.
     assert check_served_results(supabase, "run-1", config) == 0
+
+
+# --- la promesse porte sur toute la fonction, pas seulement sur `check()` --
+#
+# MINOR de la revue finale du chantier : la docstring promettait déjà « ne
+# fait jamais tomber le run » sur toute la fonction, mais trois lectures et
+# écritures externes restaient sans garde — `unchecked_tool_results`,
+# `get_model(check_model_for(...))` et `write_tool_verdict`. Trois tests, un
+# par appel non protégé.
+
+
+class _SupabaseQuiRefuseLaLecture:
+    """Un magasin dont la lecture même des lignes à contrôler lève."""
+
+    def select(self, table, **params):
+        raise RuntimeError("supabase indisponible")
+
+    def update(self, table, values, **filters):  # pragma: no cover
+        raise AssertionError("aucun verdict ne doit être écrit ici")
+
+
+def test_la_lecture_des_lignes_a_controler_qui_leve_ne_fait_pas_tomber_le_controle():
+    """`unchecked_tool_results` n'était pas gardée : une panne Supabase
+    passagère à cette lecture ne doit pas faire tomber le run, pas plus
+    qu'une panne au contrôle lui-même."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseQuiRefuseLaLecture()
+
+    assert check_served_results(supabase, "run-1", config) == 0
+
+
+def test_la_construction_du_controleur_qui_leve_ne_fait_pas_tomber_le_controle(
+    monkeypatch,
+):
+    """Même garde pour `get_model(check_model_for(...))` : un `models.world`
+    qui ne désigne plus un fournisseur connu, ou une clé absente chez celui du
+    contrôleur, ne doit pas non plus faire tomber le run."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseAControler([_LIGNE_A_CONTROLER])
+
+    def leve(*args, **kwargs):
+        raise RuntimeError("fournisseur inconnu")
+
+    monkeypatch.setattr("playground.batch_job.get_model", leve)
+
+    assert check_served_results(supabase, "run-1", config) == 0
+    assert supabase.updates == []
+
+
+def test_l_ecriture_du_verdict_qui_leve_ne_fait_pas_tomber_le_controle(monkeypatch):
+    """Symétrique du test C2 plus haut, côté succès cette fois : si le
+    contrôle réussit mais que `write_tool_verdict` lève à son tour,
+    `check_served_results` ne doit pas non plus laisser l'exception remonter
+    — la ligne reste `faithful` nul, une passe ultérieure la reprendra."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseQuiRefuseAussiLecriture([_LIGNE_A_CONTROLER])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    async def reussit(**kwargs):
+        return True, ""
+
+    monkeypatch.setattr("playground.batch_job.check", reussit)
+
+    # Ne doit pas lever, malgré l'échec de `write_tool_verdict` lui-même.
+    assert check_served_results(supabase, "run-1", config) == 0
