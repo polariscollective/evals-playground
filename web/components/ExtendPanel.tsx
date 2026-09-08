@@ -27,12 +27,16 @@ import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
 import { estimateExtension } from "@/lib/extend-estimate";
+import {
+  buildExtendRequest,
+  needsWorldModel as computeNeedsWorldModel,
+} from "@/lib/extend-request";
 import { withLiveJudges } from "@/lib/live-config";
 import type { JudgeForConfig } from "@/lib/live-config";
 import { measureRun } from "@/lib/measured-length";
 import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
-import { resolvedWorld, servesTools } from "@/lib/tools";
+import { resolvedWorld } from "@/lib/tools";
 import { MAX_TURNS } from "@/lib/validate";
 import { extendWorldWarnings } from "@/lib/world-warnings";
 import type {
@@ -263,15 +267,17 @@ export function ExtendPanel({
   // concernés par la question, les autres ayant déjà leur liste écrite.
   const aHériter = config.scenarios.filter((scenario) => scenario.tools == null);
 
-  // Le run a-t-il déjà un modèle qui sert ? Nommé une fois — repris plus bas
-  // pour décider si le champ a une raison d'exister, et si la demande doit
-  // porter `world`.
-  const hasWorldModel = Boolean(config.models.world?.trim());
   // Le seul cas où il y a quelque chose à demander : le run n'a personne pour
   // servir, et l'union de ce qu'il sert déjà et de ce que l'extension ajoute
   // sert quelque chose — pas seulement `newTools` : un run lancé avant ce
   // chantier peut déjà servir sans le nommer (voir `extendProblem`, A1).
-  const needsWorldModel = !hasWorldModel && servesTools([...(config.tools ?? []), ...newTools]);
+  //
+  // Calculée par `lib/extend-request.ts`, jamais recopiée ici : c'est cette
+  // même fonction que `buildExtendRequest` interroge pour décider si la
+  // demande porte `world`, afin que l'écran et la demande ne puissent plus se
+  // désaccorder — voir le commentaire de tête de ce module pour ce que le
+  // désaccord a coûté une fois.
+  const needsWorldModel = computeNeedsWorldModel(config, newTools);
   const worldModelWarnings = extendWorldWarnings(
     { new_tools: newTools, new_tools_for_existing: forExisting ?? undefined },
     config,
@@ -389,51 +395,26 @@ export function ExtendPanel({
   };
 
   // Le contenu de la demande, tel qu'il est là — utilisé pour confirmer et
-  // pour enregistrer un brouillon, seule différence entre les deux.
-  //
-  // `new_tools_for_existing` n'est écrit que si la question a été répondue :
-  // l'absence de clé et `true` se lisent pareil pour le serveur (voir
-  // `extendRun`), donc rien ne change pour la confirmation, où le bouton
-  // garantit déjà une réponse. Mais un brouillon peut la laisser en suspens,
-  // et il faut alors que la relire retrouve « pas encore répondu » plutôt
-  // qu'un `true` que personne n'a choisi.
-  const buildRequest = (): ExtendRequest => {
-    const min = tempMin.trim() === "" ? null : Number(tempMin);
-    return {
-      scenario_indices: indices,
-      new_scenarios: newScenarios,
+  // pour enregistrer un brouillon, seule différence entre les deux. Composée
+  // par `buildExtendRequest` (`lib/extend-request.ts`), pas ici : c'est la
+  // partie pure de cette fermeture, extraite pour se tester sans monter de
+  // composant — voir son commentaire de tête pour l'histoire de `world`, qui
+  // vivait ici même sous une forme qui pouvait se désaccorder de
+  // `needsWorldModel`.
+  const buildRequest = (): ExtendRequest =>
+    buildExtendRequest(config, {
+      indices,
+      newScenarios,
       targets,
       repetitions,
-      temperature:
-        min === null
-          ? null
-          : { min, max: tempMax.trim() === "" ? null : Number(tempMax) },
-      ...(newTools.length > 0
-        ? {
-            new_tools: newTools,
-            ...(forExisting !== null
-              ? { new_tools_for_existing: forExisting }
-              : {}),
-          }
-        : {}),
-      // Indépendant de `newTools` (CRITICAL 2) : un run antérieur à ce champ
-      // peut déjà servir sans le nommer, et alors `needsWorldModel` vaut vrai
-      // sans qu'aucun outil ne soit ajouté — c'est précisément le cas que A1
-      // a ouvert. Nichée sous `newTools.length > 0`, cette clé disparaissait
-      // de la demande dans ce cas précis : l'écran montrait le champ, forçait
-      // à le remplir, puis l'omettait — et le serveur refusait avec le
-      // message même qu'A1 avait réécrit pour lui dire de rouvrir ici. Seul
-      // `needsWorldModel` décide ; un run qui sert déjà impose silencieusement
-      // son modèle (`extendRun`), et lui en envoyer un autre serait refusé
-      // pour rien — d'où la même condition, jamais recalculée.
-      ...(needsWorldModel ? { world: worldModel } : {}),
-      // Absent laisse la profondeur telle quelle : envoyer la valeur de
-      // départ quand rien n'a changé n'apprendrait rien au serveur qu'il ne
-      // sache déjà.
-      ...(turns !== config.turns ? { turns } : {}),
-      ...(deepen !== null ? { deepen } : {}),
-    };
-  };
+      tempMin,
+      tempMax,
+      newTools,
+      forExisting,
+      worldModel,
+      turns,
+      deepen,
+    });
 
   const submit = async () => {
     setError("");
