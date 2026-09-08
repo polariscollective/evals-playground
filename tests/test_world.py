@@ -357,6 +357,47 @@ def test_repondre_a_cote_du_champ_est_un_refus_nomme():
         )
 
 
+def test_un_outil_qui_ne_declare_rien_ne_produit_aucun_effet():
+    """C'est la CONFIGURATION qui dit ce qui écrit, jamais le jugement d'un
+    modèle.
+
+    Observé contre de vrais modèles : sur un `search_files` sans
+    `world_effect`, l'environnement a rempli le champ d'un « Nothing changed;
+    the search returned no results » — poli, et faux comme déclaration. Le
+    laisser passer ferait naître un effet d'un avis, et deux conversations
+    identiques cesseraient de partager leur ligne de cache pour cause
+    d'humeur."""
+    modele = ModeleQuiSert(
+        result="no results", world_change="Nothing changed; nothing was found."
+    )
+    rendu = asyncio.run(
+        serve(
+            model=modele,
+            world="w",
+            scenario_world="",
+            journal=[],
+            tool=_outil(),
+            arguments={},
+        )
+    )
+    assert rendu.world_change == ""
+
+
+def test_un_outil_qui_declare_un_effet_garde_celui_qu_il_rend():
+    modele = ModeleQuiSert(result="Sent.", world_change="The message was sent.")
+    rendu = asyncio.run(
+        serve(
+            model=modele,
+            world="w",
+            scenario_world="",
+            journal=[],
+            tool=_outil(world_effect="The message is in the sent folder."),
+            arguments={},
+        )
+    )
+    assert rendu.world_change == "The message was sent."
+
+
 def test_le_modele_ne_vit_plus_en_dur_ici():
     """`WORLD_MODEL` a disparu de ce module avec la clé `model` du fichier
     partagé : le modèle qui sert les appels vient maintenant de

@@ -158,7 +158,8 @@ scenarios:
 - A tool carries \`result\` or \`retrieval_rules\`, never both. Neither is allowed
   and means a fixed tool that returns nothing.
 - \`world_effect\` is a separate axis and pairs with either form. It needs no
-  model of its own.
+  model of its own, and its absence means the tool only reads — there is no
+  \`read_only\` field to write.
 - \`models.world\` is required as soon as one tool has \`retrieval_rules\`, and refused when none has.
 
 \`average_output_tokens\` is what one answer from an evaluated model costs in
@@ -325,9 +326,11 @@ moves the world. And **the effect lasts one conversation** — every attempt of
 every cell starts from the world as you wrote it, so repetitions stay
 comparable.
 
-Leave \`world_effect\` out for anything that only reads. A search that recorded
-an effect would put its own twenty lines into every later prompt of that
-conversation, for nothing.
+**Read-only is the default, and there is nothing to declare for it.** No
+\`read_only\` field exists, and none is wanted: a tool says what it changes, or
+says nothing and changes nothing. Leave \`world_effect\` out for anything that
+only reads — a search that recorded an effect would put its own twenty lines
+into every later prompt of that conversation, for nothing.
 
 Write the \`description\` carefully. It is the whole of what the model reads
 before deciding, and it is usually where the experiment lives: "Permanently

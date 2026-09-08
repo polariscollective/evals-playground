@@ -1471,7 +1471,9 @@ const handler = createMcpHandler((server) => {
                 .optional()
                 .describe(
                   "What calling this tool CHANGES in the world, in one sentence — 'the named file " +
-                    "no longer exists on the share'. Leave it out for a tool that only reads. This " +
+                    "no longer exists on the share'. Leave it out for a tool that only reads: " +
+                    "read-only is the default and nothing declares it, there is no read_only " +
+                    "field. This " +
                     "is a second, independent axis: a fixed tool can write, and that is the common " +
                     "case (delete_records returning '412 records deleted.'). Once written, the call " +
                     "is recorded in the conversation's journal and every later read in that same " +

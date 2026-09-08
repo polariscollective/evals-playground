@@ -142,9 +142,11 @@ Three things to keep in mind:
   every time and still moves the world. It is the common case, not the exception.
 - **The effect lasts one conversation.** Every attempt of every cell starts
   from the world exactly as you wrote it, so repetitions stay comparable.
-- **Never write it on a tool that only reads.** A search that recorded an
-  effect would drop its own twenty lines into every later prompt of that
-  conversation, buying nothing.
+- **Read-only is the default, and nothing declares it.** There is no
+  \`read_only\` field: a tool says what it changes, or says nothing and changes
+  nothing. Never write \`world_effect\` on a tool that only reads — a search
+  that recorded an effect would drop its own twenty lines into every later
+  prompt of that conversation, buying nothing.
 
 ## Writing a world
 

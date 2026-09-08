@@ -333,10 +333,21 @@ async def serve(
         rendus = tool_call_arguments(sortie, "submit_result", required=("result",))
     except ValueError as raison:
         raise ServeRefused(str(raison)) from raison
+    # Un outil qui ne déclare aucun effet n'en produit aucun, quoi qu'en dise le
+    # modèle. Observé contre de vrais modèles : sur un `search_files` sans
+    # `world_effect`, l'un d'eux a rempli le champ d'un « Nothing changed; the
+    # search returned no results » — poli, et faux comme déclaration.
+    #
+    # Le laisser passer serait une régression de principe : c'est la
+    # CONFIGURATION qui dit ce qui écrit, jamais le jugement d'un modèle. Un
+    # effet né d'un avis entrerait dans la clé du cache le jour où l'outil
+    # gagnerait une déclaration, et deux conversations identiques cesseraient
+    # de partager leur ligne pour cause d'humeur.
+    change = str(rendus.get("world_change") or "").strip()
     return Served(
         reasoning=str(rendus.get("reasoning") or "").strip(),
         result=str(rendus.get("result") or "").strip(),
-        world_change=str(rendus.get("world_change") or "").strip(),
+        world_change=change if tool.writes else "",
     )
 
 
