@@ -1,6 +1,6 @@
 """The environment model: what it receives, and what is kept of it.
 
-Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md puis
+See docs/superpowers/specs/2026-09-07-le-monde-des-outils.md, then
 docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
 """
 
@@ -105,8 +105,8 @@ def test_the_scenario_block_is_named_and_declared_to_take_priority():
     """That is what makes negation safe: a correction to apply, not a
     contradiction to untangle."""
     _, message = world_prompt(
-        world="contracts/2026-03-vandenberghe.pdf existe.",
-        scenario_world="Le contrat Vandenberghe n'est pas sur ce lecteur.",
+        world="contracts/2026-03-vandenberghe.pdf exists.",
+        scenario_world="The Vandenberghe contract is not on this drive.",
         journal=[],
         tool=_tool(),
         arguments={"query": "Vandenberghe"},
@@ -128,11 +128,11 @@ def test_the_model_does_not_see_the_conversation():
             journal=[],
             tool=_tool(),
             arguments={},
-            transcript=["quoi que ce soit"],
+            transcript=["anything at all"],
         )
 
 
-# --- Le journal -----------------------------------------------------------
+# --- The journal ----------------------------------------------------------
 
 
 def test_an_empty_journal_writes_no_block():
@@ -176,7 +176,7 @@ def test_an_entry_with_no_effect_does_not_write_the_line():
 
 
 def test_the_tools_declared_effect_reaches_the_model():
-    """Sans quoi il n'aurait aucune consigne pour remplir `world_change`."""
+    """Without it, it would have no instruction for filling in `world_change`."""
     _, message = world_prompt(
         world="w",
         scenario_world="",
@@ -241,7 +241,7 @@ def test_the_fingerprint_fits_in_a_column():
 
 
 def test_the_order_of_arguments_does_not_change_the_key():
-    """Sans quoi deux appels identiques rateraient le cache, et deux
+    """Without it, two identical calls would miss the cache, and two
     repetitions of the same scenario would see two different worlds."""
     assert arguments_key({"a": 1, "b": 2}) == arguments_key({"b": 2, "a": 1})
 
@@ -271,7 +271,7 @@ def test_serving_returns_the_three_fields():
         reasoning="deux fichiers correspondent",
         world_change="",
     )
-    rendu = asyncio.run(
+    returned = asyncio.run(
         serve(
             model=model,
             world="deux contrats",
@@ -281,9 +281,9 @@ def test_serving_returns_the_three_fields():
             arguments={"query": "contracts"},
         )
     )
-    assert rendu.result == "contracts/2026-03.pdf\ncontracts/2026-04.pdf"
-    assert rendu.reasoning == "deux fichiers correspondent"
-    assert rendu.world_change == ""
+    assert returned.result == "contracts/2026-03.pdf\ncontracts/2026-04.pdf"
+    assert returned.reasoning == "deux fichiers correspondent"
+    assert returned.world_change == ""
     assert model.calls == 1
 
 
@@ -293,7 +293,7 @@ def test_the_reasoning_does_not_leak_into_the_result():
     model = ServingModel(
         result="404 Not Found", reasoning="le monde ne contient pas ce fichier"
     )
-    rendu = asyncio.run(
+    returned = asyncio.run(
         serve(
             model=model,
             world="w",
@@ -303,15 +303,15 @@ def test_the_reasoning_does_not_leak_into_the_result():
             arguments={},
         )
     )
-    assert rendu.result == "404 Not Found"
-    assert "monde" not in rendu.result
+    assert returned.result == "404 Not Found"
+    assert "monde" not in returned.result
 
 
 def test_serving_strips_edge_whitespace():
     """A model that wraps its output in line breaks would produce a tool result
     that looks like no real interface at all."""
     model = ServingModel(result="\n\n  404 Not Found\n\n")
-    rendu = asyncio.run(
+    returned = asyncio.run(
         serve(
             model=model,
             world="w",
@@ -321,13 +321,13 @@ def test_serving_strips_edge_whitespace():
             arguments={},
         )
     )
-    assert rendu.result == "404 Not Found"
+    assert returned.result == "404 Not Found"
 
 
 def test_an_empty_result_is_still_an_answer():
-    """That of a search with no results. `submit_result` was called: the
-    forme est bonne, et ce n'est pas un `ServeRefused`."""
-    rendu = asyncio.run(
+    """That of a search with no results. `submit_result` was called: the shape
+    is right, and this is not a `ServeRefused`."""
+    returned = asyncio.run(
         serve(
             model=ServingModel(result=""),
             world="w",
@@ -337,14 +337,14 @@ def test_an_empty_result_is_still_an_answer():
             arguments={},
         )
     )
-    assert rendu.result == ""
+    assert returned.result == ""
 
 
 def test_answering_beside_the_field_is_a_named_refusal():
     """The category closing the output creates: the call succeeded, it is the
-    shape that
-    manque. L'appelant en fait une reprise, puis tue l'essai — il ne sert
-    jamais cette prose, qui est le tell qu'on ferme."""
+    shape that is missing. The caller turns it into one retry, then kills the
+    attempt — it never serves that prose, which is the very tell being shut
+    out."""
     with pytest.raises(ServeRefused):
         asyncio.run(
             serve(
@@ -363,16 +363,15 @@ def test_a_tool_that_declares_nothing_produces_no_effect():
     judgement.
 
     Observed against real models: on a `search_files` with no
-    `world_effect`, l'environnement a rempli le champ d'un « Nothing changed;
+    `world_effect`, the environment filled the field with "Nothing changed;
     the search returned no results" — polite, and false as a declaration.
     Letting it through would let an effect be born of an opinion, and two
-    conversations
-    identiques cesseraient de partager leur ligne de cache pour cause
-    d'humeur."""
+    identical conversations would stop sharing their cache row on a matter of
+    mood."""
     model = ServingModel(
         result="no results", world_change="Nothing changed; nothing was found."
     )
-    rendu = asyncio.run(
+    returned = asyncio.run(
         serve(
             model=model,
             world="w",
@@ -382,12 +381,12 @@ def test_a_tool_that_declares_nothing_produces_no_effect():
             arguments={},
         )
     )
-    assert rendu.world_change == ""
+    assert returned.world_change == ""
 
 
 def test_a_tool_that_declares_an_effect_keeps_the_one_it_returns():
     model = ServingModel(result="Sent.", world_change="The message was sent.")
-    rendu = asyncio.run(
+    returned = asyncio.run(
         serve(
             model=model,
             world="w",
@@ -397,7 +396,7 @@ def test_a_tool_that_declares_an_effect_keeps_the_one_it_returns():
             arguments={},
         )
     )
-    assert rendu.world_change == "The message was sent."
+    assert returned.world_change == "The message was sent."
 
 
 def test_the_model_is_no_longer_hard_coded_here():
@@ -504,7 +503,7 @@ def test_the_check_does_not_receive_the_servers_reasoning():
 
 def test_a_coherent_result_passes():
     model = CheckingModel(faithful=True)
-    fidele, fault = asyncio.run(
+    faithful, fault = asyncio.run(
         check(
             model=model,
             world="w",
@@ -514,13 +513,13 @@ def test_a_coherent_result_passes():
             result="r",
         )
     )
-    assert fidele is True
+    assert faithful is True
     assert fault == ""
 
 
 def test_an_incoherent_result_comes_back_with_its_reason():
     model = CheckingModel(faithful=False, fault="invented a file")
-    fidele, fault = asyncio.run(
+    faithful, fault = asyncio.run(
         check(
             model=model,
             world="w",
@@ -530,16 +529,16 @@ def test_an_incoherent_result_comes_back_with_its_reason():
             result="r",
         )
     )
-    assert fidele is False
+    assert faithful is False
     assert fault == "invented a file"
 
 
 def test_a_fault_with_no_reason_is_given_one():
-    """La base refuse `faithful = false` avec une raison vide, et le voyant du
-    run would tell whoever drills in nothing. The reason now serves twice: it
+    """The database refuses `faithful = false` with an empty reason, and the
+    run indicator would tell whoever drills in nothing. The reason now serves twice: it
     is recorded, and it goes back to the server for its one repair."""
     model = CheckingModel(faithful=False, fault="")
-    fidele, fault = asyncio.run(
+    faithful, fault = asyncio.run(
         check(
             model=model,
             world="w",
@@ -549,7 +548,7 @@ def test_a_fault_with_no_reason_is_given_one():
             result="r",
         )
     )
-    assert fidele is False
+    assert faithful is False
     assert fault
 
 

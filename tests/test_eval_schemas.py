@@ -87,13 +87,13 @@ def test_a_one_shot_does_not_demand_an_adversary():
 
 
 def test_multi_turn_requires_an_adversary_model():
-    with pytest.raises(ValidationError) as erreur:
+    with pytest.raises(ValidationError) as error:
         _config(turns=3, adversary_prompt="Tu veux obtenir…")
-    assert "adversary" in str(erreur.value).lower()
+    assert "adversary" in str(error.value).lower()
 
 
 def test_multi_turn_requires_an_adversary_prompt():
-    with pytest.raises(ValidationError) as erreur:
+    with pytest.raises(ValidationError) as error:
         _config(
             turns=3,
             models=EvalModels(
@@ -102,7 +102,7 @@ def test_multi_turn_requires_an_adversary_prompt():
                 judge="mockllm/model",
             ),
         )
-    assert "prompt" in str(erreur.value)
+    assert "prompt" in str(error.value)
 
 
 def test_a_complete_multi_turn_is_accepted():
@@ -134,9 +134,9 @@ def test_no_cap_on_repetitions():
 
 
 def test_an_upper_bound_below_the_lower_one_is_refused():
-    with pytest.raises(ValidationError) as erreur:
+    with pytest.raises(ValidationError) as error:
         TemperatureSpec(min=1.2, max=0.7)
-    assert "below" in str(erreur.value).lower()
+    assert "below" in str(error.value).lower()
 
 
 def test_a_valid_temperature_range_is_accepted():
@@ -149,8 +149,8 @@ def test_a_single_temperature_leaves_the_upper_bound_empty():
 
 
 def test_a_missing_grade_is_allowed():
-    # Une conversation que le juge n'a pas pu noter reste une conversation :
-    # c'est ce qui la rend visible comme trou dans la matrice.
+    # A conversation the judge could not grade is still a conversation:
+    # that is what makes it visible as a hole in the matrix.
     conversation = Conversation(conversation_id="c1", repetition=0)
     assert conversation.score is None
 
@@ -163,21 +163,22 @@ def test_a_scale_of_fewer_than_two_levels_is_refused():
 
 
 def test_two_levels_with_the_same_grade_are_refused():
-    # Le juge choisit une valeur, et c'est par elle qu'on retrouve le sens
+    # The judge chooses a value, and it is by that value that the meaning is
+    # found again,
     # given to it: two levels at `1` would make the grade ambiguous at the
     # precise moment one is trying to read it back.
     with pytest.raises(ValidationError):
         _config(
             rubric=[
-                RubricLevel(value=1, meaning="a tenu"),
+                RubricLevel(value=1, meaning="held"),
                 RubricLevel(value=1, meaning="gave in"),
             ]
         )
 
 
 def test_a_level_with_no_explanation_is_refused():
-    # Une note sans son sens ne se relit pas, et le juge ne saurait pas quand
-    # la choisir.
+    # A grade without its meaning cannot be read back, and the judge would
+    # not know when to choose it.
     with pytest.raises(ValidationError):
         _config(
             rubric=[
@@ -203,22 +204,22 @@ def test_a_scale_may_carry_fractional_grades():
 
 def test_an_empty_target_is_refused():
     """An evaluated model in the targets list must not accept an empty string."""
-    with pytest.raises(ValidationError) as erreur:
+    with pytest.raises(ValidationError) as error:
         _config(models=EvalModels(targets=[""], judge="mockllm/model"))
-    # Le message d'erreur vient de notre validateur (en anglais), on teste juste le refus
-    assert "target" in str(erreur.value).lower()
+    # The error message comes from our own validator; we only test the refusal
+    assert "target" in str(error.value).lower()
 
 
 def test_an_empty_judge_is_refused():
     """The judge field must not accept an empty string."""
-    with pytest.raises(ValidationError) as erreur:
+    with pytest.raises(ValidationError) as error:
         _config(models=EvalModels(targets=["mockllm/model"], judge=""))
-    assert "judge" in str(erreur.value).lower()
+    assert "judge" in str(error.value).lower()
 
 
 def test_an_empty_adversary_is_refused():
     """If adversary is given, it must not be an empty string."""
-    with pytest.raises(ValidationError) as erreur:
+    with pytest.raises(ValidationError) as error:
         _config(
             turns=3,
             adversary_prompt="Tu veux obtenir…",
@@ -226,7 +227,7 @@ def test_an_empty_adversary_is_refused():
                 targets=["mockllm/model"], adversary="", judge="mockllm/model"
             ),
         )
-    assert "adversary" in str(erreur.value).lower()
+    assert "adversary" in str(error.value).lower()
 
 
 def test_a_missing_adversary_is_allowed():
@@ -318,7 +319,7 @@ def test_an_empty_evaluated_model_is_refused():
 
 
 def test_a_duplicated_evaluated_model_is_refused():
-    # Deux colonnes identiques dans la matrice : on ne saurait pas laquelle lire.
+    # Two identical columns in the matrix: nobody would know which to read.
     with pytest.raises(ValidationError):
         EvalModels(targets=["a/1", "a/1"], judge="m")
 
@@ -455,7 +456,8 @@ def test_an_ordinary_judge_with_no_criterion_is_refused():
 
 
 def test_an_ordinary_judge_with_no_scale_is_refused():
-    # criterion et rubric voyagent ensemble : l'un sans l'autre ne se relit pas.
+    # criterion and rubric travel together: one without the other cannot be
+    # read back.
     with pytest.raises(ValidationError):
         Judge(
             id="j5",
@@ -524,7 +526,7 @@ def test_a_secondary_judge_with_two_levels_of_the_same_grade_is_refused():
         JudgeSpec(
             criterion="q",
             rubric=[
-                RubricLevel(value=1, meaning="a tenu"),
+                RubricLevel(value=1, meaning="held"),
                 RubricLevel(value=1, meaning="gave in"),
             ],
         )
@@ -537,7 +539,7 @@ def test_a_secondary_judge_with_too_short_a_scale_is_refused():
 
 def test_a_config_with_no_secondary_judges_stays_valid():
     # The old shape — a criterion and a scale at the top level — describes
-    # le principal et n'a jamais besoin de la liste des secondaires.
+    # the principal, and never needs the list of secondary ones.
     config = _config()
     assert config.judges == []
 
@@ -558,25 +560,25 @@ def test_a_config_may_lay_down_several_judges_at_once():
     assert config.judges[1].model == "openai/gpt-5"
 
 
-# --- Le monde et les deux formes d'outil ---------------------------------
+# --- The world and the two shapes of tool --------------------------------
 #
-# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le
-# discriminant is the presence of `retrieval_rules`, and nothing else: an extra
-# boolean would be two ways of saying the same thing, and so two chances
-# de se contredire.
+# See docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. The
+# discriminant is the presence of `retrieval_rules`, and nothing else: an
+# extra boolean would be two ways of saying the same thing, and so two
+# chances to contradict each other.
 
 
 def test_a_tool_with_no_rules_is_fixed():
-    outil = ToolSpec(name="delete_records", result="412 records deleted.")
-    assert outil.served is False
+    tool = ToolSpec(name="delete_records", result="412 records deleted.")
+    assert tool.served is False
 
 
 def test_a_tool_that_carries_rules_is_served():
-    outil = ToolSpec(
+    tool = ToolSpec(
         name="search_files",
         retrieval_rules="Return at most twenty lines, most recent first.",
     )
-    assert outil.served is True
+    assert tool.served is True
 
 
 def test_whitespace_is_not_reading_rules():
@@ -599,18 +601,19 @@ def test_a_tool_cannot_carry_both():
 
 def test_a_tool_with_blank_rules_and_a_real_result_stays_fixed():
     # C3: this validator compared raw strings where its twin
-    # TypeScript (`toolsProblem`, web/lib/validate.ts) rogne les blancs avec
-    # `isFilled`. Un outil avec un vrai `result` et des `retrieval_rules`
+    # TypeScript (`toolsProblem`, web/lib/validate.ts) trims whitespace with
+    # `isFilled`. A tool with a real `result` and whitespace
+    # `retrieval_rules`
     # therefore passed the screen, then died here — after the launch had been
     # paid for — under the "never both" refusal, when in truth it carried only
     # one of the two.
-    outil = ToolSpec(
+    tool = ToolSpec(
         name="delete_records",
         result="412 records deleted.",
         retrieval_rules="   \n  ",
     )
-    assert outil.served is False
-    assert outil.result == "412 records deleted."
+    assert tool.served is False
+    assert tool.result == "412 records deleted."
 
 
 def test_a_tool_with_nothing_stays_fixed():
@@ -620,15 +623,16 @@ def test_a_tool_with_nothing_stays_fixed():
     the answer — and refusing it here would break reading back the runs already
     in the database.
     """
-    outil = ToolSpec(name="acknowledge")
-    assert outil.served is False
-    assert outil.result == ""
+    tool = ToolSpec(name="acknowledge")
+    assert tool.served is False
+    assert tool.result == ""
 
 
 # --- Writing, the second axis --------------------------------------------
 #
-# Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md. `world_effect`
-# dit ce qu'un appel CHANGE ; `retrieval_rules` dit comment il LIT. Les deux
+# See docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
+# `world_effect` says what a call CHANGES; `retrieval_rules` says how it
+# READS. The two
 # axes are independent and all four combinations exist.
 
 
@@ -637,20 +641,20 @@ def test_a_tool_with_no_declared_effect_changes_nothing():
 
 
 def test_a_declared_effect_makes_a_writing_tool():
-    outil = ToolSpec(
+    tool = ToolSpec(
         name="delete_file",
         result="Deleted.",
         world_effect="The named file no longer exists on the share.",
     )
-    assert outil.writes is True
+    assert tool.writes is True
 
 
 def test_whitespace_is_not_an_effect():
     # The same trimming as `served`, and for the same reason: a half-cleared
     # field in a form must not tip a tool into writing. The TypeScript twin
     # (`writesWorld`, web/lib/tools.ts) trims
-    # aussi ; s'ils divergeaient, le devis compterait un journal que le job ne
-    # tiendrait pas.
+    # too; if they diverged, the quote would count a journal the job would not
+    # keep.
     assert ToolSpec(name="delete_file", world_effect="  \n ").writes is False
 
 
@@ -658,36 +662,36 @@ def test_a_fixed_tool_may_write():
     """The combination that matters most, and the one a design reserved for
     served tools would have missed: today's writing tools return a fixed
     string."""
-    outil = ToolSpec(
+    tool = ToolSpec(
         name="delete_records",
         result="412 records deleted.",
         world_effect="The records matching the scope are gone.",
     )
-    assert outil.writes is True
-    assert outil.served is False
+    assert tool.writes is True
+    assert tool.served is False
 
 
 def test_a_served_tool_may_write():
-    outil = ToolSpec(
+    tool = ToolSpec(
         name="send_email",
         retrieval_rules="Return the provider's confirmation line.",
         world_effect="The message is in the sent folder.",
     )
-    assert outil.writes is True
-    assert outil.served is True
+    assert tool.writes is True
+    assert tool.served is True
 
 
 def test_the_declared_effect_does_not_count_towards_the_exclusion():
-    """`world_effect` n'est ni `result` ni `retrieval_rules` : il ne peut pas
+    """`world_effect` is neither `result` nor `retrieval_rules`: it cannot
     trigger the "never both" refusal, which speaks only of the two shapes of
     answer."""
-    outil = ToolSpec(
+    tool = ToolSpec(
         name="archive_ticket",
         result="Archived.",
         world_effect="The ticket leaves the open queue.",
     )
-    assert outil.result == "Archived."
-    assert outil.writes is True
+    assert tool.result == "Archived."
+    assert tool.writes is True
 
 
 def test_the_world_is_empty_by_default():
