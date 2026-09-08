@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { callbackFor } from "@/lib/signin-callback";
 
 // Ce fichier ne fait **pas** d'authentification. Il aiguille.
 //
@@ -49,14 +50,14 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // The requested path travels along, so a bookmark to /runs/xyz comes back
-  // to /runs/xyz rather than dropping the visitor on the home page. It cannot
-  // become an open redirect: `login` hands it to Auth.js, whose default
-  // `redirect` callback answers `baseUrl` for any origin that is not ours.
+  // to /runs/xyz rather than dropping the visitor on the home page — unless
+  // it would only repeat `login`'s own fallback, which is what `callbackFor`
+  // decides. It cannot become an open redirect: `login` hands it to Auth.js,
+  // whose default `redirect` callback answers `baseUrl` for any origin that
+  // is not ours.
   const signin = new URL("/signin", request.nextUrl.origin);
-  signin.searchParams.set(
-    "callbackUrl",
-    `${request.nextUrl.pathname}${request.nextUrl.search}`,
-  );
+  const callback = callbackFor(request.nextUrl.pathname, request.nextUrl.search);
+  if (callback) signin.searchParams.set("callbackUrl", callback);
   return NextResponse.redirect(signin);
 }
 
