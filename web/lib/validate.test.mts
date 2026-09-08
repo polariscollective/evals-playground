@@ -356,6 +356,19 @@ test("un outil servi avec models.world passe", () => {
   assert.equal(configProblem(configAvecOutilServi()), null);
 });
 
+test("models.world hors catalogue est refusé, avant même le premier appel servi", () => {
+  // A3 : seul identifiant de modèle jamais vérifié contre le catalogue —
+  // `configProblem` ne regardait que `isFilled`. Un YAML qui le porte mal
+  // écrit passait le lecteur, le validateur et le lancement, pour échouer au
+  // premier appel servi, après que la cible et l'adversaire aient déjà été
+  // payés.
+  const config = configAvecOutilServi();
+  (config.models as { world?: string }).world = "openai/gpt-5.6-lunar";
+  const problem = configProblem(config);
+  assert.ok(problem?.includes("world model"));
+  assert.ok(problem?.includes("gpt-5.6-lunar"));
+});
+
 test("aucun outil servi et pas de models.world passe", () => {
   assert.equal(configProblem(configSansOutilServi()), null);
 });

@@ -32,7 +32,7 @@ import type { JudgeForConfig } from "@/lib/live-config";
 import { measureRun } from "@/lib/measured-length";
 import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
-import { servesTools } from "@/lib/tools";
+import { resolvedWorld, servesTools } from "@/lib/tools";
 import { MAX_TURNS } from "@/lib/validate";
 import { extendWorldWarnings } from "@/lib/world-warnings";
 import type {
@@ -268,8 +268,10 @@ export function ExtendPanel({
   // porter `world`.
   const hasWorldModel = Boolean(config.models.world?.trim());
   // Le seul cas où il y a quelque chose à demander : le run n'a personne pour
-  // servir, et cette extension en donnerait quelque chose à servir.
-  const needsWorldModel = !hasWorldModel && servesTools(newTools);
+  // servir, et l'union de ce qu'il sert déjà et de ce que l'extension ajoute
+  // sert quelque chose — pas seulement `newTools` : un run lancé avant ce
+  // chantier peut déjà servir sans le nommer (voir `extendProblem`, A1).
+  const needsWorldModel = !hasWorldModel && servesTools([...(config.tools ?? []), ...newTools]);
   const worldModelWarnings = extendWorldWarnings(
     { new_tools: newTools, new_tools_for_existing: forExisting ?? undefined },
     config,
@@ -350,7 +352,15 @@ export function ExtendPanel({
   // le panneau ne passait aucune longueur et chiffrait sur le nombre déclaré,
   // sous une phrase qui annonçait pourtant la mesure.
   const totalEstimate: CostEstimate | null = estimateExtension(
-    config,
+    {
+      ...config,
+      // Sans ceci, un devis qui introduit le premier outil servi de ce run
+      // chiffrerait ses appels au modèle vide : `config.models.world` est
+      // encore `null` tant que rien n'a été enregistré, et c'est justement ce
+      // que `worldModel` s'apprête à combler. Même résolution que celle
+      // qu'`extendRun` écrira — voir `resolvedWorld`.
+      models: { ...config.models, world: resolvedWorld(config, { world: worldModel || null }) },
+    },
     {
       scenarios: [
         ...rejoués,

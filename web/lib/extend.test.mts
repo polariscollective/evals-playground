@@ -400,6 +400,21 @@ test("un run sans modèle, une extension qui ne sert rien : nommer world est ref
   assert.ok(problem?.includes("world"));
 });
 
+test("un run lancé avant ce chantier sert déjà sans le nommer : une extension qui n'ajoute rien de servi doit quand même nommer un modèle", () => {
+  // Le cas oublié par A1 : `runWorldModel` est `null` (le run est antérieur au
+  // chantier) mais `runTools` sert déjà. L'extension elle-même n'ajoute rien
+  // de servi — c'est l'union qui compte, pas seulement `new_tools`.
+  const problem = extendProblem(DEMANDE(), 1, [OUTIL_SERVI("search")]);
+  assert.ok(problem?.includes("world"));
+
+  const ok = extendProblem(
+    DEMANDE({ world: "openai/gpt-5.6-luna" }),
+    1,
+    [OUTIL_SERVI("search")],
+  );
+  assert.equal(ok, null);
+});
+
 test("un run qui a déjà un modèle : le même passe, un autre est refusé", () => {
   const même = extendProblem(
     DEMANDE({ world: "openai/gpt-5.6-luna" }),
@@ -427,4 +442,15 @@ test("un run qui a déjà un modèle : le même passe, un autre est refusé", ()
 test("un run qui a déjà un modèle : ne rien nommer passe, c'est hérité", () => {
   const problem = extendProblem(DEMANDE(), 1, [], 1, null, [], "openai/gpt-5.6-luna");
   assert.equal(problem, null);
+});
+
+test("world hors catalogue est refusé — A3, jamais vérifié avant", () => {
+  // `extendProblem` validait chaque entrée de `targets` mais jamais `r.world` :
+  // un `world` mal écrit passait la validation puis échouait au premier appel
+  // servi, après paiement de la cible et de l'adversaire.
+  const problem = extendProblem(
+    DEMANDE({ new_tools: [OUTIL_SERVI("search")], world: "openai/gpt-5.6-lunar" }),
+    1,
+  );
+  assert.ok(problem?.includes("gpt-5.6-lunar"));
 });

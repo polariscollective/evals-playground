@@ -28,6 +28,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
+import { resolvedWorld } from "./tools";
 import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
 import { measureRun, type MeasurableCell } from "./measured-length";
@@ -1368,7 +1369,19 @@ export async function planExtension(
   // même correction ici, le devis étant ce qu'un outil MCP oppose aux
   // plafonds de dépense de l'agent appelant : un devis sous-estimé le
   // laisserait dépasser le sien.
-  const liveConfig = withLiveJudges(config, liveJudges);
+  // `withLiveJudges` répare les juges ; le monde a le même problème pour
+  // l'estimation qui suit — `config.models.world` est encore `null` quand
+  // c'est justement cette extension qui introduit le premier outil servi, et
+  // le prix des appels servis retomberait alors sur le modèle vide. Résolu
+  // une fois, comme `world` l'est ailleurs — voir `resolvedWorld`. Fusionné
+  // sur `.models` déjà réparé par `withLiveJudges`, pas sur celui du
+  // lancement : sans ça, un juge vivant différent du lancement redeviendrait
+  // celui d'alors.
+  const withJudges = withLiveJudges(config, liveJudges);
+  const liveConfig = {
+    ...withJudges,
+    models: { ...withJudges.models, world: resolvedWorld(withJudges, request) },
+  };
 
   // Poser un juge ne joue aucune conversation : il relit celles qui sont déjà
   // finies. Son devis n'a donc rien à voir avec celui d'une extension qui
@@ -1578,7 +1591,7 @@ export async function extendRun(
           // Sans cette ligne, le premier cas de l'extension passait la
           // validation puis se perdait : le run restait sans serveur, et rien
           // ne le disait. Validé, jamais appliqué.
-          world: config.models.world || request.world || null,
+          world: resolvedWorld(config, request),
         },
         temperature,
       },

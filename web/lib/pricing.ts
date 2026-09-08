@@ -337,10 +337,18 @@ export function estimateTokens(
               servis.length,
           );
         add(
-          // `?? ""` n'est pas un défaut caché : on est dans la branche où
-          // `servis.length > 0`, et `configProblem` a donc déjà exigé
-          // `models.world` avant que ce devis ne soit montré. Le repli ne
-          // sert qu'à satisfaire le typage (`world?: string | null`).
+          // `?? ""` n'est pas un défaut caché, mais il n'est pas non plus
+          // toujours mort : c'est vrai pour le lancement, `submit_draft_run`
+          // et `draftCost`, qui font tous passer la configuration par
+          // `configProblem` avant d'arriver ici, et qui donc n'atteignent
+          // jamais cette branche sans `models.world`. Ce n'est PAS vrai pour
+          // les deux appelants d'extension — `estimateExtension` et l'aperçu
+          // vivant d'`ExtendPanel` — qui n'appellent jamais `configProblem` :
+          // ils résolvent `models.world` eux-mêmes avec `resolvedWorld`
+          // (`tools.ts`), qui ne rend un modèle que si `extendProblem` a déjà
+          // validé la demande. L'aperçu affiché avant qu'un modèle ne soit
+          // choisi retombe donc, sciemment, sur ce repli — un devis à 0 $ pour
+          // la part servie, le temps que le champ se remplisse.
           config.models.world ?? "",
           monde * servedCalls * weight,
           S.world_response_tokens * servedCalls * weight,

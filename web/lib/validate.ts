@@ -370,6 +370,8 @@ export function configProblem(config: unknown): string | null {
   if (judgeModel) return judgeModel;
   const adversaryModel = modelProblem(c.models?.adversary, "adversary model");
   if (adversaryModel) return adversaryModel;
+  const worldModel = modelProblem(c.models?.world, "world model");
+  if (worldModel) return worldModel;
 
   // L'équivalence, dans les deux sens. Servir sans modèle ne répondrait à
   // rien ; nommer un modèle sans rien à servir est un réglage sans effet, et
@@ -440,8 +442,14 @@ export function extendProblem(
   // Placé avant le reste — scénarios, modèles, répétitions — pour qu'une
   // demande qui ne fait qu'ajouter un outil servi sans nommer de monde ne
   // s'entende pas d'abord reprocher un champ qu'elle n'a pas à porter.
-  const ajouteDuServi = servesTools(ajoutés);
+  // L'union du déjà-là et de l'ajouté, pas seulement l'ajouté : un run lancé
+  // avant ce chantier sert déjà des outils sans `models.world` (`runWorldModel`
+  // est alors `null`), et c'est le cas qui doit exiger un modèle — pas une
+  // extension qui n'ajoute rien de servi mais touche un run qui, lui, sert.
+  const sertUneFoisAppliquée = servesTools(disponibles);
   const nommé = isFilled(r.world);
+  const worldModel = modelProblem(r.world, "world");
+  if (worldModel) return worldModel;
   if (runWorldModel) {
     if (nommé && r.world !== runWorldModel) {
       return (
@@ -450,11 +458,11 @@ export function extendProblem(
         "cells incomparable, which is the one thing a matrix cannot survive."
       );
     }
-  } else if (ajouteDuServi) {
+  } else if (sertUneFoisAppliquée) {
     if (!nommé) {
       return (
-        "world: this extension adds a tool with retrieval_rules to a run that " +
-        "serves none yet, so it needs a model to answer those calls."
+        "world: this run serves at least one tool but names no model to answer " +
+        "its calls, so this extension needs to name one — it becomes the run's."
       );
     }
   } else if (nommé) {

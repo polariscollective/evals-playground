@@ -3,7 +3,7 @@
 // Séparé parce que trois endroits en ont besoin — le devis, la validation et
 // l'écran — et qu'une règle à trois états recopiée trois fois finit par ne plus
 // dire la même chose partout.
-import type { EvalRunConfig, EvalScenario, ToolSpec } from "./types";
+import type { EvalRunConfig, EvalScenario, ExtendRequest, ToolSpec } from "./types";
 
 /** Les outils offerts à un scénario.
  *
@@ -42,4 +42,24 @@ export function servesTools(
   tools: readonly Pick<ToolSpec, "retrieval_rules">[],
 ): boolean {
   return tools.some(served);
+}
+
+/** Le modèle qui sert — ou servira — les outils de ce run, une fois cette
+ *  extension prise en compte.
+ *
+ * Celui du run gagne toujours : `extendProblem` refuse qu'une extension en
+ * change un qui existe déjà, donc `config.models.world` prime. Ce n'est que
+ * quand le run n'en a encore aucun — parce qu'il ne sert rien, ou parce qu'il
+ * est antérieur à ce champ — que celui nommé par la demande compte, et lui
+ * seul comble le vide.
+ *
+ * Trois appelants posaient chacun `config.models.world || request.world ||
+ * null` de son côté : `extendRun` en écrivant la configuration, le devis d'une
+ * extension en la chiffrant, l'écran en l'affichant. Une seule copie, pour ne
+ * pas laisser l'une des trois répondre autrement le jour où la règle change. */
+export function resolvedWorld(
+  config: Pick<EvalRunConfig, "models">,
+  request: Pick<ExtendRequest, "world">,
+): string | null {
+  return config.models.world || request.world || null;
 }
