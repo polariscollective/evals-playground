@@ -1,5 +1,7 @@
 "use server";
 
+import { AuthError } from "next-auth";
+import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
 
 /** Fermer la session, depuis un composant client.
@@ -25,11 +27,28 @@ export async function logout() {
  * not see the request that rendered the page. It cannot become an open
  * redirect: Auth.js runs every `redirectTo` through its `redirect` callback,
  * and the default (`@auth/core/lib/init.js`) prefixes a bare path with the
- * base URL and answers `baseUrl` for any other origin. */
+ * base URL and answers `baseUrl` for any other origin.
+ *
+ * The catch is not decoration. `next-auth` calls `@auth/core` in raw mode, and
+ * `@auth/core` rethrows an `AuthError` at the caller instead of rendering
+ * anything — so a bad moment at Google's discovery endpoint would surface as
+ * Next's own opaque server-action error page. That is the screen belonging to
+ * someone else that this page exists to stop showing. Sending it back here
+ * lets `signInMessage` say something true about it instead.
+ *
+ * The rethrow is what makes the success path work: `signIn` signals its
+ * redirect by throwing `NEXT_REDIRECT`, which is not an `AuthError` and must
+ * travel on untouched. */
 export async function login(formData: FormData) {
   const callbackUrl = formData.get("callbackUrl");
-  await signIn("google", {
-    redirectTo:
-      typeof callbackUrl === "string" && callbackUrl ? callbackUrl : "/",
-  });
+  const redirectTo =
+    typeof callbackUrl === "string" && callbackUrl ? callbackUrl : "/";
+  try {
+    await signIn("google", { redirectTo });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      redirect(`/signin?error=${encodeURIComponent(error.type)}`);
+    }
+    throw error;
+  }
 }

@@ -16,6 +16,11 @@ import { signInMessage } from "@/lib/signin-error";
 
 export const metadata: Metadata = {
   title: "Sign in — Evals Playground",
+  // This is the first page of the application a crawler can reach — it is in
+  // `OPEN_PREFIXES`, and the repository has no robots.txt. A sign-in form has
+  // nothing to index, and the address below has no reason to be harvested off
+  // it: it was published in `docs/evals-methodology.md`, not on the open web.
+  robots: { index: false },
 };
 
 export default async function SignIn({ searchParams }: PageProps<"/signin">) {
@@ -54,7 +59,7 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
         To request access, please reach out to{" "}
         <a
           href="mailto:sam@polariscollective.org"
-          className="text-teal-700 hover:underline"
+          className="text-teal-700 underline"
         >
           sam@polariscollective.org
         </a>
