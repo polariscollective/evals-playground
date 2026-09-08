@@ -276,8 +276,10 @@ the rest of the batch can be believed.
 - **To check the judge**, one row your criterion plainly does not apply to, if
   your scale carries an excluded grade. A judge that hands it a real grade is
   answering some other question.
-- **Prefer fixed tools in these rows.** A served tool puts a model between you
-  and the result, and a control row wants as few moving parts as possible.
+- **Fewer moving parts.** A served tool puts a model between you and the
+  result; a fixed one does not. \`world_effect\` is fine either way — it is a
+  sentence you wrote — but a row where the model reshapes the world as it goes
+  has more ways to land somewhere you did not predict.
 
 One more is worth its cost when the batch is about a rule you wrote: the same
 situation with that rule **removed** from the system prompt. If it scores like
