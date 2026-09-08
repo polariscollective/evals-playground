@@ -301,6 +301,7 @@ function EvaluateForm() {
             ...(config.models?.targets ?? []),
             config.models?.adversary,
             config.models?.judge,
+            config.models?.world,
             ...(config.judges ?? []).map((j) => j.model),
           ].filter((m): m is string => Boolean(m)),
         ),
@@ -905,7 +906,11 @@ function EvaluateForm() {
   // qui a quitté les favoris depuis : le retirer du menu rendrait le
   // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
   // Les juges secondaires en font partie : chacun peut porter son propre
-  // modèle (absent, il suit celui du run, déjà dans l'ensemble).
+  // modèle (absent, il suit celui du run, déjà dans l'ensemble). Le modèle du
+  // monde aussi, et l'oublier était pire qu'un menu incomplet : le select se
+  // serait affiché vide — indistinguable de « rien choisi » — alors que
+  // `worldModel` tenait toujours l'identifiant, que `config()` aurait
+  // resoumis au lancement suivant. Un choix facturé que personne ne voit.
   //
   // `carriedModels` s'ajoute à la sélection vivante plutôt que de s'y
   // substituer : un modèle carried qu'on désélectionne (par exemple, un
@@ -917,6 +922,7 @@ function EvaluateForm() {
       ...targets,
       adversary,
       judge,
+      worldModel,
       ...secondaryJudges.map((j) => j.model),
       ...carriedModels,
     ].filter(Boolean),
