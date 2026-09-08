@@ -596,6 +596,22 @@ def test_un_outil_ne_peut_pas_porter_les_deux():
         )
 
 
+def test_un_outil_avec_des_regles_blanches_et_un_vrai_resultat_reste_fixe():
+    # C3 : ce validateur comparait des chaînes brutes là où son jumeau
+    # TypeScript (`toolsProblem`, web/lib/validate.ts) rogne les blancs avec
+    # `isFilled`. Un outil avec un vrai `result` et des `retrieval_rules`
+    # blanches passait donc l'écran, puis mourait ici — après que le
+    # lancement ait été payé — sous le refus « never both », alors qu'il ne
+    # porte en réalité que l'un des deux.
+    outil = ToolSpec(
+        name="delete_records",
+        result="412 records deleted.",
+        retrieval_rules="   \n  ",
+    )
+    assert outil.served is False
+    assert outil.result == "412 records deleted."
+
+
 def test_un_outil_sans_rien_reste_fixe():
     """Un résultat vide est licite aujourd'hui et le reste.
 

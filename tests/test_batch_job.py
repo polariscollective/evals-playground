@@ -1391,3 +1391,32 @@ def test_un_controle_reussi_efface_une_raison_anterieure(monkeypatch):
     assert table == TOOL_RESULTS
     assert values == {"faithful": True, "fault": "", "check_error": None}
     assert filtres["scenario_index"] == "eq.0"
+
+
+class _SupabaseQuiRefuseAussiLecriture(_SupabaseAControler):
+    """Comme `_SupabaseAControler`, mais son `update` lève aussi — le cas visé
+    par C2 : une clé morte chez le fournisseur du contrôleur produit beaucoup
+    de lignes en échec, et c'est justement là que l'écriture de la raison a
+    le plus de chances d'échouer à son tour."""
+
+    def update(self, table, values, **filters):
+        raise RuntimeError("supabase indisponible")
+
+
+def test_une_ecriture_de_raison_qui_leve_ne_fait_pas_tomber_le_controle(monkeypatch):
+    """C2 : si `write_tool_check_error` lève à son tour — l'écriture même qui
+    protège le run tombe —, `check_served_results` ne doit pas laisser
+    l'exception remonter et faire échouer tout le run, perdant au passage son
+    coût déjà enregistré (voir B2). Elle doit simplement continuer, comme si
+    la raison n'avait pas pu être écrite — ce qui est le cas."""
+    config = _config_a_outil_servi()
+    supabase = _SupabaseQuiRefuseAussiLecriture([_LIGNE_A_CONTROLER])
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+
+    async def leve(**kwargs):
+        raise RuntimeError("clé invalide")
+
+    monkeypatch.setattr("playground.batch_job.check", leve)
+
+    # Ne doit pas lever, malgré l'échec de `write_tool_check_error` lui-même.
+    assert check_served_results(supabase, "run-1", config) == 0

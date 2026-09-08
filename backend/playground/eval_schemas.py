@@ -404,7 +404,7 @@ class ToolSpec(BaseModel):
         vide : on mesure la décision d'appeler, pas ce que l'outil rend, et le
         refuser ici casserait la relecture des runs déjà en base.
         """
-        if self.result and self.retrieval_rules:
+        if self.result.strip() and self.retrieval_rules.strip():
             raise ValueError(
                 f"tool {self.name!r} carries both result and retrieval_rules:"
                 " a tool is fixed or served from the world, never both."
@@ -575,7 +575,9 @@ class EvalModels(BaseModel):
     voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
     appel servi, et un défaut que personne n'a remarqué se découvrirait sur
     une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
-    changement, et ce qui reste protégé, sont dans le spec du 7 septembre.
+    changement, et ce qui reste protégé, sont dans
+    docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — pas dans
+    le-monde-des-outils.md, du même jour, qui argumentait le contraire.
     """
 
     @model_validator(mode="after")

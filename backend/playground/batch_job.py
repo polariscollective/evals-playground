@@ -183,14 +183,27 @@ def check_served_results(
             # Une ligne qu'on n'a pas su contrôler reste à contrôler — mais on
             # dit désormais pourquoi. Muette, elle ressemblait à du calme. Elle
             # ne doit ni passer pour fidèle, ni faire tomber les suivantes.
-            write_tool_check_error(
-                supabase,
-                run_id,
-                index,
-                str(ligne["tool_name"]),
-                str(ligne["arguments_hash"]),
-                reason=f"{type(e).__name__}: {e}"[:500],
-            )
+            try:
+                write_tool_check_error(
+                    supabase,
+                    run_id,
+                    index,
+                    str(ligne["tool_name"]),
+                    str(ligne["arguments_hash"]),
+                    reason=f"{type(e).__name__}: {e}"[:500],
+                )
+            except Exception:
+                # Ne pas savoir dire pourquoi ne doit jamais coûter plus cher
+                # que la panne qu'on essayait de nommer : cette écriture est
+                # elle-même la ligne qui protège le run de `check_served_results`
+                # — la faire lever remonterait l'exception hors de cette
+                # fonction, contredisant sa promesse de ne jamais faire tomber
+                # le run, et lui ferait perdre son coût déjà enregistré (voir
+                # B2). C'est exactement dans le cas visé ici — une clé morte
+                # chez le fournisseur du contrôleur, donc beaucoup de lignes en
+                # échec — que cette écriture a le plus de chances d'échouer à
+                # son tour.
+                pass
             continue
         write_tool_verdict(
             supabase,

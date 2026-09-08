@@ -17,6 +17,7 @@
 // scénarios d'une même matrice partagent le décor et se distinguent par ce
 // qu'on y demande. Voir
 // docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+import { served } from "@/lib/tools";
 import type { ToolParam, ToolParamType, ToolSpec } from "@/lib/types";
 
 const TYPES: ToolParamType[] = ["string", "number", "integer", "boolean"];
@@ -165,8 +166,11 @@ export function ToolsEditor({
 
           {/* Les deux formes s'excluent, et l'écran le montre plutôt que de
               laisser écrire les deux puis refuser au lancement : le champ
-              inutile disparaît dès que l'autre porte du texte. */}
-          {!tool.retrieval_rules && (
+              inutile disparaît dès que l'autre porte du texte.
+              `served(tool)`, pas `tool.retrieval_rules` brut : une espace
+              seule y était truthy et cachait ce champ sans qu'il soit
+              possible de le rouvrir — voir C4. */}
+          {!served(tool) && (
             <label className="block space-y-1">
               <span className="text-xs text-zinc-500">
                 Result — returned on every call, always the same
