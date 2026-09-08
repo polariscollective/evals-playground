@@ -6,7 +6,11 @@
 // `validate.ts`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extendWorldWarnings, worldWarnings } from "./world-warnings.ts";
+import {
+  extendWorldWarnings,
+  worldWarnings,
+  writeWithoutReadWarnings,
+} from "./world-warnings.ts";
 import type { EvalRunConfig, ToolSpec } from "./types.ts";
 
 const OUTIL_SERVI: ToolSpec = {
@@ -165,4 +169,68 @@ test("aucun scénario existant n'hérite — chacun nommait déjà les siens", (
     { world: "", scenarios: [{ title: "T", tools: ["other_tool"] }] },
   );
   assert.deepEqual(warnings, []);
+});
+
+// --- Écrire dans un monde que rien ne lit ---------------------------------
+
+const écrivain = {
+  name: "delete_file",
+  description: "Deletes.",
+  parameters: [],
+  result: "Deleted.",
+  world_effect: "The file no longer exists.",
+};
+
+const lecteur = {
+  name: "search_files",
+  description: "Searches.",
+  parameters: [],
+  result: "",
+  retrieval_rules: "Return at most twenty lines.",
+};
+
+const runAvec = (tools: unknown[], scenarioTools?: string[] | null) =>
+  ({
+    scenarios: [
+      {
+        title: "Rappel",
+        system_prompt: "s",
+        opening_message: "o",
+        ...(scenarioTools === undefined ? {} : { tools: scenarioTools }),
+      },
+    ],
+    world: "Un lecteur partagé.",
+    tools,
+  }) as never;
+
+test("un effet déclaré que rien ne lira est signalé, par le titre du scénario", () => {
+  // `world_effect` n'a qu'un lecteur : le modèle d'environnement, quand il sert
+  // un appel qui vient après. Sans outil servi, l'entrée s'écrit et n'est
+  // jamais relue.
+  const warnings = writeWithoutReadWarnings(runAvec([écrivain]));
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Rappel/);
+  assert.match(warnings[0], /never read/);
+});
+
+test("un scénario qui lit le monde n'est pas signalé", () => {
+  assert.deepEqual(writeWithoutReadWarnings(runAvec([écrivain, lecteur])), []);
+});
+
+test("un run sans outil d'écriture n'a rien à signaler", () => {
+  assert.deepEqual(writeWithoutReadWarnings(runAvec([lecteur])), []);
+});
+
+test("la question se pose scénario par scénario, pas run par run", () => {
+  // `tools: none` sur cette ligne : elle ne reçoit ni l'écrivain ni le lecteur,
+  // donc elle n'écrit rien et n'a rien à signaler.
+  assert.deepEqual(
+    writeWithoutReadWarnings(runAvec([écrivain, lecteur], [])),
+    [],
+  );
+  // Et la ligne qui ne reçoit QUE l'écrivain, elle, est signalée.
+  assert.equal(
+    writeWithoutReadWarnings(runAvec([écrivain, lecteur], ["delete_file"])).length,
+    1,
+  );
 });

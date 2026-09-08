@@ -41,6 +41,8 @@ test("le voyant sépare conforme, fautif et pas encore contrôlé", () => {
   assert.deepEqual(résumé, {
     total: 3,
     unfaithful: 1,
+    repaired: 0,
+    sameFamily: 0,
     unchecked: 1,
     couldNotCheck: 0,
     lastCheckError: null,
@@ -59,6 +61,8 @@ test("une tentative de contrôle échouée ne se confond pas avec un contrôle j
   assert.deepEqual(résumé, {
     total: 3,
     unfaithful: 0,
+    repaired: 0,
+    sameFamily: 0,
     unchecked: 1,
     couldNotCheck: 2,
     lastCheckError: "RateLimitError: quota dépassé",
@@ -200,4 +204,42 @@ test("les lignes qu'on n'a pas pu contrôler disent aussi pourquoi", () => {
   );
   assert.match(phrase!, /1 could not be checked \(AuthenticationError: clé invalide\)/);
   assert.ok(!phrase!.includes("not checked yet"));
+});
+
+test("servi malgré une réparation échouée est une issue à part", () => {
+  // La cinquième, et ce produit n'en fond jamais deux. Elle reste un
+  // sous-ensemble de `unfaithful` : la même ligne fautive, vue de plus près.
+  const résumé = servedSummary([
+    ligne({ faithful: false, fault: "a inventé", attempts: 2 }),
+    ligne({ faithful: false, fault: "a inventé" }),
+  ]);
+  assert.equal(résumé.unfaithful, 2);
+  assert.equal(résumé.repaired, 1);
+});
+
+test("un contrôleur de la famille du serveur se compte et se dit", () => {
+  // Le repli du spec : mieux vaut un contrôleur au biais partagé que pas de
+  // contrôle du tout, mais ça se sait plutôt que ça se devine.
+  const résumé = servedSummary([
+    ligne({
+      model: "anthropic/claude-opus-5",
+      check_model: "anthropic/claude-haiku-4-5",
+    }),
+    ligne({ model: "anthropic/claude-opus-5", check_model: "openai/gpt-5.6-luna" }),
+  ]);
+  assert.equal(résumé.sameFamily, 1);
+  assert.match(
+    servedSentence(résumé, null) ?? "",
+    /checked by the world model's own family/,
+  );
+});
+
+test("la réparation échouée se dit dans la clause de la faute", () => {
+  // Pas dans une phrase à elle : c'est la même ligne, et l'annoncer à part la
+  // ferait compter deux fois par qui lit vite.
+  const phrase = servedSentence(
+    servedSummary([ligne({ faithful: false, fault: "a inventé", attempts: 2 })]),
+    null,
+  );
+  assert.match(phrase ?? "", /1 did not hold up \(1 after a failed repair\)/);
 });

@@ -712,3 +712,90 @@ test("addEstimates ne perd pas une ligne d'avant les rôles", () => {
     assert.ok(!Number.isNaN(entry.calls ?? 0), `NaN sur ${entry.model}`);
   }
 });
+
+
+// --- Le monde qui change, et ce qu'il coûte -------------------------------
+//
+// Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md. Deux choses
+// bougent dans le devis : la sortie de l'environnement porte trois champs au
+// lieu d'un, et le journal des écritures gonfle les deux prompts servis.
+
+const écrivain = (name = "delete_file") => ({
+  name,
+  description: "Deletes a file for good.",
+  parameters: [],
+  result: "Deleted.",
+  world_effect: "E".repeat(200),
+});
+
+test("la sortie de l'environnement est facturée sur ses trois champs", () => {
+  // `submit_result(result, reasoning, world_change)`. Le raisonnement ne quitte
+  // jamais la base, mais il est facturé comme tout jeton de sortie : ne
+  // compter que le résultat promettrait moins cher que la note ne sera.
+  const devis = estimateCost(config({ tools: [servi()], world: "W".repeat(500) }));
+  const monde = lignes(devis, "world")[0];
+  assert.equal(
+    monde.output_tokens,
+    (SHARED_PRICING.world_response_tokens + SHARED_PRICING.world_reasoning_tokens) *
+      (monde.calls ?? 0),
+  );
+  assert.ok((monde.calls ?? 0) > 0);
+});
+
+test("un outil qui écrit alourdit le prompt de l'environnement", () => {
+  // Le journal entre dans le prompt de chaque appel servi qui suit une
+  // écriture. Sans lui, le devis chiffrerait un prompt plus court que celui
+  // qui part.
+  const sans = estimateCost(
+    config({ tools: [servi()], world: "W".repeat(500) }),
+  );
+  const avec = estimateCost(
+    config({ tools: [servi(), écrivain()], world: "W".repeat(500) }),
+  );
+  assert.ok(
+    lignes(avec, "world")[0].input_tokens > lignes(sans, "world")[0].input_tokens,
+  );
+});
+
+test("un outil FIXE qui écrit alourdit aussi, sans ajouter d'appel", () => {
+  // La combinaison courante, et celle qu'un devis fondé sur les seuls outils
+  // servis aurait ratée : il ne coûte aucun appel d'environnement, mais son
+  // entrée de journal gonfle chaque lecture qui suit.
+  const sans = estimateCost(
+    config({ tools: [servi(), fixe()], world: "W".repeat(500) }),
+  );
+  const avec = estimateCost(
+    config({ tools: [servi(), écrivain()], world: "W".repeat(500) }),
+  );
+  assert.equal(lignes(avec, "world")[0].calls, lignes(sans, "world")[0].calls);
+  assert.ok(
+    lignes(avec, "world")[0].input_tokens > lignes(sans, "world")[0].input_tokens,
+  );
+});
+
+test("le contrôleur reçoit le journal lui aussi", () => {
+  // Sans lui, il condamnerait une lecture parfaitement correcte d'un monde
+  // déjà modifié — et le devis chiffrerait un prompt qui n'est pas le sien.
+  const sans = estimateCost(
+    config({ tools: [servi()], world: "W".repeat(500) }),
+  );
+  const avec = estimateCost(
+    config({ tools: [servi(), écrivain()], world: "W".repeat(500) }),
+  );
+  assert.ok(
+    lignes(avec, "check")[0].input_tokens > lignes(sans, "check")[0].input_tokens,
+  );
+});
+
+test("un run qui n'écrit nulle part ne paie aucun journal", () => {
+  // La règle qui garde le cache vivant se lit jusque dans le devis : sans
+  // outil d'écriture, rien n'a changé par rapport à avant ce chantier.
+  const seul = estimateCost(config({ tools: [servi()], world: "W".repeat(500) }));
+  const avecFixe = estimateCost(
+    config({ tools: [servi(), fixe()], world: "W".repeat(500) }),
+  );
+  assert.equal(
+    lignes(avecFixe, "world")[0].input_tokens,
+    lignes(seul, "world")[0].input_tokens,
+  );
+});

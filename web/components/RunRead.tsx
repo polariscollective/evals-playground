@@ -47,7 +47,7 @@ import type { MatrixSample } from "@/lib/matrix";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
-import { served, toolsFor } from "@/lib/tools";
+import { served, toolsFor, writesWorld } from "@/lib/tools";
 import {
   cellStyle,
   distribution,
@@ -358,6 +358,17 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
             ) : (
               <p className="text-xs text-zinc-500">
                 returns: <span className="font-mono">{tool.result || "(empty)"}</span>
+              </p>
+            )}
+            {/* Le second axe, à côté du premier et jamais à sa place : un outil
+                fixe qui écrit affiche les deux lignes, et c'est la forme
+                courante des outils d'écriture. */}
+            {writesWorld(tool) && (
+              <p className="text-xs text-zinc-500">
+                changes the world:{" "}
+                <span className="font-mono whitespace-pre-wrap">
+                  {tool.world_effect}
+                </span>
               </p>
             )}
           </div>

@@ -10,7 +10,7 @@
 // paquet envoyé au navigateur, et pour que la validation reste celle qui fait
 // autorité.
 import { parse, stringify } from "yaml";
-import { served } from "./tools.ts";
+import { served, writesWorld } from "./tools.ts";
 import { configProblem } from "./validate.ts";
 import type {
   EvalRunConfig,
@@ -185,6 +185,11 @@ function readTools(value: unknown): ToolSpec[] {
       // le monde ; vide, il rend `result` sans qu'aucun modèle ne soit appelé.
       // `configProblem` refuse les deux ensemble.
       retrieval_rules: asString(tool.retrieval_rules),
+      // Le second discriminant, indépendant du premier : ce que l'appeler
+      // CHANGE au monde. Renseigné, l'appel entre au journal de la
+      // conversation et les lectures qui suivent en tiennent compte. Un outil
+      // fixe peut le porter — c'est même la forme courante.
+      world_effect: asString(tool.world_effect),
     };
   });
 }
@@ -442,7 +447,9 @@ export function writeConfigFile(config: EvalRunConfig): string {
     check_eval_awareness: config.check_eval_awareness !== false,
     ...(config.tools && config.tools.length > 0
       ? {
-          // Chaque outil n'écrit que la moitié de la paire qui le décrit. Un
+          // Chaque outil n'écrit que la moitié de la paire de RÉPONSE qui le
+          // décrit — `world_effect`, qui dit ce qu'il change, s'ajoute aux deux
+          // formes sans en faire partie. Un
           // `result: ''` posé à côté de `retrieval_rules` se relit sans
           // dommage, mais donne à lire un outil qui serait les deux — et ce
           // document est ce qu'un agent édite pour repartir d'un run.
@@ -451,19 +458,19 @@ export function writeConfigFile(config: EvalRunConfig): string {
             // blanc y est truthy, et écrirait ici la forme servie — perdant
             // `result` en route — pour un outil qui, `configProblem` mis à
             // part, n'est en réalité que fixe. Voir C4.
-            served(tool)
-              ? {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.parameters,
-                  retrieval_rules: tool.retrieval_rules,
-                }
-              : {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.parameters,
-                  result: tool.result,
-                },
+            ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+              ...(served(tool)
+                ? { retrieval_rules: tool.retrieval_rules }
+                : { result: tool.result }),
+              // L'effet, lui, s'écrit des deux côtés de cette exclusion : il
+              // n'en fait pas partie. Omis quand il est vide, comme partout
+              // ailleurs dans ce document — un champ vide donnerait à lire un
+              // outil qui écrit alors qu'il ne touche à rien.
+              ...(writesWorld(tool) ? { world_effect: tool.world_effect } : {}),
+            }),
           ),
           max_tool_calls_per_turn: config.max_tool_calls_per_turn ?? 5,
         }

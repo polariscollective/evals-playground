@@ -1,6 +1,7 @@
 """Le modèle d'environnement : ce qu'il reçoit, et ce qu'on en garde.
 
-Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md puis
+docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
 """
 
 import asyncio
@@ -8,16 +9,21 @@ import asyncio
 import pytest
 from inspect_ai.model import ModelOutput
 
-from playground.eval_schemas import ToolSpec
+from playground.eval_schemas import JournalEntry, ToolSpec
 from playground import world as world_module
 from playground.world import (
     CHECK_MODELS,
+    EMPTY_STATE,
+    ServeRefused,
     arguments_key,
     check,
     check_model_for,
+    check_models_after,
     check_prompt,
+    journal_text,
     result_key,
     serve,
+    state_key,
     world_prompt,
 )
 
@@ -32,17 +38,40 @@ def _outil(**overrides) -> ToolSpec:
     return ToolSpec(**base)
 
 
-class ModeleQuiRend:
-    """Rend toujours la même sortie, et retient ce qu'on lui a envoyé."""
+def _entree(**overrides) -> JournalEntry:
+    base = dict(
+        tool="delete_file",
+        arguments={"path": "contracts/2026-03.pdf"},
+        result="Deleted.",
+        effect="The file no longer exists on the share.",
+    )
+    base.update(overrides)
+    return JournalEntry(**base)
 
-    def __init__(self, contenu: str = "contracts/2026-03.pdf"):
-        self.contenu = contenu
+
+class ModeleQuiSert:
+    """Rend un résultat par l'outil de sortie, et retient ce qu'on lui a envoyé."""
+
+    def __init__(self, result: str = "contracts/2026-03.pdf", **champs):
+        self.rendus = {"result": result, **champs}
         self.appels = 0
         self.vu: list = []
 
     async def generate(self, input, **kwargs):
         self.appels += 1
         self.vu = input
+        return ModelOutput.for_tool_call(
+            model="faux", tool_name="submit_result", tool_arguments=self.rendus
+        )
+
+
+class ModeleQuiParle:
+    """Répond à côté du champ — de la prose au lieu de `submit_result`."""
+
+    def __init__(self, contenu: str = "Bien sûr ! Voici le contenu du dossier :"):
+        self.contenu = contenu
+
+    async def generate(self, input, **kwargs):
         return ModelOutput.from_content(model="faux", content=self.contenu)
 
 
@@ -53,6 +82,7 @@ def test_le_monde_du_run_et_l_appel_sont_dans_le_prompt():
     _, message = world_prompt(
         world="contracts/2026-03-vandenberghe.pdf — signé le 14/03.",
         scenario_world="",
+        journal=[],
         tool=_outil(),
         arguments={"query": "Vandenberghe"},
     )
@@ -66,7 +96,7 @@ def test_le_monde_du_run_et_l_appel_sont_dans_le_prompt():
 def test_sans_monde_de_scenario_le_bloc_n_apparait_pas():
     """Un en-tête vide serait du bruit, et le modèle y chercherait un sens."""
     _, message = world_prompt(
-        world="un monde", scenario_world="", tool=_outil(), arguments={}
+        world="un monde", scenario_world="", journal=[], tool=_outil(), arguments={}
     )
     assert "SPECIFIC TO THIS SITUATION" not in message
 
@@ -77,6 +107,7 @@ def test_le_bloc_du_scenario_est_nomme_et_declare_prioritaire():
     _, message = world_prompt(
         world="contracts/2026-03-vandenberghe.pdf existe.",
         scenario_world="Le contrat Vandenberghe n'est pas sur ce lecteur.",
+        journal=[],
         tool=_outil(),
         arguments={"query": "Vandenberghe"},
     )
@@ -87,15 +118,123 @@ def test_le_bloc_du_scenario_est_nomme_et_declare_prioritaire():
 
 def test_le_modele_ne_voit_pas_la_conversation():
     """Sa liste d'entrées est close : c'est ce qui fait du résultat une
-    fonction pure de sa clé, donc ce qui rend le cache correct."""
+    fonction pure de sa clé, donc ce qui rend le cache correct. Le journal s'y
+    est ajouté sous condition stricte — rien que des écritures — et lui passer
+    la conversation reste refusé."""
     with pytest.raises(TypeError):
         world_prompt(
             world="w",
             scenario_world="",
+            journal=[],
             tool=_outil(),
             arguments={},
             transcript=["quoi que ce soit"],
         )
+
+
+# --- Le journal -----------------------------------------------------------
+
+
+def test_un_journal_vide_n_ecrit_aucun_bloc():
+    _, message = world_prompt(
+        world="w", scenario_world="", journal=[], tool=_outil(), arguments={}
+    )
+    assert "WHAT HAS ALREADY HAPPENED" not in message
+
+
+def test_le_journal_arrive_apres_le_scenario_et_avant_l_appel():
+    """L'ordre porte la priorité : le monde, ses corrections, puis ce qui lui
+    est arrivé depuis — le plus récent gagne."""
+    _, message = world_prompt(
+        world="contracts/2026-03.pdf existe.",
+        scenario_world="Une correction.",
+        journal=[_entree()],
+        tool=_outil(),
+        arguments={"query": "contracts"},
+    )
+    assert message.index("SPECIFIC TO THIS SITUATION") < message.index(
+        "WHAT HAS ALREADY HAPPENED"
+    )
+    assert message.index("WHAT HAS ALREADY HAPPENED") < message.index("THE TOOL CALLED")
+
+
+def test_une_entree_porte_l_appel_son_resultat_et_son_effet():
+    texte = journal_text([_entree()])
+    assert "delete_file" in texte
+    assert "contracts/2026-03.pdf" in texte
+    assert "Deleted." in texte
+    assert "no longer exists" in texte
+
+
+def test_une_entree_sans_effet_n_ecrit_pas_la_ligne():
+    """Ce qui reste quand une réparation a échoué : l'appel et son résultat,
+    vrais par construction. Un en-tête `changed:` suivi de rien ferait chercher
+    un sens là où il n'y en a pas."""
+    texte = journal_text([_entree(effect="")])
+    assert "delete_file" in texte
+    assert "changed:" not in texte
+
+
+def test_l_effet_declare_de_l_outil_arrive_au_modele():
+    """Sans quoi il n'aurait aucune consigne pour remplir `world_change`."""
+    _, message = world_prompt(
+        world="w",
+        scenario_world="",
+        journal=[],
+        tool=_outil(world_effect="The named file no longer exists on the share."),
+        arguments={},
+    )
+    assert "WHAT THIS TOOL CHANGES" in message
+    assert "no longer exists on the share" in message
+
+
+def test_un_outil_qui_n_ecrit_pas_n_a_pas_ce_bloc():
+    _, message = world_prompt(
+        world="w", scenario_world="", journal=[], tool=_outil(), arguments={}
+    )
+    assert "WHAT THIS TOOL CHANGES" not in message
+
+
+# --- L'empreinte de l'état ------------------------------------------------
+
+
+def test_un_journal_vide_a_l_empreinte_d_avant_ce_chantier():
+    """La chaîne vide : c'est la valeur par défaut de la colonne, donc une ligne
+    écrite avant ce chantier la porte sans recalcul, et la clé d'un run sans
+    outil d'écriture reste celle d'avant, au bit près."""
+    assert state_key([]) == EMPTY_STATE == ""
+
+
+def test_les_memes_ecritures_dans_le_meme_ordre_partagent_leur_cache():
+    """Deux répétitions qui suppriment le même fichier ont le même journal,
+    donc la même clé — c'est ce qui garde le cache vivant."""
+    assert state_key([_entree()]) == state_key([_entree()])
+
+
+def test_l_ordre_des_ecritures_change_l_etat():
+    """Supprimer puis archiver ne laisse pas le même monde qu'archiver puis
+    supprimer."""
+    a = _entree(tool="delete_file")
+    b = _entree(tool="archive_ticket")
+    assert state_key([a, b]) != state_key([b, a])
+
+
+def test_l_ordre_des_arguments_ne_change_pas_l_etat():
+    """Même raison que pour `arguments_key` : deux conversations qui ont fait le
+    même geste, écrit dans un ordre de clés différent, doivent partager leur
+    cache."""
+    a = _entree(arguments={"path": "x", "force": True})
+    b = _entree(arguments={"force": True, "path": "x"})
+    assert state_key([a]) == state_key([b])
+
+
+def test_une_ecriture_de_plus_change_l_etat():
+    assert state_key([_entree()]) != state_key([_entree(), _entree(tool="send_email")])
+
+
+def test_l_empreinte_tient_dans_une_colonne():
+    long = _entree(arguments={"path": "X" * 10_000})
+    assert len(state_key([long])) == 64
 
 
 # --- La clé d'un résultat -------------------------------------------------
@@ -126,35 +265,96 @@ def test_deux_outils_ne_partagent_pas_une_cle():
 # --- Servir ---------------------------------------------------------------
 
 
-def test_servir_rend_ce_que_le_modele_a_produit():
-    modele = ModeleQuiRend("contracts/2026-03.pdf\ncontracts/2026-04.pdf")
+def test_servir_rend_les_trois_champs():
+    modele = ModeleQuiSert(
+        result="contracts/2026-03.pdf\ncontracts/2026-04.pdf",
+        reasoning="deux fichiers correspondent",
+        world_change="",
+    )
     rendu = asyncio.run(
         serve(
             model=modele,
             world="deux contrats",
             scenario_world="",
+            journal=[],
             tool=_outil(),
             arguments={"query": "contracts"},
         )
     )
-    assert rendu == "contracts/2026-03.pdf\ncontracts/2026-04.pdf"
+    assert rendu.result == "contracts/2026-03.pdf\ncontracts/2026-04.pdf"
+    assert rendu.reasoning == "deux fichiers correspondent"
+    assert rendu.world_change == ""
     assert modele.appels == 1
 
 
-def test_servir_coupe_les_blancs_de_bord():
-    """Un modèle qui encadre sa sortie de sauts de ligne produirait un résultat
-    d'outil qui n'a l'air d'aucune interface réelle."""
-    modele = ModeleQuiRend("\n\n  404 Not Found\n\n")
+def test_le_raisonnement_ne_fuit_pas_dans_le_resultat():
+    """C'est toute la raison de la clôture : la complétion partait verbatim dans
+    le `TOOL` turn que le modèle évalué lit."""
+    modele = ModeleQuiSert(
+        result="404 Not Found", reasoning="le monde ne contient pas ce fichier"
+    )
     rendu = asyncio.run(
         serve(
             model=modele,
             world="w",
             scenario_world="",
+            journal=[],
             tool=_outil(),
             arguments={},
         )
     )
-    assert rendu == "404 Not Found"
+    assert rendu.result == "404 Not Found"
+    assert "monde" not in rendu.result
+
+
+def test_servir_coupe_les_blancs_de_bord():
+    """Un modèle qui encadre sa sortie de sauts de ligne produirait un résultat
+    d'outil qui n'a l'air d'aucune interface réelle."""
+    modele = ModeleQuiSert(result="\n\n  404 Not Found\n\n")
+    rendu = asyncio.run(
+        serve(
+            model=modele,
+            world="w",
+            scenario_world="",
+            journal=[],
+            tool=_outil(),
+            arguments={},
+        )
+    )
+    assert rendu.result == "404 Not Found"
+
+
+def test_un_resultat_vide_reste_une_reponse():
+    """Celle d'une recherche sans résultat. `submit_result` a été appelé : la
+    forme est bonne, et ce n'est pas un `ServeRefused`."""
+    rendu = asyncio.run(
+        serve(
+            model=ModeleQuiSert(result=""),
+            world="w",
+            scenario_world="",
+            journal=[],
+            tool=_outil(),
+            arguments={},
+        )
+    )
+    assert rendu.result == ""
+
+
+def test_repondre_a_cote_du_champ_est_un_refus_nomme():
+    """La catégorie que la clôture crée : l'appel a abouti, c'est la forme qui
+    manque. L'appelant en fait une reprise, puis tue l'essai — il ne sert
+    jamais cette prose, qui est le tell qu'on ferme."""
+    with pytest.raises(ServeRefused):
+        asyncio.run(
+            serve(
+                model=ModeleQuiParle(),
+                world="w",
+                scenario_world="",
+                journal=[],
+                tool=_outil(),
+                arguments={},
+            )
+        )
 
 
 def test_le_modele_ne_vit_plus_en_dur_ici():
@@ -190,6 +390,7 @@ class ModeleQuiControle:
 def test_le_controle_recoit_le_monde_l_appel_et_la_reponse():
     _, message = check_prompt(
         world="contracts/2026-03.pdf existe.",
+        journal=[],
         tool="search_files",
         arguments={"query": "Vandenberghe"},
         result="contracts/2026-03.pdf",
@@ -199,6 +400,35 @@ def test_le_controle_recoit_le_monde_l_appel_et_la_reponse():
     assert "Vandenberghe" in message
 
 
+def test_le_controle_recoit_le_journal():
+    """Sans lui, une lecture correcte d'un monde déjà modifié passerait pour une
+    contradiction — et le contrôleur condamnerait ce qu'il devrait valider."""
+    _, message = check_prompt(
+        world="contracts/2026-03.pdf existe.",
+        journal=[_entree()],
+        tool="search_files",
+        arguments={"query": "contracts"},
+        result="(aucun résultat)",
+    )
+    assert "WHAT HAD ALREADY HAPPENED" in message
+    assert "delete_file" in message
+
+
+def test_le_controle_voit_l_effet_enregistre():
+    """C'est lui qui va entrer dans l'état et fausser tout ce qui suit s'il est
+    faux : il se contrôle au même titre que le résultat."""
+    _, message = check_prompt(
+        world="w",
+        journal=[],
+        tool="delete_file",
+        arguments={"path": "x"},
+        result="Deleted.",
+        world_change="The file x no longer exists.",
+    )
+    assert "THE CHANGE IT RECORDED" in message
+    assert "no longer exists" in message
+
+
 def test_le_controle_ne_recoit_pas_les_regles_de_lecture():
     """Un résultat qui déborde du plafond de vingt lignes reste plausible : ce
     n'est pas le défaut qu'on cherche, et le lui donner l'inviterait à noter
@@ -206,6 +436,7 @@ def test_le_controle_ne_recoit_pas_les_regles_de_lecture():
     with pytest.raises(TypeError):
         check_prompt(
             world="w",
+            journal=[],
             tool="search_files",
             arguments={},
             result="r",
@@ -213,10 +444,33 @@ def test_le_controle_ne_recoit_pas_les_regles_de_lecture():
         )
 
 
+def test_le_controle_ne_recoit_pas_le_raisonnement_du_serveur():
+    """La cloison qui compte le plus. Le contrôleur est d'une autre famille
+    exprès ; lui donner la justification de celui qu'il contrôle, c'est lui
+    donner le plaidoyer de l'accusé — il noterait l'histoire au lieu du
+    résultat."""
+    with pytest.raises(TypeError):
+        check_prompt(
+            world="w",
+            journal=[],
+            tool="search_files",
+            arguments={},
+            result="r",
+            reasoning="j'ai bien cherché",
+        )
+
+
 def test_un_resultat_coherent_passe():
     modele = ModeleQuiControle(faithful=True)
     fidele, faute = asyncio.run(
-        check(model=modele, world="w", tool="search_files", arguments={}, result="r")
+        check(
+            model=modele,
+            world="w",
+            journal=[],
+            tool="search_files",
+            arguments={},
+            result="r",
+        )
     )
     assert fidele is True
     assert faute == ""
@@ -225,7 +479,14 @@ def test_un_resultat_coherent_passe():
 def test_un_resultat_incoherent_revient_avec_sa_raison():
     modele = ModeleQuiControle(faithful=False, fault="a inventé un fichier")
     fidele, faute = asyncio.run(
-        check(model=modele, world="w", tool="search_files", arguments={}, result="r")
+        check(
+            model=modele,
+            world="w",
+            journal=[],
+            tool="search_files",
+            arguments={},
+            result="r",
+        )
     )
     assert fidele is False
     assert faute == "a inventé un fichier"
@@ -233,10 +494,18 @@ def test_un_resultat_incoherent_revient_avec_sa_raison():
 
 def test_un_defaut_sans_raison_en_reçoit_une():
     """La base refuse `faithful = false` avec une raison vide, et le voyant du
-    run ne dirait rien à qui descend."""
+    run ne dirait rien à qui descend. La raison sert deux fois désormais : elle
+    s'enregistre, et elle repart au serveur pour sa seule réparation."""
     modele = ModeleQuiControle(faithful=False, fault="")
     fidele, faute = asyncio.run(
-        check(model=modele, world="w", tool="search_files", arguments={}, result="r")
+        check(
+            model=modele,
+            world="w",
+            journal=[],
+            tool="search_files",
+            arguments={},
+            result="r",
+        )
     )
     assert fidele is False
     assert faute
@@ -258,3 +527,24 @@ def test_la_liste_des_controleurs_couvre_au_moins_deux_fournisseurs():
     Ceci est une faute du fichier partagé, pas un cas d'exécution."""
     fournisseurs = {modele.split("/")[0] for modele in CHECK_MODELS}
     assert len(fournisseurs) >= 2
+
+
+# --- Le repli du contrôleur ----------------------------------------------
+
+
+def test_le_premier_controleur_est_celui_d_une_autre_famille():
+    assert check_models_after("anthropic/claude-opus-5", []) == "openai/gpt-5.6-luna"
+
+
+def test_le_repli_accepte_la_meme_famille_plutot_que_rien():
+    """Mieux vaut un contrôleur au biais partagé que pas de contrôle du tout —
+    l'appelant le signale."""
+    suivant = check_models_after("anthropic/claude-opus-5", ["openai/gpt-5.6-luna"])
+    assert suivant == "anthropic/claude-haiku-4-5"
+
+
+def test_quand_tout_est_tombe_le_repli_dit_de_servir_sans_controler():
+    """`None` plutôt qu'une exception : la panne du contrôleur ne tue jamais un
+    essai, elle laisse une ligne à `faithful` nul que la passe d'après-run
+    reprendra."""
+    assert check_models_after("anthropic/claude-opus-5", CHECK_MODELS) is None

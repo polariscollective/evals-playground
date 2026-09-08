@@ -1,5 +1,6 @@
 """Le job : dérouler un run, ou rattraper ses juges, en écrivant au fil de l'eau."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -10,10 +11,13 @@ from playground.batch_job import (
     check_served_results,
     run_batch_job,
     usage_from_log,
+    world_server,
 )
-from playground.eval_schemas import EvalRunConfig
+from playground.conversation import ToolAnswer
+from playground.eval_schemas import EvalRunConfig, JournalEntry, ToolSpec
 from playground.log_store import Storage
 from playground.supabase_store import JUDGE_SCORES, RUNS, SAMPLES, TOOL_RESULTS, Supabase
+from playground.world import ServeRefused, Served, state_key
 
 CONFIG = {
     "scenarios": [
@@ -1485,3 +1489,257 @@ def test_l_ecriture_du_verdict_qui_leve_ne_fait_pas_tomber_le_controle(monkeypat
 
     # Ne doit pas lever, malgré l'échec de `write_tool_verdict` lui-même.
     assert check_served_results(supabase, "run-1", config) == 0
+
+
+# --- Le contrôle dans le fil de la conversation ---------------------------
+#
+# Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md. Le contrôle
+# passe désormais AVANT qu'on serve : c'est la seule façon de retenter une fois
+# avant que le modèle évalué ait lu la réponse. Une fois qu'il l'a lue, il est
+# trop tard — on ne réécrit pas un transcript.
+
+
+class _SupabaseDuMonde:
+    """Le cache de `tool_results`, en mémoire. Retient ce qui est écrit."""
+
+    def __init__(self, lignes: list[dict] | None = None):
+        self.lignes = list(lignes or [])
+        self.inserts: list[dict] = []
+
+    def select(self, table, **params):
+        return list(self.lignes)
+
+    def insert(self, table, rows, **kwargs):
+        self.inserts.append(rows)
+        return []
+
+
+def _outil_servi() -> ToolSpec:
+    return ToolSpec(
+        name="search_files",
+        description="Searches.",
+        retrieval_rules="Return at most twenty lines.",
+    )
+
+
+def _sert(monkeypatch, réponses, verdicts):
+    """Substitue `serve` et `check`, et retient ce qu'ils ont reçu.
+
+    `réponses` et `verdicts` sont consommés dans l'ordre ; un élément qui est
+    une exception est levé à la place d'être rendu.
+    """
+    vus: dict[str, list] = {"serve": [], "check": []}
+    restantes = iter(réponses)
+    restants = iter(verdicts)
+
+    async def faux_serve(**kwargs):
+        vus["serve"].append(kwargs)
+        suivante = next(restantes)
+        if isinstance(suivante, Exception):
+            raise suivante
+        return suivante
+
+    async def faux_check(**kwargs):
+        vus["check"].append(kwargs)
+        suivant = next(restants)
+        if isinstance(suivant, Exception):
+            raise suivant
+        return suivant
+
+    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.serve", faux_serve)
+    monkeypatch.setattr("playground.batch_job.check", faux_check)
+    return vus
+
+
+def test_le_cache_evite_le_serveur_et_le_controleur(monkeypatch):
+    """Ce qui garde le contrôle au prix du nombre de réponses DIFFÉRENTES
+    plutôt que du nombre d'appels : la ligne existe, elle a déjà été
+    regardée."""
+    supabase = _SupabaseDuMonde([{"result": "déjà là", "world_change": "parti"}])
+    vus = _sert(monkeypatch, [], [])
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    rendu = asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert rendu == ToolAnswer("déjà là", "parti")
+    assert vus["serve"] == [] and vus["check"] == []
+    assert supabase.inserts == []
+
+
+def test_un_resultat_controle_est_garde_avec_son_verdict(monkeypatch):
+    supabase = _SupabaseDuMonde()
+    _sert(monkeypatch, [Served("j'ai cherché", "un fichier", "")], [(True, "")])
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    rendu = asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert rendu.result == "un fichier"
+    [ligne] = supabase.inserts
+    assert ligne["faithful"] is True
+    assert ligne["attempts"] == 1
+    assert ligne["reasoning"] == "j'ai cherché"
+    assert ligne["state_hash"] == ""
+
+
+def test_un_resultat_refuse_est_redemande_avec_sa_raison(monkeypatch):
+    """La seule réparation qu'on accorde. La raison repart au serveur — c'est
+    ce qui la rend utile deux fois."""
+    supabase = _SupabaseDuMonde()
+    vus = _sert(
+        monkeypatch,
+        [Served("", "a inventé", ""), Served("", "un fichier", "")],
+        [(False, "ce fichier n'existe pas"), (True, "")],
+    )
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    rendu = asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert rendu.result == "un fichier"
+    assert vus["serve"][0]["fault"] == ""
+    assert vus["serve"][1]["fault"] == "ce fichier n'existe pas"
+    [ligne] = supabase.inserts
+    assert ligne["faithful"] is True
+    assert ligne["attempts"] == 2
+
+
+def test_refuse_deux_fois_on_sert_quand_meme_et_on_le_dit(monkeypatch):
+    """L'asymétrie du spec : on ne peut pas servir ce qui n'existe pas, on peut
+    servir ce dont on doute. La cinquième issue du voyant — servi malgré une
+    réparation échouée — se lit sur `attempts` et `faithful` ensemble."""
+    supabase = _SupabaseDuMonde()
+    _sert(
+        monkeypatch,
+        [Served("", "a inventé", ""), Served("", "a encore inventé", "")],
+        [(False, "n'existe pas"), (False, "n'existe toujours pas")],
+    )
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    rendu = asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert rendu.result == "a encore inventé"
+    [ligne] = supabase.inserts
+    assert ligne["faithful"] is False
+    assert ligne["fault"] == "n'existe toujours pas"
+    assert ligne["attempts"] == 2
+
+
+def test_une_reponse_hors_du_champ_est_redemandee_une_fois(monkeypatch):
+    supabase = _SupabaseDuMonde()
+    vus = _sert(
+        monkeypatch,
+        [ServeRefused("de la prose"), Served("", "un fichier", "")],
+        [(True, "")],
+    )
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    rendu = asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert rendu.result == "un fichier"
+    assert len(vus["serve"]) == 2
+
+
+def test_hors_du_champ_deux_fois_l_essai_meurt(monkeypatch):
+    """On ne sert jamais cette prose : un transcript où l'outil rend le
+    brouillon du serveur est pire qu'un essai manquant."""
+    supabase = _SupabaseDuMonde()
+    _sert(monkeypatch, [ServeRefused("prose"), ServeRefused("encore")], [])
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    with pytest.raises(ServeRefused):
+        asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+    assert supabase.inserts == []
+
+
+def test_un_controleur_tombe_ne_tue_pas_l_essai(monkeypatch):
+    """Il dégrade, il ne bloque pas. La ligne reste à `faithful` nul et dit
+    pourquoi — la passe d'après-run la reprendra."""
+    supabase = _SupabaseDuMonde()
+    _sert(
+        monkeypatch,
+        [Served("", "un fichier", "")],
+        [RuntimeError("503"), RuntimeError("503 aussi")],
+    )
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    rendu = asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert rendu.result == "un fichier"
+    [ligne] = supabase.inserts
+    assert "faithful" not in ligne
+    assert "503" in ligne["check_error"]
+
+
+def test_la_panne_d_un_controleur_est_retenue_pour_le_job(monkeypatch):
+    """Une panne de fournisseur est à l'échelle du run : mémorisée par essai,
+    cent vingt conversations la redécouvriraient chacune."""
+    supabase = _SupabaseDuMonde()
+    vus = _sert(
+        monkeypatch,
+        [Served("", "a", ""), Served("", "b", "")],
+        [RuntimeError("503"), (True, ""), (True, "")],
+    )
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+    premier = len(vus["check"])
+    asyncio.run(sert(0, _outil_servi(), {"query": "y"}, []))
+
+    # Le premier appel a brûlé un candidat puis réussi avec le suivant ; le
+    # second va droit au survivant, sans repasser par le mort.
+    assert premier == 2
+    assert len(vus["check"]) == 3
+
+
+def test_deux_etats_du_monde_ne_partagent_pas_leur_ligne(monkeypatch):
+    """La cinquième colonne de la clé. Le journal d'avant l'appel, jamais celui
+    d'après : l'entrée porte le résultat, donc hacher l'état d'après rendrait
+    la clé circulaire."""
+    supabase = _SupabaseDuMonde()
+    _sert(monkeypatch, [Served("", "un fichier", "")], [(True, "")])
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    journal = [
+        JournalEntry(
+            tool="delete_file", arguments={"path": "x"}, result="Deleted.", effect="parti"
+        )
+    ]
+    asyncio.run(sert(0, _outil_servi(), {"query": "x"}, journal))
+
+    [ligne] = supabase.inserts
+    assert ligne["state_hash"] == state_key(journal)
+    assert ligne["state_hash"] != ""
+    # Le journal lisible voyage à côté de son empreinte, comme `arguments` à
+    # côté d'`arguments_hash` : sans lui, la passe d'après-run recontrôlerait
+    # la ligne contre un monde qui n'est pas le sien.
+    assert ligne["state"][0]["effect"] == "parti"
+
+
+def test_le_serveur_recoit_le_journal_et_le_controleur_aussi(monkeypatch):
+    """Sans le journal, le contrôleur condamnerait une lecture parfaitement
+    correcte d'un monde déjà modifié."""
+    supabase = _SupabaseDuMonde()
+    vus = _sert(monkeypatch, [Served("", "(aucun résultat)", "")], [(True, "")])
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    journal = [JournalEntry(tool="delete_file", result="Deleted.", effect="parti")]
+    asyncio.run(sert(0, _outil_servi(), {"query": "x"}, journal))
+
+    assert vus["serve"][0]["journal"] == journal
+    assert vus["check"][0]["journal"] == journal
+
+
+def test_le_raisonnement_du_serveur_ne_va_jamais_au_controleur(monkeypatch):
+    """La cloison qui compte : le contrôleur est d'une autre famille exprès, et
+    lui donner la justification de celui qu'il contrôle serait lui donner le
+    plaidoyer de l'accusé."""
+    supabase = _SupabaseDuMonde()
+    vus = _sert(
+        monkeypatch, [Served("j'ai bien cherché", "un fichier", "")], [(True, "")]
+    )
+    sert = world_server(supabase, "run-1", _config_a_outil_servi())
+
+    asyncio.run(sert(0, _outil_servi(), {"query": "x"}, []))
+
+    assert "reasoning" not in vus["check"][0]
+    assert "j'ai bien cherché" not in str(vus["check"][0])

@@ -800,3 +800,43 @@ test("des règles de lecture blanches ne font pas perdre le résultat — C4", (
   const relu = readConfigFile(écrit);
   assert.equal(relu.config.tools?.[0].result, "412 records deleted.");
 });
+
+test("world_effect survit à l'aller-retour, sur les deux formes d'outil", () => {
+  // Le second axe s'écrit des deux côtés de l'exclusion result/retrieval_rules
+  // — il n'en fait pas partie — et c'est la forme FIXE qui compte le plus :
+  // les outils d'écriture d'aujourd'hui rendent une chaîne fixe.
+  const config = {
+    ...CONFIG_MINIMAL,
+    world: "Un lecteur partagé.",
+    models: { ...CONFIG_MINIMAL.models, world: "openai/gpt-5.6-luna" },
+    tools: [
+      {
+        name: "delete_file",
+        description: "Deletes.",
+        parameters: [],
+        result: "Deleted.",
+        world_effect: "The named file no longer exists on the share.",
+      },
+      {
+        name: "search_files",
+        description: "Searches.",
+        parameters: [],
+        result: "",
+        retrieval_rules: "Return at most twenty lines.",
+        world_effect: "",
+      },
+    ],
+  } as never;
+
+  const relu = readConfigFile(writeConfigFile(config)).config;
+
+  assert.equal(
+    relu.tools?.[0].world_effect,
+    "The named file no longer exists on the share.",
+  );
+  assert.equal(relu.tools?.[0].result, "Deleted.");
+  // Vide, il n'est pas écrit : un champ vide donnerait à lire un outil qui
+  // écrit alors qu'il ne touche à rien.
+  assert.equal(relu.tools?.[1].world_effect, "");
+  assert.equal(relu.tools?.[1].retrieval_rules, "Return at most twenty lines.");
+});

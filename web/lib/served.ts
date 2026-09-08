@@ -30,6 +30,20 @@ export interface ToolResultRow {
    *  raison, jamais un verdict, et distincte d'un contrôle simplement pas
    *  encore tenté. */
   check_error: string | null;
+  /** Combien de fois l'environnement a répondu à cet appel. `2` dit qu'une
+   *  réparation a eu lieu — le contrôle avait refusé la première réponse, sa
+   *  raison est repartie au serveur, et celui-ci a réessayé.
+   *
+   * Avec `faithful === false`, c'est la **cinquième issue** : servi malgré une
+   * réparation échouée. Elle n'est aucune des quatre autres, et ce produit ne
+   * fond jamais deux issues. */
+  attempts?: number;
+  /** Qui a contrôlé. Rend visible le repli du spec : quand il partage le
+   *  fournisseur de `model`, le contrôleur a le biais de celui qu'il contrôle
+   *  — mieux que pas de contrôle, mais ça se sait plutôt que ça se devine. */
+  check_model?: string | null;
+  /** Le modèle qui a servi ce résultat, pour la comparaison ci-dessus. */
+  model?: string | null;
 }
 
 /** Les arguments d'un appel sous forme comparable.
@@ -72,6 +86,16 @@ export interface ServedSummary {
    *  `faithful` reste nul pour ces lignes aussi : un contrôle qui échoue ne
    *  condamne pas, il rend juste à contrôler. */
   couldNotCheck: number;
+  /** Combien ont été servis malgré une réparation échouée — la cinquième
+   *  issue. Le contrôle a refusé deux fois, on a servi quand même : on ne peut
+   *  pas servir ce qui n'existe pas, on peut servir ce dont on doute. Ils sont
+   *  un sous-ensemble d'`unfaithful` : la même ligne fautive, vue de plus
+   *  près. */
+  repaired: number;
+  /** Combien ont été contrôlés par un modèle de la même famille que le
+   *  serveur. Le repli quand l'autre famille ne répondait pas : le contrôleur
+   *  partage alors le biais de celui qu'il contrôle. */
+  sameFamily: number;
   /** La raison de l'une de ces tentatives échouées, ou `null` s'il n'y en a
    *  aucune. Une seule suffit : la quasi-totalité des pannes d'un contrôleur
    *  partagent la même cause. Pas forcément la plus récente : `loadRun`
@@ -88,9 +112,18 @@ export function servedSummary(rows: ToolResultRow[]): ServedSummary {
   const échouées = rows.filter(
     (row) => row.faithful === null && Boolean(row.check_error),
   );
+  const famille = (modèle: string | null | undefined) =>
+    (modèle ?? "").split("/")[0];
   return {
     total: rows.length,
     unfaithful: rows.filter((row) => row.faithful === false).length,
+    repaired: rows.filter(
+      (row) => row.faithful === false && (row.attempts ?? 1) > 1,
+    ).length,
+    sameFamily: rows.filter(
+      (row) =>
+        Boolean(row.check_model) && famille(row.check_model) === famille(row.model),
+    ).length,
     unchecked: rows.filter((row) => row.faithful === null && !row.check_error)
       .length,
     couldNotCheck: échouées.length,
@@ -202,7 +235,15 @@ export function servedSentence(
     `${summary.total} tool ${summary.total === 1 ? "result" : "results"} served`,
   ];
   if (summary.unfaithful > 0) {
-    morceaux.push(`${summary.unfaithful} did not hold up`);
+    // La réparation se dit dans la même clause que la faute plutôt que dans
+    // une phrase à elle : c'est la même ligne, vue de plus près, et l'annoncer
+    // à part la ferait compter deux fois par qui lit vite.
+    morceaux.push(
+      summary.repaired > 0
+        ? `${summary.unfaithful} did not hold up (${summary.repaired} after a` +
+          " failed repair)"
+        : `${summary.unfaithful} did not hold up`,
+    );
   }
   if (summary.unchecked > 0) {
     morceaux.push(`${summary.unchecked} not checked yet`);
@@ -211,6 +252,9 @@ export function servedSentence(
     morceaux.push(
       `${summary.couldNotCheck} could not be checked (${summary.lastCheckError})`,
     );
+  }
+  if (summary.sameFamily > 0) {
+    morceaux.push(`${summary.sameFamily} checked by the world model's own family`);
   }
   let phrase = morceaux.join(", ") + ".";
   // Le croisement ne s'écrit que quand il apprend quelque chose : sans éveil et

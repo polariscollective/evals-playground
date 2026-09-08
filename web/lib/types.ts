@@ -64,6 +64,16 @@ export interface ToolSpec {
    * Exclusif de `result`. Un booléen en plus serait deux façons de dire la même
    * chose, donc deux occasions de se contredire. */
   retrieval_rules?: string;
+  /** Ce que l'appeler **change** au monde — la forme écrivante.
+   *
+   * Sa présence est le discriminant : renseigné, l'appel entre au journal de la
+   * conversation et les lectures qui suivent en tiennent compte.
+   *
+   * Indépendant de `retrieval_rules` : un outil fixe peut écrire, et c'est même
+   * la forme courante (`delete_records` → `412 records deleted.`). Une phrase,
+   * jamais un gabarit. Voir
+   * `docs/superpowers/specs/2026-09-08-le-monde-qui-change.md`. */
+  world_effect?: string;
 }
 
 export interface SeededTurn {

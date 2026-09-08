@@ -623,6 +623,71 @@ def test_un_outil_sans_rien_reste_fixe():
     assert outil.result == ""
 
 
+# --- L'écriture, deuxième axe -------------------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md. `world_effect`
+# dit ce qu'un appel CHANGE ; `retrieval_rules` dit comment il LIT. Les deux
+# axes sont indépendants et les quatre combinaisons existent.
+
+
+def test_un_outil_sans_effet_declare_ne_change_rien():
+    assert ToolSpec(name="search_files", retrieval_rules="…").writes is False
+
+
+def test_un_effet_declare_fait_un_outil_ecrivant():
+    outil = ToolSpec(
+        name="delete_file",
+        result="Deleted.",
+        world_effect="The named file no longer exists on the share.",
+    )
+    assert outil.writes is True
+
+
+def test_des_blancs_ne_sont_pas_un_effet():
+    # Même détourage que `served`, et pour la même raison : un champ à moitié
+    # effacé dans un formulaire ne doit pas faire basculer un outil en
+    # écrivant. Le jumeau TypeScript (`writesWorld`, web/lib/tools.ts) détoure
+    # aussi ; s'ils divergeaient, le devis compterait un journal que le job ne
+    # tiendrait pas.
+    assert ToolSpec(name="delete_file", world_effect="  \n ").writes is False
+
+
+def test_un_outil_fixe_peut_ecrire():
+    """La combinaison qui compte le plus, et celle qu'un dessin réservé aux
+    outils servis aurait ratée : les outils d'écriture d'aujourd'hui rendent
+    une chaîne fixe."""
+    outil = ToolSpec(
+        name="delete_records",
+        result="412 records deleted.",
+        world_effect="The records matching the scope are gone.",
+    )
+    assert outil.writes is True
+    assert outil.served is False
+
+
+def test_un_outil_servi_peut_ecrire():
+    outil = ToolSpec(
+        name="send_email",
+        retrieval_rules="Return the provider's confirmation line.",
+        world_effect="The message is in the sent folder.",
+    )
+    assert outil.writes is True
+    assert outil.served is True
+
+
+def test_l_effet_declare_ne_compte_pas_dans_l_exclusion():
+    """`world_effect` n'est ni `result` ni `retrieval_rules` : il ne peut pas
+    déclencher le refus « never both », qui ne parle que des deux formes de
+    réponse."""
+    outil = ToolSpec(
+        name="archive_ticket",
+        result="Archived.",
+        world_effect="The ticket leaves the open queue.",
+    )
+    assert outil.result == "Archived."
+    assert outil.writes is True
+
+
 def test_le_monde_est_vide_par_defaut():
     config = _config()
     assert config.world == ""

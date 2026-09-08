@@ -10,9 +10,9 @@ lui est propre. Ce prompt ne quitte jamais sa vue.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal, Sequence
+from typing import Any, Awaitable, Callable, Literal, NamedTuple, Sequence
 
-from playground.eval_schemas import ToolSpec
+from playground.eval_schemas import JournalEntry, ToolSpec
 from playground.shared_data import load
 
 from inspect_ai.tool import ToolCall, ToolDef, ToolParams
@@ -82,6 +82,75 @@ class Turn:
     évalué n'a jamais dits. Il voyage jusqu'au transcript enregistré, jusqu'à
     l'invite du juge et jusqu'à l'export.
     """
+
+    world_change: str = ""
+    """Sur un tour `tool` : ce que cet appel a changé au monde, ou vide.
+
+    Vide sur tout outil de lecture, et sur tout run antérieur à
+    `2026-09-08-le-monde-qui-change.md`.
+
+    **Ne part jamais au modèle évalué ni au juge.** `target_view` ne lit que
+    `content` — c'est le seul endroit qui construit les messages de la cible —
+    et l'invite du juge non plus. Le champ existe pour que le journal se
+    reconstitue depuis le transcript, et pour rien d'autre : c'est ce qui rend
+    une reprise gratuite (voir `journal_from`), là où le recalculer
+    demanderait de rejouer la chaîne des empreintes dans l'ordre.
+    """
+
+
+class ToolAnswer(NamedTuple):
+    """Ce que `serve_tool` rend : le résultat, et ce que l'appel a changé.
+
+    Le `reasoning` du modèle d'environnement ne traverse pas cette frontière —
+    il s'enregistre du côté de `serve_tool`, qui parle à la base, et n'entre
+    jamais dans une conversation. La cloison est structurelle plutôt
+    qu'observée : ce qui n'arrive pas ici ne peut pas finir dans un `TOOL`
+    turn.
+    """
+
+    result: str
+    world_change: str = ""
+
+
+def journal_from(
+    transcript: "Sequence[Turn]", specs: "dict[str, ToolSpec]"
+) -> list[JournalEntry]:
+    """Le journal d'une conversation, reconstitué depuis son transcript.
+
+    Les écritures seulement, dans l'ordre. Une lecture n'y entre jamais : c'est
+    ce qui garde le cache vivant, et non une économie de place — voir la
+    docstring de `JournalEntry`.
+
+    Les arguments sont lus sur le tour `assistant`, qui porte la décision
+    d'appeler ; le résultat et l'effet sur le tour `tool` qui lui répond, apparié
+    par `tool_call_id`. C'est ce qui rend une reprise gratuite : les tours
+    rejoués portent déjà tout, et il n'y a rien à recalculer.
+
+    Un outil que la configuration ne connaît plus est ignoré — une extension
+    peut avoir retiré ce que la conversation avait appelé, et rien ici ne doit
+    tomber sur un run qu'on relit.
+    """
+    arguments: dict[str, dict[str, Any]] = {}
+    journal: list[JournalEntry] = []
+    for turn in transcript:
+        if turn.role == "assistant":
+            for call in turn.tool_calls:
+                arguments[call.id] = call.arguments
+            continue
+        if turn.role != "tool" or turn.tool_name is None:
+            continue
+        spec = specs.get(turn.tool_name)
+        if spec is None or not spec.writes:
+            continue
+        journal.append(
+            JournalEntry(
+                tool=turn.tool_name,
+                arguments=arguments.get(turn.tool_call_id or "", {}),
+                result=turn.content,
+                effect=turn.world_change,
+            )
+        )
+    return journal
 
 
 def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]:
@@ -229,7 +298,10 @@ async def run_conversation(
     history: "Sequence[Turn] | None" = None,
     resume: "Sequence[Turn] | None" = None,
     tools: "Sequence[ToolSpec] | None" = None,
-    serve_tool: "Callable[[ToolSpec, dict[str, Any]], Awaitable[str]] | None" = None,
+    serve_tool: (
+        "Callable[[ToolSpec, dict[str, Any], Sequence[JournalEntry]],"
+        " Awaitable[ToolAnswer]] | None"
+    ) = None,
     max_tool_calls: int = MAX_TOOL_CALLS_PER_TURN,
     stopped: "Callable[[], bool] | None" = None,
 ) -> list[Turn]:
@@ -263,7 +335,9 @@ async def run_conversation(
             `adversary` : cette boucle ne connaît ni le monde, ni le modèle qui
             le sert, ni la base où les réponses sont gardées. Exigé dès qu'un
             outil est servi, et jamais consulté pour un outil fixe, qui ne
-            coûte donc pas un appel.
+            coûte donc pas un appel. Il reçoit le journal de la conversation
+            tel qu'il est **avant** cet appel — c'est l'état sur lequel la
+            réponse se calcule et se met en cache, jamais celui qu'elle laisse.
         tools: Les outils offerts au modèle évalué pour ce scénario. Rien n'est
             exécuté : chaque appel reçoit le `result` écrit dans sa définition,
             le même à chaque répétition. Faire improviser la réponse
@@ -356,19 +430,29 @@ async def run_conversation(
             " than a cell that is missing."
         )
 
-    async def resultat(call: ToolCall) -> str:
+    # Le journal de cette conversation : les appels qui ont changé le monde, et
+    # eux seuls. Reconstitué depuis les tours repris — c'est ce qui rend
+    # l'approfondissement gratuit — puis tenu à jour au fil des appels.
+    journal = journal_from(transcript, specs)
+
+    async def resultat(call: ToolCall) -> ToolAnswer:
         """Ce que cet appel reçoit : la chaîne fixe, ou le monde.
 
         Rien n'est mis en cache ici. C'est `serve_tool` qui décide, puisque
         c'est lui qui sait ce qui est déjà en base — cette boucle, elle, ne
         parle à personne.
+
+        Un outil fixe qui écrit journalise quand même, et sans appeler qui que
+        ce soit : sa phrase est celle que l'expérimentateur a écrite. C'est la
+        forme courante des outils d'écriture, et la réserver aux outils servis
+        les aurait tous ratés.
         """
         spec = specs.get(call.function)
         if spec is None:
-            return f"Unknown tool {call.function!r}."
+            return ToolAnswer(f"Unknown tool {call.function!r}.")
         if not spec.served:
-            return spec.result
-        return await serve_tool(spec, call.arguments or {})
+            return ToolAnswer(spec.result, spec.world_effect.strip())
+        return await serve_tool(spec, call.arguments or {}, journal)
 
     for turn_index in range(turns):
         # Un tour, c'est une réponse du modèle évalué — pas un appel de modèle.
@@ -409,18 +493,37 @@ async def run_conversation(
             # les fournisseurs refusent un appel resté en suspens.
             plafond = essai == max_tool_calls
             for call in appels:
+                # Le plafond ne sert rien : il ne consulte pas le monde, ne
+                # journalise pas, et n'a donc rien changé. Une écriture refusée
+                # faute de place n'a pas eu lieu.
+                réponse = (
+                    await resultat(call)
+                    if not plafond
+                    else ToolAnswer("Tool call limit reached for this turn.")
+                )
                 transcript.append(
                     Turn(
                         role="tool",
-                        content=(
-                            await resultat(call)
-                            if not plafond
-                            else "Tool call limit reached for this turn."
-                        ),
+                        content=réponse.result,
                         tool_call_id=call.id,
                         tool_name=call.function,
+                        world_change=réponse.world_change,
                     )
                 )
+                # L'entrée est posée APRÈS que l'appel a été servi : ce qui
+                # entre au journal a déjà été calculé sur l'état d'avant lui.
+                # L'ordre inverse rendrait la clé du cache circulaire — l'entrée
+                # porte le résultat qu'elle sert à retrouver.
+                spec = specs.get(call.function)
+                if not plafond and spec is not None and spec.writes:
+                    journal.append(
+                        JournalEntry(
+                            tool=call.function,
+                            arguments=call.arguments or {},
+                            result=réponse.result,
+                            effect=réponse.world_change,
+                        )
+                    )
             if plafond:
                 break
 
