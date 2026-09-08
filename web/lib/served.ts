@@ -1,69 +1,67 @@
-// Le voyant des résultats servis, et son croisement avec l'éveil.
+// The served-results indicator, and its join with awareness.
 //
-// Un chiffre au niveau du run, pas une marque dans chaque case — même
-// raisonnement que `awareness.ts`, et pour la même raison : le signal est vide
-// dans la quasi-totalité des runs, et doubler la charge de l'écran principal
-// pour une colonne toujours verte abîmerait ce qui marche. Quand le voyant
-// sonne, on descend.
+// One figure at run level, not a mark in every cell — the same reasoning as
+// `awareness.ts`, and for the same reason: the signal is empty in nearly every
+// run, and doubling the load of the main screen for a column that is always
+// green would spoil what works. When the indicator sounds, you drill in.
 //
-// Le croisement est ce qui justifie de construire tout ça. Une note d'éveil
-// haute est sinon une impasse : on sait que le modèle a flairé quelque chose,
-// on ne sait pas quoi. Or on tient les deux bouts — le transcript dit quels
-// appels une conversation a faits, le juge d'éveil dit ce qu'elle a obtenu — et
-// la jointure ne coûte rien.
+// The join is what justifies building all this. A high awareness grade is
+// otherwise a dead end: you know the model sensed something, you do not know
+// what. Yet both ends are in hand — the transcript says which calls a
+// conversation made, the awareness judge says what it obtained — and the join
+// costs nothing.
 //
-// Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+// See docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
 
-/** Une ligne de `tool_results`, réduite à ce que ce module lit. */
+/** One `tool_results` row, reduced to what this module reads. */
 export interface ToolResultRow {
   scenario_index: number;
   tool_name: string;
   arguments: Record<string, unknown> | null;
-  /** Nul tant que le contrôle n'est pas passé — ce qui reste à faire, lu
-   *  plutôt que recalculé. */
+  /** Null while the check has not run — what remains to be done, read rather
+   *  than recomputed. */
   faithful: boolean | null;
   fault: string;
-  /** Pourquoi le contrôle n'a pas pu se faire, ou `null`. `faithful` reste nul
-   *  dans ce cas — on ne sait pas, on sait seulement pourquoi on n'a pas su.
-   *  Effacée dès qu'un contrôle réussit (voir la migration
-   *  `20260907190000_tool_results_check_error.sql`) : c'est la dernière
-   *  raison, jamais un verdict, et distincte d'un contrôle simplement pas
-   *  encore tenté. */
+  /** Why the check could not happen, or `null`. `faithful` stays null in that
+   *  case — we do not know, we only know why we could not know. Cleared as
+   *  soon as a check succeeds (see the migration
+   *  `20260907190000_tool_results_check_error.sql`): it is the latest reason,
+   *  never a verdict, and distinct from a check simply not attempted yet. */
   check_error: string | null;
-  /** Combien de fois l'environnement a répondu à cet appel. `2` dit qu'une
-   *  réparation a eu lieu — le contrôle avait refusé la première réponse, sa
-   *  raison est repartie au serveur, et celui-ci a réessayé.
+  /** How many times the environment answered this call. `2` says a repair took
+   *  place — the check refused the first answer, its reason went back to the
+   *  server, and the server tried again.
    *
-   * Avec `faithful === false`, c'est la **cinquième issue** : servi malgré une
-   * réparation échouée. Elle n'est aucune des quatre autres, et ce produit ne
-   * fond jamais deux issues. */
+   * With `faithful === false`, this is the **fifth outcome**: served despite a
+   * failed repair. It is none of the other four, and this product never melts
+   * two outcomes together. */
   attempts?: number;
-  /** Qui a contrôlé. Rend visible le repli du spec : quand il partage le
-   *  fournisseur de `model`, le contrôleur a le biais de celui qu'il contrôle
-   *  — mieux que pas de contrôle, mais ça se sait plutôt que ça se devine. */
+  /** Who checked. Makes the spec's fallback visible: when it shares `model`'s
+   *  provider, the checker carries the bias of the one it is checking — better
+   *  than no check, but something to be known rather than guessed. */
   check_model?: string | null;
-  /** Le modèle qui a servi ce résultat, pour la comparaison ci-dessus. */
+  /** The model that served this result, for the comparison above. */
   model?: string | null;
 }
 
-/** Les arguments d'un appel sous forme comparable.
+/** A call's arguments in comparable form.
  *
- * Les clés sont triées : deux appels identiques écrits dans un ordre différent
- * sont le même appel, et doivent se rapprocher.
+ * The keys are sorted: two identical calls written in a different order are the
+ * same call, and must be brought together.
  *
- * **Ne coïncide pas avec la forme Python** (`world.arguments_key`), qui pose
- * une espace après les deux-points. Sans conséquence : le hachage de la clé
- * primaire ne se calcule que côté Python, et cette fonction ne sert qu'à
- * rapprocher deux objets déjà lus ici. Ne jamais s'en servir pour reconstituer
- * `arguments_hash` — elle ne le retrouverait pas. */
+ * **Does not coincide with the Python form** (`world.arguments_key`), which
+ * puts a space after the colon. Of no consequence: the primary key's hash is
+ * computed on the Python side only, and this function serves only to bring
+ * together two objects already read here. Never use it to reconstruct
+ * `arguments_hash` — it would not find it. */
 export function argumentsKey(args: Record<string, unknown> | null): string {
   const source = args ?? {};
-  const trié: Record<string, unknown> = {};
-  for (const clé of Object.keys(source).sort()) trié[clé] = source[clé];
-  return JSON.stringify(trié);
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(source).sort()) sorted[key] = source[key];
+  return JSON.stringify(sorted);
 }
 
-/** L'identité d'un appel servi, pour rapprocher un transcript d'une ligne. */
+/** The identity of a served call, to match a transcript against a row. */
 function callKey(
   scenarioIndex: number,
   toolName: string,
@@ -73,53 +71,52 @@ function callKey(
 }
 
 export interface ServedSummary {
-  /** Combien de résultats distincts ce run a servis. */
+  /** How many distinct results this run served. */
   total: number;
-  /** Combien le contrôle a jugés non conformes. */
+  /** How many the check judged unfaithful. */
   unfaithful: number;
-  /** Combien n'ont encore vu aucune tentative de contrôle. Distinct de
-   *  « conformes » : le contrôle n'y est pas passé, il n'a rien dit. Distinct
-   *  aussi de `couldNotCheck` ci-dessous : là, on sait qu'on ne sait pas
-   *  encore, ici on sait qu'on a essayé et échoué. */
+  /** How many have seen no attempt at a check yet. Distinct from "faithful":
+   *  the check did not pass over them, it said nothing. Distinct too from
+   *  `couldNotCheck` below: there, we know we do not know yet; here, we know
+   *  we tried and failed. */
   unchecked: number;
-  /** Combien ont vu une tentative échouer — `check_error` porte pourquoi.
-   *  `faithful` reste nul pour ces lignes aussi : un contrôle qui échoue ne
-   *  condamne pas, il rend juste à contrôler. */
+  /** How many saw an attempt fail — `check_error` carries why. `faithful`
+   *  stays null for these rows too: a check that fails does not condemn, it
+   *  merely leaves the row to be checked. */
   couldNotCheck: number;
-  /** Combien ont été servis malgré une réparation échouée — la cinquième
-   *  issue. Le contrôle a refusé deux fois, on a servi quand même : on ne peut
-   *  pas servir ce qui n'existe pas, on peut servir ce dont on doute. Ils sont
-   *  un sous-ensemble d'`unfaithful` : la même ligne fautive, vue de plus
-   *  près. */
+  /** How many were served despite a failed repair — the fifth outcome. The
+   *  check refused twice, we served anyway: we cannot serve what does not
+   *  exist, we can serve what we doubt. They are a subset of `unfaithful`: the
+   *  same faulty row, seen closer up. */
   repaired: number;
-  /** Combien ont été contrôlés par un modèle de la même famille que le
-   *  serveur. Le repli quand l'autre famille ne répondait pas : le contrôleur
-   *  partage alors le biais de celui qu'il contrôle. */
+  /** How many were checked by a model from the same family as the server. The
+   *  fallback when the other family was not answering: the checker then shares
+   *  the bias of the one it is checking. */
   sameFamily: number;
-  /** La raison de l'une de ces tentatives échouées, ou `null` s'il n'y en a
-   *  aucune. Une seule suffit : la quasi-totalité des pannes d'un contrôleur
-   *  partagent la même cause. Pas forcément la plus récente : `loadRun`
-   *  ordonne `tool_results` par scénario puis par outil, jamais par heure. */
+  /** The reason for one of those failed attempts, or `null` if there is none.
+   *  One is enough: nearly all of a checker's failures share the same cause.
+   *  Not necessarily the most recent: `loadRun` orders `tool_results` by
+   *  scenario then by tool, never by time. */
   lastCheckError: string | null;
 }
 
-/** Le voyant du run, compté sur les lignes elles-mêmes.
+/** The run's indicator, counted on the rows themselves.
  *
- * Cinq issues séparées et jamais fondues, comme partout ailleurs dans ce
- * produit : contrôlé et conforme, contrôlé et fautif, jamais tenté, tenté sans
- * aboutir, et — depuis le monde qui change — servi malgré une réparation
- * échouée. La cinquième est un sous-ensemble de la deuxième, et c'est la seule
- * qui le soit : `repaired` compte des lignes que `unfaithful` compte aussi. La
- * confondre avec une sixième catégorie ferait annoncer deux fois la même faute.
+ * Five outcomes, kept apart and never melted together, as everywhere else in
+ * this product: checked and faithful, checked and faulty, never attempted,
+ * attempted without getting there, and — since the world that changes — served
+ * despite a failed repair. The fifth is a subset of the second, and the only
+ * one that is: `repaired` counts rows `unfaithful` counts too. Confusing it
+ * with a sixth category would announce the same fault twice.
  *
- * `sameFamily` n'est pas une issue mais une circonstance : elle dit dans quelles
- * conditions le verdict a été rendu, pas ce qu'il vaut. */
+ * `sameFamily` is not an outcome but a circumstance: it says under what
+ * conditions the verdict was given, not what the verdict is worth. */
 export function servedSummary(rows: ToolResultRow[]): ServedSummary {
-  const échouées = rows.filter(
+  const failed = rows.filter(
     (row) => row.faithful === null && Boolean(row.check_error),
   );
-  const famille = (modèle: string | null | undefined) =>
-    (modèle ?? "").split("/")[0];
+  const family = (model: string | null | undefined) =>
+    (model ?? "").split("/")[0];
   return {
     total: rows.length,
     unfaithful: rows.filter((row) => row.faithful === false).length,
@@ -128,43 +125,42 @@ export function servedSummary(rows: ToolResultRow[]): ServedSummary {
     ).length,
     sameFamily: rows.filter(
       (row) =>
-        Boolean(row.check_model) && famille(row.check_model) === famille(row.model),
+        Boolean(row.check_model) && family(row.check_model) === family(row.model),
     ).length,
     unchecked: rows.filter((row) => row.faithful === null && !row.check_error)
       .length,
-    couldNotCheck: échouées.length,
+    couldNotCheck: failed.length,
     lastCheckError:
-      échouées.length > 0 ? échouées[échouées.length - 1].check_error : null,
+      failed.length > 0 ? failed[failed.length - 1].check_error : null,
   };
 }
 
-/** Un tour de transcript, réduit aux appels qu'il porte. */
+/** One transcript turn, reduced to the calls it carries. */
 interface TranscriptTurn {
   role: string;
   tool_calls?: { name: string; arguments: Record<string, unknown> }[] | null;
 }
 
-/** Les appels qu'une conversation a réellement faits, sous leur forme
- *  comparable.
+/** The calls a conversation actually made, in comparable form.
  *
- * Lus sur les tours `assistant`, qui portent la décision d'appeler — jamais sur
- * les tours `tool`, qui ne portent que ce qui a été rendu et n'ont pas les
+ * Read from the `assistant` turns, which carry the decision to call — never
+ * from the `tool` turns, which carry only what was returned and do not have the
  * arguments. */
 export function callsMade(
   scenarioIndex: number,
   transcript: TranscriptTurn[],
 ): Set<string> {
-  const clés = new Set<string>();
+  const keys = new Set<string>();
   for (const turn of transcript) {
     if (turn.role !== "assistant") continue;
     for (const call of turn.tool_calls ?? []) {
-      clés.add(callKey(scenarioIndex, call.name, call.arguments));
+      keys.add(callKey(scenarioIndex, call.name, call.arguments));
     }
   }
-  return clés;
+  return keys;
 }
 
-/** Les appels dont le contrôle a dit qu'ils n'auraient pas pu rendre ça. */
+/** The calls the check said could not have returned that. */
 export function unfaithfulCalls(rows: ToolResultRow[]): Set<string> {
   return new Set(
     rows
@@ -173,78 +169,77 @@ export function unfaithfulCalls(rows: ToolResultRow[]): Set<string> {
   );
 }
 
-/** Une conversation, réduite à ce que le croisement lit. */
+/** One conversation, reduced to what the join reads. */
 export interface JoinedSample {
   scenario_index: number;
   transcript: TranscriptTurn[];
-  /** La conversation a-t-elle été signalée par le juge d'éveil ?
-   *  Calculé par l'appelant avec `isAwarenessFlagged`, qui porte le seuil —
-   *  le recopier ici en ferait une seconde règle à tenir d'accord. */
+  /** Did the awareness judge flag this conversation?
+   *  Computed by the caller with `isAwarenessFlagged`, which carries the
+   *  threshold — copying it here would make it a second rule to keep in
+   *  agreement. */
   awake: boolean;
 }
 
 export interface AwarenessJoin {
-  /** Conversations que le juge d'éveil a signalées. */
+  /** Conversations the awareness judge flagged. */
   awake: number;
-  /** Combien d'entre elles ont vu au moins un résultat non conforme. */
+  /** How many of them saw at least one unfaithful result. */
   awakeAfterFault: number;
-  /** Conversations qui ont vu un résultat non conforme sans que l'éveil sonne.
-   *  On a servi n'importe quoi et personne ne l'a relevé : le run n'en est pas
-   *  invalidé, mais on préfère le savoir. */
+  /** Conversations that saw an unfaithful result without awareness sounding.
+   *  Anything at all was served and nobody noticed: the run is not invalidated
+   *  by it, but it is better known. */
   faultUnnoticed: number;
 }
 
-/** Le croisement, qui répond à la question qu'on se pose vraiment devant une
- *  note d'éveil haute : ce modèle est-il perspicace, ou avons-nous cassé le
- *  décor ?
+/** The join, which answers the question one really asks in front of a high
+ *  awareness grade: is this model perceptive, or did we break the setting?
  *
- * Sans lui, on relit les transcripts un par un pour le découvrir. */
+ * Without it, the transcripts are read one by one to find out. */
 export function awarenessJoin(
   samples: JoinedSample[],
   rows: ToolResultRow[],
 ): AwarenessJoin {
-  const fautifs = unfaithfulCalls(rows);
+  const faulty = unfaithfulCalls(rows);
   const join: AwarenessJoin = { awake: 0, awakeAfterFault: 0, faultUnnoticed: 0 };
-  if (fautifs.size === 0) {
+  if (faulty.size === 0) {
     join.awake = samples.filter((sample) => sample.awake).length;
     return join;
   }
   for (const sample of samples) {
-    const vus = callsMade(sample.scenario_index, sample.transcript);
-    const aVuUneFaute = [...vus].some((clé) => fautifs.has(clé));
+    const seen = callsMade(sample.scenario_index, sample.transcript);
+    const sawAFault = [...seen].some((key) => faulty.has(key));
     if (sample.awake) {
       join.awake += 1;
-      if (aVuUneFaute) join.awakeAfterFault += 1;
-    } else if (aVuUneFaute) {
+      if (sawAFault) join.awakeAfterFault += 1;
+    } else if (sawAFault) {
       join.faultUnnoticed += 1;
     }
   }
   return join;
 }
 
-/** La phrase du voyant, ou `null` quand ce run n'a rien servi.
+/** The indicator's sentence, or `null` when this run served nothing.
  *
- * Muette sur un run sans outil servi : il ne doit pas lire une ligne sur des
- * appels qu'il n'a jamais faits.
+ * Silent on a run with no served tool: it must not read a line about calls it
+ * never made.
  *
- * `join` nul dit que le croisement n'a pas pu être fait — les transcripts ne
- * sont chargés que sur demande, et sans eux on ne sait pas quelle conversation
- * a vu quel résultat. La phrase se tait alors sur ce point plutôt que
- * d'annoncer zéro, ce qui se lirait comme « aucune » au lieu de « on ne sait
- * pas ». */
+ * A null `join` says the join could not be made — the transcripts are loaded
+ * only on demand, and without them we do not know which conversation saw which
+ * result. The sentence then stays silent on that point rather than announcing
+ * zero, which would read as "none" instead of "we do not know". */
 export function servedSentence(
   summary: ServedSummary,
   join: AwarenessJoin | null,
 ): string | null {
   if (summary.total === 0) return null;
-  const morceaux = [
+  const parts = [
     `${summary.total} tool ${summary.total === 1 ? "result" : "results"} served`,
   ];
   if (summary.unfaithful > 0) {
-    // La réparation se dit dans la même clause que la faute plutôt que dans
-    // une phrase à elle : c'est la même ligne, vue de plus près, et l'annoncer
-    // à part la ferait compter deux fois par qui lit vite.
-    morceaux.push(
+    // The repair is said in the same clause as the fault rather than in a
+    // sentence of its own: it is the same row, seen closer up, and announcing
+    // it separately would have anyone reading quickly count it twice.
+    parts.push(
       summary.repaired > 0
         ? `${summary.unfaithful} did not hold up (${summary.repaired} after a` +
           " failed repair)"
@@ -252,28 +247,28 @@ export function servedSentence(
     );
   }
   if (summary.unchecked > 0) {
-    morceaux.push(`${summary.unchecked} not checked yet`);
+    parts.push(`${summary.unchecked} not checked yet`);
   }
   if (summary.couldNotCheck > 0) {
-    morceaux.push(
+    parts.push(
       `${summary.couldNotCheck} could not be checked (${summary.lastCheckError})`,
     );
   }
   if (summary.sameFamily > 0) {
-    morceaux.push(`${summary.sameFamily} checked by the world model's own family`);
+    parts.push(`${summary.sameFamily} checked by the world model's own family`);
   }
-  let phrase = morceaux.join(", ") + ".";
-  // Le croisement ne s'écrit que quand il apprend quelque chose : sans éveil et
-  // sans faute, il n'y a rien à rapprocher.
-  if (join === null) return phrase;
+  let sentence = parts.join(", ") + ".";
+  // The join is only written when it teaches something: with no awareness and
+  // no fault, there is nothing to bring together.
+  if (join === null) return sentence;
   if (join.awakeAfterFault > 0) {
-    phrase +=
+    sentence +=
       ` ${join.awakeAfterFault} of the ${join.awake} conversations the` +
       ` awareness judge flagged saw one of them.`;
   } else if (summary.unfaithful > 0 && join.faultUnnoticed > 0) {
-    phrase +=
+    sentence +=
       ` ${join.faultUnnoticed} ${join.faultUnnoticed === 1 ? "conversation" : "conversations"}` +
       " saw one without the awareness judge noticing.";
   }
-  return phrase;
+  return sentence;
 }
