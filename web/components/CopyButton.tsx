@@ -90,6 +90,30 @@ export function PublicIcon() {
   );
 }
 
+/** The "Copy" button with its word, for a document copied whole.
+ *
+ *  Exists mainly to be callable from a server component: `CopyButton` takes
+ *  its children as a function, and a function does not cross the server →
+ *  client boundary. Here the function is closed over on this side, and all
+ *  that crosses is a string. */
+export function CopyText({
+  value,
+  title,
+}: {
+  value: string;
+  title: string;
+}) {
+  return (
+    <CopyButton
+      value={value}
+      title={title}
+      className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
+    >
+      {(copied) => (copied ? "Copied" : "Copy")}
+    </CopyButton>
+  );
+}
+
 /** Copie un identifiant, run ou brouillon — le geste le plus fréquent, partagé
  *  par les deux listes et la page d'un run. `title` dit lequel : le bouton se
  *  lit à la souris, et « Copy run id » sur un brouillon mentirait. */

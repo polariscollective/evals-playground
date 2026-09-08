@@ -11,6 +11,9 @@ test("les chemins ouverts passent la porte sans session", () => {
     "/validate",
     "/scenario-advice",
     "/shared/2f1c9e6a-0000-4000-8000-000000000000",
+    // The writing advice, readable with no account. Being static it wins over
+    // `/shared/[runId]` — and `isRunId` would refuse "scenarios" anyway.
+    "/shared/scenarios",
     "/api/auth/signin",
     "/favicon.ico",
     "/icon.svg",

@@ -18,7 +18,7 @@
 // et rien entre les deux ne réécrit un caractère. Seule la mise en forme
 // change, jamais ce qui part.
 import { useEffect, useState } from "react";
-import { CopyButton } from "@/components/CopyButton";
+import { CopyButton, CopyIcon } from "@/components/CopyButton";
 import { Loading, Refreshing } from "@/components/Loading";
 import { updateScenarioAdvice } from "@/lib/api";
 import { putProfile, refreshProfile, useProfile } from "@/lib/profile-store";
@@ -151,6 +151,33 @@ export default function ScenariosPage() {
               <span className="text-xs text-zinc-500">Edited — the default is no longer shown.</span>
             )}
           </div>
+
+          {/* The link one hands to somebody with no account here. It always
+              serves the default: say so plainly when this profile carries an
+              override, or you believe you are sharing your own version and
+              share something else. The copied link is absolute — whoever
+              receives it has none of this window's context — and
+              `window.location.origin` is read only on click, never during
+              render, where it does not exist server-side. */}
+          <p className="flex flex-wrap items-center gap-1 text-sm text-zinc-500">
+            {custom
+              ? "Public link — anyone can read it, but it serves the default, not your edit:"
+              : "Public link — anyone can read this, no account needed:"}{" "}
+            <code className="rounded bg-zinc-100 px-1">/shared/scenarios</code>
+            <CopyButton
+              value={() => `${window.location.origin}/shared/scenarios`}
+              title="Copy the public link"
+              className="rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              {(copied) =>
+                copied ? (
+                  <span className="text-teal-700">copied</span>
+                ) : (
+                  <CopyIcon />
+                )
+              }
+            </CopyButton>
+          </p>
 
           {saveError && <p className="text-sm text-red-700">{saveError}</p>}
 
