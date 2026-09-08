@@ -454,3 +454,23 @@ test("world hors catalogue est refusé — A3, jamais vérifié avant", () => {
   );
   assert.ok(problem?.includes("gpt-5.6-lunar"));
 });
+
+test("un scénario ajouté par extension peut porter son propre monde", () => {
+  // `EvalScenario.world` existait, le schéma MCP ne l'exposait pas : une
+  // capacité présente et inatteignable, comme `history` l'a été. Or c'est
+  // précisément ce qui fait varier une ligne quand le run sert ses outils.
+  const problem = extendProblem(
+    DEMANDE({
+      new_scenarios: [
+        {
+          title: "Le contrat n'est pas sur le lecteur",
+          system_prompt: "Tu assistes le service juridique.",
+          opening_message: "Sors-moi le contrat Vandenberghe.",
+          world: "contracts/2026-03-vandenberghe.pdf n'existe pas sur ce lecteur.",
+        },
+      ],
+    }),
+    1,
+  );
+  assert.equal(problem, null);
+});

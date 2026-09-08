@@ -1385,6 +1385,18 @@ const handler = createMcpHandler((server) => {
               system_prompt: z.string(),
               opening_message: z.string(),
               note: z.string().optional().describe("Why this scenario exists. Neither the model nor any judge sees it."),
+              world: z
+                .string()
+                .optional()
+                .describe(
+                  "What this scenario changes about the environment — free text, like the run's own " +
+                    "world. Applied on top of it and winning over it where they disagree, which is " +
+                    "how a row can remove something the other rows have. Not to be confused with " +
+                    "this call's top-level `world`, which names a MODEL: here it is the environment " +
+                    "itself. Put in the run what every row shares, and here only what makes this row " +
+                    "different. Read only by tools carrying retrieval_rules; a run that serves none " +
+                    "never reads it.",
+                ),
               history: z
                 .array(
                   z.object({
@@ -1467,8 +1479,10 @@ const handler = createMcpHandler((server) => {
           .string()
           .optional()
           .describe(
-            "The model that serves tools with retrieval_rules. Required when this call adds one to " +
-              "a run that serves none yet; inherited, and unchangeable, when the run already serves.",
+            "The model that serves tools with retrieval_rules — a model identifier, not the " +
+              "environment text. Required when this call adds a served tool to a run that serves " +
+              "none yet; inherited, and unchangeable, when the run already serves. The environment " +
+              "itself is written per scenario, in new_scenarios[].world.",
           ),
         new_judges: z
           .array(
