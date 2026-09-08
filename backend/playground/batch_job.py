@@ -22,7 +22,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from inspect_ai import Task, eval as inspect_eval
 from inspect_ai.dataset import MemoryDataset, Sample
@@ -30,7 +30,8 @@ from inspect_ai.log import EvalLog
 from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
-from playground.eval_schemas import EvalRunConfig, ToolSpec
+from playground.conversation import ToolAnswer
+from playground.eval_schemas import EvalRunConfig, JournalEntry, ToolSpec
 from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
@@ -58,7 +59,15 @@ from playground.supabase_store import (
     write_tool_result,
     write_tool_verdict,
 )
-from playground.world import check, check_model_for, result_key, serve
+from playground.world import (
+    ServeRefused,
+    check,
+    check_model_for,
+    check_models_after,
+    result_key,
+    serve,
+    state_key,
+)
 
 LOGS_DIR = Path(os.environ.get("EVAL_LOGS_DIR", "logs/eval"))
 
@@ -122,6 +131,188 @@ def judge_metadata(liaison: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def monde_de(config: EvalRunConfig, scenario_index: int) -> str:
+    """Le monde tel qu'un scénario le lit : celui du run, plus le sien.
+
+    Reconstruit ici plutôt que stocké par résultat : le monde d'un run est gelé
+    au lancement, donc il n'a pas pu bouger, et en garder une copie par ligne de
+    `tool_results` coûterait le monde entier autant de fois.
+
+    Écrit une fois pour les deux contrôles — celui qui passe dans le fil de la
+    conversation et la passe d'après-run. Recopié, c'est la seconde copie qui
+    oublierait le monde du scénario, et le contrôleur condamnerait alors des
+    lectures parfaitement correctes.
+    """
+    monde = config.world
+    if 0 <= scenario_index < len(config.scenarios):
+        du_scénario = config.scenarios[scenario_index].world
+        if du_scénario:
+            monde = f"{monde}\n\n{du_scénario}"
+    return monde
+
+
+def world_server(
+    supabase: Supabase,
+    run_id: str,
+    config: EvalRunConfig,
+    model_args: dict[str, Any] | None = None,
+) -> "Callable[..., Any]":
+    """Ce qui répond aux outils servis, pour la durée d'un job.
+
+    Une fabrique et non une fonction libre, parce qu'il y a un état à tenir :
+    les contrôleurs qu'on a vus tomber. Un job tourne un seul run dans un seul
+    processus, et c'est la bonne échelle pour cette mémoire — voir plus bas.
+
+    Rendu à `conversation_solver`, qui le referme sur le rang du scénario.
+    """
+
+    # Les contrôleurs qu'on a vus tomber, mémorisés pour le job entier.
+    #
+    # Une panne de fournisseur est à l'échelle du run, pas de la conversation :
+    # mémorisée par essai, cent vingt conversations la redécouvriraient chacune,
+    # au prix de cent vingt attentes. Le job tourne un seul run dans un seul
+    # processus, et il garde déjà une mémoire de cette forme pour l'annulation.
+    contrôleurs_tombés: list[str] = []
+
+    async def contrôle(
+        monde: str,
+        journal: "list[JournalEntry]",
+        tool_name: str,
+        arguments: dict[str, Any],
+        result: str,
+        world_change: str,
+    ) -> tuple[tuple[bool, str] | None, str, str]:
+        """Le verdict d'un contrôleur, en descendant la liste des candidats.
+
+        Le repli du spec, dans l'ordre : une autre famille que le serveur
+        d'abord, la même ensuite — mieux vaut un contrôleur au biais partagé
+        que pas de contrôle du tout, et `check_model` sur la ligne le rend
+        visible — puis plus personne.
+
+        **La panne du contrôleur ne tue jamais un essai.** Elle rend un verdict
+        nul, l'appelant sert quand même, et la ligne reste à `faithful` nul :
+        c'est la passe d'après-run qui la reprendra.
+
+        Returns:
+            Le triplet (verdict, contrôleur retenu, raison de l'échec). Le
+            verdict est nul quand aucun candidat n'a pu répondre.
+        """
+        dernière = ""
+        while True:
+            candidat = check_models_after(config.models.world or "", contrôleurs_tombés)
+            if candidat is None:
+                return None, "", dernière or "no checker could be reached"
+            try:
+                verdict = await check(
+                    model=get_model(candidat, **(model_args or {})),
+                    world=monde,
+                    journal=journal,
+                    tool=tool_name,
+                    arguments=arguments,
+                    result=result,
+                    world_change=world_change,
+                )
+                return verdict, candidat, ""
+            except Exception as raison:  # noqa: BLE001 — voir la docstring
+                contrôleurs_tombés.append(candidat)
+                dernière = f"{candidat}: {raison}"
+
+    async def sert_outil(
+        scenario_index: int,
+        tool: ToolSpec,
+        arguments: dict[str, Any],
+        journal: "list[JournalEntry]",
+    ) -> ToolAnswer:
+        """Ce qu'un outil servi depuis le monde rend pour cet appel.
+
+        Le cache d'abord, toujours : une réponse déjà écrite est resservie
+        sans qu'aucun modèle ne soit appelé — ni le serveur, ni le contrôleur,
+        qui a déjà regardé cette ligne. C'est ce qui rend deux répétitions du
+        même scénario comparables, ce qui fait qu'une extension ne repaie pas
+        ce qui a déjà été demandé, et ce qui garde le contrôle au prix du
+        nombre de réponses DIFFÉRENTES plutôt que du nombre d'appels.
+
+        La clé porte l'état du monde d'AVANT cet appel. Journal vide — le cas
+        de l'immense majorité des appels — c'est la clé d'avant ce chantier.
+
+        Un résultat vide est une réponse — celle d'une recherche sans
+        résultat — et non une absence : c'est `None` qui dit « jamais
+        demandé », et lui seul déclenche un appel.
+
+        Le contrôle passe **avant** de servir, et non plus seulement après le
+        run : c'est la seule façon de retenter une fois avant que le modèle
+        évalué ait lu la réponse. Une fois qu'il l'a lue, il est trop tard — on
+        ne réécrit pas un transcript.
+
+        Deux issues, et l'asymétrie est le cœur de la politique : on ne peut
+        pas servir ce qui n'existe pas, on peut servir ce dont on doute.
+
+        Raises:
+            ServeRefused: si le modèle n'a pas rempli `submit_result`, deux fois
+                de suite. L'essai meurt alors — un transcript où l'outil rend la
+                prose du serveur est pire qu'un essai manquant.
+        """
+        clé = result_key(tool.name, arguments)
+        état = state_key(journal)
+        déjà = read_tool_result(
+            supabase, run_id, scenario_index, tool.name, clé, état
+        )
+        if déjà is not None:
+            return ToolAnswer(*déjà)
+
+        monde = monde_de(config, scenario_index)
+        journal_écrit = [entrée.model_dump() for entrée in journal]
+        faute_précédente = ""
+        for tentative in (1, 2):
+            try:
+                rendu = await serve(
+                    model=get_model(config.models.world, **(model_args or {})),
+                    world=config.world,
+                    scenario_world=config.scenarios[scenario_index].world,
+                    journal=journal,
+                    tool=tool,
+                    arguments=arguments,
+                    fault=faute_précédente,
+                )
+            except ServeRefused:
+                # Rien à lui redire : il n'a pas répondu. On redemande une
+                # fois, puis l'essai meurt.
+                if tentative == 2:
+                    raise
+                continue
+
+            verdict, contrôleur, raison = await contrôle(
+                monde, journal, tool.name, arguments, rendu.result, rendu.world_change
+            )
+            garder = verdict is None or verdict[0] or tentative == 2
+            if garder:
+                return ToolAnswer(
+                    *write_tool_result(
+                        supabase,
+                        run_id,
+                        scenario_index,
+                        tool.name,
+                        clé,
+                        état,
+                        arguments=arguments,
+                        state=journal_écrit,
+                        result=rendu.result,
+                        reasoning=rendu.reasoning,
+                        world_change=rendu.world_change,
+                        model=config.models.world,
+                        check_model=contrôleur,
+                        attempts=tentative,
+                        faithful=None if verdict is None else verdict[0],
+                        fault="" if verdict is None else verdict[1],
+                        check_error=raison or None,
+                    )
+                )
+            faute_précédente = verdict[1]
+        raise AssertionError("unreachable: la seconde tentative garde toujours")
+
+    return sert_outil
+
+
 def check_served_results(
     supabase: Supabase,
     run_id: str,
@@ -183,21 +374,22 @@ def check_served_results(
     contrôlées = 0
     for ligne in à_faire:
         index = int(ligne["scenario_index"])
-        # Le monde tel que cette ligne l'a vu : celui du run, plus celui de son
-        # scénario. Les reconstruire ici plutôt que de les avoir stockés évite
-        # une copie du monde par résultat, et ils n'ont pas pu bouger — le
-        # monde d'un run est gelé au lancement.
-        monde = config.world
-        if 0 <= index < len(config.scenarios) and config.scenarios[index].world:
-            monde = f"{monde}\n\n{config.scenarios[index].world}"
+        # Le journal tel que cette ligne l'a vu, relu plutôt que recalculé : son
+        # empreinte est dans la clé, mais l'empreinte ne se remonte pas. Sans
+        # lui, cette passe recontrôlerait la ligne contre un monde qui n'est
+        # pas celui qu'elle a servi — et condamnerait une lecture correcte d'un
+        # monde déjà modifié.
+        journal = [JournalEntry(**entrée) for entrée in (ligne.get("state") or [])]
         try:
             fidèle, faute = asyncio.run(
                 check(
                     model=modèle,
-                    world=monde,
+                    world=monde_de(config, index),
+                    journal=journal,
                     tool=str(ligne["tool_name"]),
                     arguments=ligne.get("arguments") or {},
                     result=str(ligne.get("result") or ""),
+                    world_change=str(ligne.get("world_change") or ""),
                 )
             )
         except Exception as e:
@@ -211,6 +403,7 @@ def check_served_results(
                     index,
                     str(ligne["tool_name"]),
                     str(ligne["arguments_hash"]),
+                    str(ligne.get("state_hash") or ""),
                     reason=f"{type(e).__name__}: {e}"[:500],
                 )
             except Exception:
@@ -233,6 +426,7 @@ def check_served_results(
                 index,
                 str(ligne["tool_name"]),
                 str(ligne["arguments_hash"]),
+                str(ligne.get("state_hash") or ""),
                 faithful=fidèle,
                 fault=faute,
             )
@@ -434,45 +628,6 @@ def run_batch_job(
     # pour la conversation.
     deja_facture: dict[tuple[int, str, int], dict[str, dict[str, int]]] = {}
 
-    async def sert_outil(
-        scenario_index: int, tool: ToolSpec, arguments: dict[str, Any]
-    ) -> str:
-        """Ce qu'un outil servi depuis le monde rend pour cet appel.
-
-        Le cache d'abord, toujours : une réponse déjà écrite est resservie
-        sans qu'aucun modèle ne soit appelé. C'est ce qui rend deux répétitions
-        du même scénario comparables, et ce qui fait qu'une extension ne
-        repaie pas ce qui a déjà été demandé.
-
-        Un résultat vide est une réponse — celle d'une recherche sans
-        résultat — et non une absence : c'est `None` qui dit « jamais
-        demandé », et lui seul déclenche un appel.
-
-        Le modèle est construit à chaque appel plutôt que gardé : `get_model`
-        mémoïse déjà, et le tenir ici obligerait à le construire même sur les
-        runs où aucun outil n'est servi.
-        """
-        clé = result_key(tool.name, arguments)
-        déjà = read_tool_result(supabase, run_id, scenario_index, tool.name, clé)
-        if déjà is not None:
-            return déjà
-        rendu = await serve(
-            model=get_model(config.models.world, **(model_args or {})),
-            world=config.world,
-            scenario_world=config.scenarios[scenario_index].world,
-            tool=tool,
-            arguments=arguments,
-        )
-        return write_tool_result(
-            supabase,
-            run_id,
-            scenario_index,
-            tool.name,
-            clé,
-            arguments=arguments,
-            result=rendu,
-            model=config.models.world,
-        )
 
     def ecrire_juge(sample_id: str, resultat: JudgeOutcome) -> None:
         """Chaque juge écrit sa propre ligne, dès qu'il a rendu son verdict.
@@ -632,7 +787,7 @@ def run_batch_job(
                 model_args=model_args,
                 stopped=arret.stopped,
                 started=commence,
-                serve_tool=sert_outil,
+                serve_tool=world_server(supabase, run_id, config, model_args),
             )
 
         logs = inspect_eval(

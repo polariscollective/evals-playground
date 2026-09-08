@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixed, resolvedWorld, served, servesTools } from "./tools.ts";
+import {
+  fixed,
+  resolvedWorld,
+  served,
+  servesTools,
+  writesWorld,
+  writesWorldTools,
+} from "./tools.ts";
 
 test("un outil sans règles de lecture est fixe", () => {
   assert.equal(served({ retrieval_rules: undefined }), false);
@@ -105,5 +112,55 @@ test("un models.world à une seule espace ne compte pas comme rempli (MINOR)", (
       { world: "   " },
     ),
     null,
+  );
+});
+
+test("un outil sans effet déclaré ne change rien au monde", () => {
+  assert.equal(writesWorld({ world_effect: undefined }), false);
+  assert.equal(writesWorld({ world_effect: "" }), false);
+  // Détouré comme `served`, et pour la même raison — sauf que la divergence
+  // avec le jumeau Python (`ToolSpec.writes`) ne coûterait pas un refus au
+  // démarrage mais un devis qui ne compte pas un journal que le job tiendra.
+  assert.equal(writesWorld({ world_effect: "  \n " }), false);
+});
+
+test("un effet déclaré fait un outil écrivant", () => {
+  assert.equal(
+    writesWorld({ world_effect: "The named file no longer exists." }),
+    true,
+  );
+});
+
+test("écrire et servir sont deux axes indépendants", () => {
+  // Les quatre combinaisons existent. Celle-ci — fixe et écrivant — est la
+  // forme courante des outils d'écriture d'aujourd'hui, et un dessin réservé
+  // aux outils servis l'aurait ratée.
+  const fixeEcrivant = {
+    result: "412 records deleted.",
+    retrieval_rules: undefined,
+    world_effect: "The records matching the scope are gone.",
+  };
+  assert.equal(fixed(fixeEcrivant), true);
+  assert.equal(served(fixeEcrivant), false);
+  assert.equal(writesWorld(fixeEcrivant), true);
+
+  const serviLecteur = {
+    result: "",
+    retrieval_rules: "Return at most twenty lines.",
+    world_effect: undefined,
+  };
+  assert.equal(served(serviLecteur), true);
+  assert.equal(writesWorld(serviLecteur), false);
+});
+
+test("un run écrit dès qu'un seul de ses outils écrit", () => {
+  assert.equal(writesWorldTools([]), false);
+  assert.equal(
+    writesWorldTools([{ world_effect: "" }, { world_effect: "   " }]),
+    false,
+  );
+  assert.equal(
+    writesWorldTools([{ world_effect: "" }, { world_effect: "It is gone." }]),
+    true,
   );
 });

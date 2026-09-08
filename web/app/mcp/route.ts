@@ -72,7 +72,11 @@ import {
   extendProblem,
 } from "@/lib/validate";
 import { verdictOf } from "@/lib/verdict";
-import { extendWorldWarnings, worldWarnings } from "@/lib/world-warnings";
+import {
+  extendWorldWarnings,
+  worldWarnings,
+  writeWithoutReadWarnings,
+} from "@/lib/world-warnings";
 import type { Draft, Judge, JudgeSystemTypeColumn, Profile, RunDetail } from "@/lib/types";
 
 /** Le run derrière un `run_id` d'entrée d'outil, ou la réponse d'erreur à
@@ -1003,7 +1007,11 @@ const handler = createMcpHandler((server) => {
       // scénario servi sans rien à lire. Design §7 : l'écran les affichait
       // déjà ; un agent composant le même run par MCP n'en entendait jamais
       // parler, exactement le cas que cet avertissement existe pour nommer.
-      const warnings = worldWarnings(config);
+      const warnings = [
+        ...worldWarnings(config),
+        // Et l'inverse : un scénario qui déclare un effet que rien ne lira.
+        ...writeWithoutReadWarnings(config),
+      ];
       return {
         content: [
           {
@@ -1333,7 +1341,8 @@ const handler = createMcpHandler((server) => {
         "new_scenarios, together with the same targets and repetitions — a scenario, existing or new, " +
         "is always covered by some models some number of times. Add tools to the run's set: new_tools, " +
         "and optionally new_tools_for_existing and world — needing no depth of its own, and no model " +
-        "unless the tool carries retrieval_rules, but never the only thing a call does: a call naming " +
+        "unless the tool carries retrieval_rules (world_effect needs none: it changes the world " +
+        "rather than reading it), but never the only thing a call does: a call naming " +
         "no scenario (scenario_indices or new_scenarios) and no deepen is refused even when new_tools " +
         "is filled in, since adding tools to a batch that adds " +
         "nothing else is not enough on its own. Raise the run's depth for what this call adds: turns — " +
@@ -1456,6 +1465,21 @@ const handler = createMcpHandler((server) => {
                 .describe(
                   "How this tool reads the world. Written instead of result, never both — a tool " +
                     "carries one or the other.",
+                ),
+              world_effect: z
+                .string()
+                .optional()
+                .describe(
+                  "What calling this tool CHANGES in the world, in one sentence — 'the named file " +
+                    "no longer exists on the share'. Leave it out for a tool that only reads: " +
+                    "read-only is the default and nothing declares it, there is no read_only " +
+                    "field. This " +
+                    "is a second, independent axis: a fixed tool can write, and that is the common " +
+                    "case (delete_records returning '412 records deleted.'). Once written, the call " +
+                    "is recorded in the conversation's journal and every later read in that same " +
+                    "conversation takes it into account — a file deleted at turn two is gone at " +
+                    "turn four. The effect lasts for one conversation only; every attempt starts " +
+                    "from a fresh world.",
                 ),
               parameters: z
                 .array(

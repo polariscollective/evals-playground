@@ -357,21 +357,40 @@ def test_ecrire_la_panne_d_un_juge_donne_le_statut_error():
 
 def test_un_resultat_absent_du_cache_se_lit_comme_absent():
     supabase, _ = _supabase(_ok([]))
-    assert (
-        read_tool_result(supabase, "run-1", 0, "search_files", "abc") is None
+    assert read_tool_result(supabase, "run-1", 0, "search_files", "abc", "") is None
+
+
+def test_un_resultat_present_revient_avec_son_effet():
+    """L'effet voyage avec le résultat : une conversation qui lit le cache d'une
+    autre a besoin de la même entrée de journal qu'elle, sans quoi les deux
+    repartiraient du même résultat vers deux états différents."""
+    supabase, envoyees = _supabase(
+        _ok([{"result": "contracts/2026-03.pdf", "world_change": ""}])
     )
-
-
-def test_un_resultat_present_revient_tel_quel():
-    supabase, envoyees = _supabase(_ok([{"result": "contracts/2026-03.pdf"}]))
-    assert (
-        read_tool_result(supabase, "run-1", 2, "search_files", "abc")
-        == "contracts/2026-03.pdf"
+    assert read_tool_result(supabase, "run-1", 2, "search_files", "abc", "") == (
+        "contracts/2026-03.pdf",
+        "",
     )
     params = dict(envoyees[0].url.params)
     assert params["run_id"] == "eq.run-1"
     assert params["scenario_index"] == "eq.2"
     assert params["arguments_hash"] == "eq.abc"
+
+
+def test_le_meme_appel_dans_deux_etats_vise_deux_lignes():
+    """La cinquième colonne : deux conversations qui n'ont pas fait les mêmes
+    écritures ne partagent pas leur réponse, et c'est le but."""
+    supabase, envoyees = _supabase(_ok([]))
+    read_tool_result(supabase, "run-1", 2, "search_files", "abc", "e7f3")
+    assert dict(envoyees[0].url.params)["state_hash"] == "eq.e7f3"
+
+
+def test_un_journal_vide_garde_la_cle_d_avant_ce_chantier():
+    """Empreinte vide pour l'immense majorité des lignes — un run sans outil
+    d'écriture partage son cache exactement comme avant."""
+    supabase, envoyees = _supabase(_ok([]))
+    read_tool_result(supabase, "run-1", 2, "search_files", "abc", "")
+    assert dict(envoyees[0].url.params)["state_hash"] == "eq."
 
 
 def test_ecrire_un_resultat_ignore_les_doublons():
@@ -391,19 +410,59 @@ def test_ecrire_un_resultat_ignore_les_doublons():
         0,
         "search_files",
         "abc",
+        "",
         arguments={"query": "X"},
+        state=[],
         result="le second arrivé",
+        reasoning="deux fichiers correspondent",
+        world_change="",
         model="openai/gpt-5.6-luna",
     )
     post = envoyees_par_appel[0]
     assert post.method == "POST"
     assert "ignore-duplicates" in post.headers["Prefer"]
     assert dict(post.url.params)["on_conflict"] == (
-        "run_id,scenario_index,tool_name,arguments_hash"
+        "run_id,scenario_index,tool_name,arguments_hash,state_hash"
     )
     # On relit toujours : c'est la relecture qui départage, pas la réponse du
     # POST, qui ne dit pas si la ligne a été écrite ou ignorée.
-    assert rendu == "le premier arrivé"
+    assert rendu == ("le premier arrivé", "")
+
+
+def test_le_raisonnement_et_le_journal_sont_gardes_avec_le_resultat():
+    """`reasoning` est la moitié que `fault` ne donne pas — ce que le serveur
+    croyait faire. `state` porte le journal lisible à côté de son empreinte,
+    comme `arguments` voyage à côté de `arguments_hash` : sans lui, la passe
+    d'après-run recontrôlerait la ligne contre un monde qui n'est pas le sien."""
+    supabase, envoyees = _supabase(_ok([{"result": "Deleted.", "world_change": "parti"}]))
+    write_tool_result(
+        supabase,
+        "run-1",
+        0,
+        "delete_file",
+        "abc",
+        "e7f3",
+        arguments={"path": "x"},
+        state=[{"tool": "delete_file", "arguments": {}, "result": "ok", "effect": "parti"}],
+        result="Deleted.",
+        reasoning="le fichier existait",
+        world_change="parti",
+        model="openai/gpt-5.6-luna",
+        check_model="anthropic/claude-haiku-4-5",
+        attempts=2,
+        faithful=False,
+        fault="a inventé un chemin",
+    )
+    corps = _body(envoyees[0])
+    assert corps["reasoning"] == "le fichier existait"
+    assert corps["world_change"] == "parti"
+    assert corps["state_hash"] == "e7f3"
+    assert corps["state"][0]["effect"] == "parti"
+    assert corps["check_model"] == "anthropic/claude-haiku-4-5"
+    # La cinquième issue du voyant : servi malgré une réparation échouée, qui
+    # n'est aucune des quatre autres.
+    assert corps["attempts"] == 2
+    assert corps["faithful"] is False
 
 
 def test_les_lignes_a_controler_sont_celles_sans_verdict():
@@ -419,7 +478,14 @@ def test_les_lignes_a_controler_sont_celles_sans_verdict():
 def test_le_verdict_du_controle_vise_la_ligne_par_sa_cle():
     supabase, envoyees = _supabase(_ok())
     write_tool_verdict(
-        supabase, "run-1", 3, "search_files", "abc", faithful=False, fault="a inventé un fichier"
+        supabase,
+        "run-1",
+        3,
+        "search_files",
+        "abc",
+        "",
+        faithful=False,
+        fault="a inventé un fichier",
     )
     corps = _body(envoyees[0])
     assert corps == {"faithful": False, "fault": "a inventé un fichier", "check_error": None}
@@ -434,7 +500,7 @@ def test_un_verdict_efface_une_raison_d_echec_anterieure():
     ligne pourtant contrôlée depuis."""
     supabase, envoyees = _supabase(_ok())
     write_tool_verdict(
-        supabase, "run-1", 3, "search_files", "abc", faithful=True, fault=""
+        supabase, "run-1", 3, "search_files", "abc", "", faithful=True, fault=""
     )
     corps = _body(envoyees[0])
     assert corps["check_error"] is None
@@ -445,7 +511,13 @@ def test_la_raison_d_un_controle_en_echec_vise_la_ligne_par_sa_cle():
     parce qu'on ne sait pas — seule la raison de ne pas savoir est écrite."""
     supabase, envoyees = _supabase(_ok())
     write_tool_check_error(
-        supabase, "run-1", 3, "search_files", "abc", reason="AuthenticationError: clé invalide"
+        supabase,
+        "run-1",
+        3,
+        "search_files",
+        "abc",
+        "",
+        reason="AuthenticationError: clé invalide",
     )
     corps = _body(envoyees[0])
     assert corps == {"check_error": "AuthenticationError: clé invalide"}

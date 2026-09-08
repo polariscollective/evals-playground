@@ -215,6 +215,27 @@ export function ToolsEditor({
               />
             </label>
           )}
+
+          {/* Le second axe, et il ne s'exclut de rien : un outil fixe peut
+              écrire, et c'est même la forme courante. Toujours visible, donc,
+              là où les deux champs au-dessus se cachent l'un l'autre — les
+              masquer selon la forme de réponse ferait croire à une troisième
+              branche de l'exclusion. */}
+          <label className="block space-y-1">
+            <span className="text-xs text-zinc-500">
+              What calling it changes in the world — leave empty if it only
+              reads
+            </span>
+            <textarea
+              value={tool.world_effect ?? ""}
+              rows={2}
+              onChange={(e) =>
+                replace(index, { ...tool, world_effect: e.target.value })
+              }
+              placeholder="The named file no longer exists on the share."
+              className={FIELD}
+            />
+          </label>
         </div>
       ))}
 

@@ -5,8 +5,11 @@ from inspect_ai.model import ChatMessageSystem, ModelOutput, get_model
 
 from playground.conversation import (
     MAX_TOOL_CALLS_PER_TURN,
+    ToolAnswer,
+    ToolCallRecord,
     Turn,
     adversary_view,
+    journal_from,
     run_conversation,
     target_view,
 )
@@ -772,9 +775,9 @@ def _outil_servi(name="search_files"):
 def test_un_outil_servi_passe_par_la_fonction():
     vus = []
 
-    async def servir(tool, arguments):
+    async def servir(tool, arguments, journal):
         vus.append((tool.name, arguments))
-        return "contracts/2026-03.pdf"
+        return ToolAnswer("contracts/2026-03.pdf")
 
     transcript = asyncio.run(
         run_conversation(
@@ -794,9 +797,9 @@ def test_un_outil_fixe_ne_passe_jamais_par_la_fonction():
     """Il ne coûte pas un appel, et c'est la moitié de l'intérêt du défaut."""
     appels = []
 
-    async def servir(tool, arguments):
+    async def servir(tool, arguments, journal):
         appels.append(tool.name)
-        return "jamais"
+        return ToolAnswer("jamais")
 
     transcript = asyncio.run(
         run_conversation(
@@ -832,9 +835,9 @@ def test_le_meme_appel_est_redemande_a_la_fonction():
     c'est elle qui sait ce qui est déjà en base."""
     appels = []
 
-    async def servir(tool, arguments):
+    async def servir(tool, arguments, journal):
         appels.append(arguments)
-        return "toujours pareil"
+        return ToolAnswer("toujours pareil")
 
     asyncio.run(
         run_conversation(
@@ -848,3 +851,181 @@ def test_le_meme_appel_est_redemande_a_la_fonction():
         )
     )
     assert len(appels) == 2
+
+
+# --- Le journal des écritures ---------------------------------------------
+#
+# Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md. Les écritures
+# entrent, les lectures jamais : c'est ce qui garde le cache vivant.
+
+
+def _outil_ecrivant(name="delete_file"):
+    return ToolSpec(
+        name=name,
+        description="Deletes a file for good.",
+        parameters=[
+            {"name": "scope", "type": "string", "description": "quoi", "required": True}
+        ],
+        result="Deleted.",
+        world_effect="The named file no longer exists on the share.",
+    )
+
+
+def test_un_outil_fixe_qui_ecrit_journalise_sans_appeler_personne():
+    """La combinaison qui compte : les outils d'écriture d'aujourd'hui rendent
+    une chaîne fixe, et ne passent par aucun modèle."""
+    vus = []
+
+    async def servir(tool, arguments, journal):
+        vus.append(list(journal))
+        return ToolAnswer("jamais")
+
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Supprime le contrat.",
+            turns=1,
+            target=ModeleQuiAppelle(combien=1, nom="delete_file"),
+            tools=[_outil_ecrivant()],
+            serve_tool=servir,
+        )
+    )
+    assert vus == []
+    assert transcript[2].content == "Deleted."
+    assert transcript[2].world_change == "The named file no longer exists on the share."
+
+
+def test_une_lecture_n_entre_jamais_au_journal():
+    """L'invariant sur lequel tout le cache repose. Une lecture est un
+    paragraphe qui diffère par nature d'un modèle à l'autre : la faire entrer
+    ferait de la clé du cache toute l'histoire de la conversation."""
+    vus = []
+
+    async def servir(tool, arguments, journal):
+        vus.append(list(journal))
+        return ToolAnswer("contracts/2026-03.pdf")
+
+    asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Cherche.",
+            turns=1,
+            target=ModeleQuiAppelle(combien=2, nom="search_files"),
+            tools=[_outil_servi()],
+            serve_tool=servir,
+            max_tool_calls=5,
+        )
+    )
+    assert [len(journal) for journal in vus] == [0, 0]
+
+
+def test_le_serveur_recoit_l_etat_d_avant_son_propre_appel():
+    """Prendre l'état d'après serait circulaire : l'entrée porte le résultat,
+    donc la clé qui sert à le retrouver en dépendrait."""
+    vus = []
+
+    async def servir(tool, arguments, journal):
+        vus.append([entrée.tool for entrée in journal])
+        return ToolAnswer("Sent.", "The message is in the sent folder.")
+
+    asyncio.run(
+        run_conversation(
+            system_prompt="s",
+            opening_message="Envoie deux messages.",
+            turns=1,
+            target=ModeleQuiAppelle(combien=2, nom="send_email"),
+            tools=[
+                ToolSpec(
+                    name="send_email",
+                    description="Sends a message.",
+                    parameters=[
+                        {
+                            "name": "scope",
+                            "type": "string",
+                            "description": "quoi",
+                            "required": True,
+                        }
+                    ],
+                    retrieval_rules="Return the provider's confirmation line.",
+                    world_effect="The message is in the sent folder.",
+                )
+            ],
+            serve_tool=servir,
+            max_tool_calls=5,
+        )
+    )
+    # Le premier appel voit un journal vide ; le second voit le premier.
+    assert vus == [[], ["send_email"]]
+
+
+def test_l_effet_ne_part_jamais_au_modele_evalue():
+    """La cloison : le champ existe pour que le journal se reconstitue, et pour
+    rien d'autre. `target_view` ne lit que `content`."""
+    transcript = [
+        Turn(role="user", content="Supprime."),
+        Turn(role="assistant", content=""),
+        Turn(
+            role="tool",
+            content="Deleted.",
+            tool_call_id="1",
+            tool_name="delete_file",
+            world_change="The named file no longer exists on the share.",
+        ),
+    ]
+    rendu = " ".join(str(m.content) for m in target_view("s", transcript))
+    assert "Deleted." in rendu
+    assert "no longer exists" not in rendu
+
+
+def test_le_journal_se_reconstitue_depuis_un_transcript_repris():
+    """Ce qui rend l'approfondissement gratuit : les tours rejoués portent déjà
+    tout, et il n'y a rien à recalculer."""
+    transcript = [
+        Turn(role="user", content="Supprime le contrat."),
+        Turn(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCallRecord(
+                    id="a1", name="delete_file", arguments={"scope": "contrat"}
+                )
+            ],
+        ),
+        Turn(
+            role="tool",
+            content="Deleted.",
+            tool_call_id="a1",
+            tool_name="delete_file",
+            world_change="The named file no longer exists on the share.",
+        ),
+        Turn(
+            role="assistant",
+            content="",
+            tool_calls=[
+                ToolCallRecord(id="a2", name="search_files", arguments={"query": "x"})
+            ],
+        ),
+        Turn(
+            role="tool",
+            content="(aucun résultat)",
+            tool_call_id="a2",
+            tool_name="search_files",
+        ),
+    ]
+    journal = journal_from(
+        transcript, {"delete_file": _outil_ecrivant(), "search_files": _outil_servi()}
+    )
+    assert [entrée.tool for entrée in journal] == ["delete_file"]
+    assert journal[0].arguments == {"scope": "contrat"}
+    assert journal[0].result == "Deleted."
+    assert journal[0].effect == "The named file no longer exists on the share."
+
+
+def test_un_outil_que_la_configuration_ne_connait_plus_est_ignore():
+    """Une extension peut avoir retiré ce que la conversation avait appelé, et
+    relire un run ne doit pas tomber pour ça."""
+    transcript = [
+        Turn(role="assistant", content="", tool_calls=[]),
+        Turn(role="tool", content="Deleted.", tool_call_id="a1", tool_name="disparu"),
+    ]
+    assert journal_from(transcript, {}) == []

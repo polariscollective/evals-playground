@@ -28,7 +28,7 @@ RUN_JUDGES = "run_judges"
 JUDGE_SCORES = "judge_scores"
 TOOL_RESULTS = "tool_results"
 
-TOOL_RESULT_KEY = "run_id,scenario_index,tool_name,arguments_hash"
+TOOL_RESULT_KEY = "run_id,scenario_index,tool_name,arguments_hash,state_hash"
 """La clé primaire de `tool_results`, telle que PostgREST veut l'entendre.
 
 Écrite une fois : elle sert à l'insertion qui ignore les doublons, et doit
@@ -485,44 +485,73 @@ def write_judge_score(
 # --- le cache des résultats d'outils -----------------------------------------
 #
 # Ce qui rend déterministe un outil servi depuis le monde : même scénario, même
-# outil, mêmes arguments, même réponse — pour toute la vie du run, extensions
-# comprises. Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+# outil, mêmes arguments, même ÉTAT du monde, même réponse — pour toute la vie
+# du run, extensions comprises. Voir
+# docs/superpowers/specs/2026-09-07-le-monde-des-outils.md puis
+# docs/superpowers/specs/2026-09-08-le-monde-qui-change.md, qui a ajouté la
+# cinquième colonne.
+#
+# `state_hash` vide — l'immense majorité des lignes — rend la clé d'avant, au
+# bit près : un run sans outil d'écriture partage son cache exactement comme
+# avant, et les lignes déjà en base restent valides.
 
 
 def _tool_filters(
-    run_id: str, scenario_index: int, tool_name: str, arguments_hash: str
+    run_id: str,
+    scenario_index: int,
+    tool_name: str,
+    arguments_hash: str,
+    state_hash: str,
 ) -> dict[str, str]:
     """La clé primaire d'une ligne, en filtres PostgREST.
 
-    Écrite une fois plutôt qu'à chaque appel : quatre colonnes recopiées à
-    trois endroits, c'est la troisième qui en oublie une, et un filtre
-    incomplet ici viserait la ligne d'un autre scénario.
+    Écrite une fois plutôt qu'à chaque appel : cinq colonnes recopiées à trois
+    endroits, c'est la troisième qui en oublie une, et un filtre incomplet ici
+    viserait la ligne d'un autre scénario — ou, depuis `state_hash`, celle du
+    même appel dans un monde qui n'est plus le même.
     """
     return {
         "run_id": f"eq.{run_id}",
         "scenario_index": f"eq.{scenario_index}",
         "tool_name": f"eq.{tool_name}",
         "arguments_hash": f"eq.{arguments_hash}",
+        "state_hash": f"eq.{state_hash}",
     }
 
 
 def read_tool_result(
-    supabase: Supabase, run_id: str, scenario_index: int, tool_name: str,
+    supabase: Supabase,
+    run_id: str,
+    scenario_index: int,
+    tool_name: str,
     arguments_hash: str,
-) -> str | None:
+    state_hash: str,
+) -> tuple[str, str] | None:
     """Ce que cet appel a déjà rendu, ou `None` s'il n'a jamais été fait.
 
     `None` déclenche un appel au modèle d'environnement chez l'appelant. Un
     résultat vide, lui, est une réponse — celle d'une recherche sans résultat —
     et ne doit surtout pas être confondu avec l'absence de ligne.
+
+    L'effet voyage avec le résultat, et c'est nécessaire : une conversation qui
+    lit le cache d'une autre a besoin de la même entrée de journal qu'elle,
+    sans quoi les deux repartiraient du même résultat vers deux états
+    différents.
+
+    Returns:
+        Le couple (résultat, effet), ou `None`.
     """
     lignes = supabase.select(
         TOOL_RESULTS,
-        select="result",
+        select="result,world_change",
         limit=1,
-        **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
+        **_tool_filters(
+            run_id, scenario_index, tool_name, arguments_hash, state_hash
+        ),
     )
-    return lignes[0]["result"] if lignes else None
+    if not lignes:
+        return None
+    return str(lignes[0]["result"] or ""), str(lignes[0].get("world_change") or "")
 
 
 def write_tool_result(
@@ -531,11 +560,20 @@ def write_tool_result(
     scenario_index: int,
     tool_name: str,
     arguments_hash: str,
+    state_hash: str,
     *,
     arguments: dict[str, Any],
+    state: list[dict[str, Any]],
     result: str,
+    reasoning: str,
+    world_change: str,
     model: str,
-) -> str:
+    check_model: str = "",
+    attempts: int = 1,
+    faithful: bool | None = None,
+    fault: str = "",
+    check_error: str | None = None,
+) -> tuple[str, str]:
     """Garde ce résultat, et rend celui qui fait foi.
 
     **Le premier arrivé gagne.** Le job déroule plusieurs conversations en
@@ -549,29 +587,55 @@ def write_tool_result(
     réponse d'une insertion qui ignore les doublons ne dit pas laquelle des
     deux lignes vit.
 
+    `state` porte le journal lisible à côté de son empreinte, comme `arguments`
+    voyage à côté de `arguments_hash` : c'est ce qui permet à la passe
+    d'après-run de recontrôler une ligne, et de relire six mois plus tard le
+    monde contre lequel elle a été servie.
+
+    `reasoning` s'enregistre et ne ressort jamais vers une conversation. Quand
+    `faithful` est faux, c'est lui qui dit ce que le serveur croyait faire —
+    la moitié que `fault` ne donne pas.
+
+    `check_model` dit qui a contrôlé. Il rend visible le repli du spec : quand
+    il partage le fournisseur de `model`, le contrôleur a le biais de celui
+    qu'il contrôle — c'est mieux que pas de contrôle, mais ça se sait plutôt
+    que ça se devine.
+
+    `attempts` vaut 2 quand une réparation a eu lieu. Avec `faithful` faux,
+    c'est la cinquième issue du voyant : servi malgré une réparation échouée,
+    qui n'est aucune des quatre autres.
+
     Returns:
-        Le résultat qui fait foi — le sien, ou celui qui était déjà là.
+        Le couple (résultat, effet) qui fait foi — le sien, ou celui qui était
+        déjà là.
     """
-    supabase.insert(
-        TOOL_RESULTS,
-        {
-            "run_id": run_id,
-            "scenario_index": scenario_index,
-            "tool_name": tool_name,
-            "arguments_hash": arguments_hash,
-            "arguments": arguments,
-            "result": result,
-            "model": model,
-        },
-        on_conflict=TOOL_RESULT_KEY,
-    )
+    ligne: dict[str, Any] = {
+        "run_id": run_id,
+        "scenario_index": scenario_index,
+        "tool_name": tool_name,
+        "arguments_hash": arguments_hash,
+        "state_hash": state_hash,
+        "arguments": arguments,
+        "state": state,
+        "result": result,
+        "reasoning": reasoning,
+        "world_change": world_change,
+        "model": model,
+        "check_model": check_model,
+        "attempts": attempts,
+        "fault": fault,
+        "check_error": check_error,
+    }
+    if faithful is not None:
+        ligne["faithful"] = faithful
+    supabase.insert(TOOL_RESULTS, ligne, on_conflict=TOOL_RESULT_KEY)
     gardé = read_tool_result(
-        supabase, run_id, scenario_index, tool_name, arguments_hash
+        supabase, run_id, scenario_index, tool_name, arguments_hash, state_hash
     )
     # `None` ne peut arriver que si la ligne a disparu entre l'écriture et la
     # relecture, ce que rien ne fait : personne ne supprime dans cette table.
     # Servir le sien plutôt que de tomber garde la conversation en vie.
-    return result if gardé is None else gardé
+    return (result, world_change) if gardé is None else gardé
 
 
 def unchecked_tool_results(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
@@ -581,10 +645,18 @@ def unchecked_tool_results(supabase: Supabase, run_id: str) -> list[dict[str, An
     exactement comme `judge_scores.status` porte déjà « ce qui reste à juger ».
     Deux règles écrites à deux endroits pour la même question finissent par
     diverger, et ce dépôt en a déjà payé le prix une fois.
+
+    Depuis que le contrôle passe d'abord en ligne, cette passe est un filet :
+    elle reprend ce qu'une panne de contrôleur avait laissé de côté. `state` et
+    `world_change` en font partie — sans eux, elle recontrôlerait la ligne
+    contre un monde qui n'est pas celui qu'elle a vu.
     """
     return supabase.select(
         TOOL_RESULTS,
-        select="scenario_index,tool_name,arguments_hash,arguments,result",
+        select=(
+            "scenario_index,tool_name,arguments_hash,state_hash,arguments,state,"
+            "result,world_change"
+        ),
         run_id=f"eq.{run_id}",
         faithful="is.null",
     )
@@ -596,6 +668,7 @@ def write_tool_verdict(
     scenario_index: int,
     tool_name: str,
     arguments_hash: str,
+    state_hash: str,
     *,
     faithful: bool,
     fault: str,
@@ -613,7 +686,9 @@ def write_tool_verdict(
     supabase.update(
         TOOL_RESULTS,
         {"faithful": faithful, "fault": fault, "check_error": None},
-        **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
+        **_tool_filters(
+            run_id, scenario_index, tool_name, arguments_hash, state_hash
+        ),
     )
 
 
@@ -623,6 +698,7 @@ def write_tool_check_error(
     scenario_index: int,
     tool_name: str,
     arguments_hash: str,
+    state_hash: str,
     *,
     reason: str,
 ) -> None:
@@ -635,5 +711,7 @@ def write_tool_check_error(
     supabase.update(
         TOOL_RESULTS,
         {"check_error": reason},
-        **_tool_filters(run_id, scenario_index, tool_name, arguments_hash),
+        **_tool_filters(
+            run_id, scenario_index, tool_name, arguments_hash, state_hash
+        ),
     )

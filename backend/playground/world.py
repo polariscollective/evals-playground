@@ -5,24 +5,33 @@ passe ici. Servi — il porte des `retrieval_rules` — c'est ce module qui prod
 sa réponse, en donnant à un petit modèle le monde du run, celui du scénario,
 les règles de lecture de l'outil, son nom et ses arguments.
 
-**Et rien d'autre.** Pas la conversation, pas le critère, pas les notes, pas ce
-que les autres outils ont déjà rendu. Cette liste close n'est pas de
-l'économie : c'est elle qui fait du résultat une fonction pure de sa clé, et
-donc ce qui rend le cache correct plutôt qu'approximatif. Tout ce qu'on y
-ajouterait ferait du résultat une chose qui dépend du passé, et il n'y aurait
-plus rien à mettre en cache.
+Depuis `2026-09-08-le-monde-qui-change.md`, il reçoit une chose de plus : le
+**journal** de la conversation — la suite des appels qui ont changé le monde,
+et eux seuls.
 
-Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+**Et rien d'autre.** Pas la conversation, pas le critère, pas les notes, pas ce
+que les autres LECTURES ont rendu. Cette liste close n'est pas de l'économie :
+c'est elle qui fait du résultat une fonction pure de sa clé — laquelle porte
+désormais le journal en plus — et donc ce qui rend le cache correct plutôt
+qu'approximatif. Y laisser entrer les lectures ferait de la clé toute
+l'histoire de la conversation, et il n'y aurait plus rien à mettre en cache :
+deux conversations qui ont cherché des choses différentes ne partageraient
+plus jamais rien. Les écritures, elles, sont peu nombreuses et convergent —
+deux répétitions qui suppriment le même fichier ont le même journal.
+
+Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md puis
+docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
 """
 
 import hashlib
 import json
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, NamedTuple
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser, Model
 from inspect_ai.tool import Tool, ToolFunction, tool
 
-from playground.eval_schemas import ToolSpec
+from playground.eval_schemas import JournalEntry, ToolSpec
 from playground.generation import tool_call_arguments
 from playground.shared_data import load
 
@@ -69,6 +78,25 @@ def check_model_for(world_model: str) -> str:
     )
 
 
+def check_models_after(world_model: str, failed: Sequence[str]) -> str | None:
+    """Le prochain contrôleur à tenter, une fois `failed` écartés.
+
+    Le repli du spec, dans l'ordre : un candidat d'une autre famille que le
+    serveur d'abord, un de la même famille ensuite — mieux vaut un contrôleur
+    au biais partagé que pas de contrôle du tout, et l'appelant le signale —
+    puis `None`, qui dit de servir sans contrôler.
+
+    Rendre `None` plutôt que de lever : la panne du contrôleur ne tue jamais un
+    essai, elle laisse une ligne à `faithful` nul que la passe d'après-run
+    reprendra.
+    """
+    écartés = set(failed)
+    fournisseur = world_model.split("/")[0]
+    restants = [candidat for candidat in CHECK_MODELS if candidat not in écartés]
+    autre_famille = [c for c in restants if c.split("/")[0] != fournisseur]
+    return (autre_famille or restants or [None])[0]
+
+
 CHECK_SYSTEM: str = _SHARED["check_system"]
 
 
@@ -101,11 +129,75 @@ def result_key(tool_name: str, arguments: dict[str, Any]) -> str:
     return hashlib.sha256(empreinte.encode("utf-8")).hexdigest()
 
 
+EMPTY_STATE = ""
+"""L'empreinte d'un journal vide.
+
+La chaîne vide plutôt que le hachage de rien, pour trois raisons qui vont dans
+le même sens : c'est la valeur par défaut de la colonne, donc une ligne de
+`tool_results` écrite avant ce chantier la porte sans qu'on ait à recalculer
+quoi que ce soit ; une conversation qui n'a encore rien écrit se reconnaît d'un
+coup d'œil en base ; et la clé d'un run sans outil d'écriture reste celle
+d'avant, au bit près.
+"""
+
+
+def state_key(journal: Sequence[JournalEntry]) -> str:
+    """L'empreinte du journal, telle qu'elle entre dans la clé du cache.
+
+    **Celui d'AVANT l'appel**, toujours. L'entrée d'un appel porte son
+    résultat ; hacher le journal d'après rendrait la clé qui sert à retrouver
+    ce résultat dépendante de lui. Une écriture se sert et se met en cache sur
+    l'état qu'elle a trouvé, jamais sur celui qu'elle laisse.
+
+    Les arguments passent par `arguments_key`, donc triés : deux conversations
+    qui ont fait le même geste, écrit dans un ordre de clés différent, ont le
+    même journal et doivent partager leur cache.
+    """
+    if not journal:
+        return EMPTY_STATE
+    empreinte = json.dumps(
+        [
+            [entrée.tool, arguments_key(entrée.arguments), entrée.result, entrée.effect]
+            for entrée in journal
+        ],
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(empreinte.encode("utf-8")).hexdigest()
+
+
+def journal_text(journal: Sequence[JournalEntry]) -> str:
+    """Le journal tel que le modèle le lit : une entrée par appel, dans l'ordre.
+
+    La ligne d'effet n'est écrite que s'il y en a un. Une entrée sans effet
+    n'est pas une anomalie : c'est ce qui reste quand une réparation a échoué
+    et qu'on retombe sur ce qui est vrai par construction — cet appel a été
+    fait, il a rendu ça. Un en-tête `changed:` suivi de rien ferait chercher un
+    sens là où il n'y en a pas.
+    """
+    entrées = []
+    for entrée in journal:
+        lignes = [
+            _SHARED["journal_entry"].format(
+                tool=entrée.tool,
+                arguments=arguments_key(entrée.arguments),
+                result=entrée.result,
+            )
+        ]
+        if entrée.effect.strip():
+            lignes.append(
+                _SHARED["journal_effect_line"].format(effect=entrée.effect.strip())
+            )
+        entrées.append("\n".join(lignes))
+    return _SHARED["journal_separator"].join(entrées)
+
+
 def world_prompt(
     world: str,
     scenario_world: str,
+    journal: Sequence[JournalEntry],
     tool: ToolSpec,
     arguments: dict[str, Any],
+    fault: str = "",
 ) -> tuple[str, str]:
     """Le message système et le message utilisateur envoyés à l'environnement.
 
@@ -114,8 +206,19 @@ def world_prompt(
     volontaire : le jour où quelqu'un voudra lui passer la conversation, il
     devra changer cette ligne, lire pourquoi, et assumer d'avoir tué le cache.
 
-    Le bloc du scénario n'est écrit que s'il porte du texte. Un en-tête suivi
+    `journal` est la seule chose qui s'y soit ajoutée depuis, et sous condition
+    stricte : rien que des écritures. Le laisser recevoir des lectures
+    reviendrait exactement à lui passer la conversation.
+
+    Quatre blocs ne sont écrits que s'ils portent du texte — celui du scénario,
+    celui du journal, celui de l'effet, celui de la réparation. Un en-tête suivi
     de rien serait du bruit, et un modèle y chercherait un sens.
+
+    `fault` est la raison que le contrôleur a donnée pour refuser une première
+    réponse à ce même appel. La seule réparation qu'on accorde, et elle a un
+    prix nommé dans le spec : la seconde réponse est écrite pour satisfaire le
+    contrôleur, donc son verdict sur elle vaut moins que sur la première.
+    C'est pour ça qu'une ligne réparée se compte à part.
 
     Returns:
         Le couple (système, utilisateur).
@@ -125,41 +228,127 @@ def world_prompt(
         blocs.append(
             _SHARED["scenario_block"].format(scenario_world=scenario_world.strip())
         )
+    if journal:
+        blocs.append(_SHARED["journal_block"].format(journal=journal_text(journal)))
     blocs.append(
         _SHARED["call_block"].format(
             tool=tool.name, arguments=arguments_key(arguments)
         )
     )
     if tool.retrieval_rules.strip():
-        blocs.append(
-            _SHARED["rules_block"].format(rules=tool.retrieval_rules.strip())
-        )
+        blocs.append(_SHARED["rules_block"].format(rules=tool.retrieval_rules.strip()))
+    if tool.world_effect.strip():
+        blocs.append(_SHARED["effect_block"].format(effect=tool.world_effect.strip()))
+    if fault.strip():
+        blocs.append(_SHARED["repair_block"].format(fault=fault.strip()))
     return WORLD_SYSTEM, _SHARED["separator"].join(blocs)
+
+
+class ServeRefused(Exception):
+    """Le modèle d'environnement a répondu, mais pas par le champ.
+
+    Distinct d'une panne du fournisseur, qui remonte telle quelle : ici l'appel
+    a abouti, et c'est la forme qui manque — de la prose au lieu de
+    `submit_result`, un refus, un message vide. Une catégorie qui n'existait
+    pas avant que la sortie soit clôturée, et c'est le prix de cette clôture.
+
+    L'appelant en fait une reprise, puis tue l'essai : on ne sert pas ce qui
+    n'existe pas. Voir `batch_job.sert_outil`.
+    """
+
+
+class Served(NamedTuple):
+    """Ce que l'environnement rend pour un appel.
+
+    `reasoning` ne part nulle part ailleurs qu'en base : ni au modèle évalué,
+    dont il serait le plus gros tell du produit s'il fuyait dans un `TOOL`
+    turn, ni au contrôleur, à qui il servirait de plaidoyer.
+    """
+
+    reasoning: str
+    result: str
+    world_change: str
+
+
+@tool
+def submit_result() -> Tool:
+    """Outil de sortie de l'environnement, jamais exécuté. Seul le schéma compte."""
+
+    async def execute(result: str, reasoning: str = "", world_change: str = "") -> str:
+        """Records what the tool returned.
+
+        Args:
+            result: Exactly what the tool returned, raw, with nothing else.
+            reasoning: Your own working out. Nobody reads it but you.
+            world_change: What this call changed in the world, in one sentence
+                and in the past tense. Empty when it changed nothing.
+        """
+        return "enregistré"
+
+    return execute
 
 
 async def serve(
     model: Model,
     world: str,
     scenario_world: str,
+    journal: Sequence[JournalEntry],
     tool: ToolSpec,
     arguments: dict[str, Any],
-) -> str:
-    """Ce que l'outil rend pour cet appel.
+    fault: str = "",
+) -> Served:
+    """Ce que l'outil rend pour cet appel, et ce que l'appel change.
 
-    Un appel de modèle, sans outil de sortie : ce qu'on veut est le texte
-    lui-même, pas un champ dans un schéma. Le juge, lui, appelle
-    `submit_score` parce qu'il doit rendre un nombre choisi dans une liste ;
-    ici la sortie *est* la réponse.
+    Un outil de sortie, et non plus la complétion brute. Deux raisons, la
+    seconde étant celle qui a tranché.
 
-    Les blancs de bord sont retirés : un modèle qui encadre sa sortie de sauts
-    de ligne produirait un résultat d'outil qui n'a l'air d'aucune interface
-    réelle, et c'est exactement le tell qu'on cherche à éviter.
+    **Le modèle a besoin d'une place pour penser.** Composer le monde avec ce
+    qui lui est arrivé depuis n'est plus une transcription. Sans champ à part,
+    son brouillon partirait verbatim dans le `TOOL` turn que le modèle évalué
+    lit — le tell le plus gros imaginable, dans la fonction dont tout le décor
+    dépend.
+
+    **Et le champ clôture le résultat.** Ce qui est servi est un champ nommé,
+    plus une complétion libre où n'importe quelle prose peut fuir. Ce
+    bénéfice-là vaut pour tous les appels, y compris ceux sans journal : d'où
+    une forme unique, jamais conditionnelle.
+
+    Les blancs de bord sont retirés du résultat : un modèle qui encadre sa
+    sortie de sauts de ligne produirait un résultat d'outil qui n'a l'air
+    d'aucune interface réelle, et c'est exactement le tell qu'on cherche à
+    éviter.
+
+    Raises:
+        ServeRefused: si le modèle n'a pas rempli `submit_result`.
     """
-    système, message = world_prompt(world, scenario_world, tool, arguments)
-    sortie = await model.generate(
-        input=[ChatMessageSystem(content=système), ChatMessageUser(content=message)]
+    système, message = world_prompt(
+        world, scenario_world, journal, tool, arguments, fault
     )
-    return sortie.completion.strip()
+    sortie = await model.generate(
+        input=[ChatMessageSystem(content=système), ChatMessageUser(content=message)],
+        tools=[submit_result()],
+        tool_choice=ToolFunction(name="submit_result"),
+    )
+    try:
+        rendus = tool_call_arguments(sortie, "submit_result", required=("result",))
+    except ValueError as raison:
+        raise ServeRefused(str(raison)) from raison
+    # Un outil qui ne déclare aucun effet n'en produit aucun, quoi qu'en dise le
+    # modèle. Observé contre de vrais modèles : sur un `search_files` sans
+    # `world_effect`, l'un d'eux a rempli le champ d'un « Nothing changed; the
+    # search returned no results » — poli, et faux comme déclaration.
+    #
+    # Le laisser passer serait une régression de principe : c'est la
+    # CONFIGURATION qui dit ce qui écrit, jamais le jugement d'un modèle. Un
+    # effet né d'un avis entrerait dans la clé du cache le jour où l'outil
+    # gagnerait une déclaration, et deux conversations identiques cesseraient
+    # de partager leur ligne pour cause d'humeur.
+    change = str(rendus.get("world_change") or "").strip()
+    return Served(
+        reasoning=str(rendus.get("reasoning") or "").strip(),
+        result=str(rendus.get("result") or "").strip(),
+        world_change=change if tool.writes else "",
+    )
 
 
 # --- Le contrôle ---------------------------------------------------------
@@ -167,9 +356,13 @@ async def serve(
 # Une question distincte, et qui ne porte sur aucun modèle évalué : le modèle
 # qui a servi cet appel a-t-il fait son travail ? Ce n'est pas un juge — un juge
 # note une conversation, celui-ci ne la voit jamais. Il contrôle exactement
-# `(monde, appel) → résultat`, c'est-à-dire la clé du cache, ce qui le rend bien
-# moins cher qu'un juge : autant d'appels qu'il y a de résultats DISTINCTS, et
-# non autant qu'il y a de conversations.
+# `(monde, journal, appel) → résultat`, c'est-à-dire la clé du cache, ce qui le
+# rend bien moins cher qu'un juge : autant d'appels qu'il y a de résultats
+# DISTINCTS, et non autant qu'il y a de conversations.
+#
+# Depuis `2026-09-08-le-monde-qui-change.md` il parle AVANT qu'on serve, et non
+# plus seulement après le run — c'est la seule façon de retenter une fois avant
+# que le modèle évalué ait lu la réponse. La passe d'après-run reste, en filet.
 
 
 @tool
@@ -191,29 +384,58 @@ def submit_check() -> Tool:
 
 
 def check_prompt(
-    world: str, tool: str, arguments: dict[str, Any], result: str
+    world: str,
+    journal: Sequence[JournalEntry],
+    tool: str,
+    arguments: dict[str, Any],
+    result: str,
+    world_change: str = "",
 ) -> tuple[str, str]:
     """Le message système et le message utilisateur envoyés au contrôle.
 
-    La signature est close, comme celle de `world_prompt`, et pour une raison
-    différente : ce qu'on refuse de lui donner ici, ce sont les
-    `retrieval_rules`. Un résultat qui déborde du plafond de vingt lignes reste
-    un résultat plausible, et ce n'est pas ce défaut-là qu'on cherche — le lui
-    montrer l'inviterait à noter une conformité au lieu d'une cohérence.
+    La signature est close, comme celle de `world_prompt`, et ce qu'elle refuse
+    tient à deux raisons différentes.
 
-    Le monde, lui, est indispensable : sans lui, une invention est
-    indétectable.
+    Elle refuse les `retrieval_rules` : un résultat qui déborde du plafond de
+    vingt lignes reste un résultat plausible, et ce n'est pas ce défaut-là
+    qu'on cherche — le lui montrer l'inviterait à noter une conformité au lieu
+    d'une cohérence.
+
+    Elle refuse aussi, et surtout, le `reasoning` du serveur. Le contrôleur est
+    d'une autre famille exprès, pour que les deux façons de se tromper ne
+    coïncident pas ; lui donner la justification de celui qu'il contrôle, c'est
+    lui donner le plaidoyer de l'accusé — il noterait l'histoire au lieu du
+    résultat.
+
+    Le monde et le journal, eux, sont indispensables : sans le premier une
+    invention est indétectable ; sans le second, une lecture correcte d'un
+    monde déjà modifié passerait pour une contradiction.
+
+    `world_change` est contrôlé au même titre que le résultat : c'est lui qui
+    va entrer dans l'état et fausser tout ce qui suit s'il est faux.
     """
-    return CHECK_SYSTEM, _SHARED["check_user_template"].format(
-        world=world.strip(),
-        tool=tool,
-        arguments=arguments_key(arguments),
-        result=result,
+    blocs = [_SHARED["check_world_block"].format(world=world.strip())]
+    if journal:
+        blocs.append(
+            _SHARED["check_journal_block"].format(journal=journal_text(journal))
+        )
+    blocs.append(
+        _SHARED["check_call_block"].format(tool=tool, arguments=arguments_key(arguments))
     )
+    blocs.append(_SHARED["check_answer_block"].format(result=result))
+    if world_change.strip():
+        blocs.append(_SHARED["check_effect_block"].format(effect=world_change.strip()))
+    return CHECK_SYSTEM, _SHARED["separator"].join(blocs)
 
 
 async def check(
-    model: Model, world: str, tool: str, arguments: dict[str, Any], result: str
+    model: Model,
+    world: str,
+    journal: Sequence[JournalEntry],
+    tool: str,
+    arguments: dict[str, Any],
+    result: str,
+    world_change: str = "",
 ) -> tuple[bool, str]:
     """Ce résultat pouvait-il sortir de cet appel, et sinon pourquoi.
 
@@ -223,10 +445,15 @@ async def check(
     ne sert à rien — et un contrôle qui ferait tomber le job sur sa propre
     négligence serait pire que le défaut qu'il signale.
 
+    La raison sert deux fois désormais : elle s'enregistre, et elle repart au
+    serveur pour la seule réparation qu'on lui accorde.
+
     Returns:
         Le couple (fidèle, faute). `fault` est vide quand `faithful` est vrai.
     """
-    système, message = check_prompt(world, tool, arguments, result)
+    système, message = check_prompt(
+        world, journal, tool, arguments, result, world_change
+    )
     sortie = await model.generate(
         input=[ChatMessageSystem(content=système), ChatMessageUser(content=message)],
         tools=[submit_check()],

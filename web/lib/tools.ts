@@ -57,6 +57,31 @@ export function fixed(tool: Pick<ToolSpec, "result">): boolean {
   return isFilled(tool.result);
 }
 
+/** Cet outil change-t-il le monde quand on l'appelle ?
+ *
+ * Jumeau de `ToolSpec.writes` côté Python, détouré comme lui. Second axe, tout
+ * à fait indépendant de `served` : les quatre combinaisons existent, et
+ * fixe-et-écrivant est la plus courante — `delete_records` rend une chaîne
+ * fixe et vide pourtant une table.
+ *
+ * Ce que la divergence coûterait n'est pas un refus au démarrage, comme pour
+ * `served`, mais un mensonge silencieux : un devis qui ne compte pas un
+ * journal que le job tiendra. */
+export function writesWorld(tool: Pick<ToolSpec, "world_effect">): boolean {
+  return isFilled(tool.world_effect);
+}
+
+/** Ce run écrit-il dans son monde ?
+ *
+ * Ce qui décide qu'un journal existe — donc que la clé du cache porte autre
+ * chose que l'empreinte du journal vide, et que le devis a un bloc de plus à
+ * compter. */
+export function writesWorldTools(
+  tools: readonly Pick<ToolSpec, "world_effect">[],
+): boolean {
+  return tools.some(writesWorld);
+}
+
 /** Ce run sert-il au moins un outil ?
  *
  * La question que posent les deux refus de `models.world` : requis dès qu'un

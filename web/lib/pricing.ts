@@ -26,7 +26,7 @@ import {
 // `toolsProblem` — était alors chiffré comme servi tout en n'étant servi par
 // personne, et le devis annonçait un modèle vide. Le discriminant vit à un
 // endroit ; trois copies finissent toujours par diverger.
-import { served, servesTools, toolsFor } from "./tools.ts";
+import { served, servesTools, toolsFor, writesWorld } from "./tools.ts";
 import type {
   CostEstimate,
   EvalRunConfig,
@@ -141,12 +141,20 @@ const JUDGE_OVERHEAD_TOKENS =
  * Mesuré sur les gabarits, comme pour le juge et l'adversaire : une
  * reformulation du prompt se répercute sur le devis toute seule. */
 const WORLD_OVERHEAD_TOKENS = fixedTokens(
-  M.system + M.world_block + M.scenario_block + M.call_block + M.rules_block,
+  M.system +
+    M.world_block +
+    M.scenario_block +
+    M.journal_block +
+    M.call_block +
+    M.rules_block +
+    M.effect_block,
   "{world}",
   "{scenario_world}",
+  "{journal}",
   "{tool}",
   "{arguments}",
   "{rules}",
+  "{effect}",
 );
 
 /** Combien d'appels d'outils servis une conversation fait, en gros.
@@ -188,7 +196,19 @@ const AWARENESS_OVERHEAD_TOKENS =
  * il chiffre un autre prompt que celui qui part. */
 const CHECK_OVERHEAD_TOKENS =
   fixedTokens(M.check_system) +
-  fixedTokens(M.check_user_template, "{world}", "{tool}", "{arguments}", "{result}");
+  fixedTokens(
+    M.check_world_block +
+      M.check_journal_block +
+      M.check_call_block +
+      M.check_answer_block +
+      M.check_effect_block,
+    "{world}",
+    "{journal}",
+    "{tool}",
+    "{arguments}",
+    "{result}",
+    "{effect}",
+  );
 
 /** Le contrôleur d'un run servi par `worldModel` : le premier candidat de
  *  `check_models` dont le fournisseur diffère du sien.
@@ -436,12 +456,38 @@ export function estimateTokens(
       // `tools: none` sur une ligne est souvent toute la comparaison qu'on
       // cherche : elle ne doit pas porter le coût d'un monde qu'elle
       // n'interroge jamais.
-      const servis = toolsFor(config, scenario).filter(served);
+      const offerts = toolsFor(config, scenario);
+      const servis = offerts.filter(served);
+      // Le journal, et ce qu'il pèse dans les deux prompts qui le reçoivent.
+      //
+      // Les outils **fixes** qui écrivent en font partie : ils ne coûtent aucun
+      // appel, mais leur entrée gonfle le prompt de chaque lecture qui suit.
+      // Ne compter que `servis` les aurait ratés, et ce sont eux la forme
+      // courante des outils d'écriture.
+      //
+      // Le milieu de zéro et du plafond, comme `servedCallsPerConversation` :
+      // rien ne déclare combien d'écritures un modèle fera. Une entrée pèse le
+      // résultat servi plus la phrase d'effet — jamais le `reasoning`, qui ne
+      // quitte pas la base.
+      const écrivains = offerts.filter(writesWorld);
+      const journal =
+        écrivains.length === 0
+          ? 0
+          : Math.floor(
+              (servedCalls / 2) *
+                (S.world_response_tokens +
+                  écrivains.reduce(
+                    (sum, tool) => sum + tokens(tool.world_effect ?? ""),
+                    0,
+                  ) /
+                    écrivains.length),
+            );
       if (servis.length > 0 && servedCalls > 0) {
         const monde =
           worldTokens +
           tokens(scenario.world ?? "") +
           WORLD_OVERHEAD_TOKENS +
+          journal +
           // Les règles de lecture de l'outil appelé. On ne sait pas lequel : la
           // moyenne des outils servis de ce scénario est la seule valeur qui
           // n'en privilégie aucun.
@@ -465,8 +511,14 @@ export function estimateTokens(
           "world",
           config.models.world ?? "",
           monde * servedCalls * weight,
-          S.world_response_tokens * servedCalls * weight,
-          S.world_response_tokens,
+          // Trois champs, pas un : le résultat, ce que l'appel a changé, et le
+          // raisonnement — qui ne quitte jamais la base, mais qui est facturé
+          // comme tout jeton de sortie. Voir `submit_result`
+          // (`backend/playground/world.py`).
+          (S.world_response_tokens + S.world_reasoning_tokens) *
+            servedCalls *
+            weight,
+          S.world_response_tokens + S.world_reasoning_tokens,
           servedCalls * weight,
         );
         // Le contrôleur relit chaque résultat servi : le monde du run et celui
@@ -488,6 +540,7 @@ export function estimateTokens(
           (worldTokens +
             tokens(scenario.world ?? "") +
             CHECK_OVERHEAD_TOKENS +
+            journal +
             S.world_response_tokens) *
             servedCalls *
             weight,
@@ -855,15 +908,24 @@ function servedCallsSentence(config: EvalRunConfig): string {
     // Le second pari des lignes servies, et le seul qui ne se lise nulle part
     // ailleurs. Le moteur ne sert pas chaque appel : `sert_outil`
     // (`backend/playground/batch_job.py`) lit d'abord `tool_results`, dont la
-    // clé — run, scénario, outil, arguments — ignore le modèle évalué et la
-    // répétition. Les conversations d'un même scénario se partagent donc leurs
-    // résultats, et le contrôle ne repasse pas sur ce qui n'a pas été reservi.
+    // clé — run, scénario, outil, arguments, état du monde — ignore le modèle
+    // évalué et la répétition. Les conversations d'un même scénario se
+    // partagent donc leurs résultats tant qu'elles n'ont pas écrit des choses
+    // différentes, et le contrôle ne repasse pas sur ce qui n'a pas été
+    // reservi.
     //
     // On facture quand même chaque appel : compter les résultats distincts
     // donnerait la borne basse, qui ment dès que deux modèles n'appellent pas
     // leurs outils avec les mêmes arguments. Un devis qui promet moins cher
     // qu'il ne sera est la seule erreur que ce produit ne peut pas se
     // permettre — alors on le dit plutôt que de le corriger.
+    //
+    // La réparation joue dans l'autre sens et n'est pas chiffrée : un résultat
+    // que le contrôle refuse est redemandé une fois, donc deux appels de
+    // serveur et deux de contrôleur au lieu d'un de chaque. Elle ne se produit
+    // que sur un contrôle négatif, et le pari du cache au-dessus surfacture
+    // déjà d'un facteur bien supérieur — le dire ici plutôt que de gonfler la
+    // ligne d'un cas rare qu'on ne sait pas compter.
     ` The world and check lines assume no result is reused; repetitions of a` +
     ` scenario share theirs, so those two will cost less.`
   );

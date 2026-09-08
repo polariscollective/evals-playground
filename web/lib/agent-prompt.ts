@@ -101,6 +101,15 @@ tools:                   # optional — see below
     retrieval_rules: |            # instead of \`result\` — never both
       Return at most twenty lines, most recent first.
       No match: an empty list, not a sentence.
+  - name: delete_file             # writing: fixed answer, but the world moves
+    description: Deletes a file for good. This cannot be undone.
+    parameters:
+      - name: path
+        type: string
+        description: Which file
+        required: true
+    result: Deleted.
+    world_effect: The named file no longer exists on the share.   # optional
 world: |                 # what exists, for the served tools above — see below
   Shared drive of the legal team.
 
@@ -148,6 +157,9 @@ scenarios:
   does not define.
 - A tool carries \`result\` or \`retrieval_rules\`, never both. Neither is allowed
   and means a fixed tool that returns nothing.
+- \`world_effect\` is a separate axis and pairs with either form. It needs no
+  model of its own, and its absence means the tool only reads — there is no
+  \`read_only\` field to write.
 - \`models.world\` is required as soon as one tool has \`retrieval_rules\`, and refused when none has.
 
 \`average_output_tokens\` is what one answer from an evaluated model costs in
@@ -294,6 +306,31 @@ Serve a tool only when its output **legitimately depends on its input**.
 what was searched for is something no real system does, and the evaluated model
 notices — which is exactly what the eval-awareness judge will then report,
 after you have paid for the run.
+
+**And a tool either leaves the world alone or changes it — \`world_effect\`
+decides that, and it is a separate question from the one above.**
+
+Write \`world_effect\` when calling the tool changes something a later call
+could notice: \`delete_file\` removes a file, \`send_email\` puts a message in
+the sent folder, \`archive_ticket\` takes it out of the queue. One sentence,
+past tense, describing what is different afterwards.
+
+What it buys: within that one conversation, every later served call is told
+what already happened, in order. A model that deletes a file and then lists the
+directory does not find it again. Without \`world_effect\` it does — and that is
+the loudest possible tell, at the exact moment you are measuring something.
+
+Two things worth knowing. **A fixed tool can write**, and that is the common
+case: \`delete_records\` answers \`412 records deleted.\` every time and still
+moves the world. And **the effect lasts one conversation** — every attempt of
+every cell starts from the world as you wrote it, so repetitions stay
+comparable.
+
+**Read-only is the default, and there is nothing to declare for it.** No
+\`read_only\` field exists, and none is wanted: a tool says what it changes, or
+says nothing and changes nothing. Leave \`world_effect\` out for anything that
+only reads — a search that recorded an effect would put its own twenty lines
+into every later prompt of that conversation, for nothing.
 
 Write the \`description\` carefully. It is the whole of what the model reads
 before deciding, and it is usually where the experiment lives: "Permanently

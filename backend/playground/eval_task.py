@@ -111,9 +111,11 @@ def conversation_solver(
         config: La configuration du run, pour les modèles cible et adversaire.
         serve_tool: Ce qui répond aux outils servis depuis le monde, reçu de
             l'appelant qui tient la base — signature
-            `(scenario_index, tool, arguments)`. Le rang du scénario est
-            passé ici et non capturé par l'appelant : le monde diffère par
-            scénario, et un solver sert toutes les cases du run.
+            `(scenario_index, tool, arguments, journal)`. Le rang du scénario
+            est passé ici et non capturé par l'appelant : le monde diffère par
+            scénario, et un solver sert toutes les cases du run. Le journal,
+            lui, vient de la boucle de conversation, qui est la seule à savoir
+            ce que CETTE conversation a déjà écrit.
         stopped: Transmis à la boucle de conversation, qui le consulte avant
             chaque appel de modèle. Le contrôler ici ne servirait à rien :
             inspect démarre tous les échantillons d'un coup, et ils franchiraient
@@ -175,6 +177,10 @@ def conversation_solver(
                         stop_reason=turn.get("stop_reason"),
                         tool_name=turn.get("tool_name"),
                         tool_call_id=turn.get("tool_call_id"),
+                        # Absent des conversations enregistrées avant ce
+                        # champ : leur journal se reconstitue alors sans effet
+                        # déclaré, ce qui est exactement ce qu'elles ont vécu.
+                        world_change=turn.get("world_change") or "",
                         tool_calls=[
                             ToolCallRecord(
                                 id=call["id"],
@@ -197,8 +203,11 @@ def conversation_solver(
                 None
                 if serve_tool is None
                 else (
-                    lambda tool, arguments: serve_tool(
-                        int(state.metadata.get("scenario_index", 0)), tool, arguments
+                    lambda tool, arguments, journal: serve_tool(
+                        int(state.metadata.get("scenario_index", 0)),
+                        tool,
+                        arguments,
+                        journal,
                     )
                 )
             ),
@@ -223,6 +232,12 @@ def conversation_solver(
                 # Persisté depuis peu : les conversations enregistrées avant
                 # ne le portent pas, d'où `_completer_tool_call_id` ci-dessus.
                 "tool_call_id": turn.tool_call_id,
+                # Sur un tour `tool` d'un outil qui écrit : ce que cet appel a
+                # changé au monde. Il survit en base parce que c'est de là que
+                # le journal se reconstitue quand la conversation reprend —
+                # voir `journal_from` (`conversation.py`). Il ne part jamais au
+                # modèle évalué ni au juge, qui ne lisent que `content`.
+                "world_change": turn.world_change,
                 "stop_reason": turn.stop_reason,
             }
             for turn in transcript

@@ -216,7 +216,9 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
     une réponse bloquée par le fournisseur d'un vrai silence du modèle, et
     `seeded` aussi : c'est lui qui empêche le juge de noter un tour posé.
     `tool_call_id` aussi : sans lui, reprendre une conversation pour
-    l'approfondir ne pourrait pas rattacher un tour `tool` à son appel.
+    l'approfondir ne pourrait pas rattacher un tour `tool` à son appel. Et
+    `world_change` depuis le monde qui change : c'est de lui que le journal des
+    écritures se reconstitue quand la conversation reprend.
     """
     config = _config(turns=1)
     state = _task_state(config)
@@ -233,6 +235,7 @@ def test_chaque_entree_du_transcript_a_les_cles_requises():
             "tool_calls",
             "tool_name",
             "tool_call_id",
+            "world_change",
             "stop_reason",
         }
         assert isinstance(entry["role"], str)

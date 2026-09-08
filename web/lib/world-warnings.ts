@@ -10,7 +10,7 @@
 // Hors de `validate.ts`, délibérément : ces fonctions-là ne rendent que des
 // refus. Un refus arrête, un avertissement informe, et les mélanger ferait
 // qu'un jour l'un se comporterait comme l'autre.
-import { servesTools, toolsFor } from "./tools.ts";
+import { servesTools, toolsFor, writesWorld } from "./tools.ts";
 import type { EvalRunConfig, EvalScenario, ExtendRequest } from "./types";
 
 function isFilled(value: string | undefined | null): boolean {
@@ -38,6 +38,36 @@ export function worldWarnings(config: EvalRunConfig): string[] {
       `\`${scenario.title}\`: served from an empty world — neither the run ` +
         "nor this scenario describes anything to read, so the model will " +
         "improvise. That is what a served tool exists to avoid.",
+    );
+  }
+  return warnings;
+}
+
+/** Un scénario qui écrit dans un monde que rien ne lit.
+ *
+ * `world_effect` n'a qu'un lecteur : le modèle d'environnement, quand il sert
+ * un appel qui vient après. Un scénario dont aucun outil ne porte de
+ * `retrieval_rules` journalise donc dans le vide — les entrées s'écrivent,
+ * elles ne sont jamais relues, et l'expérimentateur croit avoir posé un monde
+ * qui bouge alors qu'il a posé une phrase morte.
+ *
+ * Nommé plutôt que refusé, comme le monde vide au-dessus : la combinaison
+ * reste licite — on peut vouloir déclarer l'effet d'avance, avant d'ajouter
+ * l'outil qui le lira par extension — et refuser interdirait cet ordre-là
+ * pour attraper la faute probable.
+ *
+ * Un avertissement par scénario concerné, par son titre : contrairement au
+ * monde gelé d'une extension, celui-ci se répare scénario par scénario. */
+export function writeWithoutReadWarnings(config: EvalRunConfig): string[] {
+  const warnings: string[] = [];
+  for (const scenario of config.scenarios) {
+    const offerts = toolsFor(config, scenario);
+    if (!offerts.some(writesWorld)) continue;
+    if (servesTools(offerts)) continue;
+    warnings.push(
+      `\`${scenario.title}\`: a tool here declares a world_effect, but no tool ` +
+        "in this scenario reads the world. The effect would be recorded and " +
+        "never read — nothing would ever notice the change.",
     );
   }
   return warnings;

@@ -75,17 +75,32 @@ in this order
 Le bloc n'est écrit que s'il porte quelque chose, comme celui du scénario : un
 en-tête suivi de rien est du bruit, et un modèle y cherche un sens.
 
-### Il voyage avec la conversation
+### Il vit dans le transcript
 
-Sur la ligne d'`eval_samples`, à côté de `messages` et de `turns_done`. Une
-reprise ou un approfondissement le retrouve donc sans rien recalculer — c'est la
-même métadonnée qui fait déjà repartir une conversation d'où elle s'était
-arrêtée.
+**Révisé à l'implémentation, et c'est plus simple que ce qui était prévu ici.**
 
-Le reconstruire depuis le transcript serait possible mais faux d'esprit : il
-faudrait rejouer la chaîne des empreintes dans l'ordre pour retrouver l'effet
-déclaré de chaque appel, et une reprise deviendrait un calcul au lieu d'une
-lecture.
+Le dessin d'origine lui donnait une colonne sur `eval_samples`, à côté de
+`messages`, en écartant la reconstruction depuis le transcript : il aurait fallu
+« rejouer la chaîne des empreintes dans l'ordre pour retrouver l'effet déclaré
+de chaque appel ».
+
+L'objection tombe si l'effet est écrit là où il se produit. Un tour `tool`
+gagne un champ `world_change`, et le journal se relit alors du transcript —
+les écritures, dans l'ordre, avec leurs arguments, leur résultat et leur effet
+(`journal_from`, `conversation.py`).
+
+Trois bénéfices, et aucun coût :
+
+- une reprise le retrouve **gratuitement**, puisque c'est le transcript qu'elle
+  reprend déjà ;
+- une migration de moins sur `eval_samples` ;
+- une seule source. Un journal en colonne aurait pu contredire le transcript
+  qui l'a produit, et c'est le genre de divergence que ce dépôt a déjà payée.
+
+La contrepartie est une règle à tenir, et elle est testée : `world_change` ne
+part **ni au modèle évalué ni au juge**. `target_view` ne lit que `content` —
+c'est le seul endroit qui construit les messages de la cible — et l'invite du
+juge non plus.
 
 ### Une conversation, et une seule
 
@@ -391,23 +406,46 @@ appel en même temps repartent avec la même réponse.
 Dans `polaris-supabase`, sous `evals/supabase/migrations/`, et donc dans une PR à
 part — voir le `CLAUDE.md` de l'espace de travail.
 
-`tool_results` : `state_hash` entre dans la clé primaire ; `reasoning`,
-`world_change` et le nombre de tentatives s'ajoutent. La cinquième issue du
-voyant se lit sur ce dernier.
+Une seule table bouge, `tool_results` :
 
-`eval_samples` : le journal de la conversation.
+| colonne | ce qu'elle porte |
+|---|---|
+| `state_hash` | l'empreinte du journal d'avant l'appel — **entre dans la clé primaire** |
+| `state` | le journal lisible, comme `arguments` voyage à côté d'`arguments_hash` |
+| `reasoning` | ce que le serveur a déduit — la moitié que `fault` ne donne pas |
+| `world_change` | l'effet, dont une autre conversation a besoin en lisant ce cache |
+| `attempts` | `2` dit qu'une réparation a eu lieu ; avec `faithful` faux, c'est la cinquième issue |
+| `check_model` | qui a contrôlé, pour que le repli en famille se voie |
+
+`state_hash` vaut la chaîne vide par défaut, ce qui laisse les lignes déjà en
+base valides sans recalcul et garde la clé d'un run sans écriture identique à
+celle d'avant.
+
+`eval_samples` ne bouge pas : le journal vit dans le transcript, voir plus
+haut.
 
 ### Le devis
 
-Il ment aujourd'hui deux fois, et les deux se corrigent ici.
+Ce spec a été écrit avant `a341dcc`, qui a donné au devis une ligne par rôle et
+**y a fait entrer le contrôleur**, qui n'était chiffré nulle part. Ce point-là
+est donc déjà réglé ; il en reste deux.
 
-`world_response_tokens` vaut 400 et couvrait un résultat ; il porte désormais
-trois champs, dont un raisonnement. Il doit monter.
+`world_response_tokens` vaut 400 et couvrait un résultat. La sortie en porte
+trois maintenant, dont un raisonnement — facturé comme tout jeton de sortie,
+même s'il ne quitte jamais la base. Le chiffre est **scindé** plutôt que
+relevé : `world_reasoning_tokens` à côté de lui. La séparation n'était pas
+gratuite comme je le croyais en concevant — le journal a besoin de la taille du
+*résultat seul*, puisque c'est lui qu'une entrée porte.
 
-Le contrôle n'est chiffré **nulle part** — seul l'éveil l'est. Il devient un
-appel de modèle par appel servi, et doit entrer dans l'estimation, au tarif du
-contrôleur, avec la même convention conservatrice que le reste : par appel et par
-conversation, sans supposer le cache.
+Le journal entre dans les deux prompts servis, celui du serveur et celui du
+contrôleur. Il se chiffre au milieu de zéro et du plafond, comme
+`servedCallsPerConversation` : rien ne déclare combien d'écritures un modèle
+fera. Les outils **fixes** qui écrivent y comptent — ils ne coûtent aucun appel,
+mais leur entrée gonfle chaque lecture qui suit.
+
+La réparation, elle, n'est pas chiffrée, et la phrase du devis le dit : elle ne
+survient que sur un contrôle négatif, et le pari du cache surfacture déjà d'un
+facteur bien supérieur.
 
 ### Le conseil de scénario
 

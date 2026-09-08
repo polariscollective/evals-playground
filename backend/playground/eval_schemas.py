@@ -6,7 +6,7 @@ plus difficile à tenir en tête.
 """
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -379,6 +379,44 @@ class ToolSpec(BaseModel):
     multiplication », « renvoie 404 si l'id est inconnu » s'y écrivent aussi.
     """
 
+    world_effect: str = ""
+    """Ce que l'appeler CHANGE au monde — la forme **écrivante**.
+
+    Sa présence est le discriminant, et le seul : renseigné, l'appel entre au
+    journal de la conversation et les lectures qui suivent en tiennent compte ;
+    vide, l'outil laisse le monde intact. Même discipline que
+    `retrieval_rules`, et pour la même raison — un booléen laisserait exister
+    un outil qui écrit sans que personne ait dit quoi.
+
+    **Indépendant de `retrieval_rules`.** Les quatre combinaisons existent, et
+    celle qui compte le plus est fixe-et-écrivante : `delete_records` qui rend
+    `412 records deleted.` en dur est la forme courante des outils d'écriture
+    d'aujourd'hui. Un dessin qui n'aurait fait écrire que les outils servis les
+    aurait tous ratés.
+
+    Une phrase, jamais un gabarit : pas d'interpolation, pas de code — la
+    configuration d'un run reste un document qu'on lit pour savoir quelle
+    expérience a tourné. Elle sert deux fois, différemment. Sur un outil servi,
+    c'est la consigne que le modèle d'environnement suit pour remplir
+    `world_change`. Sur un outil fixe, aucun modèle n'est appelé : la phrase
+    *est* l'entrée du journal, posée à côté de l'appel, de ses arguments et de
+    son résultat, que le lecteur du journal a de toute façon sous les yeux.
+
+    Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
+    """
+
+    @property
+    def writes(self) -> bool:
+        """L'appeler change-t-il le monde ?
+
+        Détouré comme `served`, et son jumeau TypeScript (`writesWorld`,
+        `web/lib/tools.ts`) l'est aussi : les deux doivent répondre pareil sur
+        la même entrée. Ici la divergence ne coûterait pas un refus au
+        démarrage mais pire — un devis qui ne compte pas un journal que le job
+        tiendra, ou un écran qui promet un état que le moteur ne tient pas.
+        """
+        return bool(self.world_effect.strip())
+
     @property
     def served(self) -> bool:
         """L'outil passe-t-il par le modèle d'environnement ?
@@ -420,6 +458,33 @@ class ToolSpec(BaseModel):
                 " characters — the providers refuse anything else."
             )
         return name
+
+
+class JournalEntry(BaseModel):
+    """Un appel qui a changé le monde, tel que la conversation s'en souvient.
+
+    Le journal d'une conversation est la suite de ces entrées, dans l'ordre où
+    les appels ont été faits. Il ne porte **que** des écritures : une lecture
+    n'y entre jamais, et ce n'est pas une économie — c'est ce qui garde le
+    cache vivant. Une écriture est une ligne, et deux conversations qui font le
+    même geste convergent ; une lecture est un paragraphe qui diffère par
+    nature d'un modèle à l'autre, et la faire entrer ferait de la clé du cache
+    toute l'histoire de la conversation.
+
+    `effect` est ce que l'écriture a changé — la phrase de
+    `ToolSpec.world_effect` pour un outil fixe, ce que le modèle
+    d'environnement a rendu dans `world_change` pour un outil servi. Il peut
+    être vide : c'est ce qui reste quand une réparation a échoué, et l'entrée
+    retombe alors sur ce qui est vrai par construction — cet appel a été fait,
+    il a rendu ça.
+
+    Voir docs/superpowers/specs/2026-09-08-le-monde-qui-change.md.
+    """
+
+    tool: str = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    result: str = ""
+    effect: str = ""
 
 
 class SeededTurn(BaseModel):
