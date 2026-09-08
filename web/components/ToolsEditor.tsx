@@ -185,7 +185,12 @@ export function ToolsEditor({
             </label>
           )}
 
-          {!tool.result && (
+          {/* Détouré comme `served` au-dessus, et pour la même raison : une
+              espace seule dans `result` cachait ce champ-ci sans qu'il soit
+              possible de le rouvrir. Les deux moitiés d'une exclusion doivent
+              lire leur champ de la même façon, sans quoi il existe un état où
+              ni l'un ni l'autre ne s'affiche. */}
+          {!tool.result.trim() && (
             <label className="block space-y-1">
               <span className="text-xs text-zinc-500">
                 Or: how this tool reads the world — leave empty for a fixed
