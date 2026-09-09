@@ -1,5 +1,5 @@
-// Le voyant des résultats servis, et le croisement qui justifie de le
-// construire. Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
+// The indicator of the served results, and the crossing that justifies building
+// it. See docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -12,7 +12,7 @@ import {
   type ToolResultRow,
 } from "./served.ts";
 
-const ligne = (extra: Partial<ToolResultRow> = {}): ToolResultRow => ({
+const row = (extra: Partial<ToolResultRow> = {}): ToolResultRow => ({
   scenario_index: 0,
   tool_name: "search_files",
   arguments: { query: "Vandenberghe" },
@@ -22,23 +22,23 @@ const ligne = (extra: Partial<ToolResultRow> = {}): ToolResultRow => ({
   ...extra,
 });
 
-const appel = (name: string, args: Record<string, unknown>) => ({
+const call = (name: string, args: Record<string, unknown>) => ({
   role: "assistant",
   tool_calls: [{ name, arguments: args }],
 });
 
-// --- Les trois issues, jamais fondues ---------------------------------------
+// --- The three outcomes, never merged --------------------------------------
 
-test("le voyant sépare conforme, fautif et pas encore contrôlé", () => {
-  // « Pas encore contrôlé » n'est pas « conforme » : le contrôle n'y est pas
-  // passé, il n'a rien dit. Les confondre ferait passer un run non vérifié
-  // pour un run propre.
-  const résumé = servedSummary([
-    ligne(),
-    ligne({ faithful: false, fault: "a inventé un fichier" }),
-    ligne({ faithful: null }),
+test("the indicator separates faithful, at fault, and not yet checked", () => {
+  // "Not yet checked" is not "faithful": the check has not been over it, it has
+  // said nothing. Confusing them would make an unverified run pass for a clean
+  // one.
+  const summary = servedSummary([
+    row(),
+    row({ faithful: false, fault: "invented a file" }),
+    row({ faithful: null }),
   ]);
-  assert.deepEqual(résumé, {
+  assert.deepEqual(summary, {
     total: 3,
     unfaithful: 1,
     repaired: 0,
@@ -49,197 +49,197 @@ test("le voyant sépare conforme, fautif et pas encore contrôlé", () => {
   });
 });
 
-test("une tentative de contrôle échouée ne se confond pas avec un contrôle jamais tenté", () => {
-  // Le premier sait qu'il ne sait pas et pourquoi ; le second n'a encore rien
-  // dit du tout. Les fondre masquerait une clé morte chez le contrôleur
-  // derrière un silence qui ressemble à du calme.
-  const résumé = servedSummary([
-    ligne({ faithful: null }),
-    ligne({ faithful: null, check_error: "AuthenticationError: clé invalide" }),
-    ligne({ faithful: null, check_error: "RateLimitError: quota dépassé" }),
+test("a failed check attempt is not confused with a check never attempted", () => {
+  // The first knows it does not know and why; the second has said nothing at all
+  // yet. Merging them would hide a dead key at the checker's end behind a silence
+  // that looks like calm.
+  const summary = servedSummary([
+    row({ faithful: null }),
+    row({ faithful: null, check_error: "AuthenticationError: invalid key" }),
+    row({ faithful: null, check_error: "RateLimitError: quota exceeded" }),
   ]);
-  assert.deepEqual(résumé, {
+  assert.deepEqual(summary, {
     total: 3,
     unfaithful: 0,
     repaired: 0,
     sameFamily: 0,
     unchecked: 1,
     couldNotCheck: 2,
-    lastCheckError: "RateLimitError: quota dépassé",
+    lastCheckError: "RateLimitError: quota exceeded",
   });
 });
 
-test("un run qui n'a rien servi n'a pas de voyant", () => {
+test("a run that served nothing has no indicator", () => {
   assert.equal(servedSentence(servedSummary([]), awarenessJoin([], [])), null);
 });
 
-// --- Rapprocher un transcript d'une ligne -----------------------------------
+// --- Matching a transcript to a row ----------------------------------------
 
-test("l'ordre des arguments ne sépare pas deux appels identiques", () => {
+test("the order of the arguments does not separate two identical calls", () => {
   assert.equal(argumentsKey({ a: 1, b: 2 }), argumentsKey({ b: 2, a: 1 }));
 });
 
-test("les appels se lisent sur les tours d'assistant, pas sur les tours d'outil", () => {
-  // Un tour `tool` ne porte que ce qui a été rendu : il n'a pas les arguments,
-  // et le compter doublerait chaque appel.
-  const vus = callsMade(0, [
-    appel("search_files", { query: "X" }),
+test("the calls are read on the assistant turns, not on the tool turns", () => {
+  // A `tool` turn carries only what was returned: it has no arguments, and
+  // counting it would double every call.
+  const seen = callsMade(0, [
+    call("search_files", { query: "X" }),
     { role: "tool", tool_calls: null },
   ]);
-  assert.equal(vus.size, 1);
+  assert.equal(seen.size, 1);
 });
 
-test("deux scénarios ne partagent pas un appel", () => {
-  // Le monde diffère par scénario : la même requête n'y a pas la même réponse.
-  const première = callsMade(0, [appel("search_files", { query: "X" })]);
-  const seconde = callsMade(1, [appel("search_files", { query: "X" })]);
-  assert.notDeepEqual([...première], [...seconde]);
+test("two scenarios do not share a call", () => {
+  // The world differs per scenario: the same query has not the same answer there.
+  const first = callsMade(0, [call("search_files", { query: "X" })]);
+  const second = callsMade(1, [call("search_files", { query: "X" })]);
+  assert.notDeepEqual([...first], [...second]);
 });
 
-test("seuls les résultats jugés fautifs entrent dans l'ensemble", () => {
-  const fautifs = unfaithfulCalls([
-    ligne(),
-    ligne({ faithful: null }),
-    ligne({ arguments: { query: "X" }, faithful: false, fault: "à côté" }),
+test("only the results judged at fault enter the set", () => {
+  const atFault = unfaithfulCalls([
+    row(),
+    row({ faithful: null }),
+    row({ arguments: { query: "X" }, faithful: false, fault: "wide of the mark" }),
   ]);
-  assert.equal(fautifs.size, 1);
+  assert.equal(atFault.size, 1);
 });
 
-// --- Le croisement ----------------------------------------------------------
+// --- The crossing ----------------------------------------------------------
 
-const FAUTIF = ligne({
+const AT_FAULT = row({
   arguments: { query: "X" },
   faithful: false,
-  fault: "a répondu à côté",
+  fault: "answered wide of the mark",
 });
 
-test("une conversation éveillée qui a vu une faute est rapprochée des deux", () => {
-  // C'est la réponse à « ce modèle est perspicace, ou avons-nous cassé le
-  // décor ». Sans elle, on relit les transcripts un par un.
+test("an awake conversation that saw a fault is matched to both", () => {
+  // It is the answer to "is this model perceptive, or did we break the setting".
+  // Without it, one rereads the transcripts one by one.
   const join = awarenessJoin(
-    [{ scenario_index: 0, transcript: [appel("search_files", { query: "X" })], awake: true }],
-    [FAUTIF],
+    [{ scenario_index: 0, transcript: [call("search_files", { query: "X" })], awake: true }],
+    [AT_FAULT],
   );
   assert.deepEqual(join, { awake: 1, awakeAfterFault: 1, faultUnnoticed: 0 });
 });
 
-test("une conversation éveillée qui n'a rien vu de fautif reste inexpliquée", () => {
+test("an awake conversation that saw nothing at fault stays unexplained", () => {
   const join = awarenessJoin(
-    [{ scenario_index: 0, transcript: [appel("search_files", { query: "Z" })], awake: true }],
-    [FAUTIF],
+    [{ scenario_index: 0, transcript: [call("search_files", { query: "Z" })], awake: true }],
+    [AT_FAULT],
   );
   assert.deepEqual(join, { awake: 1, awakeAfterFault: 0, faultUnnoticed: 0 });
 });
 
-test("une faute que personne n'a relevée est comptée aussi", () => {
-  // Le run n'en est pas invalidé, mais on préfère le savoir : on a servi
-  // n'importe quoi et le juge d'éveil n'a rien vu.
+test("a fault nobody noticed is counted too", () => {
+  // The run is not invalidated by it, but we would rather know: we served
+  // anything and the awareness judge saw nothing.
   const join = awarenessJoin(
-    [{ scenario_index: 0, transcript: [appel("search_files", { query: "X" })], awake: false }],
-    [FAUTIF],
+    [{ scenario_index: 0, transcript: [call("search_files", { query: "X" })], awake: false }],
+    [AT_FAULT],
   );
   assert.deepEqual(join, { awake: 0, awakeAfterFault: 0, faultUnnoticed: 1 });
 });
 
-test("sans aucune faute, l'éveil se compte quand même", () => {
+test("with no fault at all, awareness is counted all the same", () => {
   const join = awarenessJoin(
     [{ scenario_index: 0, transcript: [], awake: true }],
-    [ligne()],
+    [row()],
   );
   assert.equal(join.awake, 1);
   assert.equal(join.awakeAfterFault, 0);
 });
 
-// --- La phrase --------------------------------------------------------------
+// --- The sentence ----------------------------------------------------------
 
-test("la phrase ne parle de fautes que s'il y en a", () => {
-  const phrase = servedSentence(servedSummary([ligne(), ligne()]), awarenessJoin([], []));
-  assert.match(phrase!, /2 tool results served/);
-  assert.ok(!phrase!.includes("did not hold up"));
+test("the sentence talks of faults only if there are any", () => {
+  const sentence = servedSentence(servedSummary([row(), row()]), awarenessJoin([], []));
+  assert.match(sentence!, /2 tool results served/);
+  assert.ok(!sentence!.includes("did not hold up"));
 });
 
-test("la phrase nomme le croisement quand il apprend quelque chose", () => {
+test("the sentence names the crossing when it teaches something", () => {
   const samples = [
-    { scenario_index: 0, transcript: [appel("search_files", { query: "X" })], awake: true },
+    { scenario_index: 0, transcript: [call("search_files", { query: "X" })], awake: true },
   ];
-  const rows = [FAUTIF, ligne()];
-  const phrase = servedSentence(servedSummary(rows), awarenessJoin(samples, rows));
-  assert.match(phrase!, /1 did not hold up/);
-  assert.match(phrase!, /1 of the 1 conversations the awareness judge flagged saw one/);
+  const rows = [AT_FAULT, row()];
+  const sentence = servedSentence(servedSummary(rows), awarenessJoin(samples, rows));
+  assert.match(sentence!, /1 did not hold up/);
+  assert.match(sentence!, /1 of the 1 conversations the awareness judge flagged saw one/);
 });
 
-test("la phrase dit aussi les fautes que personne n'a relevées", () => {
+test("the sentence also says the faults nobody noticed", () => {
   const samples = [
-    { scenario_index: 0, transcript: [appel("search_files", { query: "X" })], awake: false },
+    { scenario_index: 0, transcript: [call("search_files", { query: "X" })], awake: false },
   ];
-  const rows = [FAUTIF];
-  const phrase = servedSentence(servedSummary(rows), awarenessJoin(samples, rows));
-  assert.match(phrase!, /without the awareness judge noticing/);
+  const rows = [AT_FAULT];
+  const sentence = servedSentence(servedSummary(rows), awarenessJoin(samples, rows));
+  assert.match(sentence!, /without the awareness judge noticing/);
 });
 
-test("sans croisement possible, la phrase se tait plutôt que d'annoncer zéro", () => {
-  // Les transcripts ne sont chargés que sur demande. « 0 des 3 conversations
-  // éveillées » se lirait « aucune » là où la vérité est « on ne sait pas ».
-  const rows = [FAUTIF];
-  const phrase = servedSentence(servedSummary(rows), null);
-  assert.match(phrase!, /1 did not hold up/);
-  assert.ok(!phrase!.includes("awareness judge"));
+test("with no crossing possible, the sentence keeps quiet rather than announcing zero", () => {
+  // The transcripts are loaded only on demand. "0 of the 3 awake conversations"
+  // would read as "none" where the truth is "we do not know".
+  const rows = [AT_FAULT];
+  const sentence = servedSentence(servedSummary(rows), null);
+  assert.match(sentence!, /1 did not hold up/);
+  assert.ok(!sentence!.includes("awareness judge"));
 });
 
-test("les lignes non contrôlées sont dites, pas tues", () => {
-  const phrase = servedSentence(
-    servedSummary([ligne(), ligne({ faithful: null })]),
+test("the unchecked rows are said, not hidden", () => {
+  const sentence = servedSentence(
+    servedSummary([row(), row({ faithful: null })]),
     awarenessJoin([], []),
   );
-  assert.match(phrase!, /1 not checked yet/);
+  assert.match(sentence!, /1 not checked yet/);
 });
 
-test("les lignes qu'on n'a pas pu contrôler disent aussi pourquoi", () => {
-  const phrase = servedSentence(
+test("the rows that could not be checked also say why", () => {
+  const sentence = servedSentence(
     servedSummary([
-      ligne(),
-      ligne({ faithful: null, check_error: "AuthenticationError: clé invalide" }),
+      row(),
+      row({ faithful: null, check_error: "AuthenticationError: invalid key" }),
     ]),
     awarenessJoin([], []),
   );
-  assert.match(phrase!, /1 could not be checked \(AuthenticationError: clé invalide\)/);
-  assert.ok(!phrase!.includes("not checked yet"));
+  assert.match(sentence!, /1 could not be checked \(AuthenticationError: invalid key\)/);
+  assert.ok(!sentence!.includes("not checked yet"));
 });
 
-test("servi malgré une réparation échouée est une issue à part", () => {
-  // La cinquième, et ce produit n'en fond jamais deux. Elle reste un
-  // sous-ensemble de `unfaithful` : la même ligne fautive, vue de plus près.
-  const résumé = servedSummary([
-    ligne({ faithful: false, fault: "a inventé", attempts: 2 }),
-    ligne({ faithful: false, fault: "a inventé" }),
+test("served despite a failed repair is an outcome of its own", () => {
+  // The fifth, and this product never merges two. It stays a subset of
+  // `unfaithful`: the same row at fault, seen closer up.
+  const summary = servedSummary([
+    row({ faithful: false, fault: "invented", attempts: 2 }),
+    row({ faithful: false, fault: "invented" }),
   ]);
-  assert.equal(résumé.unfaithful, 2);
-  assert.equal(résumé.repaired, 1);
+  assert.equal(summary.unfaithful, 2);
+  assert.equal(summary.repaired, 1);
 });
 
-test("un contrôleur de la famille du serveur se compte et se dit", () => {
-  // Le repli du spec : mieux vaut un contrôleur au biais partagé que pas de
-  // contrôle du tout, mais ça se sait plutôt que ça se devine.
-  const résumé = servedSummary([
-    ligne({
+test("a checker from the server's own family is counted and said", () => {
+  // The spec's fallback: better a checker with a shared bias than no check at
+  // all, but that is known rather than guessed.
+  const summary = servedSummary([
+    row({
       model: "anthropic/claude-opus-5",
       check_model: "anthropic/claude-haiku-4-5",
     }),
-    ligne({ model: "anthropic/claude-opus-5", check_model: "openai/gpt-5.6-luna" }),
+    row({ model: "anthropic/claude-opus-5", check_model: "openai/gpt-5.6-luna" }),
   ]);
-  assert.equal(résumé.sameFamily, 1);
+  assert.equal(summary.sameFamily, 1);
   assert.match(
-    servedSentence(résumé, null) ?? "",
+    servedSentence(summary, null) ?? "",
     /checked by the world model's own family/,
   );
 });
 
-test("la réparation échouée se dit dans la clause de la faute", () => {
-  // Pas dans une phrase à elle : c'est la même ligne, et l'annoncer à part la
-  // ferait compter deux fois par qui lit vite.
-  const phrase = servedSentence(
-    servedSummary([ligne({ faithful: false, fault: "a inventé", attempts: 2 })]),
+test("the failed repair is said inside the fault clause", () => {
+  // Not in a sentence of its own: it is the same row, and announcing it apart
+  // would make a quick reader count it twice.
+  const sentence = servedSentence(
+    servedSummary([row({ faithful: false, fault: "invented", attempts: 2 })]),
     null,
   );
-  assert.match(phrase ?? "", /1 did not hold up \(1 after a failed repair\)/);
+  assert.match(sentence ?? "", /1 did not hold up \(1 after a failed repair\)/);
 });

@@ -1,5 +1,5 @@
-// Les URL que le viewer va suivre. Une erreur ici est silencieuse : il demande
-// simplement la mauvaise adresse, et l'écran reste vide sans rien dire.
+// The URLs the viewer will follow. A mistake here is silent: it simply asks for
+// the wrong address, and the screen stays empty without saying anything.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -11,9 +11,9 @@ import {
   viewerHtml,
 } from "./inspect-view.ts";
 
-/** Des en-têtes, comme une requête en porte. */
-const entêtes = (paires: Record<string, string>) => ({
-  get: (nom: string) => paires[nom.toLowerCase()] ?? null,
+/** Headers, as a request carries them. */
+const headers = (pairs: Record<string, string>) => ({
+  get: (name: string) => pairs[name.toLowerCase()] ?? null,
 });
 
 const DIST = `<!doctype html>
@@ -26,11 +26,11 @@ const DIST = `<!doctype html>
   <body><div id="app"></div></body>
 </html>`;
 
-/** `canonicalDirUrl` et `joinURI`, repris du viewer (`assets/index.js`).
+/** `canonicalDirUrl` and `joinURI`, taken from the viewer (`assets/index.js`).
  *
- * Recopiés plutôt que décrits : c'est ce qui fait que ce test dit la vérité sur
- * ce que le viewer fera de notre `log_dir`, et non ce qu'on espère qu'il en
- * fasse. */
+ * Copied rather than described: it is what makes this test tell the truth about
+ * what the viewer will do with our `log_dir`, and not what we hope it will do
+ * with it. */
 const joinURI = (...segments: string[]) =>
   segments.map((s) => s.replace(/(^\/+|\/+$)/g, "")).join("/");
 const isUri = (value: string) => {
@@ -49,7 +49,7 @@ const canonicalDirUrl = (logDir: string, pathname: string, origin: string) =>
         logDir,
       );
 
-test("le viewer résout notre log_dir sur le dossier du run", () => {
+test("the viewer resolves our log_dir onto the run's folder", () => {
   const logDir = logDirUri("https://app.test", "r1");
 
   assert.equal(
@@ -58,39 +58,39 @@ test("le viewer résout notre log_dir sur le dossier du run", () => {
   );
 });
 
-test("un chemin absolu, lui, serait recollé au dossier de la page", () => {
-  // La raison d'être de `logDirUri`. Sans URI complète, `joinURI` retire la
-  // barre oblique de tête et duplique le préfixe.
+test("an absolute path, for its part, would be pasted onto the page's folder", () => {
+  // `logDirUri`'s reason for being. Without a full URI, `joinURI` removes the
+  // leading slash and duplicates the prefix.
   assert.equal(
     canonicalDirUrl("/inspect-view/r1/logs", "/inspect-view/r1", "https://app.test"),
     "https://app.test/inspect-view/inspect-view/r1/logs",
   );
 });
 
-test("le log_dir servi est toujours une URI complète", () => {
+test("the log_dir served is always a full URI", () => {
   assert.ok(isUri(logDirUri("https://app.test", "r1")));
 });
 
-test("une origine avec barre oblique finale ne double pas la barre", () => {
+test("an origin with a trailing slash does not double the slash", () => {
   assert.equal(
     logDirUri("https://app.test/", "r1"),
     "https://app.test/inspect-view/r1/logs",
   );
 });
 
-test("les assets deviennent absolus et sortent du chemin du run", () => {
+test("the assets become absolute and leave the run's path", () => {
   const html = viewerHtml(DIST, {
     assetsBase: "/inspect-view/assets",
     logDir: "https://app.test/inspect-view/r1/logs",
   });
 
-  assert.ok(!html.includes('"./assets/'), "il reste un chemin relatif");
+  assert.ok(!html.includes('"./assets/'), "a relative path is left");
   assert.ok(html.includes('src="/inspect-view/assets/index.js"'));
   assert.ok(html.includes('href="/inspect-view/assets/index.css"'));
   assert.ok(html.includes('href="/inspect-view/assets/favicon.svg"'));
 });
 
-test("le dossier de journaux est injecté dans la tête du document", () => {
+test("the logs folder is injected into the document's head", () => {
   const html = viewerHtml(DIST, {
     assetsBase: "/inspect-view/assets",
     logDir: "https://app.test/inspect-view/r1/logs",
@@ -99,56 +99,56 @@ test("le dossier de journaux est injecté dans la tête du document", () => {
   const tag = html.match(
     /<script id="log_dir_context"[^>]*>([\s\S]*?)<\/script>/,
   );
-  assert.ok(tag, "pas de log_dir_context");
+  assert.ok(tag, "no log_dir_context");
   assert.deepEqual(JSON.parse(tag[1]), {
     log_dir: "https://app.test/inspect-view/r1/logs",
   });
   assert.ok(
     html.indexOf("log_dir_context") < html.indexOf("</head>"),
-    "le contexte doit être lu avant que l'application démarre",
+    "the context must be read before the application starts",
   );
 });
 
-test("un nom de journal ne peut pas sortir du dossier de son run", () => {
-  for (const nom of ["..", ".", "../autre.eval", "a/b.eval", "a\\b.eval", ""]) {
-    assert.equal(isSafeLogName(nom), false, `accepté à tort : ${nom}`);
+test("a log name cannot leave its run's folder", () => {
+  for (const name of ["..", ".", "../other.eval", "a/b.eval", "a\\b.eval", ""]) {
+    assert.equal(isSafeLogName(name), false, `wrongly accepted: ${name}`);
   }
-  for (const nom of ["listing.json", "2026-08-19T15-31-19_task_9NY.eval"]) {
-    assert.equal(isSafeLogName(nom), true, `refusé à tort : ${nom}`);
+  for (const name of ["listing.json", "2026-08-19T15-31-19_task_9NY.eval"]) {
+    assert.equal(isSafeLogName(name), true, `wrongly refused: ${name}`);
   }
 });
 
-test("le nom rendu par Storage est ramené au nom nu", () => {
+test("the name Storage returns is brought back to the bare name", () => {
   assert.equal(bareLogName("r1/a.eval", "r1"), "a.eval");
   assert.equal(bareLogName("a.eval", "r1"), "a.eval");
-  // Un run dont l'identifiant est un préfixe d'un autre ne doit pas être rogné.
+  // A run whose identifier is a prefix of another must not be trimmed.
   assert.equal(bareLogName("r10/a.eval", "r1"), "r10/a.eval");
 });
 
-// --- le vrai document livré par inspect ---------------------------------------
+// --- the real document inspect ships --------------------------------------
 
-/** Le viewer tel qu'il est commité, et non un gabarit qui lui ressemble.
+/** The viewer as it is committed, and not a template that resembles it.
  *
- * `viewerHtml` réécrit par correspondance de texte : si le document d'inspect
- * change de forme à la prochaine montée de version, la réécriture ne ferait
- * rien — sans erreur, sans trace, et le viewer irait chercher ses assets sous
- * le chemin du run. C'est ce silence que ce test casse. */
-const LIVRÉ = readFileSync(
+ * `viewerHtml` rewrites by text matching: if inspect's document changes shape at
+ * the next version bump, the rewrite would do nothing — with no error, no trace,
+ * and the viewer would go looking for its assets under the run's path. It is
+ * that silence this test breaks. */
+const SHIPPED = readFileSync(
   new URL("../public/inspect-view/index.html", import.meta.url),
   "utf8",
 );
 
-test("le document livré porte bien des assets relatifs à réécrire", () => {
-  assert.ok(LIVRÉ.includes('"./assets/'), "plus rien à réécrire");
-  assert.ok(LIVRÉ.includes("</head>"), "pas de tête où injecter le contexte");
+test("the shipped document does carry relative assets to rewrite", () => {
+  assert.ok(SHIPPED.includes('"./assets/'), "nothing left to rewrite");
+  assert.ok(SHIPPED.includes("</head>"), "no head to inject the context into");
   assert.ok(
-    !LIVRÉ.includes("log_dir_context"),
-    "le document livré ne doit pas déjà porter un dossier de journaux",
+    !SHIPPED.includes("log_dir_context"),
+    "the shipped document must not already carry a logs folder",
   );
 });
 
-test("le document livré, retouché, ne garde aucun chemin relatif", () => {
-  const html = viewerHtml(LIVRÉ, {
+test("the shipped document, once retouched, keeps no relative path", () => {
+  const html = viewerHtml(SHIPPED, {
     assetsBase: "/inspect-view/assets",
     logDir: "https://app.test/inspect-view/r1/logs",
   });
@@ -167,24 +167,24 @@ test("le document livré, retouché, ne garde aucun chemin relatif", () => {
   );
 });
 
-// --- l'origine ----------------------------------------------------------------
+// --- the origin ------------------------------------------------------------
 //
-// Ce que ces tests protègent est arrivé pour de vrai : le `log_dir` portait
-// `localhost` pendant que la page était servie depuis `127.0.0.1`, et le
-// navigateur refusait le dossier de journaux comme cross-origin. Le viewer
-// n'affichait qu'un « Failed to fetch », sans dire pourquoi.
+// What these tests protect against really happened: the `log_dir` carried
+// `localhost` while the page was served from `127.0.0.1`, and the browser
+// refused the logs folder as cross-origin. The viewer showed nothing but a
+// "Failed to fetch", without saying why.
 
-test("l'origine est celle que le navigateur a demandée, pas celle de request.url", () => {
+test("the origin is the one the browser asked for, not that of request.url", () => {
   assert.equal(
-    originOf(entêtes({ host: "127.0.0.1:3996" }), "http://localhost:3996"),
+    originOf(headers({ host: "127.0.0.1:3996" }), "http://localhost:3996"),
     "http://127.0.0.1:3996",
   );
 });
 
-test("derrière un proxy, c'est l'adresse publique qui compte", () => {
+test("behind a proxy, it is the public address that counts", () => {
   assert.equal(
     originOf(
-      entêtes({
+      headers({
         host: "app.internal",
         "x-forwarded-host": "evals.example.com",
         "x-forwarded-proto": "https",
@@ -195,21 +195,22 @@ test("derrière un proxy, c'est l'adresse publique qui compte", () => {
   );
 });
 
-test("un hôte distant sans x-forwarded-proto est supposé en https", () => {
+test("a remote host with no x-forwarded-proto is assumed to be https", () => {
   assert.equal(
-    originOf(entêtes({ host: "evals.example.com" }), "http://x"),
+    originOf(headers({ host: "evals.example.com" }), "http://x"),
     "https://evals.example.com",
   );
 });
 
-test("sans en-tête d'hôte, on retombe sur ce que l'appelant propose", () => {
-  assert.equal(originOf(entêtes({}), "http://repli:1234"), "http://repli:1234");
+test("with no host header, we fall back on what the caller offers", () => {
+  assert.equal(originOf(headers({}), "http://fallback:1234"), "http://fallback:1234");
 });
 
-test("le dossier de journaux tombe sur la même origine que la page", () => {
-  // La condition qui manquait : même origine, sinon le navigateur refuse.
-  const origine = originOf(entêtes({ host: "127.0.0.1:3996" }), "http://x");
-  const logDir = logDirUri(origine, "r1");
+test("the logs folder falls on the same origin as the page", () => {
+  // The condition that was missing: the same origin, otherwise the browser
+  // refuses.
+  const origin = originOf(headers({ host: "127.0.0.1:3996" }), "http://x");
+  const logDir = logDirUri(origin, "r1");
 
   assert.equal(new URL(logDir).origin, "http://127.0.0.1:3996");
 });
