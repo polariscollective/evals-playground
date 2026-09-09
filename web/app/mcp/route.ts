@@ -36,6 +36,7 @@ import { costSentence, estimateCost } from "@/lib/pricing";
 import { scenarioAdvice } from "@/lib/scenario-advice";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
+import type { JudgeTarget } from "@/lib/types";
 import {
   NotFound,
   createRun,
@@ -243,13 +244,20 @@ const AWAKE_SCALE = { min: 1, max: 10 } as const;
  * voir `judgeVerdictsForSample`, `lib/runs.ts`) plutôt que l'un des deux
  * précisément, pour servir les trois outils ci-dessous sans conversion. */
 function judgeIdentity(view: {
+  run_judge_id?: string;
   judge: Judge;
   is_principal: boolean;
   system_type: JudgeSystemTypeColumn;
+  targets?: JudgeTarget[] | null;
 }) {
   const isSystem = view.system_type === AWAKE_TYPE;
   return {
     judge_id: view.judge.id,
+    // L'identifiant de la LIAISON, distinct de `judge_id` : c'est lui que
+    // `submit_draft_extension` attend dans `new_targets`, un même juge pouvant
+    // être lié à plusieurs runs. Absent quand l'appelant ne le tient pas — le
+    // verdict d'un juge sur une seule conversation, où il n'a rien à adresser.
+    ...(view.run_judge_id ? { run_judge_id: view.run_judge_id } : {}),
     is_principal: view.is_principal,
     system_type: view.system_type,
     model: view.judge.model,
@@ -258,6 +266,17 @@ function judgeIdentity(view: {
     // `null` pour un juge ordinaire : son échelle est `rubric`, ci-dessus,
     // jamais ce champ-ci — les deux ne sont donc jamais renseignés ensemble.
     scale: isSystem ? AWAKE_SCALE : null,
+    // Ce que ce juge attendait de chaque scénario, dans l'ordre des lignes.
+    // `null` veut dire qu'il n'en déclare aucune : le run a été écrit comme une
+    // exploration, et sa matrice n'est pas faite pour être citée. Jamais rendu
+    // au modèle évalué ni au juge — lui donner la cible serait lui donner la
+    // réponse ; ici, l'appelant est un agent qui LIT des résultats.
+    //
+    // La CLÉ est omise quand l'appelant ne tient pas cette information — le
+    // verdict d'un juge sur une seule conversation ne la porte pas. Sans cette
+    // distinction, `get_run_trajectory` rendrait `targets: null` partout et
+    // ferait passer une étude pour une exploration.
+    ...("targets" in view ? { targets: view.targets ?? null } : {}),
   };
 }
 
@@ -488,7 +507,15 @@ const handler = createMcpHandler((server) => {
       title: "Get run results",
       description:
         "The matrix: per scenario × model, the mean grade and the count of each grade given, plus " +
-        "judged/errored/pending counts and cost. Reports EVERY judge still linked to the run, never " +
+        "judged/errored/pending counts and cost. Each judge may also carry `targets` — what a " +
+        "well-behaved model should have scored on each scenario, written before the run and never " +
+        "shown to any model. Where it exists, read a cell as the DISTANCE from its target rather " +
+        "than as a raw grade: that is what makes two judges on unrelated scales comparable. An " +
+        "entry marked `check` is a control row — it has to land near its target or nothing else on " +
+        "the matrix can be read, and it stays out of any figure computed across rows. A judge with " +
+        "no targets was written as an exploration, and its matrix is not meant to be quoted. Read " +
+        "the analysis advice (read_advice) before concluding anything from what comes back here. " +
+        "Reports EVERY judge still linked to the run, never " +
         "one that was unlinked — `judges` lists each one's identity (criterion, rubric or, for a system " +
         "judge, its fixed question and scale — same shape as get_run_metadata) plus its own overall " +
         "mean, one marked `is_principal` (the one the on-screen matrix follows); each scenario × model " +
@@ -998,7 +1025,12 @@ const handler = createMcpHandler((server) => {
         "would refuse it later. A document that fails comes back with the reason and is not saved, so " +
         "being wrong here costs only a round trip. One that passes is saved as a draft and comes back " +
         "with the run's estimated cost, the draft's address, and whether launch_draft would accept it " +
-        "from you right now, under your two caps. Call it once, on the complete document.",
+        "from you right now, under your two caps. Call it once, on the complete document.\n\n" +
+        "Two fields are easy to miss and are checked here. `targets` says what grade a well-behaved " +
+        "model should get on each scenario — either one entry per scenario or the key absent, never " +
+        "a partial list, and each grade must be on the scale it belongs to. `sees_system_prompt` " +
+        "decides whether a judge is shown the scenario's instructions; turn it off when those " +
+        "instructions state the very thing being graded. read_advice explains both.",
       inputSchema: z.object({
         yaml: z
           .string()
