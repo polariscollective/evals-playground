@@ -1,20 +1,20 @@
-// Les journaux d'un run, relayés depuis Supabase Storage.
+// A run's logs, relayed from Supabase Storage.
 //
-// Le viewer lit un `.eval` — un ZIP — par requêtes `Range` : il prend le
-// sommaire, puis l'entrée qui l'intéresse, et ne télécharge jamais le fichier
-// entier. Cette route transmet donc `Range` et rend le 206 tel quel. Elle ne
-// lit pas le corps : le recomposer ici coûterait la mémoire du serveur sur des
-// fichiers qu'il n'a aucune raison d'ouvrir.
+// The viewer reads an `.eval` — a ZIP — through `Range` requests: it takes the
+// index, then the entry it wants, and never downloads the whole file. This route
+// therefore forwards `Range` and returns the 206 as it stands. It does not read
+// the body: recomposing it here would cost the server's memory on files it has
+// no reason to open.
 //
-// Le bucket étant privé, c'est le seul chemin vers ces octets — et c'est
-// pourquoi le contrôle d'accès est en première ligne.
+// The bucket being private, this is the only path to those bytes — and that is
+// why the access control is in the front line.
 import { isRunId } from "@/lib/run-id";
 import { canReadRun } from "@/lib/run-access";
 import { fetchRunLog } from "@/lib/storage";
 import { isSafeLogName } from "@/lib/inspect-view";
 
-/** Les en-têtes qui font qu'une lecture par tranches fonctionne. */
-const RELAYÉS = [
+/** The headers that make a ranged read work. */
+const RELAYED = [
   "content-type",
   "content-length",
   "content-range",
@@ -36,36 +36,35 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
-  const amont = await fetchRunLog(runId, name, request.headers.get("range"));
-  if (!amont.ok && amont.status !== 206) {
-    // Un run sans journal est un cas normal — rien à distinguer d'un run
-    // inconnu, et le viewer sait afficher un dossier vide.
+  const upstream = await fetchRunLog(runId, name, request.headers.get("range"));
+  if (!upstream.ok && upstream.status !== 206) {
+    // A run with no log is a normal case — nothing to tell apart from an unknown
+    // run, and the viewer knows how to show an empty folder.
     return new Response("Not found", { status: 404 });
   }
 
   const headers = new Headers();
-  for (const nom of RELAYÉS) {
-    const valeur = amont.headers.get(nom);
-    if (valeur) headers.set(nom, valeur);
+  for (const name of RELAYED) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
   }
-  // `no-transform` interdit à un intermédiaire de recoder le corps. Sans lui,
-  // Vercel compresse la réponse en brotli dès que le navigateur l'accepte —
-  // ce que curl ne fait pas par défaut, d'où un défaut invisible en ligne de
-  // commande — et **retire alors `Content-Length`**. Le viewer, qui a besoin
-  // de la taille du ZIP pour savoir où lire son sommaire, s'arrête sur
-  // « Could not determine content length ». Les requêtes `Range` y
-  // échappaient, Vercel ne compressant pas un 206 : seule la toute première
-  // lecture tombait, donc le viewer ne s'ouvrait jamais.
+  // `no-transform` forbids an intermediary from re-encoding the body. Without
+  // it, Vercel compresses the response in brotli as soon as the browser accepts
+  // it — which curl does not do by default, hence a flaw invisible on the command
+  // line — and **then removes `Content-Length`**. The viewer, which needs the
+  // ZIP's size to know where to read its index, stops on "Could not determine
+  // content length". The `Range` requests escaped it, Vercel not compressing a
+  // 206: only the very first read fell over, so the viewer never opened.
   //
-  // Un `.eval` est un ZIP : le recompresser ne gagne rien de toute façon.
+  // An `.eval` is a ZIP: recompressing it gains nothing anyway.
   //
-  // `no-transform` seul ne suffit pas — Vercel ne l'honore pas. Déclarer
-  // l'encodage du corps, si : un intermédiaire qui voit déjà un
-  // `Content-Encoding` ne le recode pas. Les deux sont posés, le second parce
-  // qu'il marche, le premier parce qu'il dit l'intention à qui lit le code ou
-  // met un cache devant.
+  // `no-transform` alone is not enough — Vercel does not honour it. Declaring the
+  // body's encoding is: an intermediary that already sees a `Content-Encoding`
+  // does not re-encode it. Both are laid down, the second because it works, the
+  // first because it states the intent to whoever reads the code or puts a cache
+  // in front.
   headers.set("Cache-Control", "private, no-store, no-transform");
   headers.set("Content-Encoding", "identity");
 
-  return new Response(amont.body, { status: amont.status, headers });
+  return new Response(upstream.body, { status: upstream.status, headers });
 }

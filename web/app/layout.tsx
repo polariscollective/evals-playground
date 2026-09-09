@@ -3,9 +3,9 @@ import { Geist_Mono, Inter, Spectral } from "next/font/google";
 import "./globals.css";
 import { AppNav } from "@/components/AppNav";
 
-/* Les deux polices de polariscollective.org : Spectral pour les titres, Inter
-   pour le corps. Geist Mono reste — les identifiants de run, le JSON et les
-   invites ont besoin d'une chasse fixe, et le site n'a pas d'équivalent. */
+/* The two typefaces of polariscollective.org: Spectral for the headings, Inter
+   for the body. Geist Mono stays — the run identifiers, the JSON and the prompts
+   need a fixed pitch, and the site has no equivalent. */
 
 const inter = Inter({
   variable: "--font-inter",
