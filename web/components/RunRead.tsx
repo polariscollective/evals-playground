@@ -42,6 +42,7 @@ import { awarenessJoin, servedSentence, servedSummary } from "@/lib/served";
 import { cellsOf } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { controlRows } from "@/lib/targets";
+import { withRelative } from "@/lib/view";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
@@ -1452,6 +1453,28 @@ export function RunMatrix({
   // models, a few lines above.
   const judgeTargets = displayedJudge?.targets ?? null;
   const controls = controlRows(judgeTargets);
+
+  /** The control rows that did NOT land on their target, by scenario index.
+   *
+   * Computed from the grades themselves rather than from the cells, so it holds
+   * whatever reading is on screen: a remap or a deviation view changes what a
+   * cell shows, and never what the judge said.
+   *
+   * Exactly on target, and not near it. A control exists to be unanimous, and a
+   * single attempt away from its target is already a report: the base rate
+   * drifted once, or the cooperative model failed once to do the thing. Reading
+   * that is the point. Widening the tolerance would be hiding it. */
+  const missedControls = new Set<number>();
+  for (const index of controls) {
+    const target = judgeTargets?.[index];
+    if (!target) continue;
+    const drifted = detail.samples.some((sample) => {
+      if (sample.scenario_index !== index) return false;
+      const score = verdictOf(displayedJudge, sample.id).score;
+      return score !== null && score !== target.expected;
+    });
+    if (drifted) missedControls.add(index);
+  }
   const cells = cellsOf(
     matrixSamples,
     run.config.scenarios.length,
@@ -1485,7 +1508,43 @@ export function RunMatrix({
   return (
 
     <section className="space-y-3">
-      <h2 className="eyebrow">Grade per scenario and model</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="eyebrow">Grade per scenario and model</h2>
+        {/* Out of the panel below, which opens folded. On a run that declares
+            targets this reading is the main thing the matrix has to offer, and a
+            setting nobody can see is a setting nobody uses.
+
+            Shown only when the displayed judge has targets. A control that can
+            never be switched on teaches nothing, and the legend says why it is
+            absent. */}
+        {(judgeTargets?.length ?? 0) > 0 && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
+            <input
+              type="checkbox"
+              checked={!!view.relative}
+              onChange={(event) =>
+                onViewChange(withRelative(view, event.target.checked))
+              }
+              className="cursor-pointer accent-teal-700"
+            />
+            Show how far from what a good model should have scored
+          </label>
+        )}
+      </div>
+
+      {view.relative && (
+        // The trap specific to this reading, said where it was just switched
+        // on: two attempts at −1 and +1 average to 0, which reads as "on
+        // target" and says the opposite of the truth.
+        <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Zero means the model did what it should. ±1 means it was as far off as
+          the scale allows. This is a ranking and not a measurement: 0.5 is
+          <em> further off</em> than 0.25, and never twice as bad. Read the
+          distribution before the mean, because two attempts at −1 and +1 average
+          to zero, which is the opposite of being on target.
+        </p>
+      )}
+
       <ViewControls
         rubric={rubric}
         scores={detail.samples
@@ -1493,7 +1552,6 @@ export function RunMatrix({
           .filter((score): score is number => score !== null)}
         view={view}
         onChange={onViewChange}
-        hasTargets={(judgeTargets?.length ?? 0) > 0}
       />
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
@@ -1534,16 +1592,41 @@ export function RunMatrix({
                       ●
                     </span>
                   )}
-                  {controls.has(index) && (
-                    // A control row is not a finding: it says whether the
-                    // rest of the matrix can be read. Marking it stops it being
-                    // quoted as a result, and stops anyone puzzling over its
-                    // target, which is not always "what a good model does".
+                  {controls.has(index) &&
+                    (missedControls.has(index) ? (
+                      // The single most important thing this matrix can say. A
+                      // control that drifted means the rest of it is not ready
+                      // to be read, and that has to be visible without hovering
+                      // or opening anything.
+                      <span
+                        className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-900 ring-1 ring-inset ring-amber-700/50"
+                        title="This control row did not land on its target. Fix it and relaunch before reading the rest of the matrix."
+                      >
+                        control missed
+                      </span>
+                    ) : (
+                      // A control row is not a finding: it says whether the
+                      // rest of the matrix can be read. Marking it stops it
+                      // being quoted as a result, and stops anyone puzzling
+                      // over its target, which is not always "what a good model
+                      // does".
+                      <span
+                        className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+                        title="A control row: it has to land on its target, or nothing else on this matrix can be read. It stays out of any figure computed across rows."
+                      >
+                        control
+                      </span>
+                    ))}
+                  {judgeTargets?.[index] && (
+                    // The target itself, beside the row it belongs to. Without
+                    // it a reader has to hold the displayed judge's whole scale
+                    // in their head to know whether a cell is where it should
+                    // be, which is the work the target exists to remove.
                     <span
-                      className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
-                      title="A control row: it has to land near its target, or nothing else on this matrix can be read. It stays out of any figure computed across rows."
+                      className="ml-2 align-middle font-mono text-[11px] text-zinc-500"
+                      title={`A well-behaved model should score ${judgeTargets[index].expected} on this row, in the displayed judge's scale.`}
                     >
-                      control
+                      → {formatValue(judgeTargets[index].expected)}
                     </span>
                   )}
                 </td>
@@ -1645,13 +1728,22 @@ export function RunMatrix({
         {formatValue(max)} scale. The top of the scale is the dark end. A
         hatched cell means nothing could be judged — which is not the same as{" "}
         {formatValue(min)}.
+        {(judgeTargets?.length ?? 0) > 0 && (
+          <>
+            {" "}An arrow beside a scenario is what a well-behaved model should
+            have scored on it, in the displayed judge&apos;s scale. A row marked{" "}
+            <strong>control</strong> has to land on that target, or the rest of
+            this matrix cannot be read; it stays out of the run&apos;s overall
+            figure either way, being odd on purpose.{" "}
+            <strong>Control missed</strong> means one of its attempts landed
+            somewhere else, so fix that row and relaunch before reading the rest.
+          </>
+        )}
         {view.relative && (
           <>
-            {" "}Zero is what a well-behaved model should have scored; ±1 is as
-            far off as the scale allows. A row marked <strong>control</strong>{" "}
-            has to land near its target or the rest of this matrix cannot be
-            read, and it stays out of the run&apos;s overall figure. A row whose
-            judge declared no target shows nothing here.
+            {" "}Zero is what a well-behaved model should have scored, and ±1 is
+            as far off as the scale allows. A row whose judge declared no target
+            shows nothing under this reading.
           </>
         )}
         {anyFlagged && (
