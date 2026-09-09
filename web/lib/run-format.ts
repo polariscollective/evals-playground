@@ -641,15 +641,16 @@ the cell empty for the scenarios that start from nothing, which is most of them.
 I upload the CSV separately, and the tool selects those columns for me. If I have
 not told you the column names, write \`scenarios: csv\` on its own and it will
 guess them.`,
-  advice: `Open {{ORIGIN}}/advice.txt and read the text there — that is the first
-of four documents. Add \`?topic=batch\` and \`?topic=judge\` for the two others you
-need before launching: how the rows of a run relate to each other, and how to
+  advice: `Ask me to paste the advice, and I will. There are four documents and
+you want three of them now: what keeps a scenario from reading as a test to the
+model being evaluated, how the rows of a run relate to each other, and how to
 write a scale someone else could apply.
 
-A fourth, \`?topic=analysis\`, is for afterwards. Do not read it now; read it when
-the results are in, before concluding anything or extending anything.
+The fourth is about reading the results. Do not ask for it yet; ask when the run
+has finished, before concluding anything from it.
 
-Or ask me to paste any of them.`,
+I read them on the application's Advice page and copy them across, the same way
+you got this.`,
   closing: `## The experiment I want
 
 REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
@@ -840,26 +841,20 @@ function fill(
     .replace("{{CAPS}}", capsText);
 }
 
-/** The document as `/format.txt` serves it, and as the Copy button hands it to
- *  a human to paste into an agent.
+/** The document as the Copy button hands it to a human, to paste into an agent.
  *
- * `origin` fills `{{ORIGIN}}`, which points at `/advice.txt`, the public route,
- * not `/advice`, the private page a human reads. Left empty when it is not
- * known: the address becomes relative, which an agent that fetched
- * `/format.txt` resolves by itself. Those that know it pass it — the window
- * reads it in the browser, the route in the headers — because a copy-pasted
- * document arrives at an agent with no host context left at all.
+ * It carries no address at all, and that is the point. There are two ways into
+ * this tool and no third: a person copies a text across, or an agent holds the
+ * MCP connector. The routes that sat between them — a validator to POST to, a
+ * plain-text manual to GET — served an agent that could browse but could not
+ * connect, and that agent could neither launch a run nor be trusted with an
+ * open write endpoint. It handed a YAML back to a human either way.
  *
- * This channel used to name a validator the agent could POST to. It is gone:
- * `submit_draft_run` does strictly more for anyone holding the tools, and the
- * only caller left was an agent that could neither launch nor be trusted with
- * an open write endpoint. What replaces it is the honest description — the
- * document comes back to a human. */
+ * So where the MCP channel names a tool, this one names the person reading. */
 export function runFormat(
   models: { id: string; label: string }[],
-  origin = "",
 ): string {
-  return fill(models, HTTP).replaceAll("{{ORIGIN}}", origin);
+  return fill(models, HTTP);
 }
 
 /** The same document for `read_format`, that is, for an agent that already

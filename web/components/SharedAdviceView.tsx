@@ -39,11 +39,13 @@ export function SharedAdviceView({
 
       <div className="flex flex-wrap items-center gap-2">
         <CopyText value={sources[topic]} title={`Copy: ${ADVICE_LABEL[topic]}`} />
-        {/* The machine-facing twin, named here because this is the page one
-            sends to somebody who will in turn hand it to an agent. */}
+        {/* Two ways in and no third. Copy hands the source to an agent through
+            whoever is reading; the MCP connector hands it to one directly, and
+            serves that person's own version rather than this default. A plain
+            text route sat between them and was worth neither. */}
         <span className="text-xs text-zinc-500">
-          The same text as plain text, for an agent:{" "}
-          <code className="rounded bg-zinc-100 px-1">/advice.txt?topic={topic}</code>
+          Copy it into an agent, or connect the MCP server and let it call{" "}
+          <code className="rounded bg-zinc-100 px-1">read_advice</code>.
         </span>
       </div>
 

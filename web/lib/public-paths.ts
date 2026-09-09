@@ -47,14 +47,7 @@ export const OPEN_PREFIXES = [
  * looks at a page, and so the only place the omission would show. The query
  * string Next appends behind them changes nothing: the matcher reads the path
  * alone. */
-// The advice documents as plain text, always their default version — see the
-// head comment. The same audience as `prompt` and `validate`: an agent with no
-// session, to which the prompt gives this address.
-//
-// A FILE and not a prefix, and that is the whole point: `/advice`, the page
-// where a signed-in human rewrites those documents, must stay behind the door.
-// Anchored on the end, `advice.txt` opens itself and nothing near it.
-export const OPEN_FILES = ["favicon.ico", "icon.svg", "advice.txt", "format.txt"];
+export const OPEN_FILES = ["favicon.ico", "icon.svg"];
 
 /** The dot is the only character in these paths a regular expression would
  *  read as anything other than itself. */

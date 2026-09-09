@@ -27,17 +27,12 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/scenarios", destination: "/advice", permanent: true },
-      {
-        source: "/scenario-advice",
-        destination: "/advice.txt",
-        permanent: true,
-      },
-      // `/prompt` said "a text for a model", which in this repository means a
-      // scenario's system prompt or the adversary's — never the manual for
-      // writing a run. `/format.txt` says which of the two documents an agent
-      // reads it is: the one about what gets a document REFUSED, next to
-      // `/advice.txt`, the one about what makes it worthless.
-      { source: "/prompt", destination: "/format.txt", permanent: true },
+      // `/scenario-advice` and `/prompt` served those documents as plain text to
+      // an agent that could fetch a URL but not hold the connector. Both routes
+      // are gone — two ways in, not three — so there is nothing left to send
+      // those addresses to. The advice is still readable without an account at
+      // `/shared/advice`, which is where a person who has no session goes.
+      { source: "/scenario-advice", destination: "/shared/advice", permanent: true },
       {
         source: "/shared/scenarios",
         destination: "/shared/advice",

@@ -30,7 +30,6 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
         catalogModelOptions(providers)
           .filter((model) => model.favorite)
           .map(({ id, label }) => ({ id, label })),
-        window.location.origin,
       )
     : "";
 
