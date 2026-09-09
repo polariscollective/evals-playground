@@ -123,8 +123,8 @@ actually used needs it recorded at run time, which means a migration in
 
 ## Delivery
 
-One branch, `english-only`. One pull request. One commit per zone, in this
-order:
+One branch, `worktree-english-only`. One pull request. One commit per zone,
+in this order:
 
 | # | commit | contents |
 |---|---|---|
