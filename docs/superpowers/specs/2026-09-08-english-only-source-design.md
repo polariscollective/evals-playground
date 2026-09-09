@@ -123,22 +123,28 @@ actually used needs it recorded at run time, which means a migration in
 
 ## Delivery
 
-One branch, `worktree-english-only`. One pull request. Commits in this order:
+One branch, `english-only`. One pull request. One commit per zone, in this
+order:
 
 | # | commit | contents |
 |---|---|---|
 | 0 | delete the legacy scenario playground | the chain above, plus `catalog.py`; the `scenario_solver` note relocated |
-| 1 | identifiers | every real rename, whole repository at once |
-| 2 | `backend/` | docstrings |
-| 3 | `tests/` | test names, fake classes |
-| 4 | `web/lib` | comments, and the French sentences it builds |
-| 5 | `web/app`, `web/components` | comments, tooltips, headings |
-| 6 | prompts and config | `adversary-prompt.json`, `Dockerfile`, `pyproject.toml`, CI, `.env.example`, `docs/DEPLOY.md` |
+| 1 | `backend/` | docstrings and identifiers |
+| 2 | `tests/` | test names, fixtures, fake classes |
+| 3 | `web/lib` | comments, identifiers, and the French sentences it builds |
+| 4 | `web/app`, `web/components` | comments, identifiers, tooltips, headings |
+| 5 | prompts and config | `adversary-prompt.json`, `Dockerfile`, `pyproject.toml`, CI, `.env.example`, `docs/DEPLOY.md` |
 
-Renames cross zone boundaries — renaming an export in `web/lib` forces edits in
-`web/app` — so they are gathered into one commit rather than smeared across
-five. Commits 2 through 6 touch text only and cannot break anything; all the
-risk sits in commits 0 and 1, and both are checked by the two suites.
+The identifiers are not a commit of their own, as an earlier draft of this
+section had it. A rename crosses zone boundaries — renaming an export in
+`web/lib` forces edits in `web/app` — but the crossings turned out to be few and
+local, and a single repository-wide rename commit would have been unreadable and
+unbisectable. Each zone therefore carries its own renames, and the compiler
+catches a crossing left behind before the commit is made. Each zone was in
+practice cut into several commits, one per batch of files, for the same reason.
+
+All the risk sits in commit 0 and in the renames; both are checked by the two
+suites, run after every batch.
 
 ## Verification
 
@@ -153,3 +159,17 @@ Two checks specific to this work:
   `web/public/inspect-view/`, and text that is deliberately French.
 - The identifier extraction is re-run at the end, and what it flags is either
   English or a known false positive.
+
+An accent grep is not enough on its own, and that was learnt the hard way: a
+whole class of French carries no accent (`Les journaux d'Inspect, lus dans
+Supabase Storage.`), and an accent-only sweep declares such a file clean. The
+second detector looks for French function words that are not English words —
+`qui`, `dans`, `sans`, `chaque`, `jamais` — and one hit is enough. It found some
+five hundred lines the first sweep had walked past.
+
+GNU/BSD `grep` is not to be trusted for this either. `web/app/page.tsx` carried a
+stray NUL byte inside a template literal used as a React key; BSD `grep` treats
+such a file as binary and silently matches nothing in it, so the file read as
+clean while holding twenty-seven French lines. Both detectors are therefore
+written in Python, which decodes the file itself. The NUL was replaced by an
+ordinary `|` separator along the way.

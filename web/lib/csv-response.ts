@@ -1,4 +1,4 @@
-/** Un CSV que le navigateur enregistre au lieu de l'afficher.
+/** A CSV the browser saves instead of displaying.
  *
  * The UTF-8 BOM is there for Excel, which without it reads accents as latin-1
  * and shows "Accès données" as mojibake. */
