@@ -1,29 +1,29 @@
-// Ce qu'un inconnu peut lire d'un run publié.
+// What a stranger may read of a published run.
 //
-// Une seule fonction décide, et elle est pure : la page publique passe par
-// ici, et rien d'autre ne devrait décider seul de ce qui sort. Séparée de
+// One function decides, and it is pure: the public page goes through here, and
+// nothing else should decide alone what goes out. Separated from
 // `runs.ts`, qui est `server-only` et que `node --test` ne peut pas importer.
 import type { EvalRun, Judge, RunDetail, RunExtensionLogEntry, RunJudgeView } from "./types";
 
 /** Une extension telle qu'un inconnu peut la lire : sans l'adresse de qui l'a
- *  demandée. `via` reste — savoir qu'une extension est venue d'un agent ou de
- *  l'écran ne désigne personne. */
+ *  asked for. `via` stays — knowing an extension came from an agent or from
+ *  the screen names nobody. */
 export type PublicExtensionLogEntry = Omit<RunExtensionLogEntry, "by">;
 
-/** Un run tel qu'un inconnu peut le lire : sans l'adresse de qui l'a lancé, ni
- *  celles de qui l'a étendu. La seconde se cache dans un tableau, et c'est
- *  exactement pour ça qu'elle est retirée par le type plutôt que de compter
- *  sur la vigilance : `user_email` avait été rendue impossible à lire, et
- *  `extensions[].by` a failli passer parce qu'elle n'était pas à la racine. */
+/** A run as a stranger may read it: without the address of whoever launched
+ *  it, nor those of whoever extended it. The second hides inside an array, and
+ *  that is exactly why it is removed by the type rather than left to
+ *  vigilance: `user_email` had been made impossible to read, and
+ *  `extensions[].by` nearly got through because it was not at the root. */
 export type PublicRun = Omit<EvalRun, "user_email" | "extensions"> & {
   extensions: PublicExtensionLogEntry[];
 };
 
 /** Un juge tel qu'un inconnu peut le lire : sans `created_by`, l'adresse de
- *  qui l'a créé — même raison, et même risque, que `PublicRun` retire
- *  `user_email` : un juge ajouté après coup par quelqu'un d'autre que qui a
- *  lancé le run porterait sinon une seconde adresse jusqu'à la page
- *  publique, par un chemin que `withoutIdentity` n'aurait pas fermé. */
+ *  whoever created it — the same reason, and the same risk, as `PublicRun`
+ *  removing `user_email`: a judge added after the fact by somebody other than
+ *  whoever launched the run would otherwise carry a second address all the way
+ *  to the public page, by a path `withoutIdentity` would not have closed. */
 export type PublicJudge = Omit<Judge, "created_by">;
 
 /** Le pendant public de `RunJudgeView` (`lib/types.ts`) : son juge est un
@@ -32,12 +32,13 @@ export interface PublicRunJudgeView extends Omit<RunJudgeView, "judge"> {
   judge: PublicJudge;
 }
 
-/** Le pendant public de `RunDetail`. Distinct plutôt que de retyper `run` en
- *  `EvalRun` et de croiser les doigts : un futur accès à `.run.user_email` sur
+/** The public counterpart of `RunDetail`. Distinct rather than retyping `run`
+ *  as `EvalRun` and crossing fingers: a future access to `.run.user_email` on
  *  ce que rend `loadPublicRun` devient une erreur de compilation, pas un
- *  `undefined` découvert à l'exécution — ce qui est précisément le genre
+ *  `undefined` discovered at runtime — which is precisely the kind
  *  d'erreur que cette fonction existe pour rendre impossible. `judges` est
- *  réécrit pour la même raison : sans cet `Omit`, un `RunJudgeView[]` complet
+ *  rewritten for the same reason: without this `Omit`, a complete
+ *  `RunJudgeView[]`
  *  (avec `created_by`) satisferait ce type par structure, et le compilateur
  *  ne pourrait plus rien refuser. */
 export interface PublicRunDetail extends Omit<RunDetail, "run" | "judges"> {
@@ -45,20 +46,20 @@ export interface PublicRunDetail extends Omit<RunDetail, "run" | "judges"> {
   judges?: PublicRunJudgeView[];
 }
 
-/** Le run tel qu'il sort, sans l'adresse de qui l'a lancé, ni celle de qui a
- *  créé chacun de ses juges.
+/** The run as it goes out, without the address of whoever launched it, nor
+ *  that of whoever created each of its judges.
  *
- * Ces deux-là seules sont retirées. Les notes du run, l'analyse, la note
- * privée de chaque scénario et le CSV source partent avec le reste : c'est la
- * décision du dessin, prise en sachant que ces champs ont été écrits en
- * privé. Ne pas « corriger » ça sans rouvrir la question — le test le dit
+ * Those two alone are removed. The run's notes, the analysis, each scenario's
+ * private note and the source CSV go out with the rest: that is the design's
+ * decision, taken knowing these fields were written in private. Do not "fix"
+ * that without reopening the question — the test says so
  * aussi.
  *
  * Une copie de surface, pas une mutation : `run` et l'objet rendu sont neufs,
- * mais `run.config`, `samples` et `progress` restent partagés par référence
- * avec l'original, qui vient d'une lecture que la page privée partage aussi.
+ * but `run.config`, `samples` and `progress` stay shared by reference with the
+ * original, which comes from a read the private page shares too.
  * Rien ici ne les mute ; un futur appelant qui le ferait muterait la version
- * privée avec. */
+ * private page with it. */
 export function withoutIdentity(detail: RunDetail): PublicRunDetail {
   const { user_email, extensions, ...run } = detail.run;
   return {
@@ -66,13 +67,13 @@ export function withoutIdentity(detail: RunDetail): PublicRunDetail {
     run: {
       ...run,
       // `?? []` et non `extensions.map` : une ligne lue sans cette colonne —
-      // un `select` plus étroit, une donnée écrite avant qu'elle existe — ne
+      // a narrower `select`, data written before it existed — does not
       // doit pas faire tomber la page publique pour une histoire d'extensions
-      // qu'elle n'a de toute façon pas.
-      extensions: (extensions ?? []).map(({ by, ...entrée }) => entrée),
+      // which it does not have anyway.
+      extensions: (extensions ?? []).map(({ by, ...entry }) => entry),
     },
-    // `?.map` et non un accès direct : `judges` est absent quand `loadRun`
-    // n'a pas été appelée avec `withJudges` — voir `RunDetail.judges`.
+    // `?.map` and not a direct access: `judges` is absent when `loadRun` was
+    // not called with `withJudges` — see `RunDetail.judges`.
     judges: detail.judges?.map(({ judge, ...liaison }) => {
       const { created_by, ...publicJudge } = judge;
       return { ...liaison, judge: publicJudge };
