@@ -1,17 +1,16 @@
-// L'export, du point de vue de ce que les juges multiples y changent.
+// The export, from the point of view of what the multiple judges change in it.
 //
-// Avant ce chantier, une case ne portait qu'une note et une justification —
-// des colonnes d'`EvalSample` que la migration
-// `20260906093000_drop_eval_samples_score_columns.sql` (dépôt
-// polaris-supabase) a supprimées : ce que rend un juge vit désormais dans
-// `judge_scores`, une ligne par (juge, conversation). `detailsCsv` et
-// `runMarkdown` prennent donc en plus `judges: RunJudgeView[]` — les juges
-// vivants du run et leurs verdicts, comme `attachJudges` (`lib/runs.ts`) les
-// joint déjà pour l'écran.
+// Before this project, a cell carried one grade and one justification — columns
+// of `EvalSample` that the migration
+// `20260906093000_drop_eval_samples_score_columns.sql` (polaris-supabase
+// repository) dropped: what a judge returns now lives in `judge_scores`, one row
+// per (judge, conversation). `detailsCsv` and `runMarkdown` therefore also take
+// `judges: RunJudgeView[]` — the run's living judges and their verdicts, as
+// `attachJudges` (`lib/runs.ts`) already joins them for the screen.
 //
-// Le reste de `detailsCsv`/`runMarkdown` (scénarios, outils, transcript...)
-// était déjà exercé à chaque export réel avant ce chantier ; ce fichier ne
-// couvre que ce que les juges multiples ajoutent ou changent.
+// The rest of `detailsCsv`/`runMarkdown` (scenarios, tools, transcript...) was
+// already exercised on every real export before this project; this file covers
+// only what the multiple judges add or change.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AWAKE_TYPE, AWARENESS_ALARM } from "./awareness.ts";
@@ -50,10 +49,10 @@ function sample(overrides: Partial<EvalSample> = {}): EvalSample {
 function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   return {
     scenarios: [{ title: "S", system_prompt: "", opening_message: "" }],
-    criterion: "Le modèle a tenu la ligne.",
+    criterion: "The model held the line.",
     rubric: [
-      { value: 0, meaning: "Non." },
-      { value: 1, meaning: "Oui." },
+      { value: 0, meaning: "No." },
+      { value: 1, meaning: "Yes." },
     ],
     turns: 1,
     repetitions: 1,
@@ -66,8 +65,8 @@ function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   };
 }
 
-// Un cast, comme ailleurs dans ce dépôt (voir run-extensions.test.mts) : ni
-// `detailsCsv` ni `runMarkdown` ne regardent les champs qu'on omet ici.
+// A cast, as elsewhere in this repository (see run-extensions.test.mts): neither
+// `detailsCsv` nor `runMarkdown` looks at the fields omitted here.
 function run(overrides: Partial<EvalRun> = {}): EvalRun {
   return {
     id: "r",
@@ -75,8 +74,8 @@ function run(overrides: Partial<EvalRun> = {}): EvalRun {
     updated_at: "2026-09-06T00:00:00.000Z",
     started_at: null,
     finished_at: null,
-    user_email: "quelquun@polaris.example",
-    label: "Run de test",
+    user_email: "someone@polaris.example",
+    label: "Test run",
     status: "done",
     error: null,
     config: config(),
@@ -102,14 +101,14 @@ function run(overrides: Partial<EvalRun> = {}): EvalRun {
 function judge(overrides: Partial<Judge> = {}): Judge {
   return {
     id: "j",
-    criterion: "Le modèle a tenu la ligne.",
+    criterion: "The model held the line.",
     rubric: [
-      { value: 0, meaning: "Non." },
-      { value: 1, meaning: "Oui." },
+      { value: 0, meaning: "No." },
+      { value: 1, meaning: "Yes." },
     ],
     model: "anthropic/claude-haiku-4-5",
     system_type: "ordinary",
-    created_by: "quelquun@polaris.example",
+    created_by: "someone@polaris.example",
     created_at: "2026-09-06T00:00:00.000Z",
     ...overrides,
   };
@@ -119,8 +118,8 @@ function verdict(overrides: Partial<JudgeVerdictEntry> = {}): JudgeVerdictEntry 
   return { status: "done", score: 1, justification: "", error: null, ...overrides };
 }
 
-/** Une liaison vivante, telle qu'`attachJudges` (`lib/runs.ts`) la rend :
- *  l'identité du juge, son rôle sur ce run, et son verdict par case. */
+/** A living link, as `attachJudges` (`lib/runs.ts`) returns it: the judge's
+ *  identity, its role on this run, and its verdict per cell. */
 function runJudge(
   judgeOverrides: Partial<Judge>,
   extra: { isPrincipal?: boolean; scores?: Record<string, JudgeVerdictEntry> } = {},
@@ -135,22 +134,22 @@ function runJudge(
   };
 }
 
-test("le CSV détaillé porte une ligne par case et par juge non supprimé", () => {
+test("the detailed CSV carries one row per cell and per judge not deleted", () => {
   const principal = runJudge(
-    { id: "p", criterion: "A-t-il refusé ?", model: "anthropic/claude-haiku-4-5" },
-    { isPrincipal: true, scores: { s: verdict({ score: 1, justification: "A refusé." }) } },
+    { id: "p", criterion: "Did it refuse?", model: "anthropic/claude-haiku-4-5" },
+    { isPrincipal: true, scores: { s: verdict({ score: 1, justification: "Refused." }) } },
   );
-  const secondaire = runJudge(
-    { id: "sec", criterion: "A-t-il expliqué pourquoi ?", model: "openai/gpt-5.6-terra" },
-    { isPrincipal: false, scores: { s: verdict({ score: 0, justification: "Pas expliqué." }) } },
+  const secondary = runJudge(
+    { id: "sec", criterion: "Did it explain why?", model: "openai/gpt-5.6-terra" },
+    { isPrincipal: false, scores: { s: verdict({ score: 0, justification: "Did not explain." }) } },
   );
 
-  const csv = detailsCsv(run(), [sample()], [principal, secondaire]);
+  const csv = detailsCsv(run(), [sample()], [principal, secondary]);
   const lines = csv.split("\n");
   const header = lines[0].split(",");
 
-  // Une ligne d'en-tête, deux lignes de données — une par juge, jamais une
-  // colonne de plus : le nombre de juges varie d'un run à l'autre.
+  // One header row, two data rows — one per judge, never one more column: the
+  // number of judges varies from one run to the next.
   assert.equal(lines.length, 3);
 
   const idx = (name: string) => header.indexOf(name);
@@ -161,31 +160,31 @@ test("le CSV détaillé porte une ligne par case et par juge non supprimé", () 
   const secondaryRow = lines[2].split(",");
   assert.equal(principalRow[idx("judge_is_principal")], "true");
   assert.equal(principalRow[idx("judge_model")], "anthropic/claude-haiku-4-5");
-  assert.equal(principalRow[idx("judge_criterion")], "A-t-il refusé ?");
+  assert.equal(principalRow[idx("judge_criterion")], "Did it refuse?");
   assert.equal(principalRow[idx("score")], "1");
   assert.equal(secondaryRow[idx("judge_is_principal")], "false");
   assert.equal(secondaryRow[idx("judge_model")], "openai/gpt-5.6-terra");
-  assert.equal(secondaryRow[idx("judge_criterion")], "A-t-il expliqué pourquoi ?");
+  assert.equal(secondaryRow[idx("judge_criterion")], "Did it explain why?");
   assert.equal(secondaryRow[idx("score")], "0");
 });
 
-test("le CSV détaillé distingue noté, sans note, en attente et juge tombé", () => {
-  // C'est le réflexe de tout ce produit : ces quatre issues ne se mêlent
-  // jamais, et doivent rester lisibles comme telles même dans un tableur.
-  const noté = runJudge({ id: "a" }, { scores: { s: verdict({ score: 1 }) } });
-  const sansNote = runJudge({ id: "b" }, { scores: { s: verdict({ score: null }) } });
-  const enAttente = runJudge({ id: "c" }, { scores: {} }); // pas de ligne pour "s"
-  const tombé = runJudge(
+test("the detailed CSV distinguishes graded, ungraded, pending and judge fallen over", () => {
+  // It is the reflex of this whole product: those four outcomes never mix, and
+  // must stay legible as such even in a spreadsheet.
+  const graded = runJudge({ id: "a" }, { scores: { s: verdict({ score: 1 }) } });
+  const ungraded = runJudge({ id: "b" }, { scores: { s: verdict({ score: null }) } });
+  const pending = runJudge({ id: "c" }, { scores: {} }); // no row for "s"
+  const fallenOver = runJudge(
     { id: "d" },
     { scores: { s: verdict({ status: "error", score: null, error: "RateLimitError: boom" }) } },
   );
 
-  const csv = detailsCsv(run(), [sample()], [noté, sansNote, enAttente, tombé]);
+  const csv = detailsCsv(run(), [sample()], [graded, ungraded, pending, fallenOver]);
   const [headerLine, ...rows] = csv.split("\n");
   const header = headerLine.split(",");
   const idx = (name: string) => header.indexOf(name);
 
-  // Une ligne par juge, dans l'ordre où `judges` les donne.
+  // One row per judge, in the order `judges` gives them.
   const [row1, row2, row3, row4] = rows.map((line) => line.split(","));
 
   assert.equal(row1[idx("judge_status")], "done");
@@ -193,18 +192,18 @@ test("le CSV détaillé distingue noté, sans note, en attente et juge tombé", 
   assert.equal(row1[idx("judge_error")], "");
 
   assert.equal(row2[idx("judge_status")], "done");
-  assert.equal(row2[idx("score")], "", "sans note : la colonne reste vide, jamais à zéro");
+  assert.equal(row2[idx("score")], "", "ungraded: the column stays empty, never zero");
   assert.equal(row2[idx("judge_error")], "");
 
   assert.equal(row3[idx("judge_status")], "pending");
   assert.equal(row3[idx("score")], "");
 
   assert.equal(row4[idx("judge_status")], "error");
-  assert.equal(row4[idx("score")], "", "un juge tombé ne rend jamais de note");
+  assert.equal(row4[idx("score")], "", "a judge that fell over never returns a grade");
   assert.match(row4[idx("judge_error")], /RateLimitError: boom/);
 });
 
-test("le juge d'éveil porte sa question fixe dans le CSV, jamais un critère vide", () => {
+test("the awareness judge carries its fixed question in the CSV, never an empty criterion", () => {
   const awake = runJudge(
     { id: "awake", system_type: AWAKE_TYPE, criterion: null, rubric: null },
     { scores: { s: verdict({ score: AWARENESS_ALARM }) } },
@@ -218,77 +217,76 @@ test("le juge d'éveil porte sa question fixe dans le CSV, jamais un critère vi
   assert.notEqual(row[header.indexOf("judge_criterion")], "");
 });
 
-test("un juge délié depuis n'apparaît nulle part dans le CSV détaillé", () => {
-  // `judges` arrive déjà filtré par l'appelant (`loadLiveRunJudges`) : ce
-  // fichier ne fait qu'énumérer ce qu'on lui donne, jamais son propre filtre
-  // sur `deleted_at`. Un juge délié n'est simplement plus dans la liste que
-  // l'appelant construit — ce test le simule en fabriquant le juge délié
-  // sans jamais le transmettre à `detailsCsv`.
-  const vivant = runJudge({ id: "vivant", criterion: "Toujours là." }, { isPrincipal: true });
-  const délié = runJudge({
-    id: "délié",
-    criterion: "Un critère qui ne devrait plus jamais apparaître.",
+test("a judge unlinked since appears nowhere in the detailed CSV", () => {
+  // `judges` arrives already filtered by the caller (`loadLiveRunJudges`): this
+  // file only enumerates what it is given, never its own filter on `deleted_at`.
+  // An unlinked judge is simply no longer in the list the caller builds — this
+  // test simulates it by building the unlinked judge without ever passing it to
+  // `detailsCsv`.
+  const alive = runJudge({ id: "alive", criterion: "Still there." }, { isPrincipal: true });
+  const unlinked = runJudge({
+    id: "unlinked",
+    criterion: "A criterion that must never appear again.",
   });
-  void délié; // jamais transmis à `detailsCsv` : c'est tout le test.
-  const csv = detailsCsv(run(), [sample()], [vivant]);
-  assert.ok(!csv.includes("Un critère qui ne devrait plus jamais apparaître."));
+  void unlinked; // never passed to `detailsCsv`: that is the whole test.
+  const csv = detailsCsv(run(), [sample()], [alive]);
+  assert.ok(!csv.includes("A criterion that must never appear again."));
   assert.equal(csv.split("\n").length, 2);
 });
 
-test("sans aucun juge vivant, la case garde sa ligne, avec des colonnes de juge vides", () => {
+test("with no living judge, the cell keeps its row, with empty judge columns", () => {
   const csv = detailsCsv(run(), [sample()], []);
   const [headerLine, dataLine] = csv.split("\n");
   const header = headerLine.split(",");
   const row = dataLine.split(",");
   assert.equal(row[header.indexOf("judge_status")], "");
   assert.equal(row[header.indexOf("score")], "");
-  // La case elle-même n'a pas disparu : ses propres colonnes tiennent toujours.
+  // The cell itself has not disappeared: its own columns still hold.
   assert.equal(row[header.indexOf("target_model")], "anthropic/claude-haiku-4-5");
 });
 
-// Le CSV de la matrice, du point de vue de la correction : avant elle,
-// `matrixCsv` recopiait fidèlement la limite de l'écran (« suit le
-// principal, jamais un secondaire ») dans un fichier qui n'a plus cette
-// contrainte de densité une fois téléchargé — exactement le défaut déjà
-// corrigé une fois pour le badge d'éveil. Les tests ci-dessous vérifient la
-// forme retenue : une ligne par (scénario, juge non supprimé).
+// The matrix CSV, from the point of view of the correction: before it,
+// `matrixCsv` faithfully copied the screen's limit ("follows the principal,
+// never a secondary") into a file that no longer has that density constraint
+// once downloaded — exactly the flaw already fixed once for the awareness badge.
+// The tests below check the shape chosen: one row per (scenario, judge not
+// deleted).
 //
-// `parseCsv` (`lib/csv.ts`, déjà éprouvé sur le CSV des scénarios) plutôt
-// qu'un `split(",")` naïf : plusieurs colonnes de cette matrice contiennent
-// elles-mêmes une virgule entre guillemets (`judge_rubric` de l'éveil,
-// `cell_meaning` avec un repli) — un split naïf désaligne alors tout ce qui
-// suit dans la ligne.
+// `parseCsv` (`lib/csv.ts`, already tested on the scenarios CSV) rather than a
+// naive `split(",")`: several columns of this matrix themselves hold a comma
+// inside quotes (awareness's `judge_rubric`, `cell_meaning` with a remapping) —
+// a naive split then misaligns everything that follows on the row.
 
-test("le CSV de la matrice porte une ligne par juge vivant, principal et secondaires compris", () => {
+test("the matrix CSV carries one row per living judge, principal and secondaries included", () => {
   const principal = runJudge(
     { id: "p", model: "anthropic/claude-haiku-4-5" },
     { isPrincipal: true, scores: { s: verdict({ score: 1 }) } },
   );
-  const secondaire = runJudge(
+  const secondary = runJudge(
     { id: "sec", model: "openai/gpt-5.6-terra" },
     { isPrincipal: false, scores: { s: verdict({ score: 0 }) } },
   );
-  const csv = matrixCsv(run(), [sample()], [principal, secondaire]);
+  const csv = matrixCsv(run(), [sample()], [principal, secondary]);
   const { rows } = parseCsv(csv);
 
-  // Deux lignes de données — une par juge vivant, jamais une colonne de
-  // plus : le nombre de juges varie d'un run à l'autre.
+  // Two data rows — one per living judge, never one more column: the number of
+  // judges varies from one run to the next.
   assert.equal(rows.length, 2);
 
   const principalRow = rows.find((row) => row.judge_is_principal === "true");
   const secondaryRow = rows.find((row) => row.judge_is_principal === "false");
-  assert.ok(principalRow, "la ligne du principal doit exister");
-  assert.ok(secondaryRow, "la ligne du secondaire ne doit pas avoir disparu");
+  assert.ok(principalRow, "the principal's row must exist");
+  assert.ok(secondaryRow, "the secondary's row must not have disappeared");
   assert.equal(principalRow!.judge_model, "anthropic/claude-haiku-4-5");
   assert.equal(principalRow!["anthropic/claude-haiku-4-5"], "1.00");
   assert.equal(secondaryRow!.judge_model, "openai/gpt-5.6-terra");
   assert.equal(secondaryRow!["anthropic/claude-haiku-4-5"], "0.00");
 });
 
-test("le CSV de la matrice porte aussi le juge d'éveil, sur sa propre échelle fixe", () => {
-  // « Éveil compris » : l'utilisateur l'a dit explicitement, et c'est
-  // précisément la case qui avait déjà mordu ce dépôt une fois (le badge à
-  // l'écran, sans export pour le porter).
+test("the matrix CSV also carries the awareness judge, on its own fixed scale", () => {
+  // "Awareness included": the user said so explicitly, and it is precisely the
+  // case that had already bitten this repository once (the badge on screen, with
+  // no export to carry it).
   const principal = runJudge({ id: "p" }, { isPrincipal: true, scores: { s: verdict({ score: 1 }) } });
   const awake = runJudge(
     { id: "awake", system_type: AWAKE_TYPE, criterion: null, rubric: null },
@@ -297,43 +295,42 @@ test("le CSV de la matrice porte aussi le juge d'éveil, sur sa propre échelle 
   const csv = matrixCsv(run(), [sample()], [principal, awake]);
   const { rows } = parseCsv(csv);
   const awakeRow = rows.find((row) => row.judge_system_type === "awake");
-  assert.ok(awakeRow, "la ligne du juge d'éveil ne doit pas manquer");
+  assert.ok(awakeRow, "the awareness judge's row must not be missing");
   assert.equal(awakeRow!["anthropic/claude-haiku-4-5"], "8.00");
   assert.match(awakeRow!.judge_criterion, /eval-awareness|test/i);
 });
 
-test("un juge délié n'apparaît nulle part dans le CSV de la matrice", () => {
-  const vivant = runJudge({ id: "vivant" }, { isPrincipal: true, scores: { s: verdict({ score: 1 }) } });
-  const délié = runJudge(
-    { id: "délié", criterion: "Un critère qui ne devrait plus jamais apparaître." },
+test("an unlinked judge appears nowhere in the matrix CSV", () => {
+  const alive = runJudge({ id: "alive" }, { isPrincipal: true, scores: { s: verdict({ score: 1 }) } });
+  const unlinked = runJudge(
+    { id: "unlinked", criterion: "A criterion that must never appear again." },
     { scores: { s: verdict({ score: 0 }) } },
   );
-  void délié; // jamais transmis à `matrixCsv` : c'est tout le test.
-  const csv = matrixCsv(run(), [sample()], [vivant]);
-  assert.ok(!csv.includes("Un critère qui ne devrait plus jamais apparaître."));
+  void unlinked; // never passed to `matrixCsv`: that is the whole test.
+  const csv = matrixCsv(run(), [sample()], [alive]);
+  assert.ok(!csv.includes("A criterion that must never appear again."));
   assert.equal(parseCsv(csv).rows.length, 1);
 });
 
-test("le CSV de la matrice retombe sur l'échelle réellement posée par chaque juge", () => {
-  // `judge.rubric` prime sur `run.config.rubric`, qui n'est que la valeur
-  // historique figée au lancement — un rejugement avec une autre échelle ne
-  // doit pas se lire sur l'ancienne, et ce pour n'importe quel juge, pas
-  // seulement le principal. L'échelle du RUN exclut ici 20 de la moyenne :
-  // si `matrixCsv` s'y trompait, la case serait vide plutôt qu'à 20.00 —
-  // de quoi distinguer les deux échelles plutôt que de les confondre par
-  // coïncidence (une note qui ne figure dans AUCUNE des deux échelles reste
-  // sinon incluse dans les deux cas, ce qui ne prouverait rien).
+test("the matrix CSV falls back on the scale each judge really laid down", () => {
+  // `judge.rubric` takes precedence over `run.config.rubric`, which is only the
+  // historical value frozen at launch — a re-judgement with another scale must
+  // not be read on the old one, and that for any judge, not only the principal.
+  // The RUN's scale here excludes 20 from the mean: if `matrixCsv` got it wrong,
+  // the cell would be empty rather than at 20.00 — enough to tell the two scales
+  // apart rather than confusing them by coincidence (a grade figuring in NEITHER
+  // scale would otherwise be included in both cases, which would prove nothing).
   const principal = runJudge(
-    { id: "p", rubric: [{ value: 10, meaning: "Non." }, { value: 20, meaning: "Oui." }] },
+    { id: "p", rubric: [{ value: 10, meaning: "No." }, { value: 20, meaning: "Yes." }] },
     { isPrincipal: true, scores: { s: verdict({ score: 20 }) } },
   );
   const csv = matrixCsv(
     run({
       config: config({
-        rubric: [
-          { value: 10, meaning: "Non." },
-          { value: 20, meaning: "Oui.", excluded: true },
-        ],
+          rubric: [
+            { value: 10, meaning: "No." },
+            { value: 20, meaning: "Yes.", excluded: true },
+          ],
       }),
     }),
     [sample()],
@@ -343,22 +340,21 @@ test("le CSV de la matrice retombe sur l'échelle réellement posée par chaque 
   assert.equal(rows[0]["anthropic/claude-haiku-4-5"], "20.00");
 });
 
-test("le repli d'échelle de la vue ne s'applique jamais qu'au principal", () => {
-  // Un repli choisi en regardant la rubrique du principal (1 devient 5)
-  // n'a aucune raison de s'appliquer à la rubrique d'un juge secondaire,
-  // même si elle partage les mêmes valeurs brutes — l'appliquer quand même
-  // mentirait sur ce que sa note devient. Seul l'agrégat, générique, est
-  // repris pour tout juge.
+test("the view's scale remapping only ever applies to the principal", () => {
+  // A remapping chosen while looking at the principal's rubric (1 becomes 5) has
+  // no reason to apply to a secondary judge's rubric, even if it shares the same
+  // raw values — applying it all the same would lie about what its grade becomes.
+  // Only the aggregate, being generic, is taken up for every judge.
   const principal = runJudge(
-    { id: "p", rubric: [{ value: 0, meaning: "Non." }, { value: 1, meaning: "Oui." }] },
+    { id: "p", rubric: [{ value: 0, meaning: "No." }, { value: 1, meaning: "Yes." }] },
     { isPrincipal: true, scores: { s: verdict({ score: 1 }) } },
   );
-  const secondaire = runJudge(
-    { id: "sec", rubric: [{ value: 0, meaning: "Non." }, { value: 1, meaning: "Oui." }] },
+  const secondary = runJudge(
+    { id: "sec", rubric: [{ value: 0, meaning: "No." }, { value: 1, meaning: "Yes." }] },
     { isPrincipal: false, scores: { s: verdict({ score: 1 }) } },
   );
   const view = { aggregate: "mean" as const, remap: { 1: 5 } };
-  const csv = matrixCsv(run(), [sample()], [principal, secondaire], view);
+  const csv = matrixCsv(run(), [sample()], [principal, secondary], view);
   const { rows } = parseCsv(csv);
   const principalRow = rows.find((row) => row.judge_is_principal === "true")!;
   const secondaryRow = rows.find((row) => row.judge_is_principal === "false")!;
@@ -366,57 +362,57 @@ test("le repli d'échelle de la vue ne s'applique jamais qu'au principal", () =>
   assert.equal(secondaryRow["anthropic/claude-haiku-4-5"], "1.00");
 });
 
-test("sans juge vivant, la matrice reste en attente plutôt que vide de sens", () => {
+test("with no living judge, the matrix stays pending rather than meaningless", () => {
   const csv = matrixCsv(run(), [sample()], []);
   const { rows } = parseCsv(csv);
   assert.equal(rows[0]["anthropic/claude-haiku-4-5"], "");
   assert.equal(rows[0].judge_is_principal, "");
-  // Le scénario, lui, ne disparaît pas.
+  // The scenario, for its part, does not disappear.
   assert.equal(rows[0].scenario_title, "S");
 });
 
-test("le résumé markdown dit quels juges secondaires ont tourné", () => {
-  const principal = runJudge({ id: "p", criterion: "Question du principal." }, { isPrincipal: true });
+test("the markdown summary says which secondary judges ran", () => {
+  const principal = runJudge({ id: "p", criterion: "The principal's question." }, { isPrincipal: true });
   const sec1 = runJudge(
-    { id: "s1", criterion: "Première question secondaire.", model: "openai/gpt-5.6-terra" },
+    { id: "s1", criterion: "First secondary question.", model: "openai/gpt-5.6-terra" },
     { isPrincipal: false },
   );
   const sec2 = runJudge(
-    { id: "s2", criterion: "Seconde question secondaire.", model: "grok/grok-4.3" },
+    { id: "s2", criterion: "Second secondary question.", model: "grok/grok-4.3" },
     { isPrincipal: false },
   );
   const text = runMarkdown(run(), [sample()], [principal, sec1, sec2]);
   assert.match(text, /## Other judges \(2\)/);
-  assert.match(text, /Première question secondaire\./);
-  assert.match(text, /Seconde question secondaire\./);
+  assert.match(text, /First secondary question\./);
+  assert.match(text, /Second secondary question\./);
   assert.match(text, /openai\/gpt-5\.6-terra/);
   assert.match(text, /grok\/grok-4\.3/);
-  // Le principal a bien sa propre section plus haut (« The principal
-  // judge ») mais n'est jamais recompté parmi les « autres juges » : son
-  // critère n'apparaît qu'une seule fois dans tout le résumé.
-  const occurrences = text.split("Question du principal.").length - 1;
+  // The principal does have its own section above ("The principal judge") but is
+  // never recounted among the "other judges": its criterion appears only once in
+  // the whole summary.
+  const occurrences = text.split("The principal's question.").length - 1;
   assert.equal(occurrences, 1);
 });
 
-test("le résumé markdown ne montre pas de section « autres juges » sans secondaire", () => {
+test("the markdown summary shows no \"other judges\" section with no secondary", () => {
   const principal = runJudge({ id: "p" }, { isPrincipal: true });
   const text = runMarkdown(run(), [sample()], [principal]);
   assert.doesNotMatch(text, /## Other judges/);
 });
 
-test("sans juges chargés, le résumé retombe sur les champs historiques du run", () => {
-  // `judges` vide (route qui n'a pas demandé `withJudges`, ou run sans aucune
-  // liaison vivante) : l'ancienne forme reste valide, et décrit toujours le
-  // principal via `config.criterion`/`config.rubric`/`config.models.judge`.
+test("with no judges loaded, the summary falls back on the run's historical fields", () => {
+  // `judges` empty (a route that did not ask for `withJudges`, or a run with no
+  // living link): the old shape stays valid, and still describes the principal
+  // through `config.criterion`/`config.rubric`/`config.models.judge`.
   const text = runMarkdown(
-    run({ config: config({ criterion: "Critère historique du run." }) }),
+    run({ config: config({ criterion: "The run's historical criterion." }) }),
     [sample()],
     [],
   );
-  assert.match(text, /Critère historique du run\./);
+  assert.match(text, /The run's historical criterion\./);
 });
 
-test("le résumé markdown dit que le juge d'éveil était allumé, et son bilan", () => {
+test("the markdown summary says the awareness judge was on, and its outcome", () => {
   const awake = runJudge(
     { id: "awake", system_type: AWAKE_TYPE, criterion: null, rubric: null },
     {
@@ -434,20 +430,20 @@ test("le résumé markdown dit que le juge d'éveil était allumé, et son bilan
     [principal, awake],
   );
   assert.match(text, /\*\*Eval-awareness check\*\* on/);
-  // Même phrase que celle du voyant à l'écran (awarenessSentence) : le
-  // fichier ne doit pas raconter une autre histoire que l'interface.
+  // The same sentence as the on-screen indicator's (awarenessSentence): the file
+  // must not tell a different story from the interface.
   assert.match(text, /1 of 2 conversations showed signs/);
 });
 
-test("le résumé markdown dit clairement quand le juge d'éveil était éteint", () => {
-  // Sans cette ligne, un run lancé juge éteint se lit comme un run
-  // parfaitement sain une fois exporté — le contresens que ce chantier existe
-  // pour éviter, ici transposé au fichier plutôt qu'à l'écran.
+test("the markdown summary says clearly when the awareness judge was off", () => {
+  // Without this line, a run launched with the judge off reads as a perfectly
+  // healthy run once exported — the misreading this project exists to avoid, here
+  // transposed to the file rather than the screen.
   const text = runMarkdown(run({ config: config({ check_eval_awareness: false }) }), [sample()], []);
   assert.match(text, /\*\*Eval-awareness check\*\* off/);
 });
 
-test("rien n'a encore été jugé : le bilan se tait plutôt que d'annoncer 0 sur 0", () => {
+test("nothing has been judged yet: the outcome keeps quiet rather than announcing 0 out of 0", () => {
   const awake = runJudge(
     { id: "awake", system_type: AWAKE_TYPE, criterion: null, rubric: null },
     { scores: { s: verdict({ status: "pending", score: null }) } },
@@ -457,11 +453,10 @@ test("rien n'a encore été jugé : le bilan se tait plutôt que d'annoncer 0 su
   assert.doesNotMatch(text, /0 of 0/);
 });
 
-test("un run d'avant ce champ ne prétend ni allumé ni éteint", () => {
-  // `config()` ne porte pas `check_eval_awareness` par défaut — exactement
-  // l'état d'un run enregistré avant cette fonctionnalité. Affirmer « on »
-  // ici (l'ancien comportement, avec `!== false`) mentirait : ce contrôle n'a
-  // jamais tourné sur ce run.
+test("a run predating this field claims neither on nor off", () => {
+  // `config()` does not carry `check_eval_awareness` by default — exactly the
+  // state of a run recorded before this feature. Asserting "on" here (the old
+  // behaviour, with `!== false`) would lie: that check never ran on this run.
   const text = runMarkdown(run(), [sample()], []);
   assert.doesNotMatch(text, /\*\*Eval-awareness check\*\* on/);
   assert.doesNotMatch(text, /\*\*Eval-awareness check\*\* off/);
