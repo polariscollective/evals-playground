@@ -65,6 +65,29 @@ type système aujourd'hui. D'autres viendront sans nouvelle migration ; ils
 s'ajoutent ici."""
 
 
+class JudgeTarget(BaseModel):
+    """Ce qu'un juge attend d'un scénario : la note qu'un modèle se comportant
+    bien devrait obtenir, et si cette ligne est un contrôle.
+
+    Une note brute ne se lit qu'à côté de l'échelle qui l'a produite, et deux
+    lignes d'une même matrice peuvent être notées par deux juges sur deux
+    échelles sans rapport. Écrire d'avance la note attendue transforme chaque
+    case en un écart à cette note, comparable d'une ligne à l'autre.
+
+    `check` dit : cette ligne doit tomber près de sa cible, sans quoi rien
+    d'autre sur la matrice n'est lisible. Il ajoute un ordre de lecture et une
+    exclusion de tout chiffre calculé sur plusieurs lignes — et ne remplace
+    jamais la distance elle-même.
+
+    Le moteur ne lit ni l'un ni l'autre. Ils traversent le job sans l'atteindre,
+    et surtout sans atteindre le juge : lui donner la cible serait lui donner la
+    réponse.
+    """
+
+    expected: int
+    check: bool = False
+
+
 class Judge(BaseModel):
     """Une ligne de `judges` : la configuration d'un juge, indépendante des
     runs qui l'utilisent — voir `RunJudge` pour la liaison à un run donné.
@@ -104,6 +127,27 @@ class Judge(BaseModel):
     à l'utilisateur, son échelle est fixe de 1 à 10, et sa panne ne coûte
     jamais sa note au juge principal — ces trois propriétés vivent dans le
     code qui construit ce juge, pas ici."""
+
+    sees_system_prompt: bool = True
+    """Si ce juge voit le prompt système du scénario, en tête du transcript.
+
+    `True` est le défaut en base et le comportement d'avant ce champ : aucun
+    run déjà stocké ne change de note. Un défaut à `False` produirait en
+    silence n'importe quoi pour tout critère qui parle des instructions du
+    modèle — le juge noterait contre quelque chose qu'il ne voit pas, sans
+    qu'aucune erreur ne le signale.
+
+    À couper dès que le prompt système énonce ce qu'on note, ce qui est le cas
+    courant : le juge se voit alors souffler la réponse avant d'avoir lu un
+    seul tour. Et c'est pire sur la forme de batch que les guides recommandent
+    — quand l'axe est « la règle est dans le prompt » contre « la règle est
+    retirée », le juge voit une quantité de consigne différente par ligne, donc
+    sa sévérité varie LE LONG DE L'AXE MESURÉ.
+
+    Toujours vrai pour un juge système : le contrôle d'éveil doit voir le
+    prompt pour écarter le cas où le modèle s'est simplement fait dire que
+    c'était un test. C'est `scoring.py` qui applique ce champ, et il ne
+    construit jamais le prompt du juge d'éveil."""
 
     created_by: str
     """Qui a créé ce juge — l'adresse de la session, jamais ce que le client
@@ -297,6 +341,18 @@ class JudgeSpec(BaseModel):
     """Le modèle qui juge, si différent de celui du run (`EvalModels.judge`).
     `None` reprend celui-ci : poser un juge de plus ne devrait pas obliger à
     répéter le même modèle quand c'est bien de lui qu'il s'agit."""
+
+    targets: list[JudgeTarget] | None = None
+    """Ce que ce juge attend de chaque scénario — voir `RunJudge.targets`.
+
+    Le moteur ne le lit jamais : c'est une annotation de laboratoire, comme
+    `EvalScenario.note`, et elle n'atteint aucun modèle. Elle vit ici pour
+    qu'un aller-retour par le job ne la perde pas."""
+
+    sees_system_prompt: bool = True
+    """Si ce juge voit le prompt système du scénario — voir
+    `Judge.sees_system_prompt` pour pourquoi c'est un choix, et pourquoi le
+    défaut est vrai."""
 
     @model_validator(mode="after")
     def _echelle_valide(self) -> "JudgeSpec":
@@ -683,6 +739,22 @@ class EvalRunConfig(BaseModel):
     rien à mesurer. Au-delà, l'utilisateur met ce qu'il veut — `0` et `1`, ou
     `0` à `4`, ou des quarts de point.
     """
+
+    targets: list[JudgeTarget] | None = None
+    """Ce que le juge PRINCIPAL attend de chaque scénario.
+
+    Au niveau supérieur comme `criterion` et `rubric`, et pour la même raison :
+    le principal se décrit ici, les secondaires dans `judges`.
+
+    `None` veut dire que le rédacteur explorait et ne savait pas à quoi
+    ressemble un bon résultat. Tout ou rien : la validation refuse une liste qui
+    ne couvre pas tous les scénarios — six mois plus tard, un trou ne se
+    distingue pas d'un oubli.
+    """
+
+    sees_system_prompt: bool = True
+    """Si le juge PRINCIPAL voit le prompt système du scénario — voir
+    `Judge.sees_system_prompt`."""
 
     judges: list[JudgeSpec] = Field(default_factory=list)
     """Les juges secondaires du run, en plus du principal décrit par

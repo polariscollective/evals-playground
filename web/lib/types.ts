@@ -159,6 +159,26 @@ export interface EvalModels {
  * réels, à l'exclusion de la sentinelle `'ordinary'`. */
 export type JudgeSystemType = "awake";
 
+/** Ce qu'un juge attend d'un scénario : la note qu'un modèle se comportant
+ *  bien devrait obtenir, et si cette ligne est un contrôle.
+ *
+ * Défini ici plutôt que dans `lib/targets.ts`, qui l'utilise : ce fichier est
+ * le domicile des types, et l'inverse ferait tourner les imports en rond.
+ *
+ * `check` absent vaut faux. La plupart des lignes ne sont pas des contrôles, et
+ * écrire `check: false` cent fois serait du bruit.
+ *
+ * Un CONTRÔLE dit : cette ligne doit tomber près de sa cible, sans quoi rien
+ * d'autre sur la matrice n'est lisible. Il ajoute un ordre de lecture et une
+ * exclusion de tout chiffre calculé sur plusieurs lignes — et ne remplace
+ * jamais la distance elle-même. Une ligne de taux de base qui dérive apprend
+ * deux choses à la fois, que le décor pousse tout seul et que le modèle dérive
+ * sans qu'on l'y pousse ; un réussi/raté en effacerait la moitié. */
+export interface JudgeTarget {
+  expected: number;
+  check?: boolean;
+}
+
 /** La valeur réellement stockée dans la colonne `system_type` de `judges` et
  *  `run_judges`, sentinelle comprise : `"ordinary"` pour un juge ordinaire, ou
  *  l'un des types système réels de `JudgeSystemType`.
@@ -207,6 +227,29 @@ export interface Judge {
    *  fixe de 1 à 10, et sa panne ne coûte jamais sa note au juge principal —
    *  ces trois propriétés vivent dans le code qui construit ce juge, pas ici. */
   system_type: JudgeSystemTypeColumn;
+  /** Si ce juge voit le prompt système du scénario, en tête du transcript.
+   *
+   * `true` est le défaut en base et le comportement d'avant ce champ : aucun
+   * run déjà stocké ne change de note. Un défaut à `false` produirait en
+   * silence n'importe quoi pour tout critère qui parle des instructions du
+   * modèle — le juge noterait contre quelque chose qu'il ne voit pas, sans
+   * qu'aucune erreur ne le signale.
+   *
+   * À couper dès que le prompt système énonce ce qu'on note, ce qui est le cas
+   * courant : le juge se voit alors souffler la réponse avant d'avoir lu un
+   * seul tour. Et c'est pire sur la forme de batch que les guides
+   * recommandent — quand l'axe est « la règle est dans le prompt » contre
+   * « la règle est retirée », le juge voit une quantité de consigne différente
+   * par ligne, donc sa sévérité varie LE LONG DE L'AXE MESURÉ.
+   *
+   * Sur `judges` et non sur `RunJudge` : c'est une propriété de la question
+   * posée. Un juge qui demande « a-t-il suivi ses instructions » en a besoin
+   * sur tous les runs auxquels on le liera jamais.
+   *
+   * Toujours `true` pour un juge système : le contrôle d'éveil doit voir le
+   * prompt pour écarter le cas où le modèle s'est simplement fait dire que
+   * c'était un test. */
+  sees_system_prompt: boolean;
   /** Qui a créé ce juge — l'adresse de la session, jamais ce que le client
    *  prétend. */
   created_by: string;
@@ -275,6 +318,25 @@ export interface RunJudge {
    *  `loadLiveRunJudges` (`lib/runs.ts`) — qui porte tout le poids de ne
    *  plus les montrer. */
   deleted_at: string | null;
+  /** Ce qu'un bon modèle aurait dû obtenir sur chaque scénario, dans l'ordre
+   *  de `scenario_index`.
+   *
+   * Ici, sur la LIAISON, et non sur le scénario, pour deux raisons : `Judge`
+   * se réutilise d'un run à l'autre, et les scénarios changent d'un run à
+   * l'autre — « la ligne 3 attend un 0 » n'y aurait aucun sens ; et la même
+   * ligne porte une cible différente selon le juge qui la regarde. Un modèle
+   * coopératif à qui on demande droit de vider un disque doit tomber en haut
+   * de l'échelle de suppression ET en haut de celle d'honnêteté.
+   *
+   * `null` veut dire que le rédacteur explorait et ne savait pas à quoi
+   * ressemble un bon résultat. C'est une vraie réponse, et elle dit que cette
+   * matrice n'est pas faite pour être citée. Jamais partiel : `configProblem`
+   * refuse une liste qui ne couvre pas tous les scénarios — six mois plus
+   * tard, un trou ne se distingue pas d'un oubli.
+   *
+   * Voir `lib/targets.ts` pour la distance à la cible, et pour les trois
+   * idées que le mot « attendu » recouvrait. */
+  targets: JudgeTarget[] | null;
   created_at: string;
 }
 
@@ -383,6 +445,14 @@ export interface JudgeSpec {
    *  Absent reprend celui-ci : poser un juge de plus ne devrait pas obliger à
    *  répéter le même modèle quand c'est bien de lui qu'il s'agit. */
   model?: string | null;
+  /** Ce que ce juge attend de chaque scénario — voir `RunJudge.targets`, où
+   *  ces entrées finissent au lancement. Tout ou rien : absent, ou une entrée
+   *  par scénario. */
+  targets?: JudgeTarget[] | null;
+  /** Si ce juge voit le prompt système du scénario — voir
+   *  `Judge.sees_system_prompt`. Absent vaut `true`, le comportement
+   *  d'aujourd'hui. */
+  sees_system_prompt?: boolean;
 }
 
 export interface TemperatureSpec {
@@ -415,6 +485,16 @@ export interface EvalRunConfig {
   criterion: string;
   /** L'échelle sur laquelle le juge note. Au moins deux paliers. */
   rubric: RubricLevel[];
+  /** Ce que le juge PRINCIPAL attend de chaque scénario — voir
+   *  `RunJudge.targets`, où ces entrées finissent au lancement.
+   *
+   * Au niveau supérieur comme `criterion` et `rubric`, et pour la même
+   * raison : le principal se décrit ici, les secondaires dans `judges`. Tout
+   * ou rien — absent, ou une entrée par scénario. */
+  targets?: JudgeTarget[] | null;
+  /** Si le juge PRINCIPAL voit le prompt système du scénario — voir
+   *  `Judge.sees_system_prompt`. Absent vaut `true`. */
+  sees_system_prompt?: boolean;
   /** Les juges secondaires du run, en plus du principal décrit par
    *  `criterion`, `rubric` et `models.judge` ci-dessus.
    *

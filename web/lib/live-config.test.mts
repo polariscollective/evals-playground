@@ -35,6 +35,7 @@ function judge(
     ],
     model: "claude-opus",
     system_type: "ordinary",
+    sees_system_prompt: true,
     created_by: "quelquun@polaris.example",
     created_at: "2026-09-06T10:00:00Z",
     ...overrides,

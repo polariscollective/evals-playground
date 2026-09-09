@@ -24,17 +24,9 @@
 //
 // Module pur, sans lecture ni écriture : c'est ce qui permet de l'éprouver
 // seul, comme `view.ts` juste à côté.
-import type { RubricLevel } from "./types";
+import type { JudgeTarget, RubricLevel } from "./types";
 
-/** Ce qu'un juge attend d'un scénario : la note d'un bon modèle, et si cette
- *  ligne est un contrôle.
- *
- * `check` absent vaut faux. La majorité des lignes ne sont pas des contrôles,
- * et écrire `check: false` cent fois serait du bruit. */
-export interface JudgeTarget {
-  expected: number;
-  check?: boolean;
-}
+export type { JudgeTarget };
 
 /** Les paliers d'une échelle qui portent une note, le palier « sans objet »
  *  retiré.

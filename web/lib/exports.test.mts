@@ -109,6 +109,7 @@ function judge(overrides: Partial<Judge> = {}): Judge {
     ],
     model: "anthropic/claude-haiku-4-5",
     system_type: "ordinary",
+    sees_system_prompt: true,
     created_by: "quelquun@polaris.example",
     created_at: "2026-09-06T00:00:00.000Z",
     ...overrides,
