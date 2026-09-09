@@ -4,7 +4,7 @@ import { ADVICE_TOPICS, DEFAULT_ADVICE, isAdviceTopic } from "@/lib/advice";
  *
  * The counterpart of `/prompt`, outside the door for the same reason: the
  * point is to give this address to an agent that has no session and would not
- * know how to obtain one. `{{ORIGIN}}/scenarios` — the page showing these same
+ * know how to obtain one. `{{ORIGIN}}/advice` — the page showing these same
  * texts for a human to copy — did not suit that use: it requires a session, and
  * its content only arrives afterwards, through a client call, never in the
  * initial HTML an agent without a browser would read.

@@ -1,12 +1,16 @@
 "use client";
 
-// What one needs to know to write a scenario a model will not recognise as a
-// test.
+// The four advice documents: writing a scenario, putting a batch together,
+// reading the results, writing a judge.
 //
 // The tab is not a library of scenarios — those still live in the run that uses
-// them. It is the place where the knowledge of how to write one lives, and it is
-// the same page that serves to read it, to copy it into an agent, and to rewrite
-// it.
+// them. It is the place where the knowledge of how to run an evaluation here
+// lives, and it is the same page that serves to read it, to copy it into an
+// agent, and to rewrite it.
+//
+// It was called `/scenarios` while there was one document and it was about
+// scenarios. The old address still resolves — see the redirects in
+// `next.config.ts`, and why a public link is not broken lightly.
 //
 // The text shown is the one the MCP tool will serve: a page showing something
 // other than what leaves would be a silent lie, the same one the judge prompt's
@@ -38,7 +42,7 @@ const LABEL: Record<AdviceTopic, string> = {
   judge: "Writing a judge",
 };
 
-export default function ScenariosPage() {
+export default function AdvicePage() {
   // The profile comes from the shared cache: "Evaluate" preloaded it, and the
   // "Profile" page reads the same resource. So we show what we already had, and
   // the re-check happens behind.
@@ -146,7 +150,7 @@ export default function ScenariosPage() {
 
         {/* Holds the document's place while it is not there, at the same edge as
             it — without which the page jumps at the moment it arrives. */}
-      {!loaded && loadError === null && <Loading label="Loading scenario advice" />}
+      {!loaded && loadError === null && <Loading label="Loading the advice" />}
 
       {loaded && (
         <>
@@ -206,12 +210,12 @@ export default function ScenariosPage() {
               : "Public link — anyone can read this, no account needed:"}{" "}
             <code className="rounded bg-zinc-100 px-1">
               {topic === "scenario"
-                ? "/shared/scenarios"
-                : `/shared/scenarios?topic=${topic}`}
+                ? "/shared/advice"
+                : `/shared/advice?topic=${topic}`}
             </code>
             <CopyButton
               value={() =>
-                `${window.location.origin}/shared/scenarios` +
+                `${window.location.origin}/shared/advice` +
                 (topic === "scenario" ? "" : `?topic=${topic}`)
               }
               title="Copy the public link"

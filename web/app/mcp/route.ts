@@ -328,7 +328,7 @@ const handler = createMcpHandler((server) => {
         "results and planted information have to look. Read this before writing " +
         "scenarios — a model that suspects a test behaves differently, and the run " +
         "measures nothing. Returns the caller's own version when they have edited " +
-        "it on the Scenarios page, otherwise the default. This is one of four "
+        "it on the Advice page, otherwise the default. This is one of four "
         + "documents: read_advice serves this one plus how to put a batch together, "
         + "how to read the results, and how to write a judge.",
       inputSchema: z.object({}),
@@ -365,7 +365,7 @@ const handler = createMcpHandler((server) => {
         "the scenario's system prompt, and how to find out whether it agrees with you.\n\n" +
         "Ask for several at once: writing a run wants scenario, batch and judge together. Omit " +
         "`topics` to get all four. Returns the caller's own version of any document they have " +
-        "edited on the Scenarios page, otherwise the default.",
+        "edited on the Advice page, otherwise the default.",
       inputSchema: z.object({
         topics: z
           .array(z.enum(ADVICE_TOPICS))

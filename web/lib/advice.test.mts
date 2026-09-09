@@ -112,3 +112,30 @@ test("the sentence that was withdrawn is gone", () => {
     !DEFAULT_ADVICE.scenario.includes("your reasoning will not be shown to the user"),
   );
 });
+
+
+// --- the sources ----------------------------------------------------------------
+//
+// Each document ends with where its material comes from, so an agent that wants
+// the reasoning behind a rule can go and read it rather than take the rule on
+// trust. A section that quietly disappears takes that with it.
+
+test("every document names its sources", () => {
+  for (const topic of ADVICE_TOPICS) {
+    assert.ok(
+      DEFAULT_ADVICE[topic].includes("## Where this comes from"),
+      `${topic} has no sources section`,
+    );
+    // At least two links: one reference is a citation, not a reading list.
+    const links = DEFAULT_ADVICE[topic].match(/\]\(https:\/\//g) ?? [];
+    assert.ok(links.length >= 2, `${topic} names ${links.length} sources`);
+  }
+});
+
+test("the two documents leaning on a figure cite where it comes from", () => {
+  // The awareness gap and the calibration reference point are the two numbers
+  // these documents quote from elsewhere. A quoted figure with no source is
+  // exactly what the analysis document tells its reader not to accept.
+  assert.ok(DEFAULT_ADVICE.analysis.includes("agentic-misalignment"));
+  assert.ok(DEFAULT_ADVICE.judge.includes("bloom-auto-evals"));
+});

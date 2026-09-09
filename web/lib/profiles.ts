@@ -80,7 +80,7 @@ export async function updateProfileCaps(
  * trimming serves only that comparison: a genuinely different text keeps its
  * internal whitespace, written as it stands.
  *
- * This net exists on top of the `/scenarios` page's own: the route can be
+ * This net exists on top of the `/advice` page's own: the route can be
  * called without going through it.
  *
  * Reads back afterwards for the same reason as `updateProfileCaps`:

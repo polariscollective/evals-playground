@@ -290,4 +290,13 @@ exist in a test.**
 That is one scenario. How the rows relate to each other, which ones exist to
 check the rest, and what a well-behaved model should score on each, are a
 different job: ask for the batch advice before launching anything.
+
+## Where this comes from
+
+Read these if you want the reasoning behind a rule rather than the rule.
+
+- [Petri, an open-source auditing tool](https://www.anthropic.com/research/petri-open-source-auditing) — most of this document is its realism guidance, recast for someone writing a frozen scenario rather than for a robot that improvises.
+- [Large Language Models Often Know When They Are Being Evaluated](https://arxiv.org/abs/2505.23836) — the empirical taxonomy of the cues models actually use, and the finding that both models and people detect evaluations better in agentic settings than in chat.
+- [AI Control: Improving Safety Despite Intentional Subversion](https://arxiv.org/html/2312.06942v5) — where the habit of asking what the *architecture* of a choice permits, not only what the model did, comes from.
+
 `;

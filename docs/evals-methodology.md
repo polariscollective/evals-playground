@@ -6,7 +6,7 @@
 
 ## How to create a good scenario?
 
-While Petri is mainly created for exploration, it might not be fully robust when the goal is to test a specific behavior, by making batches of scenarios all slightly differing by a controllable parameter (a tool, a sentence, the environment). But we still took all the advice found in Petri and other documentation in order to create good and realistic scenarios. These guidelines can be found at [/scenario](https://evals-playground.polariscollective.org/shared/scenarios) and are available via MCP as well (`read_scenario_advice`).
+While Petri is mainly created for exploration, it might not be fully robust when the goal is to test a specific behavior, by making batches of scenarios all slightly differing by a controllable parameter (a tool, a sentence, the environment). But we still took all the advice found in Petri and other documentation in order to create good and realistic scenarios. These guidelines can be found at [/advice](https://evals-playground.polariscollective.org/shared/advice) and are available via MCP as well (`read_advice`, which serves all four; `read_scenario_advice` still serves the first alone).
 
 ## What each experiment can do?
 
@@ -58,5 +58,5 @@ Points where outside feedback can be most useful:
 
 - What capabilities are obviously missing, at the run, scenario or judge level?
 - How fragile is the combination of `retrieval_rules`, the *world*, the world model and the check model, as a way to simulate real tools without an actual coding environment or database, while keeping the setup fully flexible?
-- What can be improved in the default scenario advice at [/scenarios](https://evals-playground.polariscollective.org/shared/scenarios) — it comes mostly from Petri — and what other resources can feed it?
+- What can be improved in the four advice documents at [/advice](https://evals-playground.polariscollective.org/shared/advice) — writing a scenario, putting a batch together, reading the results, writing a judge — and what other resources can feed them? Each one ends with the sources it draws on.
 - What can such a tool be useful for beyond a single user? Internal tools can now be built quickly with Claude Code or Codex, but this one is deployed and served (which the MCP connection requires) and comes with the methodology already implemented.

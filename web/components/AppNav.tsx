@@ -26,7 +26,7 @@ import { PolarisStar } from "@/components/PolarisStar";
 const LINKS = [
   { href: "/", label: "Evaluate" },
   { href: "/runs", label: "Runs" },
-  { href: "/scenarios", label: "Scenarios" },
+  { href: "/advice", label: "Advice" },
   { href: "/settings/connections", label: "Connections" },
 ];
 
