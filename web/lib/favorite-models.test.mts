@@ -10,97 +10,97 @@ import {
 } from "./favorite-models.ts";
 import { knownModelIds } from "./catalog.ts";
 
-test("le modèle d'ouverture existe, et est un favori par défaut", () => {
-  // Les deux moitiés comptent. S'il quittait le catalogue, la page de run
+test("the opening model exists, and is a default favourite", () => {
+  // Both halves count. If it left the catalogue, the run page
   // s'ouvrirait sur un identifiant que rien ne sait lancer ; s'il quittait
-  // les favoris par défaut, elle s'ouvrirait sur un modèle que sa propre
+  // the default favourites, it would open on a model its own
   // liste n'affiche pas — la faute que le repli existe pour rattraper, mais
-  // qu'on ne veut pas déclencher à chaque page vierge.
+  // that we do not want to trigger on every blank page.
   assert.ok(knownModelIds().has(DEFAULT_RUN_MODEL));
   assert.ok(DEFAULT_FAVORITE_MODELS.includes(DEFAULT_RUN_MODEL));
 });
 
-test("le défaut ne nomme que des modèles du catalogue", () => {
-  // Un défaut qui nomme un modèle disparu viderait les menus de tous ceux
-  // qui n'ont jamais touché à leur liste.
+test("the default names only models from the catalogue", () => {
+  // A default naming a vanished model would empty the menus of everyone who
+  // has never touched their list.
   const known = knownModelIds();
   assert.deepEqual(DEFAULT_FAVORITE_MODELS.filter((id) => !known.has(id)), []);
 });
 
-test("le défaut porte dix modèles", () => {
+test("the default carries ten models", () => {
   assert.equal(DEFAULT_FAVORITE_MODELS.length, 10);
 });
 
-test("NULL rend le défaut du code", () => {
+test("NULL returns the code's default", () => {
   // Et non un tableau vide : c'est toute la convention de la colonne.
   assert.deepEqual(favoriteModels({ favorite_models: null }), [...DEFAULT_FAVORITE_MODELS]);
 });
 
-test("un profil illisible rend aussi le défaut", () => {
+test("an unreadable profile also returns the default", () => {
   // Ne pas savoir qui regarde n'est pas une raison de ne rien proposer.
   assert.deepEqual(favoriteModels(null), [...DEFAULT_FAVORITE_MODELS]);
 });
 
-test("une liste écrite rend cette liste", () => {
+test("a written list returns that list", () => {
   assert.deepEqual(
     favoriteModels({ favorite_models: ["grok/grok-4.6"] }),
     ["grok/grok-4.6"],
   );
 });
 
-test("un favori retiré du catalogue depuis est écarté à la lecture", () => {
-  // La liste est écrite à un instant ; le catalogue bouge sans elle. Servir
-  // un identifiant qui n'existe plus mettrait dans un menu une entrée dont
-  // le seul effet serait d'échouer au premier appel facturé.
+test("a favourite since removed from the catalogue is set aside on reading", () => {
+  // The list is written at one moment; the catalogue moves without it. Serving
+  // an identifier that no longer exists would put into a menu an entry whose
+  // only effect would be to fail at the first billed call.
   assert.deepEqual(
     favoriteModels({ favorite_models: ["grok/grok-4.6", "openai/gpt-disparu"] }),
     ["grok/grok-4.6"],
   );
 });
 
-test("une liste dont plus rien n'existe retombe sur le défaut", () => {
+test("a list of which nothing exists any more falls back on the default", () => {
   // Pas un menu vide : l'application deviendrait inutilisable sans qu'on
-  // puisse même deviner pourquoi.
+  // could even guess why.
   assert.deepEqual(
     favoriteModels({ favorite_models: ["openai/gpt-disparu"] }),
     [...DEFAULT_FAVORITE_MODELS],
   );
 });
 
-test("une liste valide est acceptée", () => {
+test("a valid list is accepted", () => {
   assert.equal(favoritesProblem(["anthropic/claude-opus-5", "grok/grok-4.6"]), null);
 });
 
-test("le tableau vide est refusé", () => {
+test("the empty array is refused", () => {
   assert.notEqual(favoritesProblem([]), null);
 });
 
-test("ce qui n'est pas un tableau de chaînes est refusé", () => {
+test("anything that is not an array of strings is refused", () => {
   assert.notEqual(favoritesProblem(null), null);
   assert.notEqual(favoritesProblem("anthropic/claude-opus-5"), null);
   assert.notEqual(favoritesProblem([1, 2]), null);
 });
 
-test("un identifiant hors catalogue est refusé, et nommé", () => {
+test("an identifier outside the catalogue is refused, and named", () => {
   const problem = favoritesProblem(["anthropic/claude-opus-5", "openai/gpt-inconnu"]);
   assert.ok(problem?.includes("openai/gpt-inconnu"));
 });
 
-test("un doublon est refusé", () => {
+test("a duplicate is refused", () => {
   assert.notEqual(
     favoritesProblem(["grok/grok-4.6", "grok/grok-4.6"]),
     null,
   );
 });
 
-test("un favori ne pose aucun problème", () => {
+test("a favourite poses no problem", () => {
   assert.equal(
     notFavouriteProblem("grok/grok-4.6", ["grok/grok-4.6"], "models.judge"),
     null,
   );
 });
 
-test("un modèle du catalogue hors favoris est refusé, en le disant", () => {
+test("a catalogue model outside the favourites is refused, and says so", () => {
   // Le message doit distinguer les deux cas : « pas dans tes favoris » se
   // corrige depuis le profil, « n'existe pas » ne se corrige pas du tout.
   const problem = notFavouriteProblem(
@@ -114,9 +114,9 @@ test("un modèle du catalogue hors favoris est refusé, en le disant", () => {
   assert.ok(problem?.includes("profile"));
 });
 
-test("un modèle qui n'existe nulle part n'est pas l'affaire de cette fonction", () => {
-  // `configProblem` l'a déjà refusé, avec son propre message. Un second
-  // refus dirait « ajoute-le à tes favoris » pour un identifiant qu'aucun
+test("a model that exists nowhere is not this function's business", () => {
+  // `configProblem` has already refused it, with its own message. A second
+  // refusal would say "add it to your favourites" for an identifier no
   // profil ne pourra jamais contenir.
   assert.equal(
     notFavouriteProblem("openai/gpt-inconnu", ["grok/grok-4.6"], "models.judge"),
@@ -124,6 +124,6 @@ test("un modèle qui n'existe nulle part n'est pas l'affaire de cette fonction",
   );
 });
 
-test("une chaîne vide passe : le champ est facultatif", () => {
+test("an empty string passes: the field is optional", () => {
   assert.equal(notFavouriteProblem("", ["grok/grok-4.6"], "models.adversary"), null);
 });
