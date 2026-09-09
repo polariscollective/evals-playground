@@ -1,14 +1,15 @@
 "use client";
 
-/** L'état des filtres de chaque liste, partagé par la page et gardé d'une
- *  visite à l'autre.
+/** The filter state of each list, shared by the page and kept from one visit
+ *  to the next.
  *
- * Un magasin plutôt qu'un `useState` pour une raison précise : la valeur vit
- * dans `localStorage`, que le serveur ne connaît pas. La lire au premier rendu
- * ferait diverger le HTML rendu côté serveur de celui rendu côté client.
- * `useSyncExternalStore` traite ce cas nommément — il rend l'instantané
- * serveur pendant l'hydratation, puis rebascule sur le vrai — là où un effet
- * qui poserait l'état après coup vaudrait un rendu de plus et un
+ * A store rather than a `useState` for a precise reason: the value lives in
+ * `localStorage`, which the server does not know. Reading it on the first
+ * render would make the HTML rendered on the server diverge from the one
+ * rendered on the client. `useSyncExternalStore` handles that case by name — it
+ * returns the server snapshot during hydration, then switches to the real one —
+ * where an effect setting the state after the fact would cost one more render
+ * and a
  * avertissement de React.
  */
 
@@ -28,8 +29,8 @@ import {
   type FilterState,
 } from "./run-filters";
 
-/** Des références constantes : `useSyncExternalStore` compare les instantanés
- *  par identité, et un objet neuf à chaque appel ferait boucler le rendu. */
+/** Constant references: `useSyncExternalStore` compares snapshots by identity,
+ *  and a fresh object at every call would loop the render. */
 const SERVER: Record<FilterMode, { state: FilterState }> = {
   runs: { state: defaultState("runs") },
   drafts: { state: defaultState("drafts") },
@@ -40,7 +41,7 @@ const stores = {
   drafts: createStore(SERVER.drafts),
 };
 
-/** `localStorage` n'est lu qu'une fois par liste, à la première demande. */
+/** `localStorage` is read once per list, on the first request. */
 const loaded: Record<FilterMode, boolean> = { runs: false, drafts: false };
 
 function snapshot(mode: FilterMode): { state: FilterState } {
@@ -56,29 +57,29 @@ function commit(mode: FilterMode, next: FilterState): void {
   writeState(mode, next);
 }
 
-/** Fait tourner un bouton de dimension : un côté, l'autre, les deux. */
+/** Rotates a dimension button: one side, the other, both. */
 export function cycleDim(mode: FilterMode, key: DimensionKey): void {
   commit(mode, cycleDimension(stores[mode].get().state, key));
 }
 
-/** Tout montrer : aucune dimension réduite, aucun tag éteint.
+/** Show everything: no dimension collapsed, no tag switched off.
  *
  * Distinct du geste ci-dessous, et c'est la distinction qui compte. « Tout
- * montrer » et « revenir aux réglages de départ » ne donnent pas le même
- * écran : les défauts masquent délibérément les runs d'agent et les brouillons
- * déjà lancés. Un seul bouton pour les deux aurait fait passer un choix pour
+ * everything" and "go back to the starting settings" do not give the same
+ * screen: the defaults deliberately hide agent runs and drafts already
+ * launched. A single button for both would have made a choice look like
  * une absence de choix. */
 export function clearFilters(mode: FilterMode): void {
   commit(mode, OPEN);
 }
 
-/** Revenir aux réglages de départ — ceux que la page choisit d'appliquer à la
- *  première visite. */
+/** Go back to the starting settings — the ones the page chooses to apply on
+ *  the first visit. */
 export function defaultFilters(mode: FilterMode): void {
   commit(mode, defaultState(mode));
 }
 
-/** Allume ou éteint un tag, ou un statut. */
+/** Switches a tag, or a status, on or off. */
 export function toggleTag(mode: FilterMode, label: string): void {
   commit(mode, toggleOff(stores[mode].get().state, label));
 }

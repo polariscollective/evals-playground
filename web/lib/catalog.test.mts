@@ -1,5 +1,5 @@
-// Le catalogue tient-il debout ? Un modèle proposé sans tarif serait compté
-// pour zéro par le devis — un run annoncé gratuit et facturé plein.
+// Does the catalogue hold up? A model offered with no price would be counted
+// as zero by the quote — a run announced free and billed in full.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { catalog, knownModelIds } from "./catalog.ts";
@@ -7,34 +7,34 @@ import { SHARED_PRICING } from "./shared.ts";
 
 const NO_FAVOURITES: string[] = [];
 
-test("chaque modèle proposé a un tarif", () => {
+test("every model offered has a price", () => {
   const priced = new Set(Object.keys(SHARED_PRICING.prices));
   const unpriced = [...knownModelIds()].filter((id) => !priced.has(id));
   assert.deepEqual(unpriced, []);
 });
 
-test("aucun tarif ne traîne sans modèle qui le porte", () => {
-  // L'inverse compte autant : un tarif orphelin est le reste d'un modèle
-  // retiré, et il fera croire à une couverture qui n'existe plus.
+test("no price is left lying without a model carrying it", () => {
+  // The converse counts as much: an orphaned price is the remains of a model
+  // that was removed, and it will suggest a coverage that no longer exists.
   const known = knownModelIds();
   const orphans = Object.keys(SHARED_PRICING.prices).filter((id) => !known.has(id));
   assert.deepEqual(orphans, []);
 });
 
-test("les quatre fournisseurs sont là, dans l'ordre", () => {
+test("the four providers are there, in order", () => {
   assert.deepEqual(
     catalog(NO_FAVOURITES).map((p) => p.id),
     ["anthropic", "openai", "grok", "google"],
   );
 });
 
-test("le catalogue porte quarante et un modèles", () => {
+test("the catalogue carries forty-one models", () => {
   assert.equal(knownModelIds().size, 41);
 });
 
-test("les sept modèles qui jettent la température sont marqués", () => {
-  // Marqués et non retirés : un run à température fixe sur eux est
-  // légitime, c'est le balayage qui ne mesurerait rien.
+test("the seven models that discard temperature are marked", () => {
+  // Marked and not removed: a fixed-temperature run on them is legitimate; it
+  // is the sweep that would measure nothing.
   const ignoring = catalog(NO_FAVOURITES)
     .flatMap((p) => p.models)
     .filter((m) => !m.honours_temperature)
@@ -51,14 +51,14 @@ test("les sept modèles qui jettent la température sont marqués", () => {
   ]);
 });
 
-test("un modèle sans marque honore la température", () => {
+test("a model with no mark honours temperature", () => {
   const haiku = catalog(NO_FAVOURITES)
     .flatMap((p) => p.models)
     .find((m) => m.id === "anthropic/claude-haiku-4-5");
   assert.equal(haiku?.honours_temperature, true);
 });
 
-test("les favoris passés sont marqués, et eux seuls", () => {
+test("the favourites passed in are marked, and only those", () => {
   const marked = catalog(["anthropic/claude-opus-5", "grok/grok-4.6"])
     .flatMap((p) => p.models)
     .filter((m) => m.favorite)

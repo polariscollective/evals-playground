@@ -1,34 +1,34 @@
 // Le budget qu'un appelant MCP peut lancer, en dollars.
 //
-// Deux plafonds, propres à chaque personne plutôt qu'identiques pour tout le
-// monde : un lancement pris seul, et ce qu'un même appelant a lancé par MCP
-// sur l'heure qui vient de s'écouler. Ils vivent dans son profil — voir
+// Two caps, belonging to each person rather than identical for everyone: one
+// launch taken alone, and what the same caller has launched through MCP over
+// the hour just gone. They live in their profile — see
 // `profiles.ts` — jamais dans une variable d'environnement : deux endroits
-// qui prétendent dire la même limite finiraient par ne plus être d'accord.
-// Rien ici ne parle à Supabase — cette lecture vit dans `profiles.ts`, la
+// claiming to state the same limit would end up disagreeing. Nothing here
+// talks to Supabase — that read lives in `profiles.ts`, the
 // seule qui connaisse la forme de la table — si bien que tout ce fichier
-// tient dans `node --test`, exactement comme `mcp-grants.ts` à côté de
+// fits inside `node --test`, exactly like `mcp-grants.ts` beside
 // `mcp-auth.ts`.
 
-/** Formaté pour un message lu par un agent : deux décimales, quatre en
+/** Formatted for a message read by an agent: two decimals, four when
  *  dessous du centime pour qu'un devis minuscule ne s'affiche pas « $0.00 ».
- *  Exporté : c'est aussi ce que `launch_draft` écrit dans sa réponse de
- *  succès, pour ne pas dupliquer la même règle d'arrondi à deux endroits. */
+ *  Exported: it is also what `launch_draft` writes in its success response, so
+ *  as not to duplicate the same rounding rule in two places. */
 export function formatUsd(amount: number): string {
   return `$${amount >= 0.01 || amount === 0 ? amount.toFixed(2) : amount.toFixed(4)}`;
 }
 
-/** La décision — « ce devis passe-t-il, compte tenu de ce qui est déjà
- *  dépensé ? » — séparée de la lecture du profil qui la nourrit. `null` si le
+/** The decision — "does this quote pass, given what is already spent?" —
+ *  separated from the profile read that feeds it. `null` if the
  *  lancement passe ; sinon le message de refus, en anglais parce que c'est un
  *  agent qui le lit, avec le chiffre en cause, le plafond, et ce que
  *  l'appelant peut en faire.
  *
- * Le plafond par run est vérifié avant celui par heure : un devis qui le
- * dépasse déjà à lui seul n'a pas besoin qu'on sache ce qui a été dépensé
- * avant pour être refusé. Les deux plafonds sont ceux du profil de
- * l'appelant — cette fonction ne sait pas d'où ils viennent, seulement
- * qu'ils sont les siens : d'où « your » plutôt que « the » dans les deux
+ * The per-run cap is checked before the per-hour one: a quote that exceeds it
+ * on its own does not need what was spent before to be known in order to be
+ * refused. Both caps are those of the caller's profile — this function does not
+ * know where they come from, only that they are theirs: hence "your" rather
+ * than "the" in both
  * messages. */
 export function budgetProblem(
   quoteUsd: number,

@@ -1,14 +1,15 @@
-// Un écrivain ZIP minimal, sans dépendance.
+// A minimal ZIP writer, with no dependency.
 //
-// Le détail d'un run tient en deux fichiers qui ne se mélangent pas : un CSV
+// A run's detail fits in two files that do not mix: a CSV
 // d'une ligne par case, et un Markdown qui porte ce qui vaut pour tout le run —
-// les notes, les outils, la configuration. Les proposer séparément obligerait à
-// cliquer deux fois et à se souvenir du second ; une archive les tient ensemble.
+// the grades, the tools, the configuration. Offering them separately would
+// mean clicking twice and remembering the second; an archive holds them
+// together.
 //
-// Écrit à la main plutôt qu'avec une bibliothèque : le format « stocké », sans
+// Written by hand rather than with a library: the "stored" format, with no
 // compression, tient en trois structures, et Node sait calculer le CRC32 depuis
 // la version 20. Deux fichiers de quelques centaines de kilo-octets ne gagnent
-// rien à être compressés au prix d'une dépendance de plus.
+// nothing from being compressed at the price of one more dependency.
 import { crc32 } from "node:zlib";
 
 interface Entry {
@@ -20,9 +21,9 @@ interface Entry {
 
 /** Date et heure au format MS-DOS, que le format impose.
  *
- * Figées à 1980-01-01, la première date représentable : l'horodatage réel
- * ferait que deux archives du même run diffèrent octet pour octet, ce qui
- * empêcherait de vérifier qu'un export est reproductible. */
+ * Frozen at 1980-01-01, the first representable date: a real timestamp would
+ * make two archives of the same run differ byte for byte, which would stop an
+ * export being checked as reproducible. */
 const DOS_TIME = 0;
 const DOS_DATE = 0x0021;
 
@@ -30,16 +31,16 @@ function localHeader(entry: Entry): Buffer {
   const name = Buffer.from(entry.name, "utf8");
   const head = Buffer.alloc(30);
   head.writeUInt32LE(0x04034b50, 0); // signature
-  head.writeUInt16LE(20, 4); // version nécessaire
+  head.writeUInt16LE(20, 4); // version needed
   head.writeUInt16LE(0x0800, 6); // drapeau : noms en UTF-8
-  head.writeUInt16LE(0, 8); // méthode : stocké
+  head.writeUInt16LE(0, 8); // method: stored
   head.writeUInt16LE(DOS_TIME, 10);
   head.writeUInt16LE(DOS_DATE, 12);
   head.writeUInt32LE(entry.crc, 14);
   head.writeUInt32LE(entry.data.length, 18);
   head.writeUInt32LE(entry.data.length, 22);
   head.writeUInt16LE(name.length, 26);
-  head.writeUInt16LE(0, 28); // pas de champ supplémentaire
+  head.writeUInt16LE(0, 28); // no extra field
   return Buffer.concat([head, name]);
 }
 
@@ -47,8 +48,8 @@ function centralEntry(entry: Entry): Buffer {
   const name = Buffer.from(entry.name, "utf8");
   const head = Buffer.alloc(46);
   head.writeUInt32LE(0x02014b50, 0);
-  head.writeUInt16LE(20, 4); // version d'écriture
-  head.writeUInt16LE(20, 6); // version nécessaire
+  head.writeUInt16LE(20, 4); // version made by
+  head.writeUInt16LE(20, 6); // version needed
   head.writeUInt16LE(0x0800, 8);
   head.writeUInt16LE(0, 10);
   head.writeUInt16LE(DOS_TIME, 12);
@@ -66,7 +67,7 @@ function centralEntry(entry: Entry): Buffer {
   return Buffer.concat([head, name]);
 }
 
-/** Une archive contenant les fichiers donnés, sans compression. */
+/** An archive containing the given files, uncompressed. */
 export function zip(files: { name: string; content: string }[]): Buffer {
   const morceaux: Buffer[] = [];
   const entries: Entry[] = [];
@@ -92,7 +93,7 @@ export function zip(files: { name: string; content: string }[]): Buffer {
   const end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0);
   end.writeUInt16LE(0, 4); // disque
-  end.writeUInt16LE(0, 6); // disque du répertoire
+  end.writeUInt16LE(0, 6); // directory's disk
   end.writeUInt16LE(entries.length, 8);
   end.writeUInt16LE(entries.length, 10);
   end.writeUInt32LE(centralSize, 12);

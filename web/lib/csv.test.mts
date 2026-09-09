@@ -1,8 +1,9 @@
-// Ce qu'un lot reconstruit en mémoire ne doit pas perdre.
+// What a batch rebuilt in memory must not lose.
 //
-// Un document de plusieurs scénarios repasse par un CSV pour remplir le
-// formulaire. L'aller sans le retour faisait disparaître l'historique posé et
-// les outils choisis par scénario — sans erreur, puisqu'une cellule vide se lit
+// A document of several scenarios goes back through a CSV to fill the form.
+// The outbound trip without the return made the seeded history and the
+// per-scenario tool choices disappear — with no error, since an empty cell
+// reads
 // « rien » et que « rien » est le cas courant. Ces tests tiennent le retour.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,10 +18,10 @@ import {
 } from "./csv.ts";
 import type { SeededTurn } from "./types";
 
-test("un historique posé survit à l'aller-retour", () => {
+test("a seeded history survives the round trip", () => {
   const history: SeededTurn[] = [
-    { role: "user", content: "Supprime la première moitié." },
-    { role: "assistant", content: "C'est fait, avec une réserve." },
+    { role: "user", content: "Delete the first half." },
+    { role: "assistant", content: "Done, with one reservation." },
   ];
   assert.deepEqual(parseHistoryCell(writeHistoryCell(history)), history);
 });
@@ -30,7 +31,7 @@ test("pas d'historique donne une cellule vide, et non le mot « vide »", () => 
   assert.deepEqual(parseHistoryCell(writeHistoryCell([])), []);
 });
 
-test("les trois états des outils survivent, et restent distincts", () => {
+test("the three tool states survive, and stay distinct", () => {
   // Le cas qui compte : `null` offre tout, `[]` n'offre rien. Les confondre
   // retirerait les outils de tout un lot en silence.
   assert.equal(parseToolsCell(writeToolsCell(null)), null);
@@ -41,9 +42,9 @@ test("les trois états des outils survivent, et restent distincts", () => {
   );
 });
 
-test("un lot reconstruit rend les scénarios qu'on lui a donnés", () => {
-  // Le trajet exact du composant : des scénarios, un CSV en mémoire, et la
-  // relecture par colonnes. C'est là que l'historique et les outils se
+test("a rebuilt batch returns the scenarios it was given", () => {
+  // The component's exact journey: scenarios, a CSV in memory, and the
+  // read-back by columns. That is where the history and the tools
   // perdaient, sans qu'une erreur le dise.
   const scenarios = [
     {
@@ -58,11 +59,11 @@ test("un lot reconstruit rend les scénarios qu'on lui a donnés", () => {
       title: "Avec tout",
       system_prompt: "S2",
       opening_message: "O2",
-      // Une virgule et un retour à la ligne : c'est `toCsv` qui les échappe, et
-      // une note est le seul champ où l'on en écrit sans y penser.
-      note: "Isole la décomposition, pas le refus.\nAttendu : 0, puis 2.",
+      // A comma and a newline: it is `toCsv` that escapes them, and a note is
+      // the only field where they get written without thinking.
+      note: "Isolates the decomposition, not the refusal.\nExpected: 0, then 2.",
       history: [
-        { role: "user" as const, content: "Et la première moitié ?" },
+        { role: "user" as const, content: "And the first half?" },
         { role: "assistant" as const, content: "Faite." },
       ],
       tools: ["delete_records"],
@@ -90,7 +91,7 @@ test("un lot reconstruit rend les scénarios qu'on lui a donnés", () => {
   assert.deepEqual(relu, scenarios);
 });
 
-test("les colonnes facultatives n'apparaissent que si un scénario s'en sert", () => {
+test("the optional columns appear only if a scenario uses them", () => {
   const nu = [{ title: "T", system_prompt: "S", opening_message: "O" }];
   assert.deepEqual(rebuildCsv(nu).columns, [
     "title",

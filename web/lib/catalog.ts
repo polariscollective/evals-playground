@@ -1,5 +1,5 @@
-// Le catalogue des modèles proposés, avec leurs tarifs. Partagé avec Python —
-// voir `shared/pricing.json`.
+// The catalogue of models offered, with their prices. Shared with Python — see
+// `shared/pricing.json`.
 import { SHARED_PRICING } from "./shared.ts";
 import type { ProviderInfo } from "./types";
 
@@ -7,36 +7,36 @@ const PROVIDER_ENV: Record<string, string[]> = Object.fromEntries(
   SHARED_PRICING.providers.map((p) => [p.id, p.env_vars]),
 );
 
-/** Les clés de fournisseur sont-elles seulement visibles d'ici ?
+/** Are the provider keys even visible from here?
  *
- * Elles ne vivent que là où tournent les modèles : dans les secrets du Cloud
- * Run Job. L'application déployée n'en a aucune, et ne peut donc rien dire de
- * leur présence. En développement, elles sont dans le `.env` et l'information
- * est réelle — c'est ce cas-là que cette fonction sert. */
+ * They live only where the models run: in the Cloud Run Job's secrets. The
+ * deployed application has none, and can therefore say nothing about their
+ * presence. In development they are in the `.env` and the information is real —
+ * that is the case this function serves. */
 function canSeeProviderKeys(): boolean {
   return Object.values(PROVIDER_ENV)
     .flat()
     .some((name) => Boolean(process.env[name]));
 }
 
-/** Les identifiants que ce produit sait lancer, à plat.
+/** The identifiers this product knows how to launch, flat.
  *
- * Séparée de `catalog()`, qui fait en plus un travail d'écran — griser un
- * fournisseur dont la clé manque — et lit pour ça l'environnement. Ici on ne
- * répond qu'à « cet identifiant existe-t-il ? », ce qui rend la fonction
- * testable et utilisable depuis la validation, où l'environnement du
- * serveur web ne dit rien de ce dont dispose le job. */
+ * Separated from `catalog()`, which also does screen work — greying out a
+ * provider whose key is missing — and reads the environment for it. Here we
+ * answer only "does this identifier exist?", which makes the function testable
+ * and usable from validation, where the web server's environment says nothing
+ * about what the job has. */
 export function knownModelIds(): Set<string> {
   return new Set(
     SHARED_PRICING.providers.flatMap((provider) => provider.models.map((model) => model.id)),
   );
 }
 
-/** Le catalogue tel qu'un écran l'affiche, marqué pour qui regarde.
+/** The catalogue as a screen shows it, marked for whoever is looking.
  *
- * `favorites` est exigé plutôt que facultatif : chaque appelant a une
- * réponse à cette question — les favoris de l'appelant, ou le défaut du
- * code pour une route publique — et un défaut implicite ici ferait passer
+ * `favorites` is required rather than optional: every caller has an answer to
+ * that question — the caller's favourites, or the code's default for a public
+ * route — and an implicit default here would make
  * l'oubli pour un choix. */
 export function catalog(favorites: readonly string[]): ProviderInfo[] {
   const informed = canSeeProviderKeys();
@@ -45,9 +45,9 @@ export function catalog(favorites: readonly string[]): ProviderInfo[] {
     id: provider.id,
     label: provider.label,
     env_vars: provider.env_vars,
-    // Quand on ne peut pas savoir, on ne grise pas : une clé manquante se
-    // verra de toute façon, en cases rouges portant l'erreur du fournisseur.
-    // Griser à tort empêcherait de lancer un run parfaitement valide.
+    // When we cannot know, we do not grey out: a missing key will show anyway,
+    // as red cells carrying the provider's error. Greying out wrongly would
+    // stop a perfectly valid run being launched.
     key_present: informed
       ? provider.env_vars.some((name) => Boolean(process.env[name]))
       : true,
@@ -59,8 +59,8 @@ export function catalog(favorites: readonly string[]): ProviderInfo[] {
         label: model.label,
         input_per_mtok: price?.input_per_mtok ?? null,
         output_per_mtok: price?.output_per_mtok ?? null,
-        // Absent vaut « oui » : la marque ne sert qu'à signaler l'exception,
-        // et l'écrire sur trente-quatre entrées pour sept cas noierait le
+        // Absent means "yes": the mark serves only to report the exception,
+        // and writing it on thirty-four entries for seven cases would drown the
         // signal dans le bruit.
         honours_temperature: declared !== false,
         favorite: preferred.has(model.id),
