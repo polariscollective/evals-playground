@@ -79,7 +79,7 @@ test("an empty body passes: nothing to cross", () => {
   assert.equal(profilePatchProblem({}), null);
 });
 
-test("favorite_models ne voyage pas avec les plafonds", () => {
+test("favorite_models does not travel with the caps", () => {
   // The same reason as the scenario advice: the route applies one thing or the
   // other, and choosing which to overwrite would be arbitrary for the sender.
   assert.notEqual(

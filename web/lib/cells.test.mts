@@ -1,7 +1,6 @@
 // The building of the matrix, which lived on the Python side until the job
-// cesse de la reconstruire depuis la configuration. Les cas de forme et de
-// temperature come from `tests/test_eval_task.py`, the extension ones are
-// neufs.
+// stopped rebuilding it from the configuration. The shape and temperature cases
+// come from `tests/test_eval_task.py`, the extension ones are new.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cellsForExtension, cellsForRun, coupleKey } from "./cells.ts";
@@ -135,8 +134,8 @@ test("each pair picks up where it is, independently of the others", () => {
 
 test("the spread applies to the added repetitions, not to the total", () => {
   // Three more on a run that already had three: the new ones spread between the
-  // bounds asked for now. The old ones keep theirs, which
-  // est inscrite sur leur ligne et que ce code ne touche pas.
+  // bounds asked for now. The old ones keep theirs, which is written on their row
+  // and which this code does not touch.
   const cells = cellsForExtension(
     [scenario("A")],
     [0],

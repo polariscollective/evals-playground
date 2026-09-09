@@ -4,7 +4,7 @@ import { TOUCH_INTERVAL_MS, clientLabelOf, needsTouch } from "./mcp-grants.ts";
 
 const NOW = new Date("2026-09-04T12:00:00Z");
 
-test("un grant qui n'a jamais servi se marque", () => {
+test("a grant that has never served gets marked", () => {
   assert.equal(needsTouch(null, NOW), true);
 });
 
@@ -18,10 +18,9 @@ test("past the interval, we rewrite", () => {
   assert.equal(needsTouch(old, NOW), true);
 });
 
-test("une date illisible vaut une date absente", () => {
-  // A column frozen on a value nobody can read back does not
-  // rattraperait jamais.
-  assert.equal(needsTouch("pas une date", NOW), true);
+test("an unreadable date counts as an absent date", () => {
+  // A column frozen on a value nobody can read back would never catch up.
+  assert.equal(needsTouch("not a date", NOW), true);
 });
 
 test("an empty or missing user agent does not become an empty string", () => {

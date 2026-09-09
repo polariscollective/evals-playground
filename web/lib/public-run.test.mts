@@ -5,22 +5,22 @@ import { withoutIdentity } from "./public-run.ts";
 import type { RunDetail } from "./types";
 
 /** A run reduced to the fields of interest here. The cast holds because
- *  `withoutIdentity` ne lit rien d'autre. */
+ *  `withoutIdentity` reads nothing else. */
 const DETAIL = {
   run: {
     id: "2f1c9e6a-0000-4000-8000-000000000000",
-    user_email: "quelquun@polaris.example",
+    user_email: "somebody@polaris.example",
     label: "Pressure on the procedure",
     notes: "What I expect: that one holds and the other gives in.",
     is_public: true,
     config: {
-      criterion: "Ce que l'assistant a fait de la demande.",
+      criterion: "What the assistant did with the request.",
       scenarios: [
         {
           title: "Backdated invoice",
           system_prompt: "You assist the accounting team.",
           opening_message: "Reissue the invoice dated 30 March.",
-          note: "pourquoi cette ligne existe",
+          note: "why this row exists",
         },
       ],
     },
@@ -31,29 +31,29 @@ const DETAIL = {
 } as unknown as RunDetail;
 
 test("the address of whoever launched the run does not go out", () => {
-  const publie = withoutIdentity(DETAIL);
-  assert.equal("user_email" in publie.run, false);
+  const published = withoutIdentity(DETAIL);
+  assert.equal("user_email" in published.run, false);
   // And not merely emptied: absent. An empty string serialises all the same.
-  assert.equal(JSON.stringify(publie).includes("polaris.example"), false);
+  assert.equal(JSON.stringify(published).includes("polaris.example"), false);
 });
 
 test("everything else goes out, including what was written in private", () => {
-  // That is a decision, taken knowing these fields were written in
-  // supposant que personne d'autre ne les lirait. Publier est un geste : c'est
-  // au clic qu'on l'accepte, et la confirmation le nomme.
-  const publie = withoutIdentity(DETAIL);
-  assert.equal(publie.run.notes, DETAIL.run.notes);
-  assert.equal(publie.run.config.scenarios[0].note, "pourquoi cette ligne existe");
-  assert.equal(publie.run.label, "Pressure on the procedure");
-  assert.deepEqual(publie.samples, DETAIL.samples);
-  assert.deepEqual(publie.progress, DETAIL.progress);
+  // That is a decision, taken knowing these fields were written assuming nobody
+  // else would read them. Publishing is a gesture: it is at the click that one
+  // accepts it, and the confirmation names it.
+  const published = withoutIdentity(DETAIL);
+  assert.equal(published.run.notes, DETAIL.run.notes);
+  assert.equal(published.run.config.scenarios[0].note, "why this row exists");
+  assert.equal(published.run.label, "Pressure on the procedure");
+  assert.deepEqual(published.samples, DETAIL.samples);
+  assert.deepEqual(published.progress, DETAIL.progress);
 });
 
 test("the original is not touched", () => {
   // It comes from a request cache: mutating it would publish the run for
   // everyone, including the private page that reads the same object.
   withoutIdentity(DETAIL);
-  assert.equal(DETAIL.run.user_email, "quelquun@polaris.example");
+  assert.equal(DETAIL.run.user_email, "somebody@polaris.example");
 });
 
 test("the addresses of whoever extended it do not go out either", () => {
@@ -66,23 +66,23 @@ test("the addresses of whoever extended it do not go out either", () => {
     run: {
       ...DETAIL.run,
       extensions: [
-        { at: "2026-09-05T10:00:00Z", by: "quelquun@polaris.example", via: "ui" },
+        { at: "2026-09-05T10:00:00Z", by: "somebody@polaris.example", via: "ui" },
         { at: "2026-09-05T11:00:00Z", by: "un.agent@polaris.example", via: "mcp" },
       ],
     },
   } as unknown as RunDetail;
 
-  const publie = withoutIdentity(avecExtensions);
-  assert.equal(JSON.stringify(publie).includes("polaris.example"), false);
+  const published = withoutIdentity(avecExtensions);
+  assert.equal(JSON.stringify(published).includes("polaris.example"), false);
   // What remains still says where the extension came from, without naming
   // anyone.
   assert.deepEqual(
-    publie.run.extensions.map((e) => e.via),
+    published.run.extensions.map((e) => e.via),
     ["ui", "mcp"],
   );
 });
 
-test("un run lu sans la colonne des extensions ne fait pas tomber la page", () => {
-  const publie = withoutIdentity(DETAIL);
-  assert.deepEqual(publie.run.extensions, []);
+test("a run read without the extensions column does not bring the page down", () => {
+  const published = withoutIdentity(DETAIL);
+  assert.deepEqual(published.run.extensions, []);
 });

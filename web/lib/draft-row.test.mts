@@ -42,7 +42,7 @@ test("an incomplete draft shows zeros rather than falling over", () => {
 });
 
 test("an extension shows what it ADDS, marked with a plus", () => {
-  // Sans le « + », on lirait la taille finale du run, qu'on n'a pas ici.
+  // Without the "+", one would read the run's final size, which we do not have here.
   assert.equal(draftShape(extendDraft()), "+2 × 1 × 1");
 });
 
@@ -51,8 +51,8 @@ test("a run draft's rocket leads to the pre-filled form", () => {
 });
 
 test("an extension's leads to its run's page, panel open", () => {
-  // An extension is not launched from the form: it is added to a
-  // run, et c'est sur ce run qu'elle se relit.
+  // An extension is not launched from the form: it is added to a run, and it is
+  // on that run that it reads back.
   assert.equal(draftDestination(extendDraft()), "/eval/r1?extend=d1");
 });
 

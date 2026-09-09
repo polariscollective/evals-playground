@@ -84,10 +84,10 @@ test("models.world outside the favourites is refused", () => {
 });
 
 test("a model that exists nowhere is not refused here", () => {
-  // `configProblem` s'en charge, avec son propre message. Deux refus pour la
+  // `configProblem` takes care of it, with its own message. Two refusals for the
   // same fault would send you to fix a profile that is not to blame.
   assert.equal(
-    configFavouritesProblem(config({ judge: "openai/gpt-inconnu" }), FAVOURITES),
+    configFavouritesProblem(config({ judge: "openai/gpt-unknown" }), FAVOURITES),
     null,
   );
 });
@@ -99,7 +99,7 @@ test("a missing adversary is no problem", () => {
   );
 });
 
-test("une extension aux cibles en favoris passe", () => {
+test("an extension whose targets are favourites passes", () => {
   const request = { targets: ["grok/grok-4.6"] } as unknown as ExtendRequest;
   assert.equal(extendFavouritesProblem(request, FAVOURITES), null);
 });
@@ -140,9 +140,9 @@ test("an extension's world outside the favourites is refused", () => {
 
 test("configProblem, for its part, knows nothing of the favourites", () => {
   // The work's boundary, held by a test rather than by goodwill: the day
-  // somebody wires the favourites into `validate.ts`,
-  // une relance humaine d'un vieux run cesserait de partir, et c'est ici
-  // is where it will be learnt, rather than in production.
+  // somebody wires the favourites into `validate.ts`, a human relaunch of an old
+  // run would stop going out, and it is here that this will be learnt, rather
+  // than in production.
   const outsideButReal = config({ judge: "openai/gpt-4o" });
   assert.equal(configProblem(outsideButReal), null);
   assert.notEqual(configFavouritesProblem(outsideButReal, FAVOURITES), null);

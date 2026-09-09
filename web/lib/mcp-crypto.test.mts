@@ -1,5 +1,5 @@
-// Le calcul, pas le stockage : `mcp-auth.ts` est `server-only` et vit hors de
-// reach of `node --test`, which does not resolve that specifier.
+// The computation, not the storage: `mcp-auth.ts` is `server-only` and lives
+// out of reach of `node --test`, which does not resolve that specifier.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { challengeOf, hashOf, newToken, pkceMatches, safeEqual } from "./mcp-crypto.ts";
@@ -16,10 +16,10 @@ test("hashOf is deterministic", () => {
 });
 
 test("hashOf tells two different values apart", () => {
-  assert.notEqual(hashOf("un secret"), hashOf("un autre"));
+  assert.notEqual(hashOf("a secret"), hashOf("another"));
 });
 
-test("challengeOf reproduit le vecteur de test de la RFC 7636", () => {
+test("challengeOf reproduces RFC 7636's test vector", () => {
   // Appendix B of the RFC: a published verifier/challenge pair, not made here.
   assert.equal(
     challengeOf("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
@@ -45,5 +45,5 @@ test("safeEqual says false for two different strings of equal length", () => {
 });
 
 test("safeEqual says false for two different lengths", () => {
-  assert.equal(safeEqual("court", "beaucoup plus long"), false);
+  assert.equal(safeEqual("short", "a great deal longer"), false);
 });

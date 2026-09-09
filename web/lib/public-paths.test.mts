@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isOpen, proxyMatcher } from "./public-paths.ts";
 
-test("les chemins ouverts passent la porte sans session", () => {
+test("the open paths go through the door with no session", () => {
   for (const path of [
     "/prompt",
     "/validate",
@@ -18,8 +18,8 @@ test("les chemins ouverts passent la porte sans session", () => {
     "/favicon.ico",
     "/icon.svg",
     "/_next/static/chunks/main.js",
-    // Without the query string: `isOpen` takes a `pathname`, like the
-    // `matcher` de Next — la query n'en fait jamais partie.
+    // Without the query string: `isOpen` takes a `pathname`, like Next's
+    // `matcher` — the query is never part of it.
     "/_next/image",
     "/mcp",
     "/mcp/authorize",
@@ -32,7 +32,7 @@ test("les chemins ouverts passent la porte sans session", () => {
 });
 
 test("their prefix neighbours stay closed", () => {
-  // Sans ancrage, `/validatex` et `/sharedx` s'ouvriraient avec leurs voisins.
+  // With no anchor, `/validatex` and `/sharedx` would open along with their neighbours.
   for (const path of [
     "/",
     "/eval/abc",
@@ -54,7 +54,7 @@ test("their prefix neighbours stay closed", () => {
 });
 
 test("the proxy's literal is exactly the one the list produces", () => {
-  // Next exige que `matcher` soit une constante et ignore silencieusement toute
+  // Next demands that `matcher` be a constant and silently ignores any
   // computed value: the pattern therefore stays hand-written in `proxy.ts`.
   // This test is what stops the two diverging.
   const source = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");

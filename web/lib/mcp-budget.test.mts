@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { budgetProblem } from "./mcp-budget.ts";
 
-test("un devis sous les deux plafonds passe", () => {
+test("a quote under both caps passes", () => {
   assert.equal(budgetProblem(1, 3, 2, 10), null);
 });
 
@@ -11,8 +11,8 @@ test("a quote over the per-run cap is refused, without looking at the hour", () 
   const problem = budgetProblem(5, 0, 2, 10);
   assert.match(problem!, /\$5\.00/);
   assert.match(problem!, /\$2\.00/);
-  // Les plafonds sont ceux du profil de l'appelant, plus une variable
-  // environment variable shared by everyone — see profiles.ts.
+  // The caps are those of the caller's profile, no longer an environment
+  // variable shared by everyone — see profiles.ts.
   assert.doesNotMatch(problem!, /MCP_MAX_USD/);
 });
 

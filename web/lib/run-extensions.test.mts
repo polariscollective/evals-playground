@@ -27,7 +27,7 @@ const ENTRY = (
 const RUN = (extensions: RunExtensionLogEntry[], cost_usd: number | null): EvalRun =>
   ({ extensions, cost_usd }) as unknown as EvalRun;
 
-test("aucune extension : une liste vide", () => {
+test("no extension: an empty list", () => {
   assert.deepEqual(extensionsOf(RUN([], 12)), []);
 });
 

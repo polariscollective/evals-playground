@@ -1,4 +1,4 @@
-// Ce que les pastilles doivent garder distinct.
+// What the pills must keep distinct.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { scenarioBadges } from "./scenario-summary.ts";

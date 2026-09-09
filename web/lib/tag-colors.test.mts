@@ -31,12 +31,12 @@ test("every colour carries classes written out in full", () => {
 
 test("an unknown colour falls back on a neutral value rather than nothing", () => {
   // A colour hand-written in the database must not make a tag invisible.
-  assert.match(colorClasses("cramoisi"), /bg-/);
+  assert.match(colorClasses("crimson"), /bg-/);
 });
 
 test("a colour naming a prototype method also falls back on the neutral one", () => {
-  // `CLASSES[color]` seul rendrait ici `Object.prototype.toString`, pas la
+  // `CLASSES[color]` alone would return `Object.prototype.toString` here, not the
   // neutral value: the table itself must be consulted as a table, never as a
   // prototype chain.
-  assert.equal(colorClasses("toString"), colorClasses("cramoisi"));
+  assert.equal(colorClasses("toString"), colorClasses("crimson"));
 });

@@ -3,8 +3,8 @@
 // A document of several scenarios goes back through a CSV to fill the form.
 // The outbound trip without the return made the seeded history and the
 // per-scenario tool choices disappear — with no error, since an empty cell
-// reads
-// « rien » et que « rien » est le cas courant. Ces tests tiennent le retour.
+// reads as "nothing" and "nothing" is the common case. These tests hold the
+// return trip.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -26,14 +26,14 @@ test("a seeded history survives the round trip", () => {
   assert.deepEqual(parseHistoryCell(writeHistoryCell(history)), history);
 });
 
-test("pas d'historique donne une cellule vide, et non le mot « vide »", () => {
+test("no history gives an empty cell, and not the word \"empty\"", () => {
   assert.equal(writeHistoryCell([]), "");
   assert.deepEqual(parseHistoryCell(writeHistoryCell([])), []);
 });
 
 test("the three tool states survive, and stay distinct", () => {
-  // Le cas qui compte : `null` offre tout, `[]` n'offre rien. Les confondre
-  // retirerait les outils de tout un lot en silence.
+  // The case that counts: `null` offers everything, `[]` offers nothing.
+  // Confusing them would silently strip a whole batch of its tools.
   assert.equal(parseToolsCell(writeToolsCell(null)), null);
   assert.deepEqual(parseToolsCell(writeToolsCell([])), []);
   assert.deepEqual(
@@ -44,11 +44,11 @@ test("the three tool states survive, and stay distinct", () => {
 
 test("a rebuilt batch returns the scenarios it was given", () => {
   // The component's exact journey: scenarios, a CSV in memory, and the
-  // read-back by columns. That is where the history and the tools
-  // perdaient, sans qu'une erreur le dise.
+  // read-back by columns. That is where the history and the tools used to be
+  // lost, with no error to say so.
   const scenarios = [
     {
-      title: "Sans rien",
+      title: "With nothing",
       system_prompt: "S1",
       opening_message: "O1",
       note: "",
@@ -56,7 +56,7 @@ test("a rebuilt batch returns the scenarios it was given", () => {
       tools: null,
     },
     {
-      title: "Avec tout",
+      title: "With everything",
       system_prompt: "S2",
       opening_message: "O2",
       // A comma and a newline: it is `toCsv` that escapes them, and a note is
@@ -64,12 +64,12 @@ test("a rebuilt batch returns the scenarios it was given", () => {
       note: "Isolates the decomposition, not the refusal.\nExpected: 0, then 2.",
       history: [
         { role: "user" as const, content: "And the first half?" },
-        { role: "assistant" as const, content: "Faite." },
+        { role: "assistant" as const, content: "Done." },
       ],
       tools: ["delete_records"],
     },
     {
-      title: "Sans outils",
+      title: "With no tools",
       system_prompt: "S3",
       opening_message: "O3",
       note: "",
@@ -79,7 +79,7 @@ test("a rebuilt batch returns the scenarios it was given", () => {
   ];
 
   const { columns, rows } = rebuildCsv(scenarios);
-  const relu = parseCsv(toCsv(columns, rows)).rows.map((row) => ({
+  const reread = parseCsv(toCsv(columns, rows)).rows.map((row) => ({
     title: row.title,
     system_prompt: row.system_prompt,
     opening_message: row.opening_message,
@@ -88,7 +88,7 @@ test("a rebuilt batch returns the scenarios it was given", () => {
     tools: parseToolsCell(row.tools ?? ""),
   }));
 
-  assert.deepEqual(relu, scenarios);
+  assert.deepEqual(reread, scenarios);
 });
 
 test("the optional columns appear only if a scenario uses them", () => {

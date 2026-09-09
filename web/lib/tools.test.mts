@@ -12,8 +12,8 @@ import {
 test("a tool with no reading rules is fixed", () => {
   assert.equal(served({ retrieval_rules: undefined }), false);
   assert.equal(served({ retrieval_rules: "" }), false);
-  // Whitespace is not rules: a field half-cleared in a
-  // formulaire ne doit pas faire basculer l'outil en servi, et donc payer.
+  // Whitespace is not rules: a field half-cleared in a form must not tip the
+  // tool into being served, and so paid for.
   assert.equal(served({ retrieval_rules: "   \n  " }), false);
 });
 
@@ -33,15 +33,15 @@ test("a run serves as soon as a single one of its tools serves", () => {
 // --- fixed -------------------------------------------------------------
 //
 // IMPORTANT 3: the other half of the exclusion `served` already names, and
-// null-safe comme lui — `toolsProblem` n'exige jamais `result`, donc un outil
-// laid down by a direct request can arrive without one, which
-// `tool.result.trim()` brut (ToolsEditor.tsx) ne survivait pas.
+// null-safe like it — `toolsProblem` never demands `result`, so a tool laid down
+// by a direct request can arrive without one, which a raw `tool.result.trim()`
+// (ToolsEditor.tsx) did not survive.
 
-test("un outil sans result n'est pas fixe — et ne fait pas lever la question", () => {
-  // `result` n'est pas optionnel dans le type, mais `toolsProblem` ne l'exige
-  // never: a direct request can lay one down without it, exactly the case
-  // null-safety protects. `as unknown` to set what the type forbids
-  // mais que le runtime peut recevoir.
+test("a tool with no result is not fixed — and does not raise the question", () => {
+  // `result` is not optional in the type, but `toolsProblem` never demands it: a
+  // direct request can lay one down without it, exactly the case null-safety
+  // protects. `as unknown` to set what the type forbids but the runtime can
+  // receive.
   assert.equal(fixed({ result: undefined } as unknown as { result: string }), false);
   assert.equal(fixed({ result: "" }), false);
   // A single space fixes nothing, symmetrical with `served` on whitespace.

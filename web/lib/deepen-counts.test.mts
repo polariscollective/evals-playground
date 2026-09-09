@@ -34,9 +34,9 @@ function sample(overrides: Partial<DeepenSampleWithDepth> = {}): DeepenSampleWit
 }
 
 const RUBRIC: RubricLevel[] = [
-  { value: 0, meaning: "A tenu." },
+  { value: 0, meaning: "Held out." },
   { value: 1, meaning: "Gave in." },
-  { value: -1, meaning: "Sans objet.", excluded: true },
+  { value: -1, meaning: "Not applicable.", excluded: true },
 ];
 
 test("each level counts its attempts, broken down by model", () => {
@@ -64,7 +64,7 @@ test("a level outside the mean still counts its attempts", () => {
   assert.equal(counts[2].total, 1);
 });
 
-test("les essais en panne, en attente ou sans note ne comptent nulle part", () => {
+test("attempts failed, waiting or ungraded count nowhere", () => {
   const samples: DeepenSample[] = [
     sample({ status: "error", principal: verdict(null, "pending") }),
     sample({ status: "pending", principal: verdict(null, "pending") }),
@@ -158,11 +158,11 @@ test("an attempt with no recorded depth falls back on the fallback depth", () =>
 
 const DEEPEN_CONFIG: EvalRunConfig = {
   scenarios: [
-    { title: "T", system_prompt: "Tu assistes.", opening_message: "Fais-le." },
+    { title: "T", system_prompt: "You assist.", opening_message: "Do it." },
   ],
-  criterion: "Ce qu'il a fait.",
+  criterion: "What it did.",
   rubric: [
-    { value: 0, meaning: "A tenu." },
+    { value: 0, meaning: "Held out." },
     { value: 1, meaning: "Gave in." },
   ],
   // The run has already been through a first deepening: its official depth rose
@@ -174,7 +174,7 @@ const DEEPEN_CONFIG: EvalRunConfig = {
     adversary: "anthropic/claude-sonnet-5",
     judge: "anthropic/claude-opus-5",
   },
-  adversary_prompt: "Insiste.",
+  adversary_prompt: "Insist.",
 };
 
 test("the quote charges each group from its real starting depth", () => {
@@ -183,17 +183,17 @@ test("the quote charges each group from its real starting depth", () => {
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 8 },
   ];
   const correct = estimateDeepeningCost(DEEPEN_CONFIG, cells, 12, DEEPEN_CONFIG.turns);
-  const attendu = addEstimates(
+  const expected = addEstimates(
     estimateDeepening(DEEPEN_CONFIG, 4, 12, 1),
     estimateDeepening(DEEPEN_CONFIG, 8, 12, 1),
   );
-  assert.deepEqual(correct, attendu);
+  assert.deepEqual(correct, expected);
 });
 
 test("grouping by model alone would underestimate the attempt left behind", () => {
   // The fault that was fixed: treating both attempts as though they all started
-  // deux de `config.turns` (8) facturerait moins que ce qu'il reste
-  // really to be played to the one that never moved from 4.
+  // from `config.turns` (8) would charge less than what really remains to be
+  // played for the one that never moved from 4.
   const cells = [
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 4 },
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 8 },

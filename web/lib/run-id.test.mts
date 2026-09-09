@@ -1,5 +1,5 @@
-// The shape of a run identifier, shared by the public page and the
-// outils MCP : deux copies de cette expression auraient fini par diverger.
+// The shape of a run identifier, shared by the public page and the MCP tools:
+// two copies of this expression would have ended up diverging.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isRunId } from "./run-id.ts";

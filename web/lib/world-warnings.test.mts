@@ -1,9 +1,8 @@
 // A warning that never fires when there is nothing to read, and that keeps
 // quiet as soon as the run or the scenario carries something to read.
 //
-// Voir docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md, §7 :
-// c'est un avertissement, pas un refus, donc rien ici ne passe par
-// `validate.ts`.
+// See docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md, §7: it is
+// a warning, not a refusal, so nothing here goes through `validate.ts`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -13,7 +12,7 @@ import {
 } from "./world-warnings.ts";
 import type { EvalRunConfig, ToolSpec } from "./types.ts";
 
-const OUTIL_SERVI: ToolSpec = {
+const SERVED_TOOL: ToolSpec = {
   name: "search_files",
   description: "Searches the shared drive.",
   parameters: [],
@@ -21,7 +20,7 @@ const OUTIL_SERVI: ToolSpec = {
   retrieval_rules: "Return at most twenty lines.",
 };
 
-/** Un run par ailleurs ordinaire, avec un outil servi sur son unique
+/** An otherwise ordinary run, with a served tool on its single
  *  scenario — just what these tests need, nothing more. */
 function baseConfig(): EvalRunConfig {
   return {
@@ -45,12 +44,12 @@ function baseConfig(): EvalRunConfig {
       world: "openai/gpt-5.6-luna",
     },
     adversary_prompt: "",
-    tools: [OUTIL_SERVI],
+    tools: [SERVED_TOOL],
   };
 }
 
 /** The run carries a world: nobody has anything to read elsewhere. */
-function configServiAvecMonde(): EvalRunConfig {
+function servedConfigWithWorld(): EvalRunConfig {
   const config = baseConfig();
   config.world = "A shared drive, thirty files.";
   return config;
@@ -58,29 +57,29 @@ function configServiAvecMonde(): EvalRunConfig {
 
 /** Neither the run nor the scenario carries a world: the served tool reads
  *  emptiness. */
-function configServiSansMonde(): EvalRunConfig {
+function servedConfigWithoutWorld(): EvalRunConfig {
   return baseConfig();
 }
 
-test("un run qui porte un monde n'avertit personne", () => {
-  assert.deepEqual(worldWarnings(configServiAvecMonde()), []);
+test("a run carrying a world warns nobody", () => {
+  assert.deepEqual(worldWarnings(servedConfigWithWorld()), []);
 });
 
 test("a scenario served with no world at all is reported, by its title", () => {
-  const config = configServiSansMonde();
+  const config = servedConfigWithoutWorld();
   const [warning] = worldWarnings(config);
   assert.ok(warning?.includes(config.scenarios[0].title));
 });
 
 test("a scenario carrying its own world is enough", () => {
-  const config = configServiSansMonde();
+  const config = servedConfigWithoutWorld();
   config.scenarios[0].world = "Shared drive of the legal team.";
   assert.deepEqual(worldWarnings(config), []);
 });
 
 test("a scenario with no served tool is never reported", () => {
   // The world is of no use to it: warning it would be noise.
-  const config = configServiSansMonde();
+  const config = servedConfigWithoutWorld();
   config.scenarios[0].tools = [];
   assert.deepEqual(worldWarnings(config), []);
 });
@@ -109,10 +108,9 @@ test("applying a served tool to existing scenarios of a run with an empty world 
   const warnings = extendWorldWarnings(
     {
       // `result: ""` added to the brief's literal: `ToolSpec.result` is
-      // required in the type, and it is the same value a tool would carry
-      // servi ordinaire (voir `OUTIL_SERVI` ci-dessus, ou `extend.test.mts`) —
-      // it changes nothing about what `served` looks at, which is only
-      // `retrieval_rules`.
+      // required in the type, and it is the same value an ordinary served tool
+      // would carry (see `SERVED_TOOL` above, or `extend.test.mts`) — it changes
+      // nothing about what `served` looks at, which is only `retrieval_rules`.
       new_tools: [
         { name: "s", description: "d", parameters: [], result: "", retrieval_rules: "r" },
       ],
@@ -123,7 +121,7 @@ test("applying a served tool to existing scenarios of a run with an empty world 
   assert.ok(warnings[0]?.includes("frozen"));
 });
 
-// --- Les cas qui ne doivent jamais avertir, pour ne jamais devenir du bruit -
+// --- The cases that must never warn, so as never to become noise ------------
 
 test("no served tool added: nothing to warn about", () => {
   const warnings = extendWorldWarnings(
@@ -194,7 +192,7 @@ const runWith = (tools: unknown[], scenarioTools?: string[] | null) =>
   ({
     scenarios: [
       {
-        title: "Rappel",
+        title: "Reminder",
         system_prompt: "s",
         opening_message: "o",
         ...(scenarioTools === undefined ? {} : { tools: scenarioTools }),
@@ -207,11 +205,10 @@ const runWith = (tools: unknown[], scenarioTools?: string[] | null) =>
 test("a declared effect nothing will read is reported, by the scenario's title", () => {
   // `world_effect` has one reader only: the environment model, when it serves a
   // call that comes afterwards. With no served tool, the entry is written and is
-  // never
-  // jamais relue.
+  // never read back.
   const warnings = writeWithoutReadWarnings(runWith([writer]));
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /Rappel/);
+  assert.match(warnings[0], /Reminder/);
   assert.match(warnings[0], /never read/);
 });
 

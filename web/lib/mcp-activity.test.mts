@@ -1,4 +1,4 @@
-// La phrase de l'heure glissante, sans Supabase : voir mcp-activity.ts.
+// The sliding hour's sentence, with no Supabase: see mcp-activity.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { activitySentence } from "./mcp-activity.ts";

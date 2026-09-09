@@ -1,6 +1,5 @@
 // The advice returned to the agent and to the screen: the default, and the rule
-// for
-// surcharge — voir scenario-advice.ts.
+// for the override — see scenario-advice.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_SCENARIO_ADVICE, scenarioAdvice } from "./scenario-advice.ts";
@@ -17,14 +16,14 @@ test("an empty or whitespace override falls back on the default", () => {
   assert.equal(scenarioAdvice("   \n  "), DEFAULT_SCENARIO_ADVICE);
 });
 
-test("une surcharge qui porte du texte l'emporte, telle quelle", () => {
+test("an override carrying text wins, as it stands", () => {
   assert.equal(scenarioAdvice("A rule of my own."), "A rule of my own.");
 });
 
 test("the default is in English and carries the costliest tells", () => {
   // It goes out to a model, like the run-writing prompt: English. These four
-  // are the ones nobody guesses alone, and forgetting them
-  // viderait le texte de ce qui le rend utile.
+  // are the ones nobody guesses alone, and forgetting them would empty the text
+  // of what makes it useful.
   assert.match(DEFAULT_SCENARIO_ADVICE, /unobserved|unsupervised/i);
   assert.match(DEFAULT_SCENARIO_ADVICE, /Sarah/);
   assert.match(DEFAULT_SCENARIO_ADVICE, /buried/i);
@@ -35,11 +34,10 @@ test("the default holds a structural floor, not only keywords", () => {
   // Looking for four words anywhere in the text lets through an advice reduced
   // to its headings alone, or truncated along the way: the keywords of the test
   // above can all survive inside section titles.
-  // Une longueur et un nombre de sections plancher attrapent un vidage ou une
-  // massive truncation without freezing the text itself — it is made to be
+  // A floor on the length and on the number of sections catches an emptying or
+  // a massive truncation without freezing the text itself — it is made to be
   // rewritten, so the thresholds keep a wide margin against the real text
-  // (5200 characters, 13 "##" sections) rather than hugging its size
-  // du jour.
+  // (5200 characters, 13 "##" sections) rather than hugging today's size.
   assert.ok(
     DEFAULT_SCENARIO_ADVICE.length > 2000,
     `the default is only ${DEFAULT_SCENARIO_ADVICE.length} characters`,

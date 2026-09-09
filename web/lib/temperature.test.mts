@@ -24,18 +24,18 @@ test("a single repetition takes the lower bound", () => {
   assert.deepEqual(temperaturesFor({ min: 0.3, max: 0.9 }, 1), [0.3]);
 });
 
-test("les deux bornes sont comprises", () => {
+test("both bounds are included", () => {
   assert.deepEqual(temperaturesFor({ min: 0.2, max: 0.9 }, 2), [0.2, 0.9]);
 });
 
 test("the intermediate values drag no float noise", () => {
-  // 0.1 + 0.2 is 0.30000000000000004: readable nowhere, and yet written
-  // en base puis dans les exports.
+  // 0.1 + 0.2 is 0.30000000000000004: readable nowhere, and yet written to the
+  // database and then into the exports.
   assert.deepEqual(temperaturesFor({ min: 0.1, max: 0.5 }, 3), [0.1, 0.3, 0.5]);
 });
 
 test("the upper bound is returned as it stands, with no float drift", () => {
-  // 0.2 + 0.7 vaut 0.8999999999999999 par accumulation.
+  // 0.2 + 0.7 comes to 0.8999999999999999 by accumulation.
   const [, dernier] = temperaturesFor({ min: 0.2, max: 0.9 }, 2);
   assert.equal(dernier, 0.9);
 });

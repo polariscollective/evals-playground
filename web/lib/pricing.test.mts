@@ -504,11 +504,11 @@ test("a scenario with no served tool does not pay for the world", () => {
     withoutLuna({
       tools: [served()],
       world: "W".repeat(4000),
-      scenarios: [{ ...scenario("sans"), tools: [] }, scenario("avec")],
+      scenarios: [{ ...scenario("without"), tools: [] }, scenario("with")],
     }),
   );
   const alone = estimateCost(
-    withoutLuna({ tools: [served()], world: "W".repeat(4000), scenarios: [scenario("avec")] }),
+    withoutLuna({ tools: [served()], world: "W".repeat(4000), scenarios: [scenario("with")] }),
   );
   const world = (quote: typeof two) =>
     quote.per_model.find((entry) => entry.model === WORLD_MODEL)?.input_tokens ?? 0;

@@ -11,11 +11,10 @@ test("a pending row on a finished conversation counts", () => {
 
 test("a pending row on a conversation not yet finished does not count", () => {
   // Reproduces the work's original bug: a cancelled or still-running
-  // conversation carries its pending score row all the same — laid down
-  // d'avance, au lancement — mais le moteur ne la touchera jamais tant
-  // qu'elle n'est pas `done` (voir `catchup_dataset`,
-  // backend/playground/batch_job.py). Un compte qui l'ignorerait
-  // would announce "1 to catch up" for a catch-up that would do 0.
+  // conversation carries its pending score row all the same — laid down in
+  // advance, at launch — but the engine will never touch it as long as it is not
+  // `done` (see `catchup_dataset`, backend/playground/batch_job.py). A count
+  // ignoring that would announce "1 to catch up" for a catch-up that would do 0.
   const count = catchupCandidateCount(
     [{ sample_id: "cancelled-1" }],
     new Set(), // no finished conversation
