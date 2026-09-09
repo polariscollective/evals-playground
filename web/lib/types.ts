@@ -422,6 +422,13 @@ export interface RunJudgeView {
    *  que les transcripts. Une conversation absente d'ici se lit comme en
    *  attente, jamais comme « pas de juge ». */
   scores: Record<string, JudgeVerdictEntry>;
+  /** Ce que ce juge attendait de chaque scénario — voir `RunJudge.targets`.
+   *
+   * Sur la vue et non sur `judge` : la cible appartient à la liaison, comme en
+   * base. C'est elle qui permet à la matrice de lire une case en écart, et de
+   * savoir quelles lignes sont des contrôles. `null` : ce juge n'en porte
+   * pas, la lecture en écart n'a alors rien à afficher pour lui. */
+  targets: JudgeTarget[] | null;
 }
 
 /** Un juge secondaire d'un run, en plus du principal — une entrée

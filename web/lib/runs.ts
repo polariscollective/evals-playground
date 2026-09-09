@@ -528,6 +528,10 @@ async function attachJudges(
     is_principal: liaison.is_principal,
     system_type: liaison.system_type,
     scores: byJudge.get(liaison.id) ?? {},
+    // La colonne arrive déjà : la liaison est lue en `select: "*"`. `null`
+    // pour un run lancé avant qu'elle n'existe, comme pour un run où personne
+    // n'a déclaré de cible.
+    targets: liaison.targets ?? null,
   }));
 }
 

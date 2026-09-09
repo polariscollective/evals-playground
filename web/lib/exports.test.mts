@@ -133,6 +133,7 @@ function runJudge(
     is_principal: extra.isPrincipal ?? false,
     system_type: j.system_type,
     scores: extra.scores ?? {},
+    targets: null,
   };
 }
 

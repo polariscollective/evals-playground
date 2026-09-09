@@ -34,7 +34,7 @@ function sample(
     target_model: target,
     status: "done",
     cost_usd: 0,
-    principal: { status: "done", score, justification: null, error: null },
+    principal: { status: "done", score },
   };
 }
 
