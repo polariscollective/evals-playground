@@ -1938,11 +1938,11 @@ function EvaluateForm() {
           <p className="text-sm text-red-700">{temperatureError}</p>
         )}
         {(() => {
-          // Ces modèles acceptent l'appel et jettent le paramètre : Claude 4.7
-          // et au-delà tournent en adaptive thinking et le refusent, inspect le
-          // retire, et rien dans la réponse ne le dit. Un balayage sur eux ne
-          // mesure que du bruit — on le dit ici plutôt que de griser le
-          // réglage, parce qu'une température fixe sur eux reste légitime.
+          // These models accept the call and throw the parameter away: Claude 4.7
+          // and beyond run in adaptive thinking and refuse it, inspect strips it,
+          // and nothing in the answer says so. A sweep over them measures noise
+          // alone — we say so here rather than greying the setting out, because a
+          // fixed temperature on them stays legitimate.
           const deaf = modelRows.filter(
             (m) => targets.includes(m.id) && !m.honoursTemperature,
           );
@@ -1983,9 +1983,9 @@ function EvaluateForm() {
           </p>
         )}
 
-        {/* Le seul endroit d'où un humain peut éteindre ce juge : un agent le
-            fait déjà par la configuration qu'il soumet, et un fichier importé
-            le porte aussi, mais rien d'autre sur cet écran ne l'exposait. */}
+        {/* The only place a human can switch this judge off from: an agent already
+            does it through the configuration it submits, and an imported file
+            carries it too, but nothing else on this screen exposed it. */}
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -2042,37 +2042,36 @@ function EvaluateForm() {
               (€{estimate.eur.toFixed(2)}).
             </p>
 
-            {/* Une ligne par (rôle, modèle), et non par modèle : un même
-                modèle évalué et juge est la configuration ordinaire, et fondre
-                ses deux dépenses empêchait de voir ce qu'un réglage coûte.
-                D'où aussi la clé, qui doit porter les deux. */}
+            {/* One row per (role, model), and not per model: one same model both
+                evaluated and judge is the ordinary configuration, and melting its
+                two expenses together kept one from seeing what a setting costs.
+                Hence the key too, which has to carry both. */}
             <table className="w-full text-sm">
               <tbody>
                 {estimate.per_model.map((model) => {
-                  // Combien de passes de juge cette ligne facture, par
-                  // conversation. Déduit de `calls` plutôt que recompté depuis
-                  // la configuration : chaque juge, d'éveil compris, est un
-                  // appel par conversation, si bien que le rapport EST leur
-                  // nombre — et il reste juste sans refaire ici le tri que
-                  // `judgesForLaunch` fait ailleurs.
+                  // How many judge passes this row bills, per conversation. Deduced
+                  // from `calls` rather than recounted from the configuration: every
+                  // judge, the awareness one included, is one call per conversation,
+                  // so that the ratio IS their number — and it stays right without
+                  // redoing here the sorting `judgesForLaunch` does elsewhere.
                   const passes =
                     model.role === "judge" && model.calls && estimate.conversations
                       ? Math.round(model.calls / estimate.conversations)
                       : 0;
-                  const éveilIci =
+                  const awakeHere =
                     checkEvalAwareness && model.model === judge && passes > 0;
-                  const juges = passes - (éveilIci ? 1 : 0);
+                  const judgeCount = passes - (awakeHere ? 1 : 0);
                   return (
                     <tr
-                      key={`${model.role ?? ""} ${model.model}`}
+                      key={`${model.role ?? ""}|${model.model}`}
                       className="border-t border-zinc-200"
                     >
                       <td className="py-1 pr-4">
                         {model.role ?? "—"}
                         {passes > 0 && (
                           <span className="ml-2 text-xs text-zinc-500">
-                            {juges} judge{juges > 1 ? "s" : ""}
-                            {éveilIci && " + awareness"}
+                            {judgeCount} judge{judgeCount > 1 ? "s" : ""}
+                            {awakeHere && " + awareness"}
                           </span>
                         )}
                       </td>
@@ -2110,13 +2109,12 @@ function EvaluateForm() {
               </tbody>
             </table>
 
-            {/* La fourchette est un repère fixe, pas une promesse qui
-                contiendrait le devis : elle chiffre le même run à deux
-                longueurs de référence, et une déclaration au-delà de la
-                longue le porte légitimement au-dessus. Le dire évite la
-                phrase qui annonçait « the run sits between » un plancher et
-                un plafond que le devis dépassait. Les deux longueurs viennent
-                du JSON partagé : une borne qui bougerait se lirait ici. */}
+            {/* The range is a fixed landmark, not a promise that would contain the
+                quote: it prices the same run at two reference lengths, and a
+                declaration beyond the long one legitimately carries it above.
+                Saying so avoids the sentence that announced "the run sits between"
+                a floor and a ceiling the quote went past. Both lengths come from
+                the shared JSON: a bound that moved would read here. */}
             <p className="text-xs text-zinc-500">
               Cost grows faster than the turn count, since every turn resends
               the whole history. For reference, the same run costs $
@@ -2157,11 +2155,11 @@ function EvaluateForm() {
             ? "Launching…"
             : `Launch ${scenarios.length * targets.length * repetitions} conversations`}
         </button>
-        {/* Jamais désactivé, à la différence du lancement : un formulaire
-            incomplet est exactement ce qu'on veut pouvoir mettre de côté. */}
-        {/* Le nom est la seule chose exigée : tout le reste a le droit de
-            manquer, c'est ce qui distingue un brouillon d'un lancement. Sans
-            lui, la liste d'attente n'aurait que des lignes sans titre. */}
+        {/* Never disabled, unlike the launch: an incomplete form is exactly what
+            one wants to be able to set aside. */}
+        {/* The name is the only thing demanded: everything else has the right to be
+            missing, which is what tells a draft from a launch. Without it, the
+            waiting list would hold nothing but untitled rows. */}
         <button
           onClick={saveAsDraft}
           disabled={savingDraft || label.trim() === ""}

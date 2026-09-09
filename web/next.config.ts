@@ -3,11 +3,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   turbopack: {
-    // La racine remonte d'un cran pour que `shared/` soit résoluble : Turbopack
-    // ne résout rien hors de la racine du projet, et les tarifs comme les
-    // gabarits du prompt du juge vivent à la racine du dépôt, partagés avec le
-    // Python du job. Les recopier ici serait exactement ce qu'on cherche à
-    // éviter — deux copies qui finissent par diverger.
+    // The root goes up one notch so that `shared/` resolves: Turbopack resolves
+    // nothing outside the project root, and the prices as well as the judge
+    // prompt's templates live at the repository root, shared with the job's
+    // Python. Copying them here would be exactly what one is trying to avoid —
+    // two copies that end up drifting apart.
     root: path.join(__dirname, ".."),
   },
 };
