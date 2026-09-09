@@ -1,11 +1,10 @@
-/** Lecture d'un CSV dans le navigateur, sans dépendance.
+/** Reading a CSV in the browser, with no dependency.
 
-   Gère le séparateur virgule, les champs entre guillemets contenant des
-   virgules ou des retours à la ligne, et les guillemets échappés par
-   doublement. Une ligne dont le nombre de champs ne correspond pas à
-   l'en-tête est écartée et comptée — l'écarter en silence serait pire que
-   la refuser, l'utilisateur croirait avoir chargé plus de scénarios qu'il
-   n'en a réellement. */
+   Handles the comma separator, quoted fields holding commas or newlines, and
+   quotes escaped by doubling. A row whose field count does not match the header
+   is set aside and counted — setting it aside in silence would be worse than
+   refusing it, the user would believe they had loaded more scenarios than they
+   really have. */
 
 import type { EvalScenario, SeededTurn } from "./types";
 
@@ -44,7 +43,7 @@ function splitRecords(text: string): string[][] {
       record.push(field);
       field = "";
     } else if (char === "\n" || char === "\r") {
-      // Un \r\n ne doit compter que pour une fin de ligne.
+      // A \r\n must count for one end of line only.
       if (char === "\r" && text[i + 1] === "\n") i += 1;
       record.push(field);
       records.push(record);
@@ -85,11 +84,11 @@ export function parseCsv(text: string): ParsedCsv {
   return { columns, rows, skipped };
 }
 
-/** Écrit un CSV lisible par `parseCsv` et par un tableur.
+/** Writes a CSV readable by `parseCsv` and by a spreadsheet.
  *
- * Sert à reconstituer le lot d'un run lancé avant que le fichier téléversé ne
- * soit conservé : les scénarios, eux, sont dans le record, et le CSV
- * reconstruit a exactement le même contenu que l'original. */
+ * Used to rebuild the batch of a run launched before the uploaded file was
+ * kept: the scenarios themselves are in the record, and the rebuilt CSV has
+ * exactly the same content as the original. */
 export function toCsv(columns: string[], rows: Record<string, string>[]): string {
   const cell = (value: string) =>
     /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
@@ -99,22 +98,22 @@ export function toCsv(columns: string[], rows: Record<string, string>[]): string
   ].join("\n");
 }
 
-/** L'historique posé d'un scénario, lu dans une cellule de CSV.
+/** A scenario's seeded history, read from a CSV cell.
  *
- * Du JSON dans une cellule est laid, et c'est le moins mauvais choix : un
- * échange de six tours ne se met pas en colonnes sans figer leur nombre, et une
- * cellule vide reste la règle — la plupart des scénarios n'ont pas d'historique.
+ * JSON in a cell is ugly, and it is the least bad choice: a six-turn exchange
+ * does not go into columns without freezing their number, and an empty cell
+ * stays the rule — most scenarios have no history.
  *
- * Une cellule illisible rend une liste vide plutôt que de faire échouer tout le
- * fichier : le scénario part sans historique, ce que l'écran annonce. Refuser le
- * lot entier pour une ligne mal échappée coûterait plus que ça ne protège. */
+ * An unreadable cell returns an empty list rather than failing the whole file:
+ * the scenario leaves without history, which the screen announces. Refusing the
+ * whole batch for one badly escaped row would cost more than it protects. */
 export function parseHistoryCell(cell: string): SeededTurn[] {
-  const texte = (cell ?? "").trim();
-  if (texte === "") return [];
+  const text = (cell ?? "").trim();
+  if (text === "") return [];
   try {
-    const brut = JSON.parse(texte);
-    if (!Array.isArray(brut)) return [];
-    return brut
+    const raw = JSON.parse(text);
+    if (!Array.isArray(raw)) return [];
+    return raw
       .map((turn) => ({
         role: turn?.role === "assistant" ? "assistant" : "user",
         content: String(turn?.content ?? ""),
@@ -125,67 +124,66 @@ export function parseHistoryCell(cell: string): SeededTurn[] {
   }
 }
 
-/** Les outils d'un scénario, lus dans une cellule de CSV.
+/** A scenario's tools, read from a CSV cell.
  *
- * Trois états à faire tenir dans une cellule : vide offre tous les outils du
- * run — c'est le cas courant et l'absence de valeur doit donc être inoffensive ;
- * `none` n'en offre aucun ; sinon les noms, séparés par des virgules.
+ * Three states to fit in one cell: empty offers all the run's tools — that is
+ * the common case, so the absence of a value must be harmless; `none` offers
+ * none; otherwise the names, separated by commas.
  *
- * Le mot `none` plutôt qu'une cellule vide pour « aucun » : une colonne
- * fraîchement ajoutée est vide partout, et si le vide voulait dire « aucun »,
- * l'ajouter retirerait silencieusement les outils de tout le lot. */
+ * The word `none` rather than an empty cell for "none at all": a freshly added
+ * column is empty everywhere, and if empty meant "none", adding it would
+ * silently withdraw the tools from the whole batch. */
 export function parseToolsCell(cell: string): string[] | null {
-  const texte = (cell ?? "").trim();
-  if (texte === "") return null;
-  if (texte.toLowerCase() === "none") return [];
-  return texte
+  const text = (cell ?? "").trim();
+  if (text === "") return null;
+  if (text.toLowerCase() === "none") return [];
+  return text
     .split(",")
     .map((name) => name.trim())
     .filter((name) => name !== "");
 }
 
-/** L'inverse de `parseHistoryCell`, pour un lot reconstruit en mémoire.
+/** The inverse of `parseHistoryCell`, for a batch rebuilt in memory.
  *
- * Elle manquait, et son absence se voyait mal : un document de plusieurs
- * scénarios repasse par un CSV pour remplir le formulaire, et l'historique
- * posé disparaissait en silence entre le document et le run. Silence est le
- * mot — `parseHistoryCell` d'une cellule vide rend une liste vide, qui est
- * exactement ce qu'un scénario sans historique rend aussi. */
+ * It was missing, and its absence showed badly: a document of several scenarios
+ * goes back through a CSV to fill the form, and the seeded history was
+ * vanishing silently between the document and the run. Silently is the word —
+ * `parseHistoryCell` of an empty cell returns an empty list, which is exactly
+ * what a scenario with no history returns too. */
 export function writeHistoryCell(history: SeededTurn[]): string {
   return history.length === 0 ? "" : JSON.stringify(history);
 }
 
-/** L'inverse de `parseToolsCell`, et ses trois états.
+/** The inverse of `parseToolsCell`, and its three states.
  *
- * `null` offre tous les outils du run, une liste vide n'en offre aucun, sinon
- * les noms. Les virgules séparent sans risque : un nom d'outil est limité aux
- * lettres, aux chiffres, au tiret et au souligné. */
+ * `null` offers all the run's tools, an empty list offers none, otherwise the
+ * names. The commas separate without risk: a tool's name is limited to letters,
+ * digits, the dash and the underscore. */
 export function writeToolsCell(tools: string[] | null): string {
   if (tools === null) return "";
   if (tools.length === 0) return "none";
   return tools.join(",");
 }
 
-/** Les colonnes toujours présentes dans un CSV reconstruit. */
+/** The columns always present in a rebuilt CSV. */
 const REBUILT_COLUMNS = ["title", "system_prompt", "opening_message"];
 
-/** Un lot de scénarios remis sous la forme que le formulaire sait tenir.
+/** A batch of scenarios put back into the shape the form knows how to hold.
  *
- * Le mode manuel ne porte qu'un scénario : au-delà, un document — collé,
- * chargé, ou repris d'un vieux run dont le CSV n'a pas été gardé — repasse par
- * un CSV reconstruit en mémoire. Ce détour ne doit rien perdre en route, et il
- * perdait tout ce qui n'est pas l'un des trois champs obligatoires : la note de
- * laboratoire, l'historique posé, les outils choisis par scénario. Rien ne le
- * signalait — une cellule vide se lit « pas de note », « pas d'historique » et
- * « tous les outils », qui sont précisément ce qu'un scénario sans rien de tout
- * cela rend aussi.
+ * Manual mode carries only one scenario: beyond that, a document — pasted,
+ * loaded, or taken from an old run whose CSV was not kept — goes back through a
+ * CSV rebuilt in memory. That detour must lose nothing on the way, and it was
+ * losing everything that is not one of the three mandatory fields: the
+ * laboratory note, the seeded history, the tools chosen per scenario. Nothing
+ * reported it — an empty cell reads as "no note", "no history" and "all the
+ * tools", which are precisely what a scenario with none of that returns too.
  *
- * Chaque colonne facultative n'apparaît que si un scénario s'en sert : vides sur
- * tout un lot, elles n'apprendraient rien et alourdiraient le panneau des
- * colonnes pour le cas courant, qui n'en a aucune.
+ * Each optional column appears only if a scenario uses it: empty across a whole
+ * batch, they would teach nothing and would weigh down the column panel for the
+ * common case, which has none of them.
  *
- * Un champ de plus par scénario, un jour, se rajoute ici — et l'oublier ne
- * casse rien de visible, ce qui est exactement le danger. */
+ * One more field per scenario, one day, gets added here — and forgetting it
+ * breaks nothing visible, which is exactly the danger. */
 export function rebuildCsv(scenarios: EvalScenario[]): {
   columns: string[];
   rows: Record<string, string>[];
@@ -206,8 +204,8 @@ export function rebuildCsv(scenarios: EvalScenario[]): {
       title: scenario.title,
       system_prompt: scenario.system_prompt,
       opening_message: scenario.opening_message,
-      // Du texte libre, qui n'a pas besoin d'être encodé : `toCsv` échappe les
-      // virgules et les retours à la ligne, `parseCsv` les rend.
+        // Free text, which needs no encoding: `toCsv` escapes the commas and
+        // the newlines, `parseCsv` gives them back.
       note: scenario.note ?? "",
       world: scenario.world ?? "",
       history: writeHistoryCell(scenario.history ?? []),

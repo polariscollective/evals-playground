@@ -1,5 +1,5 @@
-// Lire et écrire les tags. Le seul endroit qui connaît la forme des deux
-// tables de nomenclature.
+// Reading and writing the tags. The only place that knows the shape of the two
+// nomenclature tables.
 import "server-only";
 import { DRAFT_TAGS, RUN_TAGS, TAGS, insert, remove, select } from "./supabase";
 import { nextColor } from "./tag-colors";
@@ -10,27 +10,27 @@ export async function loadTags(): Promise<Tag[]> {
   return select<Tag>(TAGS, { select: "id,label,color", order: "label.asc" });
 }
 
-/** `%` et `_` sont des jokers pour `ilike`, et `\` les échappe : un libellé
- *  qui en porte un — « 100% », par exemple — matcherait autrement n'importe
- *  quoi et se dédupliquerait sur la mauvaise ligne. */
+/** `%` and `_` are wildcards for `ilike`, and `\` escapes them: a label that
+ *  carries one — "100%", for instance — would otherwise match anything and
+ *  deduplicate onto the wrong row. */
 function escapeIlike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-/** Crée un tag, ou rend celui qui porte déjà ce libellé.
+/** Creates a tag, or returns the one that already carries this label.
  *
- * La casse ne distingue pas deux tags : l'index unique est posé sur
- * `lower(label)`, et rendre l'existant plutôt qu'une erreur laisse l'appelant
- * écrire « ajoute ce tag » sans avoir à savoir s'il existe. */
+ * Case does not distinguish two tags: the unique index sits on `lower(label)`,
+ * and returning the existing one rather than an error lets the caller write
+ * "add this tag" without having to know whether it exists. */
 export async function createTag(label: string): Promise<Tag> {
   const trimmed = label.trim();
-  // La garde est ici et non dans la route : `tagsForLabels` crée aussi des
-  // tags, pour l'outil MCP qui en pose sur un run. Deux portes, une seule
-  // règle — la mettre en amont d'une seule laisserait l'autre ouverte.
+  // The guard is here and not in the route: `tagsForLabels` also creates tags,
+  // for the MCP tool that lays them on a run. Two doors, one rule — putting it
+  // upstream of only one would leave the other open.
   //
-  // Un vrai tag « local » se confondrait dans la barre de filtres avec le
-  // pseudo-tag du même nom, et l'un masquerait l'autre sans que rien ne le
-  // dise. Voir `run-filters.ts`.
+  // A real tag named "local" would be confused in the filter bar with the
+  // pseudo-tag of the same name, and one would hide the other without anything
+  // saying so. See `run-filters.ts`.
   if (isReservedTag(trimmed)) {
     throw new Error(
       `"${trimmed}" is reserved — the runs list already uses it to filter on ` +
@@ -53,11 +53,11 @@ export async function createTag(label: string): Promise<Tag> {
   return rows[0];
 }
 
-/** Les tags d'un seul run.
+/** The tags of a single run.
  *
- * `tagsByRun` ci-dessous ramène tout en une lecture pour la liste des runs ;
- * ici l'appelant n'en veut qu'un, et charger toute la table pour ça serait le
- * mauvais compromis — la page d'un run ne lit qu'un identifiant. */
+ * `tagsByRun` below brings back everything in one read for the runs list; here
+ * the caller wants only one, and loading the whole table for that would be the
+ * wrong trade-off — a run's page reads a single identifier. */
 export async function tagsOf(runId: string): Promise<Tag[]> {
   const links = await select<{ tag_id: number }>(RUN_TAGS, {
     select: "tag_id",
@@ -72,11 +72,10 @@ export async function tagsOf(runId: string): Promise<Tag[]> {
   });
 }
 
-/** Les tags de chaque run, par identifiant de run.
+/** The tags of each run, by run identifier.
  *
- * Une seule lecture pour tous les runs, comme `loadRuns` le fait pour les
- * cases : une requête par run coûterait bien plus cher que les deux petites
- * colonnes ramenées ici. */
+ * A single read for every run, as `loadRuns` does for the cells: one request
+ * per run would cost far more than the two small columns brought back here. */
 export async function tagsByRun(): Promise<Map<string, Tag[]>> {
   const [tags, links] = await Promise.all([
     loadTags(),
@@ -96,24 +95,24 @@ export async function tagsByRun(): Promise<Map<string, Tag[]>> {
   return byRun;
 }
 
-/** Pose exactement ces tags sur ce run : ce qui manque est inséré, ce qui n'y
- *  est plus est retiré — jamais tout effacé puis tout réécrit.
+/** Lays exactly these tags on this run: what is missing is inserted, what is
+ *  no longer there is withdrawn — never everything erased then everything
+ *  rewritten.
  *
- * Un tag qui reste dans la liste avant et après ne doit jamais, même un
- * instant, perdre son dernier lien : la tâche suivante pose un déclencheur
- * qui supprime un tag devenu orphelin, et PostgREST envoie un `remove` et un
- * `insert` comme deux requêtes HTTP — donc deux transactions distinctes,
- * qu'aucun `deferred` ne peut recoller. Remplacer `[A]` par `[A, B]` en
- * effaçant d'abord tout détacherait A, le déclencheur le supprimerait, et
- * l'insertion qui suit échouerait sur une clé étrangère pointant vers un tag
- * qui n'existe plus. Ne toucher que la différence évite qu'A soit jamais sans
- * lien.
+ * A tag that stays in the list before and after must never, even for an
+ * instant, lose its last link: the following task lays down a trigger that
+ * deletes a tag once orphaned, and PostgREST sends a `remove` and an `insert`
+ * as two HTTP requests — so two distinct transactions, which no `deferred` can
+ * glue back together. Replacing `[A]` by `[A, B]` by erasing everything first
+ * would detach A, the trigger would delete it, and the insertion that follows
+ * would fail on a foreign key pointing at a tag that no longer exists. Touching
+ * only the difference keeps A from ever being without a link.
  *
- * L'insertion passe avant la suppression : les deux ensembles sont
- * disjoints par construction (un tag ne peut pas à la fois arriver et
- * partir), donc l'ordre ne change rien à ce que la table contient au final —
- * mais si la seconde requête échoue en cours de route, mieux vaut garder un
- * lien de trop (retiré plus tard) que perdre un lien voulu. */
+ * The insertion comes before the deletion: the two sets are disjoint by
+ * construction (a tag cannot both arrive and leave), so the order changes
+ * nothing about what the table ends up holding — but if the second request
+ * fails midway, better to keep one link too many (withdrawn later) than to lose
+ * a link that was wanted. */
 export async function setRunTags(runId: string, tagIds: number[]): Promise<void> {
   const existing = await select<{ tag_id: number }>(RUN_TAGS, {
     select: "tag_id",
@@ -136,7 +135,7 @@ export async function setRunTags(runId: string, tagIds: number[]): Promise<void>
   }
 }
 
-/** Les tags d'un seul brouillon. Jumelle de `tagsOf`. */
+/** The tags of a single draft. Twin of `tagsOf`. */
 export async function tagsOfDraft(draftId: string): Promise<Tag[]> {
   const links = await select<{ tag_id: number }>(DRAFT_TAGS, {
     select: "tag_id",
@@ -151,8 +150,8 @@ export async function tagsOfDraft(draftId: string): Promise<Tag[]> {
   });
 }
 
-/** Pose exactement ces tags sur ce brouillon : par différence, comme
- *  `setRunTags` — pour la même raison, jumelle jusque dans le commentaire. */
+/** Lays exactly these tags on this draft: by difference, like `setRunTags` —
+ *  for the same reason, twin down to the comment. */
 export async function setDraftTags(draftId: string, tagIds: number[]): Promise<void> {
   const existing = await select<{ tag_id: number }>(DRAFT_TAGS, {
     select: "tag_id",
@@ -175,8 +174,8 @@ export async function setDraftTags(draftId: string, tagIds: number[]): Promise<v
   }
 }
 
-/** Les tags de chaque brouillon, par identifiant de brouillon. Jumelle de
- *  `tagsByRun`, pour la liste des brouillons. */
+/** The tags of each draft, by draft identifier. Twin of `tagsByRun`, for the
+ *  drafts list. */
 export async function tagsByDraft(): Promise<Map<string, Tag[]>> {
   const [tags, links] = await Promise.all([
     loadTags(),
@@ -196,12 +195,12 @@ export async function tagsByDraft(): Promise<Map<string, Tag[]>> {
   return byDraft;
 }
 
-/** Chaque libellé passé par `createTag` : réutilisé s'il existe déjà (sans
- *  casse), créé sinon. C'est par là qu'un agent nomme ses tags en mots plutôt
- *  qu'en identifiants.
+/** Every label passed through `createTag`: reused if it already exists
+ *  (case-insensitively), created otherwise. This is how an agent names its tags
+ *  in words rather than in identifiers.
  *
- * Dédupliqué sans casse avant l'aller-retour : le même libellé répété deux
- * fois dans la liste ne doit pas chercher/créer deux fois la même ligne. */
+ * Deduplicated case-insensitively before the round trip: the same label
+ * repeated twice in the list must not look up or create the same row twice. */
 export async function tagsForLabels(labels: string[]): Promise<Tag[]> {
   const seen = new Set<string>();
   const tags: Tag[] = [];
@@ -214,16 +213,16 @@ export async function tagsForLabels(labels: string[]): Promise<Tag[]> {
   return tags;
 }
 
-/** Ajoute ces tags à ceux que porte déjà ce run, sans en retirer aucun.
+/** Adds these tags to the ones this run already carries, withdrawing none.
  *
- * C'est la seule écriture qu'un agent aura sur un run existant. `setRunTags`
- * remplace la liste entière ; la lui confier laisserait un agent effacer en
- * silence des tags qu'un humain a posés. L'union est une contrainte de
- * sécurité, pas une commodité.
+ * This is the only write an agent will have on an existing run. `setRunTags`
+ * replaces the whole list; entrusting it to an agent would let it silently
+ * erase tags a human laid down. The union is a safety constraint, not a
+ * convenience.
  *
- * Insérer un lien déjà présent violerait la clé primaire composite
- * (`run_id`, `tag_id`) : on calcule donc la différence et on ne pose que ce
- * qui manque. */
+ * Inserting a link already present would violate the composite primary key
+ * (`run_id`, `tag_id`): so we compute the difference and lay down only what is
+ * missing. */
 export async function addRunTags(runId: string, tagIds: number[]): Promise<void> {
   const existing = await select<{ tag_id: number }>(RUN_TAGS, {
     select: "tag_id",
