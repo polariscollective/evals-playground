@@ -5,8 +5,8 @@
 // `configProblem` really applies — if one changes over there, it must change
 // here, without which we promise an agent a format we will reject.
 //
-// Two readers, two outputs, one single template. `/prompt` is pasted by a human
-// into an agent that has nothing but HTTP; `read_prompt` is read by an agent
+// Two readers, two outputs, one single template. `/format.txt` is pasted by a human
+// into an agent that has nothing but HTTP; `read_format` is read by an agent
 // that already holds the tools. They describe the same format — what separates
 // them fits in five passages: four say where the document goes back to, the
 // fifth where to find the scenario writing advice.
@@ -784,10 +784,10 @@ before writing anything.`,
 /** A catalogue of providers flattened out, in the `${provider.label}
  *  ${model.label}` form every reader of the model list shows.
  *
- * Shared between `agentModels` (the caller's favourites, the `/prompt` and
- * `read_prompt` channels) and `PromptGuide` (the favourites of whoever is
+ * Shared between `agentModels` (the caller's favourites, the `/format.txt` and
+ * `read_format` channels) and `FormatGuide` (the favourites of whoever is
  * looking at the screen): the two lay out the same catalogue, and having
- * written it twice is precisely what let `PromptGuide` publish all forty-one
+ * written it twice is precisely what let `FormatGuide` publish all forty-one
  * models while the other channels were already filtering. One place that knows
  * how to make the label can no longer diverge in silence. */
 export function catalogModelOptions(
@@ -802,8 +802,8 @@ export function catalogModelOptions(
   );
 }
 
-/** The models the prompt publishes, in the shape `agentPrompt` reads — shared
- *  between `/prompt` and the MCP tool `read_prompt`, so that only one list
+/** The models the prompt publishes, in the shape `runFormat` reads — shared
+ *  between `/format.txt` and the MCP tool `read_format`, so that only one list
  *  exists.
  *
  * Filtered to the caller's favourites: the prompt says "Use these identifiers
@@ -821,7 +821,7 @@ export function agentModels(
     .map(({ id, label }) => ({ id, label }));
 }
 
-/** A profile's two caps, as `mcpAgentPrompt` receives them — never read here,
+/** A profile's two caps, as `mcpRunFormat` receives them — never read here,
  *  only laid out. */
 export interface AgentCaps {
   maxUsdPerRun: number;
@@ -864,16 +864,16 @@ function fill(
     .replace("{{CAPS}}", capsText);
 }
 
-/** The prompt as `/prompt` serves it, with the validator's address.
+/** The prompt as `/format.txt` serves it, with the validator's address.
  *
  * `origin` is left empty when it is not known: the address becomes `/validate`,
- * which an agent that has read `/prompt` resolves by itself — same for
+ * which an agent that has read `/format.txt` resolves by itself — same for
  * `{{ORIGIN}}`, which points at `/advice.txt`, the public route, not
  * `/advice`, the private page a human reads. Those that know it pass it —
  * the window reads it in the browser, the route in the headers — because a
  * copy-pasted prompt arrives at an agent that has no host context left at
  * all. */
-export function agentPrompt(
+export function runFormat(
   models: { id: string; label: string }[],
   origin = "",
 ): string {
@@ -882,7 +882,7 @@ export function agentPrompt(
     .replaceAll("{{ORIGIN}}", origin);
 }
 
-/** The same document for `read_prompt`, that is, for an agent that already
+/** The same document for `read_format`, that is, for an agent that already
  *  holds the tools.
  *
  * No origin to pass: there is no URL left to reach. What used to replace
@@ -890,11 +890,11 @@ export function agentPrompt(
  * deposits without launching anything — giving the validator's address on top
  * would send the agent knocking at an HTTP door it has no reason to open.
  *
- * `caps` carries the two caps of the caller's profile — the one `read_prompt`
+ * `caps` carries the two caps of the caller's profile — the one `read_format`
  * resolved through `callerEmail` before calling this function, not a default of
  * this file. `null` when the profile could not be read at that moment: the
  * template says so rather than inventing a figure. */
-export function mcpAgentPrompt(
+export function mcpRunFormat(
   models: { id: string; label: string }[],
   caps: AgentCaps | null,
 ): string {

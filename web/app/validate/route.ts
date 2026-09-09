@@ -1,9 +1,9 @@
 // Telling an agent whether its document would pass, before it hands it over.
 //
-// The counterpart of `/prompt`, and outside the door for the same reason: both
+// The counterpart of `/format.txt`, and outside the door for the same reason: both
 // address a machine that has no session and would not know how to get one. What
 // it returns holds nothing private — a verdict on a text the caller already
-// owns, pronounced according to rules published in plain sight on `/prompt`. No
+// owns, pronounced according to rules published in plain sight on `/format.txt`. No
 // run, no note, no address passes through it, and nothing enters it: the route
 // does not read the database.
 //

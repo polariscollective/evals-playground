@@ -2,7 +2,7 @@
 //
 // One document covered four jobs, read at four moments by a reader in four
 // different states: writing a scenario, putting a batch together, reading
-// results, writing a judge. The third existed nowhere — `read_prompt` walks an
+// results, writing a judge. The third existed nowhere — `read_format` walks an
 // agent through writing a run up to launch and stops there.
 //
 // The default lives in the code and the profile carries only an override, as

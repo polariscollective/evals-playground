@@ -51,7 +51,7 @@ export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
  *
  * `null` — an absent profile as much as an empty column — returns the default.
  * Not knowing who is looking is no reason to offer nothing: a public route such
- * as `/prompt` comes through here with no profile and must serve something.
+ * as `/format.txt` comes through here with no profile and must serve something.
  *
  * Identifiers no longer in the catalogue are set aside on reading rather than on
  * writing: the list is written at one moment, the catalogue moves without it, and

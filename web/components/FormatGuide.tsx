@@ -8,10 +8,10 @@
 // memory produces refused configs.
 import { useState } from "react";
 import { Dialog } from "./Dialog";
-import { agentPrompt, catalogModelOptions } from "@/lib/agent-prompt";
+import { runFormat, catalogModelOptions } from "@/lib/run-format";
 import type { ProviderInfo } from "@/lib/types";
 
-export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
+export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   // The prompt sends the agent to `/validate`, and a copy-pasted prompt reaches
@@ -23,7 +23,7 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
   // effect laying the origin in state would do the same work in two renders, and
   // the linter refuses it rightly.
   const text = open
-    ? agentPrompt(
+    ? runFormat(
         // Filtered to the favourites of whoever is looking: this dialog promises
         // "the model identifiers currently available", and an identifier one has
         // not ticked is not available — `submit_draft_run` would refuse it.
@@ -96,11 +96,11 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
           <div className="mb-3 flex items-center gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
             <span className="shrink-0 text-zinc-500">Or give it this link:</span>
             <code className="grow truncate font-mono text-xs">
-              {`${window.location.origin}/prompt`}
+              {`${window.location.origin}/format.txt`}
             </code>
             <button
               onClick={() =>
-                copy(`${window.location.origin}/prompt`, "Link copied.")
+                copy(`${window.location.origin}/format.txt`, "Link copied.")
               }
               className="shrink-0 cursor-pointer rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs hover:bg-zinc-50"
             >

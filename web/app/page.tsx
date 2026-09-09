@@ -39,7 +39,7 @@ import { NotesField } from "@/components/NotesField";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { PromptGuide } from "@/components/PromptGuide";
+import { FormatGuide } from "@/components/FormatGuide";
 import { configProblem } from "@/lib/validate";
 import { DEFAULT_RUN_MODEL } from "@/lib/favorite-models";
 import { clearSaved, readSaved, writeSaved } from "@/lib/evaluate-storage";
@@ -1282,7 +1282,7 @@ function EvaluateForm() {
         </button>
         <span className="text-zinc-500">JSON or YAML — fills in everything below.</span>
         <span className="ml-auto flex gap-4">
-          <PromptGuide providers={providers} />
+          <FormatGuide providers={providers} />
           <button
             onClick={() => void downloadConfig()}
             className="cursor-pointer text-zinc-600 underline hover:text-zinc-900"

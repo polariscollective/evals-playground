@@ -32,6 +32,12 @@ const nextConfig: NextConfig = {
         destination: "/advice.txt",
         permanent: true,
       },
+      // `/prompt` said "a text for a model", which in this repository means a
+      // scenario's system prompt or the adversary's — never the manual for
+      // writing a run. `/format.txt` says which of the two documents an agent
+      // reads it is: the one about what gets a document REFUSED, next to
+      // `/advice.txt`, the one about what makes it worthless.
+      { source: "/prompt", destination: "/format.txt", permanent: true },
       {
         source: "/shared/scenarios",
         destination: "/shared/advice",

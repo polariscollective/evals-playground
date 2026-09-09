@@ -2,7 +2,7 @@ import { ADVICE_TOPICS, DEFAULT_ADVICE, isAdviceTopic } from "@/lib/advice";
 
 /** Un document de conseil, en texte brut et sans connexion.
  *
- * The counterpart of `/prompt`, outside the door for the same reason: the
+ * The counterpart of `/format.txt`, outside the door for the same reason: the
  * point is to give this address to an agent that has no session and would not
  * know how to obtain one. `{{ORIGIN}}/advice` — the page showing these same
  * texts for a human to copy — did not suit that use: it requires a session, and

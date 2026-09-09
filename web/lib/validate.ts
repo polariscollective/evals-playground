@@ -37,7 +37,7 @@ function isFilled(value: unknown): value is string {
  * zero tokens by the estimate — so the announced quote would be too low for a
  * run that has no chance of getting anywhere.
  *
- * The catalogue is the only list there is: `/prompt` publishes it saying "Use
+ * The catalogue is the only list there is: `/format.txt` publishes it saying "Use
  * these identifiers exactly. Anything else fails at the first call." This
  * refusal only enforces what is already promised. */
 function modelProblem(id: unknown, where: string): string | null {
@@ -60,7 +60,7 @@ function temperatureProblem(temperature: unknown): string | null {
   if (typeof temperature !== "object") return "temperature must be a min, or a min and a max";
   const { min, max } = temperature as { min?: unknown; max?: unknown };
 
-  // `min` carries the temperature when there is no range — see the `/prompt`
+  // `min` carries the temperature when there is no range — see the `/format.txt`
   // template, "omit max to use one fixed temperature". Requiring it rather than
   // giving it a default value avoids the trap of a hidden default: a file that
   // wrote only `max` received "upper bound is below the lower bound" about a
