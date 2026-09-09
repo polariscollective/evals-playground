@@ -472,7 +472,7 @@ def test_an_ordinary_judge_with_no_scale_is_refused():
 def test_a_judge_with_no_system_type_is_refused():
     # NOT NULL on both sides, with no default (migration 20260906113533,
     # polaris-supabase repository): omitting the field must fail, not fall back
-    # silencieusement sur un sentinelle choisi par le code.
+    # silently on a sentinel chosen by the code.
     with pytest.raises(ValidationError):
         Judge(
             id="j6",

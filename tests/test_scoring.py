@@ -626,8 +626,8 @@ def test_an_ordinary_judge_receives_the_scenarios_system_prompt():
     _run_scorer(config, outputs)
 
     assert len(seen) == 1, "the judge must have been called"
-    contenu = str(seen[0][-1].content)
-    assert JUDGE_MARKER in contenu, (
+    content = str(seen[0][-1].content)
+    assert JUDGE_MARKER in content, (
         "the scenario's system prompt must reach the message sent to the"
         " judge, without which it cannot understand what the model had been"
         " asked"
@@ -692,7 +692,7 @@ def test_invariant_2_a_cancellation_does_not_lose_a_grade_already_obtained():
     """
     judges = [
         _ordinary_judge("j1", criterion="First question."),
-        _ordinary_judge("j2", criterion="Seconde question."),
+        _ordinary_judge("j2", criterion="Second question."),
     ]
     calls: list[int] = []
 
@@ -754,10 +754,10 @@ def test_invariant_3_a_system_judge_ignores_the_criterion_and_scale_from_the_dat
     in `shared/awareness-prompt.json` and `parse_awareness`.
     """
     forged_judge = {
-        "run_judge_id": "j-eveil",
+        "run_judge_id": "j-awareness",
         "model": "mockllm/model",
         "system_type": "awake",
-        "criterion": "CRITERE_MALVEILLANT_JAMAIS_ENVOYE",
+        "criterion": "MALICIOUS_CRITERION_NEVER_SENT",
         "rubric": [{"value": 999, "meaning": "PALIER_MALVEILLANT"}],
     }
     seen: list = []
@@ -779,10 +779,10 @@ def test_invariant_3_a_system_judge_ignores_the_criterion_and_scale_from_the_dat
     )
 
     assert len(seen) == 1
-    contenu = str(seen[0][-1].content)
-    assert "CRITERE_MALVEILLANT_JAMAIS_ENVOYE" not in contenu
-    assert "PALIER_MALVEILLANT" not in contenu
-    assert contenu == awareness_prompt(
+    content = str(seen[0][-1].content)
+    assert "MALICIOUS_CRITERION_NEVER_SENT" not in content
+    assert "PALIER_MALVEILLANT" not in content
+    assert content == awareness_prompt(
         render_transcript(
             TRANSCRIPT, system_prompt=_config().scenarios[0].system_prompt
         )
@@ -791,7 +791,7 @@ def test_invariant_3_a_system_judge_ignores_the_criterion_and_scale_from_the_dat
     # grade (999) exists on no level of that scale, but 3 (on the fixed scale)
     # is indeed accepted.
     assert verdicts[0][1].score == 3
-    assert verdicts[0][1].run_judge_id == "j-eveil"
+    assert verdicts[0][1].run_judge_id == "j-awareness"
 
 
 def test_judge_from_metadata_rebuilds_the_rubric():

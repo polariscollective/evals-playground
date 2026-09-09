@@ -61,7 +61,6 @@ export function AppNav() {
    * name, who would see them all fail. The answer lives in `public-paths.ts`,
    * with the proxy that enforces it; duplicating it here would let it drift. */
   const isPublic = isOpen(pathname);
-  const publique = isOpen(pathname);
   useEffect(() => {
     if (isPublic) return;
     ensureRunsLoaded();

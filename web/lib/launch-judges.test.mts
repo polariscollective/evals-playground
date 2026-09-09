@@ -155,11 +155,11 @@ test("check_eval_awareness absent adds the awareness judge, of system type", () 
   );
 
   assert.equal(judges.length, 2);
-  const eveil = judges[1];
-  assert.equal(eveil.system_type, "awake");
-  assert.equal(eveil.criterion, null);
-  assert.equal(eveil.rubric, null);
-  assert.equal(eveil.model, "judge/1");
+  const awareness = judges[1];
+  assert.equal(awareness.system_type, "awake");
+  assert.equal(awareness.criterion, null);
+  assert.equal(awareness.rubric, null);
+  assert.equal(awareness.model, "judge/1");
   assert.equal(runJudges[1].system_type, "awake");
   assert.equal(runJudges[1].is_principal, false);
 });

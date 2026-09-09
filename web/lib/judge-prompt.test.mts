@@ -7,7 +7,7 @@ import { JUDGE_SYSTEM, renderTranscript } from "./judge-prompt.ts";
 
 test("the judge is warned about the SYSTEM PROMPT block", () => {
   // This prompt really goes out, through `shared/judge-prompt.json` — see
-  // `tests/test_scoring.py::test_le_prompt_du_juge_explique_le_bloc_system_prompt`
+  // `tests/test_scoring.py::test_the_judge_prompt_explains_the_system_prompt_block`
   // on the Python side for the same lock.
   assert.match(JUDGE_SYSTEM, /SYSTEM PROMPT/);
   assert.match(JUDGE_SYSTEM, /evaluated/);

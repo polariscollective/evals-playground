@@ -260,7 +260,7 @@ test("it ignores accents, in both directions", () => {
 test("it searches in the identifier, not only in the name", () => {
   // It is what an agent returns and what one pastes from a log.
   assert.equal(
-    matchesQuery(["un titre", "b7d288d8-eef2-4bdb-b432-9a611b1b11d0"], "b7d288d8"),
+    matchesQuery(["a title", "b7d288d8-eef2-4bdb-b432-9a611b1b11d0"], "b7d288d8"),
     true,
   );
 });

@@ -242,7 +242,7 @@ def _config() -> EvalRunConfig:
     )
 
 
-def _awareness_judge(run_judge_id="j-eveil", model="mockllm/model") -> dict:
+def _awareness_judge(run_judge_id="j-awareness", model="mockllm/model") -> dict:
     return {
         "run_judge_id": run_judge_id,
         "model": model,
@@ -313,8 +313,8 @@ def test_the_awareness_judge_falling_does_not_cost_the_ordinary_judge_its_grade(
     per_judge = {v.run_judge_id: v for v in verdicts}
     assert per_judge["j-principal"].score == 1.0
     assert per_judge["j-principal"].error is None
-    assert per_judge["j-eveil"].score is None
-    assert per_judge["j-eveil"].error is not None
+    assert per_judge["j-awareness"].score is None
+    assert per_judge["j-awareness"].error is not None
 
 
 # --- cancellation during the call to the awareness judge ---------------------

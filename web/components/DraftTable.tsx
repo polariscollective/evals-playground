@@ -106,7 +106,7 @@ export function DraftTable({
             <th className="relative w-24 py-3 pr-8 font-medium">
               Shape{" "}
               <InfoDot label="What Shape means">
-                scenarios × models × repetitions — preceded by a "+" for an
+                scenarios × models × repetitions — preceded by a &ldquo;+&rdquo; for an
                 extension, which adds to the run rather than making a fresh one
               </InfoDot>
             </th>

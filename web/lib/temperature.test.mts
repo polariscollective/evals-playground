@@ -36,6 +36,6 @@ test("the intermediate values drag no float noise", () => {
 
 test("the upper bound is returned as it stands, with no float drift", () => {
   // 0.2 + 0.7 comes to 0.8999999999999999 by accumulation.
-  const [, dernier] = temperaturesFor({ min: 0.2, max: 0.9 }, 2);
-  assert.equal(dernier, 0.9);
+  const [, last] = temperaturesFor({ min: 0.2, max: 0.9 }, 2);
+  assert.equal(last, 0.9);
 });

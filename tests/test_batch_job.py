@@ -366,8 +366,8 @@ def test_a_failing_judge_gives_a_score_row_in_error(tmp_path: Path):
     way — and since multiple judges, that failure touches only the
     row of THAT judge, never the status of the cell itself (see invariant 1,
     tested end to end in
-    `test_invariant_1_deux_juges_vivants_l_un_tombe_l_autre_note_normalement`,
-    plus bas)."""
+    `test_invariant_1_two_live_judges_one_falls_the_other_grades_normally`,
+    further down)."""
 
     def without_a_tool_call(input, tools, tool_choice, config):
         return ModelOutput.from_content(model="mockllm", content="I do not grade")
@@ -524,7 +524,7 @@ def test_every_live_judge_grades_every_fresh_cell(tmp_path: Path):
         },
         {
             "id": "j2",
-            "criterion": "Seconde question.",
+            "criterion": "Second question.",
             "rubric": CONFIG["rubric"],
             "model": "mockllm/model",
             "system_type": "ordinary",
@@ -641,7 +641,7 @@ def test_invariant_1_two_live_judges_one_falls_the_other_grades_normally(
         },
         {
             "id": "j-ok",
-            "criterion": "Seconde question.",
+            "criterion": "Second question.",
             "rubric": CONFIG["rubric"],
             "model": "mockllm/model",
             "system_type": "ordinary",

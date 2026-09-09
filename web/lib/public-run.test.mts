@@ -61,7 +61,7 @@ test("the addresses of whoever extended it do not go out either", () => {
   // through. The type forbids it now, and this test checks it at runtime: a
   // future name-bearing field added to an entry would do the same thing
   // silently.
-  const avecExtensions = {
+  const withExtensions = {
     ...DETAIL,
     run: {
       ...DETAIL.run,
@@ -72,7 +72,7 @@ test("the addresses of whoever extended it do not go out either", () => {
     },
   } as unknown as RunDetail;
 
-  const published = withoutIdentity(avecExtensions);
+  const published = withoutIdentity(withExtensions);
   assert.equal(JSON.stringify(published).includes("polaris.example"), false);
   // What remains still says where the extension came from, without naming
   // anyone.

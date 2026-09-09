@@ -144,13 +144,13 @@ test("writing and serving are two independent axes", () => {
   assert.equal(served(fixeEcrivant), false);
   assert.equal(writesWorld(fixeEcrivant), true);
 
-  const serviLecteur = {
+  const servedReader = {
     result: "",
     retrieval_rules: "Return at most twenty lines.",
     world_effect: undefined,
   };
-  assert.equal(served(serviLecteur), true);
-  assert.equal(writesWorld(serviLecteur), false);
+  assert.equal(served(servedReader), true);
+  assert.equal(writesWorld(servedReader), false);
 });
 
 test("a run writes as soon as a single one of its tools writes", () => {

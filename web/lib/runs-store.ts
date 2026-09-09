@@ -10,8 +10,7 @@
  * A module store rather than a React context: the runs page is not the only
  * one that triggers the load — "Evaluate" preloads it on arrival, so that the
  * next tab is already filled when it opens. A context would have imposed a
- * provider in `layout.tsx` for a state nobody
- * modifie hors d'ici.
+ * provider in `layout.tsx` for a state nobody changes outside this file.
  *
  * The mechanism is in `store.ts`, shared with the three other caches.
  */
