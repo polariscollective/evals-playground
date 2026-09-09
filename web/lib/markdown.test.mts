@@ -1,11 +1,11 @@
-// Le rendu des notes n'avait pas de test, et c'est par là qu'il s'est cassé :
-// une balise n'était reconnue que si tout le paragraphe était de son espèce.
+// The note rendering had no test, and that is where it broke: a tag was
+// recognised only if the whole paragraph was of its kind.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderMarkdown } from "./markdown.ts";
 
 test("un titre reste un titre quand du texte le suit sans ligne vide", () => {
-  // Le cas qui ratait : personne n'écrit un titre en le laissant seul.
+  // The case that failed: nobody writes a heading and leaves it alone.
   assert.equal(
     renderMarkdown("# Titre\npuis du texte"),
     "<h2>Titre</h2><p>puis du texte</p>",
@@ -19,7 +19,7 @@ test("une liste reste une liste quand une ligne ordinaire la suit", () => {
   );
 });
 
-test("titre, liste et paragraphe se suivent dans un même bloc", () => {
+test("heading, list and paragraph follow one another in one block", () => {
   assert.equal(
     renderMarkdown("## Sous-titre\n- a\n- b\nconclusion"),
     "<h3>Sous-titre</h3><ul><li>a</li><li>b</li></ul><p>conclusion</p>",
@@ -31,7 +31,7 @@ test("un titre seul marche toujours, et h1 reste au titre de la page", () => {
   assert.equal(renderMarkdown("#### Quatre"), "<h5>Quatre</h5>");
 });
 
-test("un retour simple reste un retour, une ligne vide sépare", () => {
+test("a plain break stays a break, an empty line separates", () => {
   assert.equal(renderMarkdown("un\ndeux"), "<p>un<br />deux</p>");
   assert.equal(renderMarkdown("un\n\ndeux"), "<p>un</p><p>deux</p>");
 });
@@ -43,8 +43,8 @@ test("une citation sur plusieurs lignes n'en fait qu'une", () => {
   );
 });
 
-test("le HTML d'entrée est échappé, quelle que soit la ligne où il tombe", () => {
-  // La sûreté ne peut pas dépendre de la bonne volonté de l'auteur : le rendu
+test("input HTML is escaped, whatever line it falls on", () => {
+  // Safety cannot depend on the author's goodwill: the rendering
   // part dans `dangerouslySetInnerHTML`.
   assert.equal(
     renderMarkdown("<script>alert(1)</script>"),
@@ -56,54 +56,56 @@ test("le HTML d'entrée est échappé, quelle que soit la ligne où il tombe", (
   );
 });
 
-test("un lien dont le schéma exécute du code retombe sur son texte", () => {
+test("a link whose scheme executes code falls back on its text", () => {
   const html = renderMarkdown("[clique](javascript:alert(1))");
   assert.doesNotMatch(html, /<a /);
   assert.match(html, /\[clique\]/);
 });
 
-test("les marques en début de ligne sont rendues", () => {
+test("marks at the start of a line are rendered", () => {
   assert.equal(renderMarkdown("*gras* et suite"), "<p><em>gras</em> et suite</p>");
-  assert.equal(renderMarkdown("`code` au début"), "<p><code>code</code> au début</p>");
+  assert.equal(renderMarkdown("`code` at the start"), "<p><code>code</code> at the start</p>");
 });
 
 // ---------------------------------------------------------------------------
-// Le mode « recomposé », pour un document dur-wrappé.
+// The "reflow" mode, for a hard-wrapped document.
 //
-// Le conseil d'écriture de scénario est stocké coupé à 78 colonnes. Rendu avec
-// les retours durs ci-dessus, il gardait ses coupures : le texte s'arrêtait au
-// milieu d'un cadre large, et une puce coupée en deux voyait sa suite repartir
-// en paragraphe à la marge. C'est du markdown ordinaire qu'il lui faut — un
+// The scenario-writing advice is stored wrapped at 78 columns. Rendered with
+// the hard breaks above, it kept its wraps: the text stopped in the middle of a
+// wide frame, and a bullet cut in two saw its continuation start again as a
+// paragraph at the margin. What it needs is ordinary markdown — a
 // retour simple y est une respiration de la source, pas une intention.
 
-test("recomposé : un retour simple redevient une espace", () => {
+test("reflow: a plain break becomes a space again", () => {
   assert.equal(renderMarkdown("un\ndeux", { reflow: true }), "<p>un deux</p>");
 });
 
-test("recomposé : une ligne vide sépare toujours deux paragraphes", () => {
+test("reflow: an empty line still separates two paragraphs", () => {
   assert.equal(
     renderMarkdown("un\n\ndeux", { reflow: true }),
     "<p>un</p><p>deux</p>",
   );
 });
 
-test("recomposé : une puce coupée en deux reste une seule puce", () => {
-  // Le cas exact du document : la suite est indentée et ne porte pas de tiret.
+test("reflow: a bullet cut in two stays a single bullet", () => {
+  // The document's exact case: the continuation is indented and carries no
+  // dash.
   assert.equal(
-    renderMarkdown("- une puce coupée\n  en deux", { reflow: true }),
-    "<ul><li>une puce coupée en deux</li></ul>",
+    renderMarkdown("- a bullet cut\n  in two", { reflow: true }),
+    "<ul><li>a bullet cut in two</li></ul>",
   );
 });
 
-test("recomposé : une ligne ordinaire non indentée ferme quand même la liste", () => {
-  // Sans quoi tout le reste du document serait avalé par la première puce.
+test("reflow: an ordinary unindented line still closes the list", () => {
+  // Without which the whole rest of the document would be swallowed by the
+  // first bullet.
   assert.equal(
     renderMarkdown("- item\ntexte qui suit", { reflow: true }),
     "<ul><li>item</li></ul><p>texte qui suit</p>",
   );
 });
 
-test("recomposé : un titre ferme le paragraphe qui le précède", () => {
+test("reflow: a heading closes the paragraph before it", () => {
   assert.equal(
     renderMarkdown("du texte\n## Titre", { reflow: true }),
     "<p>du texte</p><h3>Titre</h3>",
@@ -111,7 +113,7 @@ test("recomposé : un titre ferme le paragraphe qui le précède", () => {
 });
 
 test("les notes de run gardent leurs retours durs", () => {
-  // La garde qui compte : ce mode est une option, jamais le nouveau défaut.
+  // The guard that matters: this mode is an option, never the new default.
   assert.equal(renderMarkdown("un\ndeux"), "<p>un<br />deux</p>");
   assert.equal(
     renderMarkdown("- une puce\n  suite"),
@@ -120,22 +122,22 @@ test("les notes de run gardent leurs retours durs", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Une marque qui enjambe un retour à la ligne.
+// A mark that straddles a line break.
 //
-// `inline` était appliqué ligne par ligne, avant que les lignes du paragraphe
-// soient recollées : un `**gras**` ouvert sur une ligne et fermé sur la
-// suivante n'avait sa paire complète dans aucune des deux, et ressortait en
-// astérisques. C'est ce qui arrivait à la dernière phrase du conseil de
-// scénario. Les puces y échappaient déjà — elles, se recollent avant.
+// `inline` was applied line by line, before the paragraph's lines were joined
+// back together: a `**bold**` opened on one line and closed on the next had its
+// complete pair in neither, and came out as asterisks. That is what happened to
+// the last sentence of the scenario advice. Bullets escaped it already — they
+// are joined first.
 
-test("une marque qui enjambe un retour est rendue, en recomposé", () => {
+test("a mark straddling a break is rendered, in reflow mode", () => {
   assert.equal(
     renderMarkdown("It is: **could this only\nexist in a test.**", { reflow: true }),
     "<p>It is: <strong>could this only exist in a test.</strong></p>",
   );
 });
 
-test("une marque qui enjambe un retour est rendue, retours durs gardés", () => {
+test("a mark straddling a break is rendered, hard breaks kept", () => {
   // Le gras traverse la coupure ; le retour, lui, reste un retour.
   assert.equal(
     renderMarkdown("a **gras\nsur deux** b"),
