@@ -1,4 +1,4 @@
-import { agentModels, agentPrompt } from "@/lib/agent-prompt";
+import { agentModels, runFormat } from "@/lib/run-format";
 import { DEFAULT_FAVORITE_MODELS } from "@/lib/favorite-models";
 
 /** The public address under which we were called.
@@ -29,13 +29,13 @@ function originOf(request: Request): string {
  * who is asking, so nothing depending on who is asking can come out here — the
  * same rule as `/advice.txt`, which serves the default advice for that
  * exact reason. The agent going through MCP, for its part, is identified, and
- * `read_prompt` returns its own list.
+ * `read_format` returns its own list.
  *
  * In `text/plain` because the reader is a machine: HTML would make it cross a
  * layout to find the text meant for it. */
 export async function GET(request: Request) {
   return new Response(
-    agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), originOf(request)),
+    runFormat(agentModels(DEFAULT_FAVORITE_MODELS), originOf(request)),
     {
       headers: {
         "content-type": "text/plain; charset=utf-8",

@@ -47,7 +47,7 @@ function isCurrent(pathname: string, href: string): boolean {
  * you are trying to obtain are worse than no bar at all.
  *
  * Not `isOpen` from `public-paths.ts`, which answers a different question —
- * `/prompt` and `/validate` are open paths that do want the bar. */
+ * `/format.txt` and `/validate` are open paths that do want the bar. */
 const HIDDEN_ON = ["/shared", "/signin"];
 
 export function AppNav() {

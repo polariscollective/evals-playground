@@ -25,9 +25,9 @@ export const OPEN_PREFIXES = [
   // no one can sign in through a page that requires being signed in. Safe
   // behind an open door — it reads nothing and writes nothing.
   "signin",
-  // The instructions and the checker: they address an agent, which has no
-  // session and would not know how to obtain one.
-  "prompt",
+  // The checker: it addresses an agent, which has no session and would not
+  // know how to obtain one. The manual it goes with is `format.txt`, a file
+  // rather than a prefix — see OPEN_FILES.
   "validate",
   // A published run.
   "shared",
@@ -58,7 +58,7 @@ export const OPEN_PREFIXES = [
 // A FILE and not a prefix, and that is the whole point: `/advice`, the page
 // where a signed-in human rewrites those documents, must stay behind the door.
 // Anchored on the end, `advice.txt` opens itself and nothing near it.
-export const OPEN_FILES = ["favicon.ico", "icon.svg", "advice.txt"];
+export const OPEN_FILES = ["favicon.ico", "icon.svg", "advice.txt", "format.txt"];
 
 /** The dot is the only character in these paths a regular expression would
  *  read as anything other than itself. */

@@ -76,7 +76,7 @@ test("an evaluated model outside the catalogue is refused", () => {
 });
 
 test("the template's placeholder is refused like any other unknown", () => {
-  // `/prompt` writes `adversary: ...` in its template. A document that copies it
+  // `/format.txt` writes `adversary: ...` in its template. A document that copies it
   // without filling it in used to pass.
   const problem = configProblem(
     withPatch((c) => {

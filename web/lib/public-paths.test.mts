@@ -7,7 +7,7 @@ import { isOpen, proxyMatcher } from "./public-paths.ts";
 
 test("the open paths go through the door with no session", () => {
   for (const path of [
-    "/prompt",
+    "/format.txt",
     "/validate",
     "/advice.txt",
     "/shared/2f1c9e6a-0000-4000-8000-000000000000",

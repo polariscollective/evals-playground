@@ -73,7 +73,7 @@ export async function GET(request: Request) {
       // internal host, and the `callbackUrl` would then designate an origin
       // NextAuth judges foreign and rewrites to `/`. The user would sign in to
       // Google only to land on the home page, while claude.ai waited for a code
-      // that would never arrive. Same reason as `originOf` in `/prompt`.
+      // that would never arrive. Same reason as `originOf` in `/format.txt`.
     const origin = getPublicOrigin(request);
     const signin = new URL("/signin", origin);
     signin.searchParams.set("callbackUrl", `${origin}${url.pathname}${url.search}`);

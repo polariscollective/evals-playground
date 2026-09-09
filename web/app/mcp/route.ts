@@ -11,7 +11,7 @@
 import { createMcpHandler, getPublicOrigin, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { agentModels, mcpAgentPrompt } from "@/lib/agent-prompt";
+import { agentModels, mcpRunFormat } from "@/lib/run-format";
 import { analysisReplaceAllowed } from "@/lib/analysis";
 import { AWAKE_TYPE, AWARENESS_ALARM, awarenessEnabled, awarenessSummary } from "@/lib/awareness";
 import { readConfigFile, writeConfigFile } from "@/lib/config-file";
@@ -210,7 +210,7 @@ function authorOnly(ownerEmail: string, caller: string): string | null {
 function documentRefusal(message: string) {
   const prefix = message.startsWith("INCOMPLETE")
     ? "Nothing has been saved: unlike the web app, this channel has no way to carry a CSV " +
-      "upload. Write the scenarios out in full instead — see read_prompt — and call this again " +
+      "upload. Write the scenarios out in full instead — see read_format — and call this again " +
       "with the complete document.\n\n"
     : "";
   return { content: [{ type: "text" as const, text: `${prefix}${message}` }], isError: true as const };
@@ -279,7 +279,7 @@ function judgeIdentity(view: {
 
 const handler = createMcpHandler((server) => {
   server.registerTool(
-    "read_prompt",
+    "read_format",
     {
       title: "Read the run-writing prompt",
       description:
@@ -294,7 +294,7 @@ const handler = createMcpHandler((server) => {
       inputSchema: z.object({}),
     },
     async (_input, ctx) => {
-      // The MCP variant, not `/prompt`'s: it points at submit_draft_run rather
+      // The MCP variant, not `/format.txt`'s: it points at submit_draft_run rather
       // than at the HTTP validator, which is not a door this agent has any reason
       // to open.
       const caller = await callerEmail(ctx);
@@ -310,7 +310,7 @@ const handler = createMcpHandler((server) => {
             // `submit_draft_run` will enforce a few calls further on, and
             // publishing anything else would send it offering a model it will be
             // refused.
-            text: mcpAgentPrompt(agentModels(favoriteModels(profile)), caps),
+            text: mcpRunFormat(agentModels(favoriteModels(profile)), caps),
           },
         ],
       };
@@ -907,7 +907,7 @@ const handler = createMcpHandler((server) => {
         yaml: z
           .string()
           .describe(
-            "The complete run, as a YAML document — every scenario written out, no CSV. See read_prompt.",
+            "The complete run, as a YAML document — every scenario written out, no CSV. See read_format.",
           ),
       }),
     },
@@ -1012,7 +1012,7 @@ const handler = createMcpHandler((server) => {
         yaml: z
           .string()
           .describe(
-            "The complete run, as a YAML document — every scenario written out, no CSV. See read_prompt.",
+            "The complete run, as a YAML document — every scenario written out, no CSV. See read_format.",
           ),
         tags: z
           .array(z.string())
@@ -1036,7 +1036,7 @@ const handler = createMcpHandler((server) => {
       // profile changed between the two reads.
       const profile = await profileOf(caller);
       // The only place where a model outside the favourites is forbidden and not
-      // merely hidden: `read_prompt` did not tell it about it, and refusing it on
+      // merely hidden: `read_format` did not tell it about it, and refusing it on
       // deposit spares it a draft it could not launch.
       const outside = configFavouritesProblem(config, favoriteModels(profile));
       if (outside) return toolError(outside);
@@ -1501,7 +1501,7 @@ const handler = createMcpHandler((server) => {
                     "instead of at the beginning. Alternating, first one `user`, last one " +
                     "`assistant` — the opening_message is the user turn that follows. The judge " +
                     "sees them marked as given, and never grades them. Same field, same rules, as " +
-                    "in the YAML format; see read_prompt.",
+                    "in the YAML format; see read_format.",
                 ),
               tools: z
                 .array(z.string())
@@ -1602,7 +1602,7 @@ const handler = createMcpHandler((server) => {
                     excluded: z
                       .boolean()
                       .optional()
-                      .describe("true keeps this grade out of the mean — see read_prompt."),
+                      .describe("true keeps this grade out of the mean — see read_format."),
                   }),
                 )
                 .describe("Its own scale, at least two grades, highest value the strongest form."),
@@ -1942,7 +1942,7 @@ const handler = createMcpHandler((server) => {
     "Evals playground: run behavioural evaluations of language models — one scenario played " +
     "against several models, several times each, graded by judges on a scale you define, and " +
     "read as a matrix.\n\n" +
-    "Start with `read_prompt`. It is the entire manual for writing a run, and nothing else on " +
+    "Start with `read_format`. It is the entire manual for writing a run, and nothing else on " +
     "this server explains the format: a run written without it is written from guesswork, and " +
     "this server will refuse it. Before writing anything, also call `read_advice` with " +
     "`[\"scenario\", \"batch\", \"judge\"]` — one call, three documents: what keeps a scenario " +

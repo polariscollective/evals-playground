@@ -6,7 +6,7 @@
 // template itself and put it through the file reader.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentModels, agentPrompt, catalogModelOptions, mcpAgentPrompt } from "./agent-prompt.ts";
+import { agentModels, runFormat, catalogModelOptions, mcpRunFormat } from "./run-format.ts";
 import { catalog, knownModelIds } from "./catalog.ts";
 import { readConfigFile } from "./config-file.ts";
 import { DEFAULT_FAVORITE_MODELS } from "./favorite-models.ts";
@@ -23,8 +23,8 @@ const CAPS = { maxUsdPerRun: 2, maxUsdPerHour: 10 };
 /** The template's two outputs. Everything that describes the format must hold on
  *  both sides: that is what these tests check by walking them together. */
 const CHANNELS = [
-  { name: "the pasted prompt", prompt: agentPrompt(MODELS) },
-  { name: "the MCP prompt", prompt: mcpAgentPrompt(MODELS, CAPS) },
+  { name: "the pasted prompt", prompt: runFormat(MODELS) },
+  { name: "the MCP prompt", prompt: mcpRunFormat(MODELS, CAPS) },
 ];
 
 /** The prompt's first YAML block, with its gaps filled in.
@@ -71,7 +71,7 @@ for (const { name, prompt } of CHANNELS) {
 }
 
 test("the CSV form described further down is accepted too", () => {
-  const prompt = agentPrompt(MODELS);
+  const prompt = runFormat(MODELS);
   const blocks = [...prompt.matchAll(/```yaml\n([\s\S]*?)```/g)];
   assert.ok(blocks.length >= 2, "the prompt must show the CSV form as well");
   const scenarios = blocks[1][1];
@@ -88,19 +88,19 @@ test("the CSV form described further down is accepted too", () => {
 });
 
 test("an empty catalogue says so rather than leaving a gap", () => {
-  assert.match(agentPrompt([]), /ask me for the model identifiers/);
-  assert.match(mcpAgentPrompt([], CAPS), /ask me for the model identifiers/);
+  assert.match(runFormat([]), /ask me for the model identifiers/);
+  assert.match(mcpRunFormat([], CAPS), /ask me for the model identifiers/);
 });
 
 test("the pasted prompt carries the origin it is given", () => {
   // It arrives at an agent with no host context: relative, it leads nowhere.
-  const prompt = agentPrompt(MODELS, "https://evals.example");
+  const prompt = runFormat(MODELS, "https://evals.example");
   assert.ok(prompt.includes("https://evals.example/validate"));
 });
 
 test("the MCP prompt never sends the agent to /validate", () => {
   // It holds the tool: showing it the HTTP door means watching it take it.
-  const prompt = mcpAgentPrompt(MODELS, CAPS);
+  const prompt = mcpRunFormat(MODELS, CAPS);
   assert.ok(!prompt.includes("/validate"));
   assert.ok(prompt.includes("submit_draft_run"));
 });
@@ -108,13 +108,13 @@ test("the MCP prompt never sends the agent to /validate", () => {
 test("the MCP prompt promises nothing gets launched", () => {
   // This channel's reason for being: an agent that fears spending does not call
   // the tool and looks for a gentler door, which does not exist.
-  assert.match(mcpAgentPrompt(MODELS, CAPS), /Calling it starts nothing/);
+  assert.match(mcpRunFormat(MODELS, CAPS), /Calling it starts nothing/);
 });
 
 test("the MCP prompt names the tools by which one picks up what exists", () => {
   // A tool that is not in the prompt does not exist for the agent: it would retype
   // a hundred-scenario run from what it sees of it.
-  const prompt = mcpAgentPrompt(MODELS, CAPS);
+  const prompt = mcpRunFormat(MODELS, CAPS);
   for (const tool of ["get_run_config", "get_draft_config", "update_draft_run"]) {
     assert.ok(prompt.includes(tool), tool);
   }
@@ -123,19 +123,19 @@ test("the MCP prompt names the tools by which one picks up what exists", () => {
 test("the MCP prompt does not offer a CSV form the tool refuses", () => {
   // `submit_draft_run` returns INCOMPLETE as an error: offering the CSV here
   // would promise a closed path.
-  const prompt = mcpAgentPrompt(MODELS, CAPS);
+  const prompt = mcpRunFormat(MODELS, CAPS);
   assert.ok(!prompt.includes("from: csv"));
   assert.equal([...prompt.matchAll(/```yaml\n/g)].length, 1);
 });
 
 test("the MCP prompt does not ask for a line to be edited before pasting it", () => {
   // Nobody pastes it: the experiment is already in the conversation.
-  assert.ok(!mcpAgentPrompt(MODELS, CAPS).includes("REPLACE THIS LINE"));
-  assert.ok(agentPrompt(MODELS).includes("REPLACE THIS LINE"));
+  assert.ok(!mcpRunFormat(MODELS, CAPS).includes("REPLACE THIS LINE"));
+  assert.ok(runFormat(MODELS).includes("REPLACE THIS LINE"));
 });
 
 test("the MCP prompt gives the caller's caps, not invented defaults", () => {
-  const prompt = mcpAgentPrompt(MODELS, { maxUsdPerRun: 3.5, maxUsdPerHour: 17 });
+  const prompt = mcpRunFormat(MODELS, { maxUsdPerRun: 3.5, maxUsdPerHour: 17 });
   assert.ok(prompt.includes("$3.50"), "the per-run cap must be readable");
   assert.ok(prompt.includes("$17.00"), "the per-hour cap must be readable");
   assert.ok(prompt.includes("launch_draft"));
@@ -144,7 +144,7 @@ test("the MCP prompt gives the caller's caps, not invented defaults", () => {
 });
 
 test("the MCP prompt does not guess a cap when the profile could not be read", () => {
-  const prompt = mcpAgentPrompt(MODELS, null);
+  const prompt = mcpRunFormat(MODELS, null);
   assert.ok(!prompt.includes("$2.00"), "no hard-coded default must appear in its place");
   assert.ok(!/\{\{[A-Z_]+\}\}/.test(prompt), "the gap must be filled even with no profile");
   assert.ok(prompt.includes("launch_draft"));
@@ -153,7 +153,7 @@ test("the MCP prompt does not guess a cap when the profile could not be read", (
 test("the prompt announces the awareness judge and the writing advice", () => {
   // What the prompt leaves out becomes a field an agent never writes, or advice
   // it does not go and fetch.
-  const prompt = agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
+  const prompt = runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
   assert.match(prompt, /check_eval_awareness/);
   // The MCP channel calls a tool; the HTTP channel opens the dedicated public
   // route — never `/scenarios`, the private page an agent with no session cannot
@@ -166,8 +166,8 @@ test("the prompt announces the two tool forms and the world", () => {
   // whose answer ignores the arguments, which the awareness judge will report
   // once the run is paid for.
   for (const prompt of [
-    agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
-    mcpAgentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), null),
+    runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    mcpRunFormat(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /retrieval_rules/);
     assert.match(prompt, /## Writing the world/);
@@ -184,7 +184,7 @@ test("the prompt announces models.world and its equivalence", () => {
   // The field has existed in the template since the previous project, but nothing
   // else said so: an agent that reads only the prose of the rules would not know
   // it becomes mandatory as soon as a tool is served.
-  const prompt = agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
+  const prompt = runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
   assert.match(prompt, /models\.world/);
   assert.match(prompt, /required as soon as one tool has/i);
 });
@@ -194,8 +194,8 @@ test("the prompt says the run names the world's server, at its own rate", () => 
   // adversary and judge), and every served call is billed at the named model's
   // rate — never a constant, as `pricing.ts` already does.
   for (const prompt of [
-    agentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
-    mcpAgentPrompt(agentModels(DEFAULT_FAVORITE_MODELS), null),
+    runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    mcpRunFormat(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /`models\.world` is what names its server/);
     assert.match(prompt, /billed at `models\.world`'s own rate, not some flat constant/);
@@ -205,7 +205,7 @@ test("the prompt says the run names the world's server, at its own rate", () => 
 test("the MCP prompt no longer says update_draft_run refuses another's draft", () => {
   // It diverts: it forks rather than writing on what is not the caller's. An
   // agent still reading the old sentence never tries.
-  const prompt = mcpAgentPrompt(MODELS, CAPS);
+  const prompt = mcpRunFormat(MODELS, CAPS);
   assert.ok(!/refuses a draft that is not/.test(prompt));
   assert.match(prompt, /forks/);
 });
@@ -226,7 +226,7 @@ for (const { name, prompt } of CHANNELS) {
 test("the prompt says the old single-judge format stays valid as it stands", () => {
   // An agent that learned the old format (criterion/rubric at the top level) must
   // not believe it has to relearn everything for a run with a single judge.
-  const prompt = agentPrompt(MODELS);
+  const prompt = runFormat(MODELS);
   assert.match(prompt, /is the default, and often all you need/);
   assert.match(prompt, /nothing about that changes if\s+you never add another/);
 });
@@ -235,7 +235,7 @@ test("the prompt says each judge costs one model call per conversation", () => {
   // The trap already bitten once with the awareness judge: the quote counted it
   // wrongly, nobody noticed before the invoice. An agent that lays three judges
   // without knowing it triggers three times the spend.
-  const prompt = agentPrompt(MODELS);
+  const prompt = runFormat(MODELS);
   assert.match(prompt, /Every judge is a model call per conversation, at its own model/);
   assert.match(prompt, /Three\s+judges are three times the grading spend/);
   assert.match(prompt, /the estimate already counts each one of them/);
@@ -245,13 +245,13 @@ test("the prompt says an agent cannot declare itself principal through `judges`"
   // `readJudges` (`config-file.ts`) silently ignores `system_type` and
   // `is_principal` on an entry: an agent that does not know it could believe it
   // had laid a second principal, or a system judge.
-  const prompt = agentPrompt(MODELS);
+  const prompt = runFormat(MODELS);
   assert.match(prompt, /system_type[\s\S]*is_principal|is_principal[\s\S]*system_type/);
   assert.match(prompt, /silently ignored/);
 });
 
 test("the prompt announces the section that teaches how to lay several judges", () => {
-  const prompt = agentPrompt(MODELS);
+  const prompt = runFormat(MODELS);
   assert.match(prompt, /## Adding more judges/);
   // The main template's rule (the first two scale rules) applies to each
   // secondary judge too.
@@ -288,7 +288,7 @@ test("agentModels labels the provider with the model", () => {
 
 // --- catalogModelOptions ----------------------------------------------------
 //
-// Shared by `agentModels` and by `PromptGuide`: it is what decides the label and
+// Shared by `agentModels` and by `FormatGuide`: it is what decides the label and
 // what carries each model's favourite flag, so that the two readers can no
 // longer filter one and not the other without noticing.
 
