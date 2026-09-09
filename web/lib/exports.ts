@@ -1,29 +1,28 @@
-// Exports CSV d'un run.
+// A run's CSV exports.
 //
-// Deux formats, pour deux usages qui ne se recouvrent pas : la matrice telle
-// qu'elle est affichée à l'écran, pour recoller un tableau dans un rapport ;
-// et le détail, une ligne par case, pour ré-analyser un run hors de l'outil.
+// Two formats, for two uses that do not overlap: the matrix as it is shown on
+// screen, to paste a table into a report; and the details, one row per cell, to
+// re-analyse a run outside the tool.
 //
-// Depuis les juges multiples, une case n'a plus une seule note posée dessus :
-// elle en a une par juge non supprimé du run, dans `judge_scores`. Cette
-// distinction avait déjà mordu ce dépôt une fois avant l'export : le badge
-// d'éveil existait à l'écran, mais aucun export ne le portait — une revue l'a
-// résumé « on savait, et on ne pouvait rien en faire ailleurs ». Les trois
-// fonctions ci-dessous prennent donc désormais, en plus des cases,
-// `judges: RunJudgeView[]` — les juges vivants du run et leurs verdicts, tels
-// que `attachJudges` (`lib/runs.ts`) les joint déjà pour l'écran. Ce fichier
-// ne lit jamais `judge_scores` ni `run_judges` lui-même, et ne refait jamais
-// le filtre `deleted_at` : il fait confiance à ce qu'on lui passe, exactement
-// comme `matrix.ts` et `awareness.ts` le font déjà pour la même donnée.
+// Since the multiple judges, a cell no longer has a single grade laid on it: it
+// has one per judge not deleted from the run, in `judge_scores`. That
+// distinction had already bitten this repository once before the export: the
+// awareness badge existed on screen, but no export carried it — a review summed
+// it up as "we knew, and we could do nothing with it elsewhere". The three
+// functions below therefore now take, on top of the cells,
+// `judges: RunJudgeView[]` — the run's living judges and their verdicts, as
+// `attachJudges` (`lib/runs.ts`) already joins them for the screen. This file
+// never reads `judge_scores` or `run_judges` itself, and never redoes the
+// `deleted_at` filter: it trusts what it is passed, exactly as `matrix.ts` and
+// `awareness.ts` already do for the same data.
 //
-// L'écran ne montre jamais qu'une seule matrice, celle du PRINCIPAL (voir le
-// commentaire de tête de `matrix.ts`) — mais un fichier qui quitte l'outil
-// n'a plus la contrainte de densité qui justifie ce choix à l'écran.
-// L'utilisateur a tranché : l'export doit porter tous les scores de tous les
-// juges, éveil compris. `matrixCsv` suivait encore, jusqu'à cette correction,
-// la même limite que l'écran — exactement le défaut déjà corrigé une fois
-// pour le badge d'éveil, revenu ici sous une autre forme. Voir sa docstring
-// pour la forme retenue et pourquoi.
+// The screen only ever shows one matrix, the PRINCIPAL's (see the head comment
+// of `matrix.ts`) — but a file that leaves the tool no longer has the density
+// constraint that justifies that choice on screen. The user has decided: the
+// export must carry every score of every judge, awareness included. `matrixCsv`
+// still followed, until this correction, the same limit as the screen —
+// exactly the flaw already fixed once for the awareness badge, back here in
+// another form. See its docstring for the shape chosen and why.
 import {
   AWAKE_TYPE,
   AWARENESS_ALARM,
@@ -31,11 +30,11 @@ import {
   awarenessSentence,
   awarenessSummary,
 } from "./awareness.ts";
-// Extension explicite : ce fichier n'avait jusqu'ici jamais été chargé
-// directement par `node --test` (aucun `exports.test.mts` n'existait), et le
-// résolveur ESM natif de Node — contrairement au compilateur TypeScript —
-// exige l'extension sur un import de valeur. Latent avant ce chantier, révélé
-// par le premier test qui importe ce fichier.
+// Explicit extension: this file had until now never been loaded directly by
+// `node --test` (no `exports.test.mts` existed), and Node's native ESM
+// resolver — unlike the TypeScript compiler — demands the extension on a value
+// import. Latent before this project, revealed by the first test that imports
+// this file.
 import { cellsOf, type MatrixSample } from "./matrix.ts";
 import { PLAIN_VIEW, describeView, type MatrixView } from "./view.ts";
 import { formatValue, sortedRubric } from "./judge-prompt.ts";
@@ -58,11 +57,11 @@ function toCsv(rows: string[][]): string {
   return rows.map((row) => row.map(cell).join(",")).join("\n");
 }
 
-/** En attente : ni notée, ni tombée. Même repli que `loadRuns`
- *  (`principalVerdictsByRun`, `runs.ts`) et que l'écran
- *  (`components/RunRead.tsx`) pour un juge sans ligne sur cette case —
- *  une absence de donnée n'est pas différente, à l'export, d'un juge qui
- *  n'est pas encore passé. */
+/** Pending: neither graded nor fallen over. Same fallback as `loadRuns`
+ *  (`principalVerdictsByRun`, `runs.ts`) and as the screen
+ *  (`components/RunRead.tsx`) for a judge with no row on this cell — an absence
+ *  of data is no different, at export time, from a judge that has not been over
+ *  it yet. */
 const PENDING_VERDICT: JudgeVerdictEntry = {
   status: "pending",
   score: null,
@@ -70,11 +69,11 @@ const PENDING_VERDICT: JudgeVerdictEntry = {
   error: null,
 };
 
-/** Le principal vivant de la liste, ou `undefined` — `judges` non chargé par
- *  l'appelant, ou cas improbable d'un run sans aucune liaison vivante. Même
- *  recherche que `RunMatrix`/`JudgeBlock` (`components/RunRead.tsx`) et que
- *  les outils MCP (`app/mcp/route.ts`) : ce fichier n'invente pas une
- *  troisième façon de le trouver. */
+/** The living principal of the list, or `undefined` — `judges` not loaded by
+ *  the caller, or the unlikely case of a run with no living link at all. Same
+ *  search as `RunMatrix`/`JudgeBlock` (`components/RunRead.tsx`) and as the MCP
+ *  tools (`app/mcp/route.ts`): this file does not invent a third way of finding
+ *  it. */
 function principalOf(judges: RunJudgeView[]): RunJudgeView | undefined {
   return judges.find((judge) => judge.is_principal);
 }
@@ -83,13 +82,13 @@ function verdictOf(judge: RunJudgeView | undefined, sampleId: string): JudgeVerd
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
 }
 
-/** L'identité d'un juge, commune à la matrice et au détail — cinq colonnes,
- *  jamais plus : une case de la matrice n'a pas de statut d'exécution ni de
- *  justification propres, elle en agrège plusieurs (voir `JUDGE_COLUMNS`,
- *  qui étend cette liste pour `detailsCsv`, à la maille de la conversation
- *  individuelle). Un même nom de colonne dans les deux fichiers permet de
- *  les recouper dans un tableur — trier, filtrer, VLOOKUP — sans redevinner
- *  laquelle correspond à laquelle. */
+/** A judge's identity, common to the matrix and to the details — five columns,
+ *  never more: a matrix cell has no execution status or justification of its
+ *  own, it aggregates several (see `JUDGE_COLUMNS`, which extends this list for
+ *  `detailsCsv`, at the grain of the individual conversation). The same column
+ *  name in both files makes it possible to cross-reference them in a
+ *  spreadsheet — sort, filter, VLOOKUP — without guessing again which
+ *  corresponds to which. */
 const JUDGE_IDENTITY_COLUMNS = [
   "judge_is_principal",
   "judge_system_type",
@@ -98,46 +97,44 @@ const JUDGE_IDENTITY_COLUMNS = [
   "judge_rubric",
 ];
 
-/** La matrice telle qu'affichée à l'écran, mais déclinée pour chaque juge
- *  vivant du run plutôt que pour le seul principal.
+/** The matrix as shown on screen, but declined for each living judge of the run
+ *  rather than for the principal alone.
  *
- * Chaque case porte la moyenne des notes obtenues. Une case dont rien n'a pu
- * être noté reste vide plutôt que de valoir zéro : la distinction est la même
- * qu'à l'écran, et c'est la plus facile à perdre en passant par un tableur.
+ * Each cell carries the mean of the grades obtained. A cell of which nothing
+ * could be graded stays empty rather than being worth zero: the distinction is
+ * the same as on screen, and it is the easiest one to lose on the way through a
+ * spreadsheet.
  *
- * **Une ligne par (scénario, juge non supprimé)**, jamais une colonne par
- * juge — même raison que `detailsCsv` : le nombre de juges varie d'un run à
- * l'autre (0 aujourd'hui, 1, 3...), et un en-tête CSV est fixe. Une colonne
- * par juge produirait un en-tête différent d'un export à l'autre : deux
- * exports du même dépôt ne pourraient plus s'empiler dans le même tableur,
- * et on ne saurait combien de colonnes ouvrir avant d'avoir déjà ouvert le
- * fichier. Chaque ligne porte l'identité du juge qui l'a produite
- * (`judge_is_principal`, `judge_model`, `judge_criterion`, `judge_rubric`) :
- * un tableur peut filtrer « seulement le principal », ou trier par juge, ou
- * par modèle de juge, sans deviner quelle colonne numérotée correspond à
- * quel juge — exactement le choix déjà fait pour `detailsCsv`, prolongé ici
- * à la maille de la matrice (scénario × modèle) plutôt qu'à celle de la
- * conversation individuelle.
+ * **One row per (scenario, judge not deleted)**, never one column per judge —
+ * same reason as `detailsCsv`: the number of judges varies from one run to the
+ * next (0 today, 1, 3...), and a CSV header is fixed. One column per judge would
+ * produce a different header from one export to another: two exports of the same
+ * repository could no longer be stacked in the same spreadsheet, and one would
+ * not know how many columns to open before having already opened the file. Each
+ * row carries the identity of the judge that produced it (`judge_is_principal`,
+ * `judge_model`, `judge_criterion`, `judge_rubric`): a spreadsheet can filter
+ * "only the principal", or sort by judge, or by judge model, without guessing
+ * which numbered column corresponds to which judge — exactly the choice already
+ * made for `detailsCsv`, extended here to the grain of the matrix (scenario ×
+ * model) rather than that of the individual conversation.
  *
- * `view` (agrégat + repli d'échelle, choisi à l'écran et transmis par la
- * route d'export) est la lecture de la matrice du PRINCIPAL — la seule que
- * l'écran montre, et son repli a été composé en regardant SA rubrique.
- * L'appliquer tel quel à un autre juge, dont les notes n'ont aucune raison
- * de tomber sur les mêmes valeurs, mentirait sur ce qu'elles deviennent.
- * Seul l'agrégat (moyenne/médiane/pire/meilleure — un réducteur générique,
- * indifférent à l'échelle qu'il réduit) est repris pour tout juge ; le repli
- * de valeurs ne s'applique jamais qu'au principal. La colonne `cell_meaning`
- * le dit sur chaque ligne, plutôt qu'une seule fois dans l'en-tête comme
- * avant cette correction : un chiffre qui n'est plus « la moyenne des
- * notes » doit se présenter, surtout une fois recopié dans un tableur où
- * plus rien ne le rappelle — et cette phrase diffère maintenant d'une ligne
- * à l'autre.
+ * `view` (aggregate + scale remapping, chosen on screen and passed on by the
+ * export route) is the reading of the PRINCIPAL's matrix — the only one the
+ * screen shows, and its remapping was composed while looking at ITS rubric.
+ * Applying it as it stands to another judge, whose grades have no reason to fall
+ * on the same values, would lie about what they become. Only the aggregate
+ * (mean/median/worst/best — a generic reducer, indifferent to the scale it
+ * reduces) is taken up for every judge; the value remapping only ever applies to
+ * the principal. The `cell_meaning` column says so on every row, rather than
+ * once only in the header as before this correction: a figure that is no longer
+ * "the mean of the grades" must introduce itself, above all once copied into a
+ * spreadsheet where nothing recalls it — and that sentence now differs from one
+ * row to the next.
  *
- * Sans aucun juge vivant (liste non chargée par l'appelant, ou — improbable
- * — aucune liaison vivante), chaque scénario garde tout de même sa ligne,
- * colonnes de juge vides : même choix que `detailsCsv`, pour la même
- * raison — un scénario ne doit jamais disparaître de l'export pour une
- * cause qui ne le concerne pas. */
+ * With no living judge at all (list not loaded by the caller, or — unlikely — no
+ * living link), each scenario still keeps its row, with empty judge columns:
+ * same choice as `detailsCsv`, for the same reason — a scenario must never
+ * disappear from the export for a cause that does not concern it. */
 export function matrixCsv(
   run: EvalRun,
   samples: EvalSample[],
@@ -147,52 +144,52 @@ export function matrixCsv(
   const targets = run.config.models.targets;
   const scenarioCount = run.config.scenarios.length;
 
-  // Au moins une itération même sans juge vivant, pour que chaque scénario
-  // garde sa ligne — voir la docstring ci-dessus.
-  const liaisons: (RunJudgeView | undefined)[] = judges.length > 0 ? judges : [undefined];
+  // At least one iteration even with no living judge, so that each scenario
+  // keeps its row — see the docstring above.
+  const links: (RunJudgeView | undefined)[] = judges.length > 0 ? judges : [undefined];
 
-  // Le repli d'échelle de `view` ne vaut que pour le principal — voir la
-  // docstring. L'agrégat, générique, reste le même pour tout juge.
+  // `view`'s scale remapping holds for the principal only — see the docstring.
+  // The aggregate, being generic, stays the same for every judge.
   const readingFor = (isPrincipal: boolean): MatrixView =>
     isPrincipal ? view : { aggregate: view.aggregate, remap: {} };
 
   const rowsByScenario: string[][][] = Array.from({ length: scenarioCount }, () => []);
 
-  for (const liaison of liaisons) {
-    const rubric = liaison?.judge.rubric ?? undefined;
-    const judgeView = readingFor(liaison?.is_principal ?? false);
-    // Réutilise `cellsOf` (`matrix.ts`) pour CHAQUE juge, pas seulement le
-    // principal : son champ `MatrixSample.principal` porte ici le verdict du
-    // juge en cours d'itération, quel qu'il soit — `cellsOf` ne sait pas, et
-    // n'a pas à savoir, lequel des juges du run le lui apporte, c'est une
-    // fonction pure sur des verdicts déjà joints. Ça ne contredit pas
-    // l'invariant documenté en tête de `matrix.ts` (« la matrice suit le
-    // juge principal ») : celui-ci porte sur la matrice AFFICHÉE
-    // (`RunMatrix`), qui reste inchangée — jamais sur cette fonction
-    // générique, appelée ici plusieurs fois de suite avec un juge différent.
+  for (const link of links) {
+    const rubric = link?.judge.rubric ?? undefined;
+    const judgeView = readingFor(link?.is_principal ?? false);
+      // Reuses `cellsOf` (`matrix.ts`) for EVERY judge, not only the principal:
+      // its `MatrixSample.principal` field carries here the verdict of the judge
+      // being iterated over, whichever it is — `cellsOf` does not know, and has
+      // no business knowing, which of the run's judges brings it to it; it is a
+      // pure function over verdicts already joined. That does not contradict the
+      // invariant documented at the head of `matrix.ts` ("the matrix follows the
+      // principal judge"): that one bears on the DISPLAYED matrix (`RunMatrix`),
+      // which stays unchanged — never on this generic function, called here
+      // several times in a row with a different judge.
     const matrixSamples: MatrixSample[] = samples.map((sample) => ({
       scenario_index: sample.scenario_index,
       target_model: sample.target_model,
       status: sample.status,
       cost_usd: sample.cost_usd,
-      principal: verdictOf(liaison, sample.id),
+      principal: verdictOf(link, sample.id),
     }));
     const cells = cellsOf(matrixSamples, scenarioCount, rubric, judgeView);
 
-    // `judgeQuestionAndScale` couvre déjà le juge d'éveil (question et
-    // échelle fixes, jamais en base) — même fonction que `detailsCsv`,
-    // plutôt que de réécrire ce cas ici une seconde fois.
-    const qa = liaison ? judgeQuestionAndScale(liaison.judge) : { criterion: "", rubric: "" };
-    const identity = liaison
+      // `judgeQuestionAndScale` already covers the awareness judge (fixed
+      // question and scale, never in the database) — same function as
+      // `detailsCsv`, rather than rewriting that case here a second time.
+    const qa = link ? judgeQuestionAndScale(link.judge) : { criterion: "", rubric: "" };
+    const identity = link
       ? [
-          liaison.is_principal ? "true" : "false",
-          liaison.system_type,
-          liaison.judge.model,
+          link.is_principal ? "true" : "false",
+          link.system_type,
+          link.judge.model,
           qa.criterion,
           qa.rubric,
         ]
       : ["", "", "", "", ""];
-    const cellMeaning = liaison ? describeView(judgeView, rubric) : "";
+    const cellMeaning = link ? describeView(judgeView, rubric) : "";
 
     for (let index = 0; index < scenarioCount; index += 1) {
       rowsByScenario[index].push([
@@ -219,9 +216,9 @@ function transcript(messages: Message[]): string {
   return messages
     .map(
       (message) =>
-        // Le marquage suit le transcript jusque dans l'export : une analyse
-        // faite hors de l'outil, sur ce fichier, doit pouvoir séparer ce que le
-        // modèle a produit de ce qu'on lui a posé.
+          // The marking follows the transcript all the way into the export: an
+          // analysis made outside the tool, on this file, must be able to
+          // separate what the model produced from what was laid before it.
         `[${message.role}${message.seeded ? ", given as context" : ""}${
           message.tool_name ? ` ${message.tool_name}` : ""
         }] ${message.content}${(message.tool_calls ?? [])
@@ -231,22 +228,22 @@ function transcript(messages: Message[]): string {
     .join("\n\n");
 }
 
-/** Une échelle sur une ligne, de la note la plus basse à la plus haute —
- *  celle d'un juge quelconque, principal ou non : les deux s'écrivent pareil. */
+/** A scale on one line, from the lowest grade to the highest — that of any
+ *  judge, principal or not: both are written the same way. */
 function rubricLine(rubric: RubricLevel[]): string {
   return sortedRubric(rubric)
     .map((level) => `${formatValue(level.value)} = ${level.meaning}`)
     .join(" | ");
 }
 
-/** La question et l'échelle d'UN juge, pour une ligne du CSV détaillé.
+/** The question and the scale of ONE judge, for a row of the detailed CSV.
  *
- * Un juge système ne porte ni l'une ni l'autre en base — voir la docstring de
- * `Judge` (`types.ts`) : sa question et son échelle vivent dans le code qui le
- * construit. L'éveil est le seul aujourd'hui ; le taire ici laisserait ses
- * colonnes vides comme s'il n'avait pas de question, quand il en a une, fixe
- * — le même texte que celui déjà promis à l'écran et dans le résumé Markdown
- * (voir `runMarkdown`), pour ne pas raconter deux histoires. */
+ * A system judge carries neither in the database — see the docstring of `Judge`
+ * (`types.ts`): its question and its scale live in the code that builds it.
+ * Awareness is the only one today; keeping quiet about it here would leave its
+ * columns empty as if it had no question, when it has one, fixed — the same text
+ * as the one already promised on screen and in the Markdown summary (see
+ * `runMarkdown`), so as not to tell two stories. */
 function judgeQuestionAndScale(judge: Judge): { criterion: string; rubric: string } {
   if (judge.system_type === AWAKE_TYPE) {
     return {
@@ -262,8 +259,8 @@ function judgeQuestionAndScale(judge: Judge): { criterion: string; rubric: strin
   };
 }
 
-/** Les colonnes qui ne dépendent que de la case : répétées sur chaque ligne
- *  de juge qu'elle porte (voir `JUDGE_COLUMNS` plus bas). */
+/** The columns that depend on the cell alone: repeated on every judge row it
+ *  carries (see `JUDGE_COLUMNS` below). */
 const SAMPLE_COLUMNS = [
   "run_id",
   "run_name",
@@ -275,9 +272,9 @@ const SAMPLE_COLUMNS = [
   "opening_message",
   "target_model",
   "repetition",
-  // L'exécution de la conversation — jamais celle d'un juge, qui a sa propre
-  // colonne de statut plus bas (`judge_status`). Une conversation peut être
-  // `done` sans qu'aucun juge n'y soit encore passé.
+  // The conversation's execution — never a judge's, which has its own status
+  // column further down (`judge_status`). A conversation can be `done` without
+  // any judge having been over it yet.
   "status",
   "temperature",
   "cost_usd",
@@ -287,17 +284,17 @@ const SAMPLE_COLUMNS = [
   "tools_available",
 ];
 
-/** Les colonnes d'UNE ligne de juge sur cette case — voir `detailsCsv` pour
- *  pourquoi c'est une ligne par juge et non une colonne par juge.
+/** The columns of ONE judge row on this cell — see `detailsCsv` for why it is
+ *  one row per judge and not one column per judge.
  *
- * Étend `JUDGE_IDENTITY_COLUMNS` (partagée avec `matrixCsv`) de ce qui n'a de
- * sens qu'à la maille de la conversation individuelle. `judge_status`,
- * `score`, `justification`, `judge_error` tiennent à eux quatre les trois
- * issues que ce produit ne confond jamais : noté (`judge_status = done`,
- * `score` renseigné), sans note (`done`, `score` vide — conversation vide ou
- * note hors échelle), et le juge tombé (`judge_status = error`, `judge_error`
- * renseigné, `score` toujours vide). `pending` en plus, pour un juge pas
- * encore passé sur cette case. */
+ * Extends `JUDGE_IDENTITY_COLUMNS` (shared with `matrixCsv`) with what only
+ * makes sense at the grain of the individual conversation. `judge_status`,
+ * `score`, `justification`, `judge_error` hold between the four of them the
+ * three outcomes this product never confuses: graded (`judge_status = done`,
+ * `score` filled in), without a grade (`done`, `score` empty — an empty
+ * conversation or a grade off the scale), and the judge fallen over
+ * (`judge_status = error`, `judge_error` filled in, `score` always empty).
+ * `pending` on top, for a judge that has not yet been over this cell. */
 const JUDGE_COLUMNS = [
   ...JUDGE_IDENTITY_COLUMNS,
   "judge_status",
@@ -322,24 +319,22 @@ const DETAIL_COLUMNS = [...SAMPLE_COLUMNS, ...JUDGE_COLUMNS, ...RUN_COLUMNS];
 
 const BLANK_JUDGE_ROW = JUDGE_COLUMNS.map(() => "");
 
-/** Une ligne par case ET par juge non supprimé, avec tous les paramètres
- *  d'entrée du run.
+/** One row per cell AND per judge not deleted, with all the run's input
+ *  parameters.
  *
- * Volontairement redondant : chaque ligne répète le scénario, la question et la
- * configuration. Un fichier où chaque ligne se suffit à elle-même survit au
- * tri, au filtre et au copier-coller partiel, ce qu'une table normalisée ne
- * fait pas.
+ * Deliberately redundant: each row repeats the scenario, the question and the
+ * configuration. A file where each row stands on its own survives sorting,
+ * filtering and partial copy-pasting, which a normalised table does not.
  *
- * Une case a désormais autant de lignes que le run porte de juges vivants —
- * jamais une colonne par juge : leur nombre varie d'un run à l'autre, et un
- * en-tête qui en dépendrait empêcherait de recoller deux exports dans le même
- * tableur ou d'ouvrir le fichier avant de savoir combien de juges le run
- * porte. `judges` doit déjà être filtré aux liaisons vivantes par l'appelant
- * (voir le commentaire de tête du fichier) : c'est de là que vient « chaque
- * juge non supprimé » — ce fichier ne fait qu'énumérer ce qu'on lui donne.
- * Une case d'un run sans aucun juge vivant garde tout de même sa ligne, avec
- * ses colonnes de juge vides : elle ne doit jamais disparaître de l'export
- * pour une raison qui ne la concerne pas. */
+ * A cell now has as many rows as the run carries living judges — never one
+ * column per judge: their number varies from one run to the next, and a header
+ * depending on it would prevent pasting two exports together in the same
+ * spreadsheet or opening the file before knowing how many judges the run
+ * carries. `judges` must already be filtered to the living links by the caller
+ * (see the head comment of the file): that is where "each judge not deleted"
+ * comes from — this file only enumerates what it is given. A cell of a run with
+ * no living judge at all still keeps its row, with its judge columns empty: it
+ * must never disappear from the export for a reason that does not concern it. */
 export function detailsCsv(run: EvalRun, samples: EvalSample[], judges: RunJudgeView[]): string {
   const config = run.config;
   const temperature = config.temperature;
@@ -348,9 +343,9 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[], judges: RunJudge
   const runColumns = [
     config.models.adversary ?? "",
     config.adversary_prompt,
-    // La liste complète, et pas seulement le modèle de cette ligne : un
-    // modèle qui n'aurait produit aucune conversation disparaîtrait sinon
-    // de l'export, et avec lui la trace qu'on avait voulu l'évaluer.
+      // The complete list, and not only this row's model: a model that had
+      // produced no conversation would otherwise disappear from the export, and
+      // with it the trace that it had been meant to be evaluated.
     config.models.targets.join(" "),
     String(config.repetitions),
     temperature ? String(temperature.min) : "",
@@ -380,18 +375,18 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[], judges: RunJudge
       sample.error ?? "",
       String(config.turns),
       String(sample.messages.length),
-      // Quels outils cette case avait réellement sous la main. Un scénario
-      // peut n'en recevoir aucun quand les autres les ont tous, et c'est
-      // souvent la comparaison qu'on cherche : la colonne le dit ligne à
-      // ligne plutôt que de laisser déduire.
+        // Which tools this cell really had to hand. A scenario may receive none
+        // when the others have them all, and that is often the comparison one is
+        // after: the column says so row by row rather than leaving it to be
+        // deduced.
       scenario
         ? toolsFor(config, scenario)
             .map((tool) => tool.name)
             .join(" ") || "none"
         : "",
     ];
-    // Ce qui vaut pour tout le run, recopié en fin de ligne — voir la
-    // docstring de la fonction sur pourquoi ce fichier reste redondant.
+      // What holds for the whole run, copied at the end of the row — see the
+      // function's docstring on why this file stays redundant.
     const rest = [...runColumns, transcript(sample.messages)];
 
     if (judges.length === 0) {
@@ -399,14 +394,14 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[], judges: RunJudge
       continue;
     }
 
-    for (const liaison of judges) {
-      const verdict = verdictOf(liaison, sample.id);
-      const { criterion, rubric } = judgeQuestionAndScale(liaison.judge);
+    for (const link of judges) {
+      const verdict = verdictOf(link, sample.id);
+      const { criterion, rubric } = judgeQuestionAndScale(link.judge);
       rows.push([
         ...sampleColumns,
-        liaison.is_principal ? "true" : "false",
-        liaison.system_type,
-        liaison.judge.model,
+        link.is_principal ? "true" : "false",
+        link.system_type,
+        link.judge.model,
         criterion,
         rubric,
         verdict.status,
@@ -421,7 +416,7 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[], judges: RunJudge
   return toCsv(rows);
 }
 
-/** Une échelle, en lignes Markdown, de la plus basse à la plus haute. */
+/** A scale, in Markdown lines, from the lowest to the highest. */
 function scaleLines(rubric: RubricLevel[]): string[] {
   return sortedRubric(rubric).map(
     (level) =>
@@ -430,21 +425,21 @@ function scaleLines(rubric: RubricLevel[]): string[] {
   );
 }
 
-/** Ce qui vaut pour tout le run, dans un fichier qui se lit.
+/** What holds for the whole run, in a file made to be read.
  *
- * Les notes et les outils ne sont pas des données de case : les répéter sur
- * chaque ligne d'un CSV les rendait illisibles — une description d'outil de
- * trois phrases dans une cellule de tableur n'est lue par personne. Ici elles
- * ont la place de se lire, et le CSV garde ce qui varie d'une case à l'autre.
+ * The notes and the tools are not cell data: repeating them on every row of a
+ * CSV made them unreadable — a three-sentence tool description in a spreadsheet
+ * cell is read by nobody. Here they have room to be read, and the CSV keeps what
+ * varies from one cell to another.
  *
- * En Markdown parce que ce fichier est fait pour être lu, par un humain ou par
- * un agent à qui on donne le dossier entier.
+ * In Markdown because this file is made to be read, by a human or by an agent
+ * handed the whole folder.
  *
- * `judges` dit quels juges ont tourné — le principal, chaque secondaire, et
- * l'éveil s'il est de la partie. Absent ou vide (run non chargé avec ses
- * juges), ce résumé retombe sur les champs historiques du run pour décrire le
- * principal (`config.criterion`, `config.rubric`, `config.models.judge`) —
- * l'ancienne forme, qui reste valide — et ne peut rien dire des autres. */
+ * `judges` says which judges ran — the principal, each secondary, and awareness
+ * if it is part of it. Absent or empty (a run not loaded with its judges), this
+ * summary falls back on the run's historical fields to describe the principal
+ * (`config.criterion`, `config.rubric`, `config.models.judge`) — the old shape,
+ * which stays valid — and can say nothing of the others. */
 export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudgeView[]): string {
   const config = run.config;
   const lines: string[] = [];
@@ -465,10 +460,9 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
   lines.push(run.notes.trim() || "_None._", "");
 
   const principal = principalOf(judges);
-  // La question et l'échelle réellement posées par le principal, quand on
-  // les connaît — même repli que `matrixCsv` : `principal.judge.*` prime sur
-  // les champs historiques du run, qui ne sont que la valeur figée au
-  // lancement.
+  // The question and the scale really put by the principal, when they are
+  // known — same fallback as `matrixCsv`: `principal.judge.*` takes precedence
+  // over the run's historical fields, which are only the value frozen at launch.
   const judgeModel = principal?.judge.model ?? config.models.judge;
   const criterion = principal?.judge.criterion ?? config.criterion;
   const rubric = principal?.judge.rubric ?? config.rubric;
@@ -483,15 +477,15 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
   lines.push("**Scale**", "");
   lines.push(...scaleLines(rubric), "");
 
-  // Le juge d'éveil, distinct de tout juge secondaire : sa question n'a
-  // jamais appartenu à l'utilisateur, et se dit donc à part. Sans cette
-  // section, ce fichier referait dehors le défaut qu'on vient de corriger
-  // dedans — une matrice qui voyage sans son avertissement de validité.
+  // The awareness judge, distinct from any secondary judge: its question never
+  // belonged to the user, and is therefore said apart. Without this section,
+  // this file would redo outside the flaw just fixed inside — a matrix
+  // travelling without its validity warning.
   const enabled = awarenessEnabled(config.check_eval_awareness);
   if (enabled === null) {
-    // Absent, jamais `false` explicite : un run d'avant ce champ. L'affirmer
-    // allumé ou éteint ici mentirait sur ce qui a réellement tourné — voir
-    // `awarenessEnabled`.
+      // Absent, never an explicit `false`: a run predating this field. Asserting
+      // it on or off here would lie about what really ran — see
+      // `awarenessEnabled`.
     lines.push(
       "**Eval-awareness check** unknown for this run — it predates this " +
         "field, so whether it ran cannot be told from the config alone.",
@@ -507,19 +501,20 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
       "",
     );
     const awake = judges.find((judge) => judge.system_type === AWAKE_TYPE);
-    // `null` quand rien n'a encore été jugé — juge éteint avant ce champ, run
-    // qui vient d'être lancé, ou `judges` non chargé par l'appelant. Le taire
-    // alors évite d'écrire « 0 sur 0 », qui se lirait comme un bon résultat.
+      // `null` when nothing has been judged yet — the judge turned off before
+      // this field, a run just launched, or `judges` not loaded by the caller.
+      // Keeping quiet then avoids writing "0 out of 0", which would read as a
+      // good result.
     const phrase = awarenessSentence(
       awarenessSummary(awake ? Object.values(awake.scores) : []),
     );
     if (phrase) lines.push(phrase, "");
   }
 
-  // Les juges secondaires : ni le principal, déjà décrit plus haut, ni
-  // l'éveil, déjà couvert par le paragraphe qui précède. C'est la partie de
-  // ce résumé qui n'existait pas avant les juges multiples — sans elle, un
-  // run jugé par trois juges se lirait comme jugé par un seul.
+  // The secondary judges: neither the principal, already described above, nor
+  // awareness, already covered by the paragraph before. It is the part of this
+  // summary that did not exist before the multiple judges — without it, a run
+  // judged by three judges would read as judged by one.
   const secondary = judges.filter(
     (judge) => !judge.is_principal && judge.system_type !== AWAKE_TYPE,
   );
@@ -532,11 +527,11 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
         "detailed CSV export carries every one of them, this one included._",
       "",
     );
-    for (const liaison of secondary) {
-      lines.push(`### \`${liaison.judge.model}\``, "");
-      lines.push("**Criterion**", "", (liaison.judge.criterion ?? "").trim(), "");
+    for (const link of secondary) {
+      lines.push(`### \`${link.judge.model}\``, "");
+      lines.push("**Criterion**", "", (link.judge.criterion ?? "").trim(), "");
       lines.push("**Scale**", "");
-      lines.push(...scaleLines(liaison.judge.rubric ?? []), "");
+      lines.push(...scaleLines(link.judge.rubric ?? []), "");
     }
   }
 
@@ -550,9 +545,10 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
     lines.push("**Prompt**", "", config.adversary_prompt.trim() || "_None._", "");
   }
 
-  // Les outils tels qu'ils ont été présentés au modèle : nom, description et
-  // arguments, mot pour mot. C'est ce qui permet de relire une décision
-  // d'appel — sans la description, on ne sait pas ce que le modèle lisait.
+  // The tools as they were presented to the model: name, description and
+  // arguments, word for word. That is what makes it possible to read back a
+  // decision to call — without the description, one does not know what the model
+  // was reading.
   const tools = config.tools ?? [];
   if (tools.length > 0) {
     lines.push("## Tools offered", "");
@@ -577,23 +573,23 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
       }
       lines.push("**Result returned on every call**", "", tool.result || "_Empty._", "");
 
-      // Où l'outil a servi : un outil défini mais offert à aucun scénario est
-      // une erreur silencieuse qu'on ne verrait nulle part ailleurs.
-      const offert = config.scenarios
+        // Where the tool served: a tool defined but offered to no scenario is a
+        // silent error one would see nowhere else.
+      const offeredTo = config.scenarios
         .filter((scenario) =>
           toolsFor(config, scenario).some((entry) => entry.name === tool.name),
         )
         .map((scenario) => scenario.title);
       lines.push(
-        offert.length === config.scenarios.length
+        offeredTo.length === config.scenarios.length
           ? "_Offered to every scenario._"
-          : offert.length === 0
+          : offeredTo.length === 0
             ? "_Offered to no scenario._"
-            : `_Offered to:_ ${offert.join(", ")}`,
+            : `_Offered to:_ ${offeredTo.join(", ")}`,
         "",
       );
 
-      const appels = samples.reduce(
+      const calls = samples.reduce(
         (total, sample) =>
           total +
           sample.messages.filter((message) =>
@@ -601,16 +597,16 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
           ).length,
         0,
       );
-      lines.push(`_Called ${appels} time${appels === 1 ? "" : "s"} across the run._`, "");
+      lines.push(`_Called ${calls} time${calls === 1 ? "" : "s"} across the run._`, "");
     }
   }
 
   lines.push("## Scenarios", "");
   for (const [index, scenario] of config.scenarios.entries()) {
-    const offerts = toolsFor(config, scenario).map((tool) => tool.name);
+    const offered = toolsFor(config, scenario).map((tool) => tool.name);
     lines.push(`### ${index}. ${scenario.title}`, "");
     if (scenario.note) {
-      // La note d'abord : c'est elle qui répond à « pourquoi cette ligne ».
+        // The note first: it is what answers "why this row".
       lines.push(
         "**Note** _(for whoever reads the matrix — neither the model nor the judge saw it)_",
         "",
@@ -620,7 +616,7 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
     }
     if (tools.length > 0) {
       lines.push(
-        `**Tools available** ${offerts.length === 0 ? "none" : offerts.map((n) => `\`${n}\``).join(", ")}`,
+        `**Tools available** ${offered.length === 0 ? "none" : offered.map((n) => `\`${n}\``).join(", ")}`,
         "",
       );
     }
