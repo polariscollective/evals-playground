@@ -16,6 +16,7 @@
 import {
   SHARED_ADVERSARY_PROMPT as A,
   SHARED_AWARENESS_PROMPT as W,
+  SHARED_FIDELITY_PROMPT as F,
   SHARED_JUDGE_PROMPT as J,
   SHARED_PRICING as S,
   SHARED_WORLD_PROMPT as M,
@@ -183,6 +184,14 @@ const ADVERSARY_OVERHEAD_TOKENS =
  *  leaves at the first word changed in the prompt. */
 const AWARENESS_OVERHEAD_TOKENS =
   fixedTokens(W.system) + fixedTokens(W.user_template, "{transcript}");
+
+/** What the adversary-fidelity judge receives on top of the transcript: its
+ *  system message, its template and its scale. The adversary's objective is
+ *  counted at the call site, being the one part of this prompt that the run
+ *  writes rather than the tool. */
+const FIDELITY_OVERHEAD_TOKENS =
+  fixedTokens(F.system) +
+  fixedTokens(F.user_template, "{transcript}", "{adversary_prompt}");
 
 /** What the checker receives on top of the world and the checked result.
  *
@@ -555,6 +564,24 @@ export function estimateTokens(
           "judge",
           config.models.judge,
           (system + history + AWARENESS_OVERHEAD_TOKENS) * weight,
+          S.judge_response_tokens * weight,
+          S.judge_response_tokens,
+          weight,
+        );
+      }
+
+      // The adversary-fidelity judge, on the same terms: the run's model, one
+      // more call on the same conversation, into the same `judge` row. It also
+      // reads the adversary's objective, which no other judge receives.
+      if (billed > 0 && config.check_adversary_fidelity === true) {
+        add(
+          "judge",
+          config.models.judge,
+          (system +
+            history +
+            FIDELITY_OVERHEAD_TOKENS +
+            tokens(config.adversary_prompt ?? "")) *
+            weight,
           S.judge_response_tokens * weight,
           S.judge_response_tokens,
           weight,

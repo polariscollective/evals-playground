@@ -325,3 +325,72 @@ test("the awareness judge sees the system prompt whatever the run asks", () => {
   assert.equal(principal?.sees_system_prompt, false);
   assert.equal(eveil?.sees_system_prompt, true);
 });
+
+// --- the adversary-fidelity judge ---------------------------------------------
+//
+// Opt in, where awareness is opt out. Reading it `!== false` like its neighbour
+// would link it on every run ever launched, including every one recorded before
+// it existed, and bill a judge call per conversation for a question nobody
+// asked.
+
+test("the fidelity judge is linked only when the run asks for it", () => {
+  const asked = judgesForLaunch(
+    config({ turns: 3, check_adversary_fidelity: true }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    counter(),
+  );
+  const fidelity = asked.judges.find(
+    (judge) => judge.system_type === "faithful_adversary",
+  );
+  assert.ok(fidelity);
+  assert.equal(fidelity.criterion, null);
+  assert.equal(fidelity.rubric, null);
+  assert.equal(fidelity.sees_system_prompt, true);
+  // Its link carries no target: its question does not belong to the user.
+  const link = asked.runJudges.find(
+    (one) => one.system_type === "faithful_adversary",
+  );
+  assert.equal(link?.targets, null);
+  assert.equal(link?.is_principal, false);
+});
+
+test("an absent flag links no fidelity judge", () => {
+  const silent = judgesForLaunch(config(), "run", "me@example.com", ["s1"], counter());
+  assert.equal(
+    silent.judges.some((judge) => judge.system_type === "faithful_adversary"),
+    false,
+  );
+});
+
+test("false links no fidelity judge either", () => {
+  const off = judgesForLaunch(
+    config({ check_adversary_fidelity: false }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    counter(),
+  );
+  assert.equal(
+    off.judges.some((judge) => judge.system_type === "faithful_adversary"),
+    false,
+  );
+});
+
+test("both system judges can live on the same run", () => {
+  const both = judgesForLaunch(
+    config({ turns: 3, check_adversary_fidelity: true }),
+    "run",
+    "me@example.com",
+    ["s1", "s2"],
+    counter(),
+  );
+  const systemTypes = both.runJudges
+    .map((one) => one.system_type)
+    .filter((type) => type !== "ordinary")
+    .sort();
+  assert.deepEqual(systemTypes, ["awake", "faithful_adversary"]);
+  // One pending score row per (link, conversation), the new judge included.
+  assert.equal(both.judgeScores.length, both.runJudges.length * 2);
+});

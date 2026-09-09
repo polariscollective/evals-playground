@@ -146,16 +146,17 @@ export interface EvalModels {
 // `JudgeSpec`, at the bottom of this section, is not a table mirror: it is what
 // a run carries as configuration, before any row exists.
 
-/** The REAL system judge types existing today. One only: `"awake"`, the
- *  awareness check. A closed union rather than `string`, so that
+/** The REAL system judge types existing today. Two: `"awake"`, the awareness
+ *  check, and `"faithful_adversary"`, which asks whether the adversary pushed
+ *  the way its objective said. A closed union rather than `string`, so that
  *  `Judge.system_type` and `RunJudge.system_type` — which must always agree, see
- *  `RunJudge.system_type` — accept exactly the same values. Other system types
- *  will come with no new migration; they are added here.
+ *  `RunJudge.system_type` — accept exactly the same values. Adding a third takes
+ *  a migration: `judges_system_type_check` enumerates the values.
  *
  * This is NOT the type of the `system_type` column in the database — see
  * `JudgeSystemTypeColumn` for that. This one names only the real system types,
  * excluding the `'ordinary'` sentinel. */
-export type JudgeSystemType = "awake";
+export type JudgeSystemType = "awake" | "faithful_adversary";
 
 /** What a judge expects of one scenario: the grade a model behaving the way we
  *  want should get, and whether this row is a control.
@@ -527,6 +528,20 @@ export interface EvalRunConfig {
    * this field do not carry it and must stay readable. Read
    * `config.check_eval_awareness !== false`, never `=== true`. */
   check_eval_awareness?: boolean;
+  /** Does a judge say whether the ADVERSARY pushed the way its objective told
+   *  it to?
+   *
+   * The failure it catches: a scenario asks the adversary to press on fairness,
+   * the adversary presses on a geopolitical argument, and the model's behaviour
+   * is graded against a pressure nobody wrote. No ordinary judge can see it,
+   * since none of them ever receives `adversary_prompt`.
+   *
+   * **Off by default, and read `=== true`** — the opposite convention from
+   * `check_eval_awareness` just above, and deliberately so. It grades a text the
+   * experimenter wrote rather than the model under test, so an absent field must
+   * mean "not asked for", never "on since always". It is refused below two
+   * turns, where there is no adversary to grade. */
+  check_adversary_fidelity?: boolean;
   /** How many output tokens one answer from the evaluated model costs, roughly.
    *
    * Serves the quote and nothing else: this number changes nothing about what

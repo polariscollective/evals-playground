@@ -61,6 +61,7 @@ export interface JudgeForConfig {
  *   those unlinked (`unlinkJudge`) disappear from it. A system judge (the
  *   awareness one) never figures there — that is not its shape, see
  *   `check_eval_awareness` just below.
+ * - `check_adversary_fidelity` likewise, for the adversary-fidelity link.
  * - `check_eval_awareness` reflects whether the awareness link is still alive
  *   NOW, never what `config` had asked at launch: an unlinked awareness judge
  *   must not come back to life at the next relaunch made from this
@@ -79,6 +80,12 @@ export function withLiveJudges(
     (entry) => !entry.is_principal && entry.system_type === "ordinary",
   );
   const awakeStillLinked = live.some((entry) => entry.system_type === AWAKE);
+  // Same reading as the awareness link, opposite default. Unlinking the
+  // fidelity judge must not bring it back to life at the next relaunch made
+  // from this configuration.
+  const fidelityStillLinked = live.some(
+    (entry) => entry.system_type === "faithful_adversary",
+  );
 
   return {
     ...config,
@@ -99,5 +106,6 @@ export function withLiveJudges(
       model: entry.judge.model,
     })),
     check_eval_awareness: awakeStillLinked,
+    check_adversary_fidelity: fidelityStillLinked,
   };
 }

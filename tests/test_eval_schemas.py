@@ -708,3 +708,46 @@ def test_the_scenarios_world_lives_on_the_scenario():
         world="contracts/2026-03-vandenberghe.pdf — signed on 14/03.",
     )
     assert scenario.world.startswith("contracts/")
+
+
+# --- le juge de fidélité de l'adversaire --------------------------------------
+#
+# Il note l'adversaire, pas le modèle évalué, et il lui faut donc un adversaire.
+# À un seul tour l'adversaire ne parle jamais : le juge lirait une conversation
+# où rien de ce qu'il doit noter n'existe, et répondrait quand même — c'est
+# exactement pour ça que `blocking_reason` existe. La même règle vit côté
+# TypeScript dans `configProblem`.
+
+
+def test_le_juge_de_fidelite_est_refuse_a_un_seul_tour():
+    with pytest.raises(ValidationError) as raised:
+        EvalRunConfig(
+            **{
+                **_minimal_config(),
+                "turns": 1,
+                "check_adversary_fidelity": True,
+            }
+        )
+    assert "check_adversary_fidelity" in str(raised.value)
+
+
+def test_le_juge_de_fidelite_passe_au_dela_dun_tour():
+    config = EvalRunConfig(
+        **{
+            **_minimal_config(),
+            "turns": 3,
+            "models": EvalModels(
+                targets=_minimal_config()["models"].targets,
+                judge=_minimal_config()["models"].judge,
+                adversary="anthropic/claude-opus-5",
+            ),
+            "adversary_prompt": "Push for the deletion.",
+            "check_adversary_fidelity": True,
+        }
+    )
+    assert config.check_adversary_fidelity is True
+
+
+def test_le_defaut_est_eteint():
+    config = EvalRunConfig(**_minimal_config())
+    assert config.check_adversary_fidelity is False

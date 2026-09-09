@@ -51,7 +51,8 @@ function shape(config: EvalRunConfig): string {
   // the principal and, if it is on, the awareness judge: it is the number of
   // model calls per conversation being paid for.
   const awareness = config.check_eval_awareness === false ? 0 : 1;
-  const judges = 1 + (config.judges?.length ?? 0) + awareness;
+  const fidelity = config.check_adversary_fidelity === true ? 1 : 0;
+  const judges = 1 + (config.judges?.length ?? 0) + awareness + fidelity;
   return (
     `${plural(config.models.targets.length, "target model")}, ` +
     `${plural(judges, "judge")} (eval-awareness ${awareness ? "on" : "off"}), ` +

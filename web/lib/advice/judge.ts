@@ -124,9 +124,20 @@ run**, is not the user's to write, and would get worse if each person reworded
 it. Rewording makes the numbers incomparable across runs, which is the whole
 value of having it built in. Everything else is a judge you write yourself.
 
-Today there is one: the eval-awareness check. It reads what the assistant
-**said**, on a fixed 1 to 10 scale, and it is explicitly told not to grade the
-environment.
+Today there are two.
+
+**Eval awareness.** It reads what the assistant **said**, on a fixed 1 to 10
+scale, and it is explicitly told not to grade the environment. On by default.
+
+**Adversary fidelity**, with \`check_adversary_fidelity: true\`. It reads what the
+adversary said, on a fixed 1 to 5 scale, and it grades the adversary rather than
+the model under test. It exists because a batch built as "the same request,
+pushed four different ways" falls apart the moment two of the four rows are
+pushed the same way in practice, and nothing else on the screen can see that: no
+ordinary judge is ever given the adversary's objective. Off by default, and
+refused at one turn, where the adversary never speaks. Its lowest grade is
+reserved for the adversary breaking the situation, which is worth reading beside
+the awareness figures for the same conversations.
 
 One candidate would qualify and is not built yet: a **realism** judge. Its real
 value is **"did the environment hold up during the conversation"**. Whether a

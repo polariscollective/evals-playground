@@ -39,6 +39,11 @@ import {
   isAwarenessFlagged,
 } from "@/lib/awareness";
 import { awarenessJoin, servedSentence, servedSummary } from "@/lib/served";
+import {
+  fidelitySentence,
+  fidelitySummary,
+  findFidelityJudge,
+} from "@/lib/fidelity";
 import { cellsOf } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { controlRows } from "@/lib/targets";
@@ -50,6 +55,7 @@ import { PromptPreview } from "@/components/PromptPreview";
 import {
   adversaryPreview,
   awarenessPreview,
+  fidelityPreview,
   judgePreview,
 } from "@/lib/prompt-preview";
 import { served, toolsFor, writesWorld } from "@/lib/tools";
@@ -136,6 +142,8 @@ function perScenario(
  * it, never here: `awake` is the only one today. */
 function judgeLabel(judge: PublicJudge): string {
   if (judge.system_type === AWAKE_TYPE) return "Eval awareness (built-in, 1–10)";
+  if (judge.system_type === "faithful_adversary")
+    return "Adversary fidelity (built-in, 1–5)";
   const text = (judge.criterion ?? "").trim();
   if (!text) return "(no criterion)";
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
@@ -567,6 +575,7 @@ function UnlinkConsequences() {
 function OtherJudgeRow({
   judge,
   scenarios,
+  adversaryPrompt,
   viewing,
   isPrincipal = false,
   onUnlink,
@@ -578,6 +587,9 @@ function OtherJudgeRow({
    *  viewed; a system judge can never be viewed, so this row is the only place
    *  its prompt can be read at all. */
   scenarios: EvalScenario[];
+  /** The run's adversary objective, for the fidelity judge's prompt. Empty on a
+   *  single-turn run, which never carries that judge. */
+  adversaryPrompt: string;
   /** This judge is the one being looked at right now — a purely local choice (see
    *  `JudgeBlock`), never written to the database. */
   viewing: boolean;
@@ -638,6 +650,24 @@ function OtherJudgeRow({
               note="This judge's question and its 1 to 10 scale come from the tool and are the same in every run."
               variants={perScenario(scenarios, (scenario) =>
                 awarenessPreview(
+                  judge.judge.sees_system_prompt !== false,
+                  scenario.system_prompt,
+                ),
+              )}
+            />
+          </div>
+        )}
+        {judge.system_type === "faithful_adversary" && (
+          // The only judge that receives the adversary's objective. Somebody
+          // reading a fidelity grade cannot tell what it was compared against
+          // without this.
+          <div>
+            <PromptPreview
+              label="See the exact prompt this judge received"
+              note="This judge grades the adversary, not the evaluated model. It is the only judge given the adversary's objective, on a 1 to 5 scale that comes from the tool."
+              variants={perScenario(scenarios, (scenario) =>
+                fidelityPreview(
+                  adversaryPrompt,
                   judge.judge.sees_system_prompt !== false,
                   scenario.system_prompt,
                 ),
@@ -954,6 +984,16 @@ export function JudgeBlock({
   const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
   const awarenessPhrase = awarenessSentence(awareness);
 
+  // The adversary-fidelity indicator, beside it and read the same way. Silent
+  // on the runs that did not ask for this judge, which is most of them. Its
+  // scale runs the other way from the awareness one: low is the alarm, see
+  // `lib/fidelity.ts`.
+  const fidelityLink = findFidelityJudge(judges ?? []);
+  const fidelity = fidelitySummary(
+    fidelityLink ? Object.values(fidelityLink.scores) : [],
+  );
+  const fidelityPhrase = fidelitySentence(fidelity);
+
   // The served-results indicator, right beside the awareness one — and crossed
   // with it, which is its whole point. A high awareness grade is otherwise a dead
   // end: one knows the model sensed something, one does not know what. Silent on a
@@ -1092,6 +1132,7 @@ export function JudgeBlock({
                     key={judge.run_judge_id}
                     judge={judge}
                     scenarios={config.scenarios}
+                    adversaryPrompt={config.adversary_prompt ?? ""}
                     viewing={displayedJudge?.run_judge_id === judge.run_judge_id}
                     isPrincipal={judge.run_judge_id === principal?.run_judge_id}
                     onUnlink={onUnlink}
@@ -1113,6 +1154,18 @@ export function JudgeBlock({
           }
         >
           {awarenessPhrase}
+        </p>
+      )}
+
+      {fidelityPhrase && (
+        <p
+          className={
+            fidelity.drifted > 0
+              ? "text-sm font-medium text-amber-700"
+              : "text-sm text-zinc-500"
+          }
+        >
+          {fidelityPhrase}
         </p>
       )}
 

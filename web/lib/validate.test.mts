@@ -485,3 +485,56 @@ test("a draft aiming at another run is refused, whatever its state", () => {
   assert.ok(launchedProblem?.includes("extends run 0060e7c3-2455-4ad4-8c72-5d46261ffb92"));
   assert.ok(!launchedProblem?.includes("already applied"));
 });
+
+// --- the adversary-fidelity check ---------------------------------------------
+//
+// A judge grading the adversary needs there to be one, and the pair
+// (`check_adversary_fidelity: true`, `turns: 1`) has no meaning: at a single
+// turn the adversary never speaks, so the judge would read a conversation
+// holding nothing it is meant to grade and answer anyway. The same rule lives in
+// `_adversary_fidelity_needs_an_adversary` on the Python side.
+
+test("the fidelity check is refused at one turn", () => {
+  const problem = configProblem(
+    withPatch((c) => {
+      c.turns = 1;
+      c.check_adversary_fidelity = true;
+    }),
+  );
+  assert.ok(problem?.includes("check_adversary_fidelity"));
+  assert.ok(problem?.includes("turns above 1"));
+});
+
+test("the fidelity check passes beyond one turn", () => {
+  assert.equal(
+    configProblem(
+      withPatch((c) => {
+        c.turns = 3;
+        c.check_adversary_fidelity = true;
+      }),
+    ),
+    null,
+  );
+});
+
+test("false at one turn is not a problem: nothing was asked for", () => {
+  assert.equal(
+    configProblem(
+      withPatch((c) => {
+        c.turns = 1;
+        c.check_adversary_fidelity = false;
+      }),
+    ),
+    null,
+  );
+});
+
+test("a string in place of the boolean is refused, not read as on", () => {
+  const problem = configProblem(
+    withPatch((c) => {
+      (c as { check_adversary_fidelity?: unknown }).check_adversary_fidelity =
+        "true";
+    }),
+  );
+  assert.equal(problem, "check_adversary_fidelity must be true or false");
+});

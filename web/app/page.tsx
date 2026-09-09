@@ -52,6 +52,7 @@ import { PromptPreview } from "@/components/PromptPreview";
 import {
   adversaryPreview,
   awarenessPreview,
+  fidelityPreview,
   judgePreview,
 } from "@/lib/prompt-preview";
 import { ScenarioList } from "@/components/ScenarioList";
@@ -272,6 +273,10 @@ function EvaluateForm() {
   // same rule `configProblem` reads, `!== false` and never `=== true`, and the
   // form must hold to it just as much as an imported file or an agent's draft.
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
+  // Off by default, unlike the awareness check: it grades a text the
+  // experimenter wrote rather than the model under test, and it is refused
+  // below two turns.
+  const [checkAdversaryFidelity, setCheckAdversaryFidelity] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
@@ -385,6 +390,8 @@ function EvaluateForm() {
       // would turn it back on here, and "Save as draft" would rewrite the switch
       // in the database without them: exactly the flaw this field fixes.
       setCheckEvalAwareness(config.check_eval_awareness !== false);
+      // The opposite default, `=== true`: absent means nobody asked for it.
+      setCheckAdversaryFidelity(config.check_adversary_fidelity === true);
 
       // One scenario fits in manual mode; beyond that, the form goes through a
       // CSV, rebuilding it from the scenarios if need be.
@@ -663,6 +670,10 @@ function EvaluateForm() {
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       average_output_tokens: averageOutputTokens ?? undefined,
       check_eval_awareness: checkEvalAwareness,
+      // Never sent as true on a one-turn run: `configProblem` refuses the
+      // pair, and the box below is not even rendered there. Belt and braces,
+      // because the depth can be lowered after the box was ticked.
+      check_adversary_fidelity: turns > 1 && checkAdversaryFidelity,
       tools,
       max_tool_calls_per_turn: maxToolCalls,
       world,
@@ -706,6 +717,7 @@ function EvaluateForm() {
       adversaryPrompt,
       averageOutputTokens,
       checkEvalAwareness,
+      checkAdversaryFidelity,
       tools,
       maxToolCalls,
       world,
@@ -931,6 +943,7 @@ function EvaluateForm() {
     // the screen; not reading it here would throw it away on arrival, when the
     // form has only just learned how to show it.
     setCheckEvalAwareness(config.check_eval_awareness !== false);
+    setCheckAdversaryFidelity(config.check_adversary_fidelity === true);
 
     if (csv) {
       // The file announces a CSV without carrying it: the form goes into CSV mode
@@ -1113,6 +1126,7 @@ function EvaluateForm() {
     setTemperatureMax(1);
     setAverageOutputTokens(null);
     setCheckEvalAwareness(true);
+    setCheckAdversaryFidelity(false);
 
     // A blank page's models, chosen exactly as they are on opening — see
     // `openingModel`. The catalogue is already in hand: nothing to re-fetch.
@@ -2087,6 +2101,38 @@ function EvaluateForm() {
             note="This judge's question and scale come from the tool, not from this form. They are the same in every run, which is why they are worth reading once."
             preview={awarenessPreview()}
           />
+        )}
+
+        {/* Only where there is an adversary to grade. At a single turn the
+            adversary never speaks, and `configProblem` refuses the pair, so
+            offering the box there would only be a way of meeting that refusal
+            at launch. */}
+        {turns > 1 && (
+          <>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={checkAdversaryFidelity}
+                onChange={(e) => setCheckAdversaryFidelity(e.target.checked)}
+              />
+              Check whether the adversary pushed the way you told it to
+            </label>
+            <p className="text-xs text-zinc-500">
+              Off by default. It grades the adversary and never the model being
+              evaluated. Turn it on when a row&rsquo;s whole point is the
+              particular lever the adversary was told to use: if it is told to
+              press on fairness and presses on something else, the cell is real
+              and it answers a question you did not ask. One extra judge call
+              per graded conversation, included in the estimate below.
+            </p>
+            {checkAdversaryFidelity && (
+              <PromptPreview
+                label="See the exact prompt the adversary-fidelity judge receives"
+                note="The only judge given the adversary's objective. Its question and its 1 to 5 scale come from the tool, not from this form."
+                preview={fidelityPreview(adversaryPrompt)}
+              />
+            )}
+          </>
         )}
 
         <label className="flex flex-wrap items-center gap-2 text-sm">

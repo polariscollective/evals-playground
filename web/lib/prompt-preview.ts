@@ -11,7 +11,11 @@
 // which is the only way a preview stays a preview: one that described a prompt
 // no longer leaving would be a lie nobody could see.
 import { JUDGE_SYSTEM, fill, renderTranscript, scorePrompt } from "./judge-prompt.ts";
-import { SHARED_ADVERSARY_PROMPT, SHARED_AWARENESS_PROMPT } from "./shared.ts";
+import {
+  SHARED_ADVERSARY_PROMPT,
+  SHARED_AWARENESS_PROMPT,
+  SHARED_FIDELITY_PROMPT,
+} from "./shared.ts";
 import type { RubricLevel } from "./types";
 
 export interface PromptPreview {
@@ -85,6 +89,27 @@ export function awarenessPreview(
     system: SHARED_AWARENESS_PROMPT.system,
     user: fill(SHARED_AWARENESS_PROMPT.user_template, {
       transcript: renderTranscript(PLACEHOLDER_TRANSCRIPT, head),
+    }),
+  };
+}
+
+/** The adversary-fidelity judge: the one judge that grades the USER.
+ *
+ * The only judge prompt carrying the adversary's objective, which is exactly
+ * why it is worth reading. Every ordinary judge is kept from that text on
+ * purpose, so somebody looking at a fidelity grade and wondering what the judge
+ * could possibly have compared against needs this button to answer it. */
+export function fidelityPreview(
+  adversaryPrompt: string,
+  seesSystemPrompt = true,
+  systemPrompt?: string | null,
+): PromptPreview {
+  const head = headFor(seesSystemPrompt, systemPrompt);
+  return {
+    system: SHARED_FIDELITY_PROMPT.system,
+    user: fill(SHARED_FIDELITY_PROMPT.user_template, {
+      transcript: renderTranscript(PLACEHOLDER_TRANSCRIPT, head),
+      adversary_prompt: adversaryPrompt,
     }),
   };
 }

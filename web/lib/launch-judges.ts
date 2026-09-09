@@ -104,8 +104,11 @@ export function judgeRowFromSpec(
  * - one per entry of `config.judges`, the ordinary secondaries — see
  *   `JudgeSpec`;
  * - an awareness judge, of system type, if `config.check_eval_awareness` is
- *   not explicitly `false` — never from `config.judges`, which never carries
- *   one: see the docstring of `JudgeSpec` in `types.ts`.
+ *   not explicitly `false`;
+ * - an adversary-fidelity judge, of system type, if
+ *   `config.check_adversary_fidelity` is explicitly `true` — never from
+ *   `config.judges`, which carries no system judge at all: see the docstring of
+ *   `JudgeSpec` in `types.ts`.
  *
  * Then one row of `judge_scores` per (link, conversation): each judge above
  * crossed with each element of `sampleIds`.
@@ -187,6 +190,30 @@ export function judgesForLaunch(
         // the assistant was simply told it was a test, the answer is 1", which
         // it cannot apply without knowing what it was told. Never configurable,
         // unlike an ordinary judge.
+        sees_system_prompt: true,
+        created_by: createdBy,
+      },
+      false,
+      // Its question does not belong to the user, so neither does its target.
+      null,
+    );
+  }
+
+  // Opt in, where awareness is opt out. It grades a text the experimenter
+  // wrote rather than the model under test, and it is meaningless below two
+  // turns: `configProblem` refuses the pair, so nothing here has to check it
+  // again.
+  if (config.check_adversary_fidelity === true) {
+    link(
+      {
+        id: newId(),
+        criterion: null,
+        rubric: null,
+        model: config.models.judge,
+        system_type: "faithful_adversary",
+        // It grades the adversary's turns against the objective it was given.
+        // The evaluated model's instructions are part of the situation the
+        // adversary was playing in, so it reads them like any other judge.
         sees_system_prompt: true,
         created_by: createdBy,
       },

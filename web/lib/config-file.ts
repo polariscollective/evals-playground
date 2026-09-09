@@ -416,6 +416,14 @@ export function readConfigFile(text: string): ImportedConfig {
       file.check_eval_awareness === undefined || file.check_eval_awareness === null
         ? true
         : (file.check_eval_awareness as boolean),
+      // The opposite default, for the opposite reason: absent means "not asked
+      // for". Passed through as it stands like the one above, so `configProblem`
+      // can still see a string "false" written in quotes by mistake.
+    check_adversary_fidelity:
+      file.check_adversary_fidelity === undefined ||
+      file.check_adversary_fidelity === null
+        ? false
+        : (file.check_adversary_fidelity as boolean),
     average_output_tokens:
       typeof file.average_output_tokens === "number"
         ? file.average_output_tokens
@@ -515,6 +523,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
       // field has no "absent" state to preserve — a run that has not written it
       // yet runs all the same as if it were true.
     check_eval_awareness: config.check_eval_awareness !== false,
+      // Written only when it is on. Off is the default and the common case, and
+      // a `check_adversary_fidelity: false` in every document that comes back
+      // out would read as a switch somebody had considered and declined.
+    ...(config.check_adversary_fidelity === true
+      ? { check_adversary_fidelity: true }
+      : {}),
     ...(config.tools && config.tools.length > 0
       ? {
             // Each tool writes only the half of the ANSWER pair that describes

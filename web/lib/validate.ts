@@ -361,6 +361,21 @@ export function configProblem(config: unknown): string | null {
     return "check_eval_awareness must be true or false";
   }
 
+  const fidelity = c.check_adversary_fidelity;
+  if (fidelity !== undefined && typeof fidelity !== "boolean") {
+    return "check_adversary_fidelity must be true or false";
+  }
+  // A judge grading the adversary needs there to be one. At a single turn the
+  // adversary never speaks, so this judge would read a conversation holding
+  // nothing it is meant to grade and answer anyway. Mirrors
+  // `_adversary_fidelity_needs_an_adversary` in `eval_schemas.py`.
+  if (fidelity === true && c.turns <= 1) {
+    return (
+      "check_adversary_fidelity needs an adversary, so it needs turns above 1: " +
+      "at a single turn the adversary never speaks"
+    );
+  }
+
   for (const scenario of c.scenarios) {
     const asked = scenarioToolsProblem(
       scenario.tools,

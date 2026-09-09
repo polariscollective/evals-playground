@@ -51,7 +51,7 @@ class RubricLevel(BaseModel):
 # `JudgeSpec`, at the bottom of this section, is not a mirror of a table: it is
 # what a run carries in its configuration, before any row exists.
 
-JudgeSystemType = Literal["ordinary", "awake"]
+JudgeSystemType = Literal["ordinary", "awake", "faithful_adversary"]
 """The exact domain of the `system_type` column, in `judges` as in
 `run_judges` — that of the `judges_system_type_check` CHECK in the database.
 
@@ -60,8 +60,10 @@ says there is none. The column is NOT NULL on both sides, with no default, since
 migration `20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql`
 (polaris-supabase repository) — before it, absence (`NULL`) played that role, but
 disarmed `run_judges`'s composite foreign key on the way (see
-`RunJudge.system_type`). `"awake"`, the awareness check, is the only real system
-type today. Others will come without a new migration; they are added here."""
+`RunJudge.system_type`). Two real system types today: `"awake"`, the awareness
+check, and `"faithful_adversary"`, which asks whether the adversary pushed the
+way it was told to. Adding a third takes a migration — `judges_system_type_check`
+enumerates the values."""
 
 
 class JudgeTarget(BaseModel):
@@ -121,9 +123,11 @@ class Judge(BaseModel):
     column is NOT NULL in the database with no default, so this field has no
     default here either; every construction of a judge must set it explicitly.
     `"awake"`: the awareness check — did the evaluated model show it knew it was
-    being tested? Its question does not belong to the user, its scale is fixed
-    from 1 to 10, and its failure never costs the principal judge its grade —
-    those three properties live in the code that builds this judge, not here."""
+    being tested? `"faithful_adversary"`: did the adversary push the way its
+    objective said? Both share the three properties of a system judge: the
+    question does not belong to the user, the scale is fixed, and a failure never
+    costs another judge its grade. Those live in the code that builds the judge,
+    not here."""
 
     sees_system_prompt: bool = True
     """Si ce juge voit le prompt système du scénario, en tête du transcript.
@@ -790,6 +794,25 @@ class EvalRunConfig(BaseModel):
     so, not this value.
     """
 
+    check_adversary_fidelity: bool = False
+    """Does a judge read every conversation back to say whether the ADVERSARY
+    pushed the way its objective told it to?
+
+    The failure it catches: a scenario asks the adversary to press on fairness,
+    the adversary presses on a geopolitical argument, and the assistant's
+    behaviour is graded against a pressure nobody wrote. The cell is real and it
+    answers a question that was never asked. No ordinary judge can see it, since
+    none of them ever receives `adversary_prompt`.
+
+    Off by default, unlike the awareness check, for two reasons. It is
+    meaningless below two turns, where there is no adversary at all. And it grades
+    a text the experimenter wrote rather than the model under test, so it belongs
+    to whoever is designing a batch and not to every run by default.
+
+    Refused at one turn — see `_adversary_fidelity_needs_an_adversary`. It costs
+    one judge call per conversation.
+    """
+
     world: str = ""
     """What the environment contains, written by the experimenter.
 
@@ -886,6 +909,23 @@ class EvalRunConfig(BaseModel):
                 raise ValueError(
                     "An adversary prompt is required once turns exceeds 1."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _adversary_fidelity_needs_an_adversary(self) -> "EvalRunConfig":
+        """A judge grading the adversary needs there to be one.
+
+        At a single turn the adversary is never called, so this judge would read
+        a conversation containing nothing it is meant to grade and answer
+        anyway — we have watched a judge do exactly that on an empty transcript,
+        which is why `blocking_reason` exists. Refusing is cheaper than
+        explaining the resulting column later.
+        """
+        if self.check_adversary_fidelity and self.turns <= 1:
+            raise ValueError(
+                "check_adversary_fidelity needs an adversary, so it needs turns "
+                "above 1: at a single turn the adversary never speaks."
+            )
         return self
 
     @model_validator(mode="after")
