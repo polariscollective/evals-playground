@@ -114,9 +114,9 @@ export function CopyText({
   );
 }
 
-/** Copie un identifiant, run ou brouillon — le geste le plus fréquent, partagé
- *  par les deux listes et la page d'un run. `title` dit lequel : le bouton se
- *  lit à la souris, et « Copy run id » sur un brouillon mentirait. */
+/** Copies an identifier, run or draft — the most frequent gesture, shared by
+ *  both lists and a run's page. `title` says which: the button reads under the
+ *  mouse, and "Copy run id" on a draft would lie. */
 export function CopyId({
   value,
   title = "Copy run id",

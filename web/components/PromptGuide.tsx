@@ -1,11 +1,11 @@
 "use client";
 
-// « Comment demander ça à un agent » : le prompt tout écrit, à copier.
+// "How to ask an agent for this": the prompt written out, ready to copy.
 //
-// Le raccourci que cette fenêtre existe pour offrir : on décrit son expérience à
-// un agent, il rend le YAML, on le recolle dans le formulaire. Sans elle il
-// faudrait décrire le format de mémoire, et un format décrit de mémoire produit
-// des configs refusées.
+// The shortcut this window exists to offer: one describes one's experiment to an
+// agent, it returns the YAML, one pastes it back into the form. Without it one
+// would have to describe the format from memory, and a format described from
+// memory produces refused configs.
 import { useState } from "react";
 import { Dialog } from "./Dialog";
 import { agentPrompt, catalogModelOptions } from "@/lib/agent-prompt";
@@ -14,19 +14,19 @@ import type { ProviderInfo } from "@/lib/types";
 export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  // Le prompt renvoie l'agent vers `/validate`, et un prompt copié-collé arrive
-  // chez un agent qui n'a aucun contexte d'hôte : il lui faut l'adresse
-  // entière, que seul le navigateur connaît.
+  // The prompt sends the agent to `/validate`, and a copy-pasted prompt reaches
+  // an agent with no host context at all: it needs the whole address, which only
+  // the browser knows.
   //
-  // D'où le calcul à l'ouverture et non au rendu : le serveur rend toujours
-  // cette fenêtre fermée, donc `window` est là dès que ce texte existe. Un
-  // effet qui poserait l'origine en état ferait le même travail en deux rendus,
-  // et le linter le refuse à juste titre.
+  // Hence the computation on opening and not at render: the server always renders
+  // this window closed, so `window` is there as soon as this text exists. An
+  // effect laying the origin in state would do the same work in two renders, and
+  // the linter refuses it rightly.
   const text = open
     ? agentPrompt(
-        // Filtré aux favoris de qui regarde : ce dialogue promet « the model
-        // identifiers currently available », et un identifiant qu'on n'a pas
-        // coché n'est pas disponible — `submit_draft_run` le refuserait.
+        // Filtered to the favourites of whoever is looking: this dialog promises
+        // "the model identifiers currently available", and an identifier one has
+        // not ticked is not available — `submit_draft_run` would refuse it.
         catalogModelOptions(providers)
           .filter((model) => model.favorite)
           .map(({ id, label }) => ({ id, label })),
@@ -74,8 +74,8 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
                 onClick={() => copy(text, "Prompt copied.")}
                 className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700"
               >
-                {/* Une icône seule serait muette pour ce que ce bouton fait
-                    vraiment : il emporte deux pages de texte, pas un lien. */}
+                {/* An icon alone would be mute about what this button really
+                    does: it carries off two pages of text, not a link. */}
                 ⧉ Copy the prompt
               </button>
             </div>
@@ -89,9 +89,9 @@ export function PromptGuide({ providers }: { providers: ProviderInfo[] }) {
           identifiers currently available — so what comes back loads without
           editing.
         </p>
-        {/* Un agent qui sait lire une page se passe du copier-coller : cette
-            adresse rend le même texte, en clair et sans connexion — et le
-            prompt qu'elle rend porte déjà l'origine, lue côté serveur. */}
+        {/* An agent that can read a page does without the copy-paste: this address
+            returns the same text, in the clear and with no sign-in — and the prompt
+            it returns already carries the origin, read on the server side. */}
         {open && (
           <div className="mb-3 flex items-center gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
             <span className="shrink-0 text-zinc-500">Or give it this link:</span>
