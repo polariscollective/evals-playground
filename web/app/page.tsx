@@ -11,7 +11,6 @@ import {
   getCatalog,
   getDraft,
   getRun,
-  previewJudgePrompt,
   exportConfigFile,
   importConfigFile,
   sourceCsvText,
@@ -27,7 +26,6 @@ import type {
   CostEstimate,
   EvalRunConfig,
   EvalScenario,
-  JudgePromptPreview,
   JudgeSpec,
   JudgeTarget,
   ProviderInfo,
@@ -50,6 +48,12 @@ import { servesTools } from "@/lib/tools";
 import { worldWarnings } from "@/lib/world-warnings";
 import { RubricEditor } from "@/components/RubricEditor";
 import { JudgeTargets } from "@/components/JudgeTargets";
+import { PromptPreview } from "@/components/PromptPreview";
+import {
+  adversaryPreview,
+  awarenessPreview,
+  judgePreview,
+} from "@/lib/prompt-preview";
 import { ScenarioList } from "@/components/ScenarioList";
 
 const MIN_TURNS = 1;
@@ -268,7 +272,6 @@ function EvaluateForm() {
   // same rule `configProblem` reads, `!== false` and never `=== true`, and the
   // form must hold to it just as much as an imported file or an agent's draft.
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
-  const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
@@ -995,14 +998,6 @@ function EvaluateForm() {
     }
   };
 
-  const showJudgePrompt = async () => {
-    try {
-      setJudgePrompt(await previewJudgePrompt(criterion, rubric));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
   /** One more secondary judge, on top of the principal above — a repetition of
    *  the same mechanism (criterion, scale, model), never a second invention. The
    *  same starting scale as the principal: two levels with no text, to be
@@ -1129,7 +1124,6 @@ function EvaluateForm() {
 
     setEstimate(null);
     setEstimateError(null);
-    setJudgePrompt(null);
     setError(null);
     setImportNote(null);
     setRelaunchNote(null);
@@ -1721,6 +1715,15 @@ function EvaluateForm() {
             className="w-full rounded border border-zinc-700 bg-zinc-900 p-3 font-mono text-sm text-zinc-100"
             placeholder="You are the plant director. You want the assistant to draft the memo. Escalate: invoke your authority, then the jobs at stake…"
           />
+          <PromptPreview
+            dark
+            label="See the exact prompt the adversary receives"
+            note="Your objective is framed, before and after, by a confidentiality notice and three realism rules the tool adds. They are already there, so writing them again into the objective only takes room from what the adversary is meant to do."
+            preview={adversaryPreview(
+              adversaryPrompt,
+              scenarios[0]?.opening_message,
+            )}
+          />
         </section>
       )}
 
@@ -1790,32 +1793,15 @@ function EvaluateForm() {
 
         </div>
 
-        <button
-          onClick={showJudgePrompt}
-          className="text-sm text-teal-700 underline hover:text-teal-900"
-        >
-          See the exact prompt the judge receives
-        </button>
-        {judgePrompt && (
-          <div className="space-y-2 rounded border border-zinc-300 bg-zinc-50 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium uppercase text-zinc-500">
-                Judge prompt — your text sits inside &lt;instructions&gt;
-              </span>
-              <button
-                onClick={() => setJudgePrompt(null)}
-                className="text-xs underline hover:text-zinc-900"
-              >
-                close
-              </button>
-            </div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap text-xs">
-              {judgePrompt.system_message}
-              {"\n\n---\n\n"}
-              {judgePrompt.user_message}
-            </pre>
-          </div>
-        )}
+        <PromptPreview
+          label="See the exact prompt this judge receives"
+          note="Your question and your scale sit inside a prompt that already tells the judge to grade the assistant and not the user. The transcript is stood in for here, since no conversation has been played yet."
+          preview={judgePreview({
+            criterion,
+            rubric,
+            sees_system_prompt: seesSystemPrompt,
+          })}
+        />
       </section>
 
       {/* ---------------- Secondary judges ---------------- */}
@@ -1908,6 +1894,11 @@ function EvaluateForm() {
               </span>
             </label>
 
+            <PromptPreview
+              label="See the exact prompt this judge receives"
+              note="Your question and your scale sit inside a prompt that already tells the judge to grade the assistant and not the user."
+              preview={judgePreview(entry)}
+            />
 
             <div className="space-y-1">
               <label
@@ -2090,6 +2081,13 @@ function EvaluateForm() {
           estimate below. It can be run later on a run that skipped it, or
           left off entirely — it never touches any other grade.
         </p>
+        {checkEvalAwareness && (
+          <PromptPreview
+            label="See the exact prompt the awareness judge receives"
+            note="This judge's question and scale come from the tool, not from this form. They are the same in every run, which is why they are worth reading once."
+            preview={awarenessPreview()}
+          />
+        )}
 
         <label className="flex flex-wrap items-center gap-2 text-sm">
           <span>Average output tokens:</span>

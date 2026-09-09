@@ -1188,8 +1188,3 @@ export interface Tag {
   label: string;
   color: string;
 }
-
-export interface JudgePromptPreview {
-  system_message: string;
-  user_message: string;
-}

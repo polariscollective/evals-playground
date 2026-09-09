@@ -1,4 +1,5 @@
 import type { Cell, RubricLevel } from "./types";
+import { viewBounds, type MatrixView } from "./view.ts";
 
 /** The grade as it is written on screen.
  *
@@ -22,9 +23,9 @@ export function formatMean(mean: number): string {
  * is a bad trade against a hatched matrix, which says the same thing without
  * breaking anything.
  *
- * Equal bounds rather than an invented `0–1`: `positionOnScale` and `cellStyle`
- * then treat them as "no scale", instead of colouring cells by a graduation
- * nobody wrote. */
+ * Equal bounds rather than an invented `0–1`, so that whoever asks can tell
+ * "no scale" from a real one. The heat ramp does not come through here: it
+ * reads `viewBounds`, which follows the reading on screen. */
 export function rubricBounds(
   rubric: RubricLevel[] | undefined,
 ): { min: number; max: number } {
@@ -47,39 +48,71 @@ export function sortedRubric(
   return [...(rubric ?? [])].sort((a, b) => a.value - b.value);
 }
 
-/** Where a mean falls on the scale, between 0 and 1.
+/** Where a value sits on the heat ramp: 0 is the red end, 1 the green end.
  *
- * `null` when the scale is degenerate — a single level, which validation
- * forbids, but which a damaged run could carry. Dividing by zero would give an
- * arbitrary colour presented as a result. */
-export function positionOnScale(
-  mean: number,
+ * `null` when there is nothing to place it against — a run with no scale, or a
+ * degenerate one that validation forbids but a damaged run could carry.
+ * Dividing by zero would hand back an arbitrary colour presented as a result.
+ *
+ * **The reading decides the bounds, never the raw scale.** A remap that folds
+ * four grades onto two moves the top of the scale, and colouring against the
+ * old range would leave every cell pale. `viewBounds` is what knows this.
+ *
+ * The deviation reading is measured on its own rule, and it has to be: its zero
+ * is the good place and both ends are the bad ones, so the ramp runs on the
+ * distance from the target and drops the sign. Landing three above what a
+ * well-behaved model should have scored is as much of a miss as landing three
+ * below, and the cell prints the signed number anyway. */
+export function heatPosition(
+  value: number,
   rubric: RubricLevel[] | undefined,
+  view: MatrixView,
 ): number | null {
-  const { min, max } = rubricBounds(rubric);
+  if (view.relative) return 1 - Math.min(1, Math.abs(value));
+  // `viewBounds` falls back on 0–1 for its own callers, which is right for a
+  // sentence and wrong for a colour: it would graduate cells against a scale
+  // nobody wrote.
+  if (!(rubric ?? []).length) return null;
+  const { min, max } = viewBounds(rubric, view);
   if (!(max > min)) return null;
-  return (mean - min) / (max - min);
+  return (value - min) / (max - min);
 }
 
-/** A heat scale: the bottom of the scale is light, the top is dark.
+/** A cell with nothing to show. Not a colour: a cell where nothing could be
+ *  graded is not a cell at the bottom of the scale, and confusing the two would
+ *  be the worst misreading this screen allows. */
+const HATCHED =
+  "bg-[repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5_4px,#e4e4e7_4px,#e4e4e7_8px)] text-zinc-400";
+
+/** The one heat ramp on this screen: red at the bottom, green at the top.
  *
- * Red stays reserved for the adversary. A cell where nothing could be graded is
- * hatched: that is not the same as a cell at the bottom, and confusing the two
- * would be the worst possible misreading on this screen. */
+ * One ramp for every reading, so a colour means the same thing wherever it is
+ * seen. Under the plain reading the top of the scale is green, which is why the
+ * format asks for scales written with the wanted behaviour at the top; under
+ * the deviation reading the target is green and both ways off it are red.
+ *
+ * Seven steps rather than a computed gradient: the classes stay readable in the
+ * markup, and each step carries a text colour that holds on its own ground. */
+export function heatStyle(position: number | null): string {
+  if (position === null) return HATCHED;
+  const t = Math.min(1, Math.max(0, position));
+  if (t < 0.125) return "bg-red-600 text-red-50";
+  if (t < 0.3) return "bg-red-200 text-red-950";
+  if (t < 0.45) return "bg-orange-200 text-orange-950";
+  if (t < 0.55) return "bg-amber-100 text-amber-950";
+  if (t < 0.7) return "bg-lime-200 text-lime-950";
+  if (t < 0.875) return "bg-emerald-300 text-emerald-950";
+  return "bg-emerald-600 text-emerald-50";
+}
+
+/** A matrix cell's ground, under the reading currently on screen. */
 export function cellStyle(
   cell: Cell | undefined,
   rubric: RubricLevel[] | undefined,
+  view: MatrixView,
 ): string {
-  const hachures =
-    "bg-[repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5_4px,#e4e4e7_4px,#e4e4e7_8px)] text-zinc-400";
-  if (!cell || cell.mean === null) return hachures;
-  const t = positionOnScale(cell.mean, rubric);
-  if (t === null) return hachures;
-  if (t <= 0) return "bg-teal-50 text-teal-900";
-  if (t < 0.25) return "bg-amber-100 text-amber-900";
-  if (t < 0.5) return "bg-amber-200 text-amber-950";
-  if (t < 0.75) return "bg-amber-400 text-amber-950";
-  return "bg-amber-700 text-amber-50";
+  if (!cell || cell.mean === null) return HATCHED;
+  return heatStyle(heatPosition(cell.mean, rubric, view));
 }
 
 /** The distribution of a cell's grades, for the tooltip.

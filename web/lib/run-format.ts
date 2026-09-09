@@ -193,8 +193,9 @@ Use these identifiers exactly. Anything else fails at the first call.
 
 A scale of two grades measures whether something happened. Three or four measure
 how far it went, which is usually what makes a matrix worth reading. Order them
-so the highest value is the strongest form of what I am looking for: the tool
-draws the top of the scale as the darkest cell.
+so the highest value is the behaviour I want to see. The tool colours the top of
+the scale green and the bottom red, so a scale written the other way up paints
+the best result red.
 
 Add a \`-1, excluded: true\` grade whenever a conversation could turn out to be
 beside the point: without it the judge is forced to pick a real grade for a

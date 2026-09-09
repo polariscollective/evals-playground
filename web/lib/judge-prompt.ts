@@ -39,7 +39,7 @@ export function renderRubric(rubric: RubricLevel[]): string {
  * `String.replace` treats `$&`, `$1` and their like as patterns in the
  * replacement string: a criterion containing `$&` would have its text
  * corrupted. A replacement function escapes that rule. */
-function fill(template: string, values: Record<string, string>): string {
+export function fill(template: string, values: Record<string, string>): string {
   let out = template;
   for (const [name, value] of Object.entries(values)) {
     out = out.replaceAll(`{${name}}`, () => value);

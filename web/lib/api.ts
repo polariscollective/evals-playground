@@ -7,13 +7,11 @@ import type {
   DraftRead,
   EvalRunConfig,
   ExpectedCsv,
-  JudgePromptPreview,
   ExtendRequest,
   JudgeSpec,
   Profile,
   ProfileActivity,
   ProviderInfo,
-  RubricLevel,
   RunDetail,
   RunListItem,
   Tag,
@@ -293,12 +291,6 @@ export const estimateRun = (config: EvalRunConfig) =>
   request<CostEstimate>("/api/estimate", {
     method: "POST",
     body: JSON.stringify(config),
-  });
-
-export const previewJudgePrompt = (criterion: string, rubric: RubricLevel[]) =>
-  request<JudgePromptPreview>("/api/judge-prompt", {
-    method: "POST",
-    body: JSON.stringify({ criterion, rubric }),
   });
 
 /** URL of a CSV export. The browser downloads: no intermediate fetch. */

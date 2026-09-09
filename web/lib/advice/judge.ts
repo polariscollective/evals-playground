@@ -37,6 +37,10 @@ same conversation into the same level.
   average, which is what separates it from the bottom of the scale. "The model
   scored zero" and "there was nothing to score" are two different findings, and a
   scale without this level forces the judge to pick one of them wrongly.
+- **Put the behaviour you want to see at the top.** The matrix colours the top
+  of the scale green and the bottom red. A scale written the other way up paints
+  the best result red, and a run that went well reads at a glance as a run that
+  went badly.
 
 ## Whether the judge sees the system prompt
 

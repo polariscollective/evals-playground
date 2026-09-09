@@ -42,22 +42,30 @@ import { awarenessJoin, servedSentence, servedSummary } from "@/lib/served";
 import { cellsOf } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { controlRows } from "@/lib/targets";
-import { withRelative } from "@/lib/view";
+import { PLAIN_VIEW, withRelative } from "@/lib/view";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
+import { PromptPreview } from "@/components/PromptPreview";
+import {
+  adversaryPreview,
+  awarenessPreview,
+  judgePreview,
+} from "@/lib/prompt-preview";
 import { served, toolsFor, writesWorld } from "@/lib/tools";
 import {
   cellStyle,
   distribution,
   formatMean,
   formatValue,
-  rubricBounds,
+  heatPosition,
+  heatStyle,
   sortedRubric,
 } from "@/lib/rubric";
 import type { PublicJudge, PublicRun, PublicRunDetail, PublicRunJudgeView } from "@/lib/public-run";
 import type {
   EvalSample,
+  EvalScenario,
   JudgeVerdictEntry,
   RubricLevel,
   SampleStatus,
@@ -102,6 +110,23 @@ export function verdictOf(
   sampleId: string,
 ): JudgeVerdictEntry {
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
+}
+
+/** One entry per scenario, for `PromptPreview`'s selector.
+ *
+ * A judge's prompt opens with the scenario's own system prompt, and the
+ * adversary's carries the scenario's own opening message. On a run already
+ * played those texts exist, so there is no reason to stand in for them, and
+ * every reason not to show one row's prompt as though it were every row's. */
+function perScenario(
+  scenarios: EvalScenario[],
+  build: (scenario: EvalScenario) => ReturnType<typeof judgePreview>,
+) {
+  return scenarios.map((scenario, index) => ({
+    key: `${index}`,
+    label: scenario.title || `Scenario ${index + 1}`,
+    preview: build(scenario),
+  }));
 }
 
 /** A short label for a judge, in the list of "other judges".
@@ -206,7 +231,6 @@ export function ScoreBadge({
     );
   }
 
-  const { min, max } = rubricBounds(rubric);
   const level = rubric.find((one) => one.value === verdict.score);
   const meaning = level?.meaning;
 
@@ -222,15 +246,11 @@ export function ScoreBadge({
       </span>
     );
   }
-  const t = max > min ? (verdict.score - min) / (max - min) : 0;
-  const style =
-    t <= 0
-      ? "bg-teal-100 text-teal-900"
-      : t < 0.5
-        ? "bg-amber-100 text-amber-900"
-        : t < 1
-          ? "bg-amber-300 text-amber-950"
-          : "bg-zinc-900 text-white";
+  // The matrix ramp, on a single grade. A reader who has just clicked through
+  // from a green cell must not find its attempts in another set of colours.
+  // Always the plain reading: this is one judge's raw grade, and neither a
+  // remap nor a deviation applies to it.
+  const style = heatStyle(heatPosition(verdict.score, rubric, PLAIN_VIEW));
   return (
     <span className={`rounded px-2 py-0.5 text-xs ${style}`} title={meaning}>
       {formatValue(verdict.score)}
@@ -546,12 +566,18 @@ function UnlinkConsequences() {
 
 function OtherJudgeRow({
   judge,
+  scenarios,
   viewing,
   isPrincipal = false,
   onUnlink,
   onView,
 }: {
   judge: PublicRunJudgeView;
+  /** The run's scenarios, so a system judge can show the prompt it really
+   *  received. An ordinary judge shows its own through `JudgeBlock`, on being
+   *  viewed; a system judge can never be viewed, so this row is the only place
+   *  its prompt can be read at all. */
+  scenarios: EvalScenario[];
   /** This judge is the one being looked at right now — a purely local choice (see
    *  `JudgeBlock`), never written to the database. */
   viewing: boolean;
@@ -587,7 +613,7 @@ function OtherJudgeRow({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 py-2 text-sm first:border-t-0">
-      <div>
+      <div className="space-y-1">
         <span className="font-mono text-xs text-zinc-500">
           {shortModel(judge.judge.model)}
         </span>{" "}
@@ -601,6 +627,23 @@ function OtherJudgeRow({
           <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] tracking-wide text-white uppercase">
             principal
           </span>
+        )}
+        {judge.system_type === AWAKE_TYPE && (
+          // The one judge whose question nobody on this run wrote. It cannot be
+          // selected for display, so without this link its prompt is readable
+          // nowhere at all.
+          <div>
+            <PromptPreview
+              label="See the exact prompt this judge received"
+              note="This judge's question and its 1 to 10 scale come from the tool and are the same in every run."
+              variants={perScenario(scenarios, (scenario) =>
+                awarenessPreview(
+                  judge.judge.sees_system_prompt !== false,
+                  scenario.system_prompt,
+                ),
+              )}
+            />
+          </div>
         )}
       </div>
       {(onUnlink || onView) && (
@@ -970,6 +1013,31 @@ export function JudgeBlock({
           </tbody>
         </table>
 
+        {/* The whole text this judge was handed, and not only the part
+            somebody typed. It is what answers "why did it grade like that" six
+            months later, when the criterion on screen looks unimpeachable and
+            the prompt around it turns out to be where the answer was. */}
+        <PromptPreview
+          label="See the exact prompt this judge received"
+          note={
+            (displayedJudge?.judge.sees_system_prompt === false
+              ? "This judge was not shown the scenario's system prompt. "
+              : "") +
+            "The criterion and the scale sit inside a prompt that already tells the judge to grade the assistant and not the user. The transcript is stood in for; the rest is word for word."
+          }
+          variants={perScenario(config.scenarios, (scenario) =>
+            judgePreview(
+              {
+                criterion: criterion ?? "",
+                rubric: rubric ?? [],
+                sees_system_prompt:
+                  displayedJudge?.judge.sees_system_prompt ?? true,
+              },
+              scenario.system_prompt,
+            ),
+          )}
+        />
+
         {/* Looking is not deciding: this banner says nothing as long as one is
             looking at the principal, but as soon as one looks at another judge it
             says which of the two gestures is being made — and that the export and
@@ -1023,6 +1091,7 @@ export function JudgeBlock({
                   <OtherJudgeRow
                     key={judge.run_judge_id}
                     judge={judge}
+                    scenarios={config.scenarios}
                     viewing={displayedJudge?.run_judge_id === judge.run_judge_id}
                     isPrincipal={judge.run_judge_id === principal?.run_judge_id}
                     onUnlink={onUnlink}
@@ -1199,6 +1268,22 @@ export function DetailModal({
             <pre className="whitespace-pre-wrap text-xs text-zinc-300">
               {detail.run.config.adversary_prompt}
             </pre>
+            {/* The objective above is what somebody typed. What left is that
+                text wrapped, before and after, in a confidentiality notice and
+                three realism rules nobody on the form wrote, and closed with
+                this scenario's opening message. Reading an adversary's turns
+                without knowing that is reading half the instructions. */}
+            <div className="mt-2">
+              <PromptPreview
+                dark
+                label="See the exact prompt the adversary received"
+                note="The objective above sits inside a confidentiality notice, repeated before and after it, followed by three realism rules and this scenario's opening message."
+                preview={adversaryPreview(
+                  detail.run.config.adversary_prompt,
+                  scenario?.opening_message,
+                )}
+              />
+            </div>
           </div>
         )}
 
@@ -1636,7 +1721,7 @@ export function RunMatrix({
                       // to be read, and that has to be visible without hovering
                       // or opening anything.
                       <span
-                        className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-900 ring-1 ring-inset ring-amber-700/50"
+                        className="ml-2 rounded bg-red-600 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-red-50"
                         title="This control row did not land on its target. Fix it and relaunch before reading the rest of the matrix."
                       >
                         control missed
@@ -1701,7 +1786,7 @@ export function RunMatrix({
                     <td key={target} className="border-b border-zinc-200 p-1">
                       <button
                         onClick={() => onOpenCell(index, target)}
-                        className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric)}`}
+                        className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric, view)}`}
                         title={
                           flagged > 0
                             ? `${baseTitle} · ${flagged} attempt${flagged > 1 ? "s" : ""} showed signs of knowing it was a test`
@@ -1732,8 +1817,8 @@ export function RunMatrix({
                           // almost every cell, and a mark everywhere would drown the
                           // one case that counts. A ground of its own rather than a
                           // mere text colour, so as to stay readable whatever the
-                          // cell's ground — from the palest teal to the darkest
-                          // amber.
+                          // cell's ground, from the deepest red to the deepest
+                          // green.
                           // The number is written, not merely a presence: two flagged
                           // attempts out of five is not one.
                           <span className="ml-1 rounded bg-white/85 px-1 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-700/50">
@@ -1762,8 +1847,11 @@ export function RunMatrix({
         {/* The sentence follows the current reading: "average" stops being true as
             soon as one chooses a median or a minimum. */}
         {describeView(view, rubric)}, on a {formatValue(min)}–
-        {formatValue(max)} scale. The top of the scale is the dark end. A
-        hatched cell means nothing could be judged — which is not the same as{" "}
+        {formatValue(max)} scale.{" "}
+        {view.relative
+          ? "A cell that landed on its target is green, and the further it landed either side of it, the redder it goes."
+          : "The top of the scale is green and the bottom is red, so a scale is worth writing with the behaviour you want to see at the top."}{" "}
+        A hatched cell means nothing could be judged, which is not the same as{" "}
         {formatValue(min)}.
         {(judgeTargets?.length ?? 0) > 0 && (
           <>
@@ -1772,8 +1860,9 @@ export function RunMatrix({
             <strong>control</strong> has to land on that target, or the rest of
             this matrix cannot be read; it stays out of the run&apos;s overall
             figure either way, being odd on purpose.{" "}
-            <strong>Control missed</strong> means one of its attempts landed
-            somewhere else, so fix that row and relaunch before reading the rest.
+            A red <strong>control missed</strong> badge means one of its
+            attempts landed somewhere else, so fix that row and relaunch before
+            reading the rest.
           </>
         )}
         {view.relative && (
