@@ -1,1 +1,1 @@
-"""Playground de génération et de notation de scénarios d'évaluation."""
+"""Evaluation playground: running scenarios against models, and grading them."""

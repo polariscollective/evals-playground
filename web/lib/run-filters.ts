@@ -1,30 +1,29 @@
-/** Le filtre de la liste des runs et de celle des brouillons.
+/** The filter of the runs list and of the drafts list.
  *
- * Deux sortes de filtres, parce qu'il y a deux sortes de propriétés.
+ * Two kinds of filter, because there are two kinds of property.
  *
- * Les TAGS et les STATUTS sont des ensembles : une ligne en porte plusieurs,
- * ou aucun. On les allume et on les éteint un par un, et l'état enregistré ne
- * nomme que les éteints — un tag créé demain naîtrait invisible si la liste
- * nommait les allumés.
+ * TAGS and STATUSES are sets: a row carries several, or none. They are turned
+ * on and off one by one, and the saved state names only the ones turned off — a
+ * tag created tomorrow would be born invisible if the list named the ones
+ * turned on.
  *
- * Les DIMENSIONS sont binaires : un run a tourné en local ou en ligne, il est
- * publié ou non, un agent l'a lancé ou un humain. Les traiter comme des tags
- * qu'on éteint ne répondait qu'à « je ne veux pas de ça », jamais à « je ne
- * veux QUE ça » : éteindre « MCP » montrait les runs humains, mais rien ne
- * montrait les runs d'agent seuls. D'où trois états — un côté, l'autre, ou les
- * deux — et un bouton qui tourne entre eux.
+ * DIMENSIONS are binary: a run ran locally or live, it is published or not, an
+ * agent launched it or a human. Treating them as tags one turns off answered
+ * only "I do not want that", never "I want ONLY that": turning "MCP" off showed
+ * the human runs, but nothing showed the agent runs alone. Hence three states —
+ * one side, the other, or both — and a button that cycles between them.
  *
- * Les libellés des deux côtés sont réservés en création (voir `isReservedTag`),
- * sans quoi un vrai tag nommé « local » se confondrait avec le pseudo-tag du
- * même nom, et l'un masquerait l'autre sans que rien ne le dise.
+ * The labels of both sides are reserved at creation time (see `isReservedTag`),
+ * without which a real tag named "local" would be confused with the pseudo-tag
+ * of the same name, and one would hide the other without anything saying so.
  *
- * Les vrais tags, eux, sont globaux à la base — une ligne par libellé, sans
- * colonne utilisateur, couleur portée par le tag. Deux personnes qui écrivent
- * le même mot partagent la même ligne et la même couleur.
+ * The real tags, for their part, are global to the database — one row per
+ * label, no user column, colour carried by the tag. Two people who write the
+ * same word share the same row and the same colour.
  */
 
-/** Les statuts d'un run, du plus banal au plus alarmant — et non dans l'ordre
- *  du type. Un ensemble et non une dimension : il y en a cinq. */
+/** A run's statuses, from the most ordinary to the most alarming — and not in
+ *  the type's order. A set and not a dimension: there are five of them. */
 export const STATUS_TAGS = [
   "done",
   "running",
@@ -34,13 +33,13 @@ export const STATUS_TAGS = [
 ] as const;
 export type StatusTag = (typeof STATUS_TAGS)[number];
 
-/** Comment chaque statut s'écrit à l'écran.
+/** How each status is written on screen.
  *
- * La valeur en base et le mot affiché diffèrent pour deux d'entre eux —
- * `error` se lit « failed », `triggered` se lit « starting ». Le badge de la
- * ligne le savait, le bouton du filtre non : on filtrait sur « error » un
- * statut affiché « failed », et les deux se contredisaient sur le même écran.
- * Une seule table, lue des deux côtés. */
+ * The value in the database and the displayed word differ for two of them —
+ * `error` reads "failed", `triggered` reads "starting". The row's badge knew
+ * that, the filter's button did not: we were filtering on "error" a status
+ * displayed as "failed", and the two contradicted each other on the same
+ * screen. One table only, read from both sides. */
 export const STATUS_LABELS: Record<string, string> = {
   triggered: "starting",
   running: "running",
@@ -49,24 +48,24 @@ export const STATUS_LABELS: Record<string, string> = {
   cancelled: "cancelled",
 };
 
-/** Quel côté d'une dimension une ligne occupe. `a` est le côté notable :
- *  celui qui vaut un badge sur la ligne, et celui qu'on vient chercher. */
+/** Which side of a dimension a row occupies. `a` is the notable side: the one
+ *  that earns a badge on the row, and the one people come looking for. */
 export type Side = "a" | "b";
 
-/** Ce qu'un bouton de dimension peut valoir. `both` ne filtre rien. */
+/** What a dimension's button can be worth. `both` filters nothing. */
 export type Choice = Side | "both";
 
 interface Dimension {
   a: string;
   b: string;
-  /** Sur quelle liste ce bouton a un sens. */
+  /** On which list this button makes sense. */
   on: "runs" | "drafts" | "both";
 }
 
-/** Les dimensions, dans l'ordre où la barre les propose.
+/** The dimensions, in the order the bar offers them.
  *
- * Un brouillon n'a ni machine ni publication : il n'a pas encore tourné, et
- * rien n'est publiable tant que rien n'existe. */
+ * A draft has neither machine nor publication: it has not run yet, and nothing
+ * is publishable as long as nothing exists. */
 export const DIMENSIONS = {
   machine: { a: "local", b: "live", on: "runs" },
   visibility: { a: "public", b: "private", on: "runs" },
@@ -79,13 +78,13 @@ export type DimensionKey = keyof typeof DIMENSIONS;
 
 export const DIMENSION_KEYS = Object.keys(DIMENSIONS) as DimensionKey[];
 
-/** Les classes de chaque pseudo-libellé, écrites une fois.
+/** The classes of each pseudo-label, written once.
  *
- * Le badge sur la ligne et le bouton de la barre lisent la même entrée : sans
- * ça, les deux représentations du même concept dérivent au premier changement
- * de palette. Comme `tag-colors.ts`, elles sont en toutes lettres — Tailwind
- * ne construit aucune classe à l'exécution. Les statuts reprennent celles du
- * badge de la colonne « Status ». */
+ * The badge on the row and the button in the bar read the same entry: without
+ * that, the two representations of the same concept drift at the first change
+ * of palette. Like `tag-colors.ts`, they are spelled out in full — Tailwind
+ * builds no class at run time. The statuses take back those of the "Status"
+ * column's badge. */
 export const PSEUDO_TAG_CLASSES: Record<string, string> = {
   triggered: "bg-zinc-100 text-zinc-700",
   running: "bg-teal-100 text-teal-900",
@@ -104,8 +103,8 @@ export const PSEUDO_TAG_CLASSES: Record<string, string> = {
   waiting: "bg-zinc-100 text-zinc-700",
 };
 
-/** Tout ce que la machine produit, et qu'un humain ne peut donc pas créer
- *  comme tag sous peine de collision silencieuse dans la barre. */
+/** Everything the machine produces, and which a human therefore cannot create
+ *  as a tag without a silent collision in the bar. */
 const RESERVED: readonly string[] = [
   ...STATUS_TAGS,
   ...(Object.keys(DIMENSIONS) as DimensionKey[]).flatMap((key) => [
@@ -114,15 +113,15 @@ const RESERVED: readonly string[] = [
   ]),
 ];
 
-/** Insensible à la casse, comme `createTag` qui déduplique en `ilike` :
- *  réserver « local » sans réserver « Local » ne réserverait rien. */
+/** Case-insensitive, like `createTag` which deduplicates through `ilike`:
+ *  reserving "local" without reserving "Local" would reserve nothing. */
 export function isReservedTag(label: string): boolean {
   const wanted = label.trim().toLowerCase();
   return RESERVED.some((name) => name.toLowerCase() === wanted);
 }
 
-/** Ce que le filtre lit d'un run. Volontairement minuscule : la logique se
- *  teste sans fabriquer un `RunListItem` entier. */
+/** What the filter reads of a run. Deliberately tiny: the logic is tested
+ *  without building a whole `RunListItem`. */
 export interface FilterableRun {
   status: string;
   origin: "local" | "cloud-run";
@@ -154,17 +153,17 @@ export function draftSides(draft: FilterableDraft): Sides {
   };
 }
 
-/** Le mot que porte une ligne sur cette dimension — celui de son badge. */
+/** The word a row carries on this dimension — the one on its badge. */
 export function sideLabel(key: DimensionKey, side: Side): string {
   return side === "a" ? DIMENSIONS[key].a : DIMENSIONS[key].b;
 }
 
-/** L'état du filtre.
+/** The filter's state.
  *
- * `dims` ne nomme que les dimensions RÉDUITES à un côté : une absence vaut
- * « les deux ». L'état par défaut est donc presque vide, et une dimension
- * ajoutée demain naît ouverte plutôt que fermée sans que personne ne l'ait
- * voulu. `off` ne nomme que les tags et statuts éteints, pour la même raison. */
+ * `dims` names only the dimensions NARROWED to one side: an absence means
+ * "both". The default state is therefore almost empty, and a dimension added
+ * tomorrow is born open rather than closed without anyone having wanted it.
+ * `off` names only the tags and statuses turned off, for the same reason. */
 export interface FilterState {
   dims: Sides;
   off: string[];
@@ -172,12 +171,12 @@ export interface FilterState {
 
 export const OPEN: FilterState = { dims: {}, off: [] };
 
-/** Deux états sont-ils le même filtre ?
+/** Are two states the same filter?
  *
- * Comparé champ par champ plutôt que par sérialisation : l'ordre des clés d'un
- * objet et celui d'un tableau ne sont pas garantis, et deux filtres identiques
- * écrits dans un ordre différent se seraient dits différents — le lien serait
- * resté actif en promettant un geste sans effet. */
+ * Compared field by field rather than by serialisation: the order of an
+ * object's keys and that of an array are not guaranteed, and two identical
+ * filters written in a different order would have called themselves different —
+ * the link would have stayed active while promising a gesture with no effect. */
 export function sameFilter(a: FilterState, b: FilterState): boolean {
   for (const key of DIMENSION_KEYS) {
     if (a.dims[key] !== b.dims[key]) return false;
@@ -187,10 +186,10 @@ export function sameFilter(a: FilterState, b: FilterState): boolean {
   return b.off.every((label) => known.has(label));
 }
 
-/** Le tour d'un bouton : le côté notable, l'autre, puis les deux.
+/** A button's cycle: the notable side, the other, then both.
  *
- * `a` d'abord parce que c'est celui qu'on vient chercher — on clique « MCP »
- * pour voir les runs d'agent, pas pour les exclure. */
+ * `a` first because it is the one people come looking for — one clicks "MCP" to
+ * see the agent runs, not to exclude them. */
 export function nextChoice(current: Choice): Choice {
   if (current === "both") return "a";
   if (current === "a") return "b";
@@ -201,7 +200,7 @@ export function choiceOf(state: FilterState, key: DimensionKey): Choice {
   return state.dims[key] ?? "both";
 }
 
-/** Réduit une dimension au côté suivant, ou la rouvre. */
+/** Narrows a dimension to the next side, or reopens it. */
 export function cycleDimension(
   state: FilterState,
   key: DimensionKey,
@@ -213,7 +212,7 @@ export function cycleDimension(
   return { ...state, dims };
 }
 
-/** Allume ou éteint un tag, ou un statut. */
+/** Turns a tag, or a status, on or off. */
 export function toggleOff(state: FilterState, label: string): FilterState {
   const off = state.off.includes(label)
     ? state.off.filter((entry) => entry !== label)
@@ -221,15 +220,15 @@ export function toggleOff(state: FilterState, label: string): FilterState {
   return { ...state, off };
 }
 
-/** Une ligne passe-t-elle le filtre ?
+/** Does a row pass the filter?
  *
- * Chaque dimension réduite doit tomber du bon côté, ET aucun des libellés
- * d'ensemble portés ne doit être éteint. Une ligne sans aucun tag n'est jamais
- * écartée par eux — elle ne porte rien qu'on ait éteint.
+ * Each narrowed dimension must fall on the right side, AND none of the set
+ * labels carried must be turned off. A row with no tag at all is never set
+ * aside by them — it carries nothing anyone has turned off.
  *
- * Une dimension que la ligne ne connaît pas ne la disqualifie pas : un
- * brouillon n'a pas de machine, et un état partagé entre les deux listes ne
- * doit pas les effacer l'une par l'autre. */
+ * A dimension the row does not know does not disqualify it: a draft has no
+ * machine, and a state shared between the two lists must not erase one by the
+ * other. */
 export function passes(
   sides: Sides,
   labels: string[],
@@ -245,19 +244,19 @@ export function passes(
   return !labels.some((label) => off.has(label));
 }
 
-/** La ligne répond-elle à la recherche ?
+/** Does the row answer the search?
  *
- * Insensible à la casse et aux accents : on tape « regression » pour trouver
- * « régression », et personne ne devrait avoir à composer un accent pour
- * retrouver son propre run. La normalisation NFD sépare les lettres de leurs
- * diacritiques, que la classe `\p{Diacritic}` retire ensuite.
+ * Insensitive to case and to accents: one types "regression" to find
+ * "régression", and nobody should have to compose an accent to find their own
+ * run again. NFD normalisation separates the letters from their diacritics,
+ * which the `\p{Diacritic}` class then removes.
  *
- * Une recherche vide laisse tout passer : c'est l'état ordinaire du champ, et
- * il ne doit rien filtrer tant qu'on n'a rien écrit.
+ * An empty search lets everything through: that is the field's ordinary state,
+ * and it must filter nothing as long as nothing has been typed.
  *
- * Cherche dans tout ce qui identifie une ligne — son nom, et son identifiant.
- * L'identifiant parce que c'est ce qu'un agent rend et ce qu'on colle depuis
- * un journal ; le chercher est même le cas le plus fréquent. */
+ * Searches everything that identifies a row — its name, and its identifier. The
+ * identifier because that is what an agent returns and what one pastes from a
+ * log; looking for it is even the most frequent case. */
 function fold(text: string): string {
   return text
     .normalize("NFD")
@@ -273,15 +272,16 @@ export function matchesQuery(haystacks: (string | null)[], query: string): boole
   );
 }
 
-/** Ce que la barre propose pour la liste en cours.
+/** What the bar offers for the list at hand.
  *
- * Une dimension n'est proposée que si elle a un sens ici ET qu'au moins une
- * ligne occupe son côté notable : offrir « publié / privé » quand rien n'est
- * publié n'encombrerait que la barre. Statuts et tags : uniquement ce qu'au
- * moins une ligne porte.
+ * A dimension is offered only if it makes sense here AND at least one row
+ * occupies its notable side: offering "public / private" when nothing is
+ * published would only clutter the bar. Statuses and tags: only what at least
+ * one row carries.
  *
- * Le tout se calcule AVANT filtrage, sans quoi réduire une dimension ferait
- * disparaître son propre bouton et il n'y aurait plus moyen de la rouvrir. */
+ * All of it is computed BEFORE filtering, without which narrowing a dimension
+ * would make its own button disappear and there would be no way left to reopen
+ * it. */
 export function offered(
   mode: "runs" | "drafts",
   rows: { sides: Sides; labels: string[] }[],

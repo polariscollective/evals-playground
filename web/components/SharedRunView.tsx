@@ -1,15 +1,15 @@
 "use client";
 
-// Un run publié, lu comme on le lit chez soi.
+// A published run, read as one reads it at home.
 //
-// Les mêmes composants que la page privée, aux mêmes endroits : la matrice
-// s'ouvre case par case, un scénario s'ouvre par son titre, les trajectoires
-// se déplient. Ce qui manque n'est pas de la lecture — c'est le menu, la
-// publication, l'extension, la repasse du juge, les notes éditables, et
-// l'adresse de qui a lancé le run.
+// The same components as the private page, in the same places: the matrix opens
+// cell by cell, a scenario opens by its title, the trajectories unfold. What is
+// missing is not reading — it is the menu, the publication, the extension, the
+// judge's second pass, the editable notes, and the address of whoever launched
+// the run.
 //
-// Cette dernière est tenue par le type : `PublicRunDetail` n'a pas de
-// `user_email`, donc l'afficher ne compile pas.
+// That last one is held by the type: `PublicRunDetail` has no `user_email`, so
+// showing it does not compile.
 import { useEffect, useState } from "react";
 import { hasInspectLogs, inspectViewUrl } from "@/lib/api";
 import { PLAIN_VIEW } from "@/lib/view";
@@ -36,17 +36,16 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
   const { run } = detail;
   const [low, high] = repetitionRange(detail.samples);
 
-  // Le journal suit la publication du run : `canReadRun`, derrière cette
-  // requête, laisse passer un inconnu exactement quand `loadPublicRun` l'a
-  // laissé arriver jusqu'ici.
+  // The log follows the run's publication: `canReadRun`, behind this request,
+  // lets a stranger through exactly when `loadPublicRun` let them get this far.
   const [inspectLogs, setInspectLogs] = useState(false);
   useEffect(() => {
-    let vivant = true;
-    void hasInspectLogs(run.id).then((présents) => {
-      if (vivant) setInspectLogs(présents);
+    let alive = true;
+    void hasInspectLogs(run.id).then((present) => {
+      if (alive) setInspectLogs(present);
     });
     return () => {
-      vivant = false;
+      alive = false;
     };
   }, [run.id]);
 
@@ -83,8 +82,8 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
         )}
       </div>
 
-      {/* Avant le juge, comme sur la page privée : les notes disent ce qu'on
-          voulait de ce run, et l'échelle du juge se lit ensuite. */}
+      {/* Before the judge, as on the private page: the notes say what one wanted
+          from this run, and the judge's scale reads afterwards. */}
       {run.notes.trim() !== "" && (
         <Collapsible
           className="space-y-2 rounded border border-zinc-300 p-3"
@@ -93,7 +92,7 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
         >
           <div
             className="notes-prose text-sm"
-            // Sûr : `renderMarkdown` échappe tout le HTML d'entrée.
+            // Safe: `renderMarkdown` escapes all the input HTML.
             dangerouslySetInnerHTML={{ __html: renderMarkdown(run.notes) }}
           />
         </Collapsible>
@@ -119,7 +118,7 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
         >
           <div
             className="notes-prose text-sm"
-            // Sûr : `renderMarkdown` échappe tout le HTML d'entrée.
+            // Safe: `renderMarkdown` escapes all the input HTML.
             dangerouslySetInnerHTML={{ __html: renderMarkdown(run.analysis) }}
           />
         </Collapsible>
@@ -134,11 +133,10 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
       )}
 
       {open && (
-        // `loading` est toujours faux : la page charge les trajectoires d'un
-        // coup côté serveur, là où la page privée les demande à l'ouverture
-        // d'une case. Elle n'a pas de route publique à interroger, et lui en
-        // ouvrir une pour ça élargirait la surface exposée sans rien apporter
-        // à qui lit.
+        // `loading` is always false: the page loads the trajectories in one go on
+        // the server side, where the private page asks for them when a cell opens.
+        // It has no public route to question, and opening one for that would widen
+        // the exposed surface without bringing anything to whoever is reading.
         <DetailModal
           detail={detail}
           scenarioIndex={open.scenario}

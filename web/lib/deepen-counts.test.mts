@@ -1,5 +1,5 @@
-// Les comptes que le panneau d'extension affiche à côté de chaque palier, et
-// celui de la sélection qu'il envoie au devis.
+// The counts the extension panel shows beside each level, and that of the
+// selection it sends to the quote.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -34,12 +34,12 @@ function sample(overrides: Partial<DeepenSampleWithDepth> = {}): DeepenSampleWit
 }
 
 const RUBRIC: RubricLevel[] = [
-  { value: 0, meaning: "A tenu." },
-  { value: 1, meaning: "A cédé." },
-  { value: -1, meaning: "Sans objet.", excluded: true },
+  { value: 0, meaning: "Held out." },
+  { value: 1, meaning: "Gave in." },
+  { value: -1, meaning: "Not applicable.", excluded: true },
 ];
 
-test("chaque palier compte ses essais, répartis par modèle", () => {
+test("each level counts its attempts, broken down by model", () => {
   const samples = [
     sample({ principal: verdict(0), target_model: "a" }),
     sample({ principal: verdict(0), target_model: "a" }),
@@ -53,26 +53,26 @@ test("chaque palier compte ses essais, répartis par modèle", () => {
   assert.deepEqual(counts[1].byModel, { a: 1 });
 });
 
-test("un palier que personne ne porte reste à zéro", () => {
+test("a level nobody carries stays at zero", () => {
   const counts = countsByLevel([sample({ principal: verdict(0) })], RUBRIC);
   assert.equal(counts[1].total, 0);
   assert.deepEqual(counts[1].byModel, {});
 });
 
-test("un palier hors moyenne compte quand même ses essais", () => {
+test("a level outside the mean still counts its attempts", () => {
   const counts = countsByLevel([sample({ principal: verdict(-1) })], RUBRIC);
   assert.equal(counts[2].total, 1);
 });
 
-test("les essais en panne, en attente ou sans note ne comptent nulle part", () => {
+test("attempts failed, waiting or ungraded count nowhere", () => {
   const samples: DeepenSample[] = [
     sample({ status: "error", principal: verdict(null, "pending") }),
     sample({ status: "pending", principal: verdict(null, "pending") }),
-    // Conversation vide ou note hors échelle : `done`, mais sans note.
+    // Empty conversation or grade off the scale: `done`, but with no grade.
     sample({ status: "done", principal: verdict(null, "done") }),
-    // Jouée, mais le principal n'y est pas encore passé.
+    // Played, but the principal has not passed over it yet.
     sample({ status: "done", principal: verdict(null, "pending") }),
-    // Le principal est tombé sur une conversation par ailleurs valide.
+    // The principal fell over on an otherwise valid conversation.
     sample({ status: "done", principal: verdict(null, "error") }),
   ];
   assert.deepEqual(
@@ -82,7 +82,7 @@ test("les essais en panne, en attente ou sans note ne comptent nulle part", () =
   assert.equal(countAllGraded(samples).total, 0);
 });
 
-test("« tous les essais notés » couvre tous les paliers, répartis par modèle", () => {
+test("\"all graded attempts\" covers every level, broken down by model", () => {
   const samples = [
     sample({ principal: verdict(0), target_model: "a" }),
     sample({ principal: verdict(1), target_model: "b" }),
@@ -93,12 +93,12 @@ test("« tous les essais notés » couvre tous les paliers, répartis par modèl
   assert.deepEqual(all.byModel, { a: 2, b: 1 });
 });
 
-test("la sélection null n'approfondit rien", () => {
+test("a null selection deepens nothing", () => {
   const samples = [sample({ principal: verdict(0) })];
   assert.deepEqual(countsForSelection(samples, null), { total: 0, byModel: {} });
 });
 
-test("la sélection \"all\" retrouve le même compte que countAllGraded", () => {
+test("the \"all\" selection finds the same count as countAllGraded", () => {
   const samples = [
     sample({ principal: verdict(0), target_model: "a" }),
     sample({ principal: verdict(1), target_model: "b" }),
@@ -106,7 +106,7 @@ test("la sélection \"all\" retrouve le même compte que countAllGraded", () => 
   assert.deepEqual(countsForSelection(samples, "all"), countAllGraded(samples));
 });
 
-test("une sélection de notes ne prend que les essais qui les portent", () => {
+test("a selection of grades takes only the attempts carrying them", () => {
   const samples = [
     sample({ principal: verdict(0), target_model: "a" }),
     sample({ principal: verdict(1), target_model: "b" }),
@@ -117,14 +117,14 @@ test("une sélection de notes ne prend que les essais qui les portent", () => {
   assert.deepEqual(selected.byModel, { a: 2 });
 });
 
-// --- le devis d'approfondir, groupé par profondeur de départ -----------------
+// --- the quote for deepening, grouped by starting depth ----------------------
 //
-// Après un premier approfondissement, les essais d'un run n'ont plus tous la
-// même profondeur : seuls ceux qu'on avait choisis ont grandi. Un devis qui ne
-// groupe que par modèle traite alors tout le monde comme s'il partait de
-// `config.turns`, et sous-facture les essais restés en arrière.
+// After a first deepening, a run's attempts no longer all have the same depth:
+// only the ones chosen grew. A quote that groups by model alone then treats
+// everyone as though starting from `config.turns`, and under-bills the attempts
+// left behind.
 
-test("samplesForSelection renvoie les essais eux-mêmes, pas seulement leur compte", () => {
+test("samplesForSelection returns the attempts themselves, not only their count", () => {
   const a = sample({ principal: verdict(0), target_model: "a", turns_done: 4 });
   const b = sample({ principal: verdict(1), target_model: "b", turns_done: 8 });
   assert.deepEqual(samplesForSelection([a, b], "all"), [a, b]);
@@ -132,7 +132,7 @@ test("samplesForSelection renvoie les essais eux-mêmes, pas seulement leur comp
   assert.deepEqual(samplesForSelection([a, b], null), []);
 });
 
-test("le regroupement sépare deux profondeurs de départ pour un même modèle", () => {
+test("the grouping separates two starting depths for one model", () => {
   const groups = groupByModelAndDepth(
     [
       { target_model: "a", turns_done: 4 },
@@ -148,7 +148,7 @@ test("le regroupement sépare deux profondeurs de départ pour un même modèle"
   assert.deepEqual(byKey, { "a@4": 2, "a@8": 1, "b@4": 1 });
 });
 
-test("un essai sans profondeur enregistrée retombe sur la profondeur de repli", () => {
+test("an attempt with no recorded depth falls back on the fallback depth", () => {
   const groups = groupByModelAndDepth(
     [{ target_model: "a", turns_done: null }],
     4,
@@ -158,15 +158,15 @@ test("un essai sans profondeur enregistrée retombe sur la profondeur de repli",
 
 const DEEPEN_CONFIG: EvalRunConfig = {
   scenarios: [
-    { title: "T", system_prompt: "Tu assistes.", opening_message: "Fais-le." },
+    { title: "T", system_prompt: "You assist.", opening_message: "Do it." },
   ],
-  criterion: "Ce qu'il a fait.",
+  criterion: "What it did.",
   rubric: [
-    { value: 0, meaning: "A tenu." },
-    { value: 1, meaning: "A cédé." },
+    { value: 0, meaning: "Held out." },
+    { value: 1, meaning: "Gave in." },
   ],
-  // Le run a déjà subi un premier approfondissement : sa profondeur officielle
-  // est montée à 8, mais un essai qu'on n'avait pas choisi alors est resté à 4.
+  // The run has already been through a first deepening: its official depth rose
+  // to 8, but an attempt not chosen then stayed at 4.
   turns: 8,
   repetitions: 1,
   models: {
@@ -174,38 +174,38 @@ const DEEPEN_CONFIG: EvalRunConfig = {
     adversary: "anthropic/claude-sonnet-5",
     judge: "anthropic/claude-opus-5",
   },
-  adversary_prompt: "Insiste.",
+  adversary_prompt: "Insist.",
 };
 
-test("le devis charge chaque groupe depuis sa vraie profondeur de départ", () => {
+test("the quote charges each group from its real starting depth", () => {
   const cells = [
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 4 },
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 8 },
   ];
-  const juste = estimateDeepeningCost(DEEPEN_CONFIG, cells, 12, DEEPEN_CONFIG.turns);
-  const attendu = addEstimates(
+  const correct = estimateDeepeningCost(DEEPEN_CONFIG, cells, 12, DEEPEN_CONFIG.turns);
+  const expected = addEstimates(
     estimateDeepening(DEEPEN_CONFIG, 4, 12, 1),
     estimateDeepening(DEEPEN_CONFIG, 8, 12, 1),
   );
-  assert.deepEqual(juste, attendu);
+  assert.deepEqual(correct, expected);
 });
 
-test("grouper par modèle seul sous-estimerait l'essai resté en arrière", () => {
-  // Le défaut corrigé : traiter les deux essais comme s'ils partaient tous
-  // deux de `config.turns` (8) facturerait moins que ce qu'il reste
-  // réellement à jouer à celui qui n'a jamais bougé de 4.
+test("grouping by model alone would underestimate the attempt left behind", () => {
+  // The fault that was fixed: treating both attempts as though they all started
+  // from `config.turns` (8) would charge less than what really remains to be
+  // played for the one that never moved from 4.
   const cells = [
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 4 },
     { target_model: DEEPEN_CONFIG.models.targets[0], turns_done: 8 },
   ];
-  const juste = estimateDeepeningCost(DEEPEN_CONFIG, cells, 12, DEEPEN_CONFIG.turns)!;
-  const sousEstime = estimateDeepening(DEEPEN_CONFIG, DEEPEN_CONFIG.turns, 12, cells.length);
+  const correct = estimateDeepeningCost(DEEPEN_CONFIG, cells, 12, DEEPEN_CONFIG.turns)!;
+  const underestimated = estimateDeepening(DEEPEN_CONFIG, DEEPEN_CONFIG.turns, 12, cells.length);
   assert.ok(
-    juste.usd > sousEstime.usd,
-    `le devis juste (${juste.usd}) devrait dépasser celui groupé par modèle seul (${sousEstime.usd})`,
+    correct.usd > underestimated.usd,
+    `the correct quote (${correct.usd}) should exceed the one grouped by model alone (${underestimated.usd})`,
   );
 });
 
-test("sans essai à approfondir, aucun devis", () => {
+test("with no attempt to deepen, no quote", () => {
   assert.equal(estimateDeepeningCost(DEEPEN_CONFIG, [], 12, DEEPEN_CONFIG.turns), null);
 });

@@ -1,21 +1,21 @@
-// Qui a le droit de lire les journaux d'un run.
+// Who has the right to read a run's logs.
 //
-// Une seule fonction décide, et les deux routes de `/inspect-view` l'appellent
-// en première ligne. Elle refait la règle de `loadPublicRun` — un run vivant,
-// et soit une session valide, soit `is_public` — sans charger le run entier :
-// servir un journal ne demande pas de connaître ses cases.
+// One function decides, and both `/inspect-view` routes call it first. It
+// redoes `loadPublicRun`'s rule — a live run, and either a valid session or
+// `is_public` — without loading the whole run: serving a log does not require
+// knowing its cells.
 //
-// Module à part plutôt qu'une fonction de plus dans `runs.ts` : celui-ci fait
-// déjà 607 lignes et n'a jamais eu besoin de connaître l'authentification.
+// A module of its own rather than one more function in `runs.ts`: that one is
+// 607 lines already and has never needed to know about authentication.
 import "server-only";
 import { requireUser } from "@/auth";
 import { RUNS, select } from "./supabase";
 
-/** Le run existe-t-il, et cet appelant peut-il en lire les journaux ?
+/** Does the run exist, and can this caller read its logs?
  *
- * Un run inconnu, mis à la corbeille, ou non publié devant un inconnu donnent
- * tous `false` : de dehors ils doivent se ressembler, sinon l'adresse dit qui
- * existe. */
+ * An unknown run, one in the bin, or one unpublished in front of a stranger all
+ * give `false`: from outside they must look alike, otherwise the address says
+ * who exists. */
 export async function canReadRun(runId: string): Promise<boolean> {
   const rows = await select<{ is_public: boolean | null }>(RUNS, {
     id: `eq.${runId}`,

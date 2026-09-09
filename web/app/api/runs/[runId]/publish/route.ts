@@ -3,14 +3,14 @@ import { requireUser } from "@/auth";
 import { NotFound, loadRun, setPublic } from "@/lib/runs";
 import { publicRunPath } from "@/lib/run-id";
 
-/** Publier un run, ou le dépublier.
+/** Publishing a run, or unpublishing it.
  *
- * Gardée comme toutes les routes `/api` : c'est un geste d'utilisateur, pas une
- * lecture publique. Ce qu'elle ouvre, en revanche, ne l'est pas — `/shared/<id>`
- * répond hors session, et c'est tout l'objet.
+ * Guarded like every `/api` route: it is a user's gesture, not a public read.
+ * What it opens, on the other hand, is not — `/shared/<id>` answers outside a
+ * session, and that is the whole point.
  *
- * Rend l'adresse publique quand le run vient d'être publié, `null` sinon : le
- * client n'a alors rien à fabriquer ni à deviner. */
+ * Returns the public address when the run has just been published, `null`
+ * otherwise: the client then has nothing to build or to guess. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -30,9 +30,9 @@ export async function POST(
   }
 
   try {
-    // Vérifier l'existence d'abord : un PATCH PostgREST sur un identifiant
-    // inconnu ne touche aucune ligne et répond 204, ce qui se lirait comme une
-    // publication réussie.
+      // Check existence first: a PostgREST PATCH on an unknown identifier
+      // touches no row and answers 204, which would read as a successful
+      // publication.
     await loadRun(runId);
   } catch (error) {
     if (error instanceof NotFound) {

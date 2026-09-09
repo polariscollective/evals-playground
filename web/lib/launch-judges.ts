@@ -1,9 +1,9 @@
-// Les lignes des trois tables de juges, à créer pour un run neuf.
+// The rows of the three judge tables, to be created for a fresh run.
 //
-// Séparé de `runs.ts` pour la même raison que `cells.ts` : c'est la seule
-// partie de ce mécanisme qui mérite d'être éprouvée seule — le reste n'est
-// que des écritures Supabase — et `runs.ts` importe `server-only`, qui casse
-// l'import sous `node --test`. Voir le commentaire en tête de `cells.ts`.
+// Separated from `runs.ts` for the same reason as `cells.ts`: it is the only
+// part of this mechanism worth testing on its own — the rest is nothing but
+// Supabase writes — and `runs.ts` imports `server-only`, which breaks the
+// import under `node --test`. See the comment at the head of `cells.ts`.
 import { randomUUID } from "node:crypto";
 import type {
   EvalRunConfig,
@@ -13,7 +13,7 @@ import type {
   RubricLevel,
 } from "./types";
 
-/** Une ligne de `judges` telle qu'elle naît, avant insertion. */
+/** A row of `judges` as it is born, before insertion. */
 export interface NewJudgeRow {
   id: string;
   criterion: string | null;
@@ -28,12 +28,12 @@ export interface NewJudgeRow {
   created_by: string;
 }
 
-/** Une ligne de `run_judges` telle qu'elle naît, avant insertion.
+/** A row of `run_judges` as it is born, before insertion.
  *
- * `system_type` copie fidèlement celui du juge visé — voir le commentaire de
- * `RunJudge` dans `types.ts` sur pourquoi cette copie existe et pourquoi elle
- * ne doit jamais s'en écarter : c'est elle que la clé étrangère composée
- * `run_judges_judge_fk` vérifie à l'insertion. */
+ * `system_type` faithfully copies that of the judge it points at — see the
+ * comment on `RunJudge` in `types.ts` for why this copy exists and why it must
+ * never depart from it: it is what the composite foreign key
+ * `run_judges_judge_fk` checks on insertion. */
 export interface NewRunJudgeRow {
   id: string;
   run_id: string;
@@ -46,9 +46,9 @@ export interface NewRunJudgeRow {
   targets: JudgeTarget[] | null;
 }
 
-/** Une ligne de `judge_scores` telle qu'elle naît : en attente, sans verdict.
- *  `status`, `justification` et le reste prennent leur défaut en base — voir
- *  la migration. */
+/** A row of `judge_scores` as it is born: pending, with no verdict. `status`,
+ *  `justification` and the rest take their default in the database — see the
+ *  migration. */
 export interface NewJudgeScoreRow {
   run_judge_id: string;
   sample_id: string;
@@ -61,17 +61,17 @@ export interface LaunchJudges {
   judgeScores: NewJudgeScoreRow[];
 }
 
-/** Un `JudgeSpec` — une entrée de `config.judges` au lancement, ou le corps
- *  posté à `.../judges` pour ajouter un juge après coup (`addJudge`,
- *  `runs.ts`) — réduit à une ligne de `judges` prête à insérer.
+/** A `JudgeSpec` — an entry of `config.judges` at launch, or the body posted
+ *  to `.../judges` to add a judge afterwards (`addJudge`, `runs.ts`) — reduced
+ *  to a row of `judges` ready to insert.
  *
- * Toujours ordinaire : un `JudgeSpec` ne porte jamais de type système, voir
- * sa docstring. `defaultModel` reprend le modèle du run quand l'entrée n'en
- * précise pas — voir `JudgeSpec.model`.
+ * Always ordinary: a `JudgeSpec` never carries a system type, see its
+ * docstring. `defaultModel` takes the run's model when the entry does not name
+ * one — see `JudgeSpec.model`.
  *
- * Partagée par `judgesForLaunch`, plus bas, et par `addJudge` : les deux
- * gestes créent le même genre de juge à partir de la même forme, et une
- * définition dupliquée aurait pu diverger. */
+ * Shared by `judgesForLaunch`, further down, and by `addJudge`: the two
+ * gestures create the same kind of judge from the same shape, and a duplicated
+ * definition could have diverged. */
 export function judgeRowFromSpec(
   spec: JudgeSpec,
   defaultModel: string,
@@ -91,34 +91,34 @@ export function judgeRowFromSpec(
   };
 }
 
-/** Les lignes des trois tables de juges à créer pour un run neuf.
+/** The rows of the three judge tables to create for a fresh run.
  *
- * Même geste que `cellsForRun` pour la matrice : tout est créé d'avance, en
- * attente — le job ne fait que remplir, jamais que créer. Voir la
- * conception, section « Les lignes de score sont créées d'avance ».
+ * Same gesture as `cellsForRun` for the matrix: everything is created in
+ * advance, pending — the job only fills in, never creates. See the design,
+ * section « Les lignes de score sont créées d'avance »
+ * (docs/superpowers/specs/2026-09-06-juges-multiples.md).
  *
- * Un juge par source, dans cet ordre :
- * - le principal, depuis `config.criterion`, `config.rubric` et
- *   `config.models.judge` — l'ancienne forme, toujours acceptée ;
- * - un par entrée de `config.judges`, les secondaires ordinaires — voir
- *   `JudgeSpec` ;
- * - un juge d'éveil, de type système, si `config.check_eval_awareness` ne
- *   vaut pas explicitement `false` — jamais depuis `config.judges`, qui n'en
- *   porte jamais : voir la docstring de `JudgeSpec` dans `types.ts`.
+ * One judge per source, in this order:
+ * - the principal, from `config.criterion`, `config.rubric` and
+ *   `config.models.judge` — the old shape, still accepted;
+ * - one per entry of `config.judges`, the ordinary secondaries — see
+ *   `JudgeSpec`;
+ * - an awareness judge, of system type, if `config.check_eval_awareness` is
+ *   not explicitly `false` — never from `config.judges`, which never carries
+ *   one: see the docstring of `JudgeSpec` in `types.ts`.
  *
- * Puis une ligne de `judge_scores` par (liaison, conversation) : chaque juge
- * ci-dessus croisé avec chaque élément de `sampleIds`.
+ * Then one row of `judge_scores` per (link, conversation): each judge above
+ * crossed with each element of `sampleIds`.
  *
- * Les identifiants de `judges` et `run_judges` sont fabriqués ici plutôt que
- * laissés à la base : une ligne de `judge_scores` doit référencer sa liaison
- * avant que celle-ci existe réellement en base, ce qui exige de construire
- * les trois tables d'un coup, en mémoire, avant la première écriture.
- * `newId` — `crypto.randomUUID` par défaut — s'injecte pour que les tests
- * produisent une sortie déterministe.
+ * The identifiers of `judges` and `run_judges` are made here rather than left
+ * to the database: a row of `judge_scores` must reference its link before that
+ * link really exists in the database, which demands building the three tables
+ * at once, in memory, before the first write. `newId` — `crypto.randomUUID` by
+ * default — is injected so that the tests produce deterministic output.
  *
- * `runId` et `sampleIds` sont fournis par l'appelant : le run et ses cases
- * doivent déjà exister en base — leurs identifiants sont générés là-bas —
- * avant que cette fonction ne soit appelée. */
+ * `runId` and `sampleIds` are supplied by the caller: the run and its cells
+ * must already exist in the database — their identifiers are generated there —
+ * before this function is called. */
 export function judgesForLaunch(
   config: EvalRunConfig,
   runId: string,
@@ -154,11 +154,11 @@ export function judgesForLaunch(
       criterion: config.criterion,
       rubric: config.rubric,
       model: config.models.judge,
-      // Sentinelle, jamais `null` : voir `JudgeSystemTypeColumn` dans
-      // `types.ts`. « Ce juge est-il système ? » se lit désormais en
-      // comparant cette valeur à `"ordinary"`, plus jamais en testant une
-      // absence — un test de nullité rétabli ici ferait passer tous les
-      // juges pour systèmes, la colonne n'étant plus jamais nulle en base.
+        // A sentinel, never `null`: see `JudgeSystemTypeColumn` in `types.ts`.
+        // "Is this judge a system one?" is now read by comparing this value to
+        // `"ordinary"`, never again by testing an absence — a nullity test
+        // restored here would make every judge pass for a system one, the column
+        // never being null in the database any more.
       system_type: "ordinary",
       sees_system_prompt: config.sees_system_prompt !== false,
       created_by: createdBy,
@@ -205,20 +205,19 @@ export function judgesForLaunch(
   return { judges, runJudges, judgeScores };
 }
 
-/** Les lignes de `judge_scores` à créer pour des cases neuves qui rejoignent
- *  un run déjà lancé — le même produit croisé (chaque juge vivant du run ×
- *  chaque conversation) que `judgesForLaunch` construit ci-dessus pour un run
- *  neuf, réduit au cas où les juges existent déjà et où seules les
- *  conversations sont neuves.
+/** The rows of `judge_scores` to create for fresh cells joining a run already
+ *  launched — the same cross product (each living judge of the run × each
+ *  conversation) that `judgesForLaunch` builds above for a fresh run, reduced
+ *  to the case where the judges already exist and only the conversations are
+ *  new.
  *
- * Utilisée par `extendRun` (`runs.ts`) pour les cases qu'une extension
- * ajoute. Sans ces lignes, `write_judge_score` (moteur, côté
- * `supabase_store.py`) ne trouverait rien à mettre à jour : elle ne fait
- * qu'un `UPDATE` ciblé sur `(run_judge_id, sample_id)`, jamais un `INSERT` —
- * la ligne est censée exister déjà, en `pending`, depuis que la conversation
- * a été posée. Un verdict de juge sur une case neuve qu'on aurait oublié de
- * précréer ici se perdrait donc en silence : l'écriture ne toucherait aucune
- * ligne, sans lever d'erreur. */
+ * Used by `extendRun` (`runs.ts`) for the cells an extension adds. Without
+ * these rows, `write_judge_score` (the engine, on the `supabase_store.py` side)
+ * would find nothing to update: it only does a targeted `UPDATE` on
+ * `(run_judge_id, sample_id)`, never an `INSERT` — the row is supposed to exist
+ * already, `pending`, ever since the conversation was laid down. A judge's
+ * verdict on a fresh cell one had forgotten to pre-create here would therefore
+ * be lost in silence: the write would touch no row, without raising an error. */
 export function judgeScoresForSamples(
   runId: string,
   runJudgeIds: string[],

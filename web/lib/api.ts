@@ -1,6 +1,6 @@
-// L'accès du navigateur à l'application. Tout passe par les routes `/api` de
-// cette même application : le navigateur ne parle jamais à Supabase, et ne voit
-// donc jamais la clé de service.
+// The browser's access to the application. Everything goes through the `/api`
+// routes of this same application: the browser never talks to Supabase, and
+// therefore never sees the service key.
 import type {
   CostEstimate,
   Draft,
@@ -21,14 +21,14 @@ import type {
 import { PLAIN_VIEW, viewToQuery, type MatrixView } from "./view";
 import type { AdviceTopic } from "./advice";
 
-/** Rend lisible le corps d'une réponse d'erreur, plutôt que d'afficher du JSON brut. */
+/** Makes an error response's body readable, rather than showing raw JSON. */
 async function readError(response: Response): Promise<string> {
   const raw = await response.text();
   try {
     const parsed = JSON.parse(raw) as { error?: string };
     if (typeof parsed.error === "string" && parsed.error.trim()) return parsed.error;
   } catch {
-    /* la réponse n'est pas du JSON : on garde le corps brut */
+    /* the response is not JSON: we keep the raw body */
   }
   return raw || `HTTP ${response.status}`;
 }
@@ -46,19 +46,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getCatalog = () => request<ProviderInfo[]>("/api/catalog");
 
-/** Lit un run décrit dans un fichier JSON ou YAML.
+/** Reads a run described in a JSON or YAML file.
  *
- * Le texte part au serveur plutôt que d'être analysé ici : l'analyseur YAML
- * reste hors du paquet du navigateur, et la validation appliquée est celle du
- * lancement. */
+ * The text goes to the server rather than being parsed here: the YAML parser
+ * stays out of the browser bundle, and the validation applied is the one used
+ * at launch. */
 export const importConfigFile = (text: string) =>
   request<{ config: EvalRunConfig; csv: ExpectedCsv | null }>("/api/config", {
     method: "POST",
     body: JSON.stringify({ text }),
   });
 
-/** Écrit la configuration du formulaire en YAML, le format que le prompt
- *  demande à l'agent — un seul format pour les deux sens. */
+/** Writes the form's configuration in YAML, the format the prompt asks the
+ *  agent for — one format for both directions. */
 export const exportConfigFile = (config: EvalRunConfig) =>
   request<{ text: string }>("/api/config", {
     method: "PUT",
@@ -66,25 +66,23 @@ export const exportConfigFile = (config: EvalRunConfig) =>
   });
 export const getRuns = () => request<RunListItem[]>("/api/runs");
 
-/** Renomme un run. Une chaîne vide remet le titre par défaut. */
+/** Renames a run. An empty string restores the default title. */
 export const saveRunLabel = (runId: string, label: string) =>
   request<{ ok: true; label: string | null }>(`/api/runs/${runId}/label`, {
     method: "PUT",
     body: JSON.stringify({ label }),
   });
 
-/** Un run et ses cases.
+/** A run and its cells.
  *
- * Sans `withTranscripts`, les conversations ne sont pas ramenées : c'est ce qui
- * rend supportable un rafraîchissement toutes les trois secondes pendant qu'un
- * run tourne.
+ * Without `withTranscripts`, the conversations are not brought back: that is
+ * what makes a refresh every three seconds bearable while a run is going.
  *
- * `withFullJudgeScores`, indépendant de `withTranscripts` : ramène les
- * verdicts de tous les juges vivants plutôt que seulement ceux du principal
- * et de l'éveil, sans pour autant charger les conversations — nécessaire dès
- * qu'on affiche un juge secondaire (voir `app/eval/[runId]/page.tsx`), sans
- * quoi la matrice affiche « pending » partout pour un juge qui a pourtant
- * tout noté. */
+ * `withFullJudgeScores`, independent of `withTranscripts`: brings back the
+ * verdicts of every living judge rather than only those of the principal and of
+ * the awareness one, without loading the conversations — necessary as soon as a
+ * secondary judge is shown (see `app/eval/[runId]/page.tsx`), without which the
+ * matrix shows "pending" everywhere for a judge that has graded everything. */
 export const getRun = (
   runId: string,
   options: { withTranscripts?: boolean; withFullJudgeScores?: boolean } = {},
@@ -96,10 +94,10 @@ export const getRun = (
   return request<RunDetail>(`/api/runs/${runId}${query ? `?${query}` : ""}`);
 };
 
-/** Lance un run. Le CSV téléversé est conservé, pour le retélécharger et pour
- * relancer depuis la même source. */
-/** `draftId` dit d'où sort le run, quand le formulaire était ouvert sur un
- *  brouillon. Il n'ouvre aucun droit — il n'attribue qu'une provenance. */
+/** Launches a run. The uploaded CSV is kept, to download it again and to
+ * relaunch from the same source. */
+/** `draftId` says where the run comes from, when the form was open on a draft.
+ *  It opens no right — it only attributes a provenance. */
 export const createRun = (
   config: EvalRunConfig,
   csvText?: string | null,
@@ -110,18 +108,18 @@ export const createRun = (
     body: JSON.stringify({ config, csv_text: csvText ?? null, draft_id: draftId ?? null }),
   });
 
-/** Ajoute un juge secondaire à un run — jamais principal. Ce que « rejuger »
- *  est devenu depuis les juges multiples : on ajoute un juge de plus, on
- *  n'écrase plus le verdict de l'ancien. */
+/** Adds a secondary judge to a run — never a principal. What "re-judging" has
+ *  become since the multiple judges: one more judge is added, the old one's
+ *  verdict is no longer overwritten. */
 export const addRunJudge = (runId: string, spec: JudgeSpec) =>
   request<{ ok: true; run_judge_id: string }>(`/api/runs/${runId}/judges`, {
     method: "POST",
     body: JSON.stringify(spec),
   });
 
-/** Délie un juge d'un run. `replacementRunJudgeId` : obligatoire pour délier
- *  le principal tant qu'il reste d'autres juges vivants — la base le refuse
- *  sinon (voir `PrincipalRequiresReplacement`, `lib/runs.ts`). */
+/** Unlinks a judge from a run. `replacementRunJudgeId`: required to unlink the
+ *  principal as long as other judges are still alive — the database refuses it
+ *  otherwise (see `PrincipalRequiresReplacement`, `lib/runs.ts`). */
 export const unlinkRunJudge = (
   runId: string,
   runJudgeId: string,
@@ -132,32 +130,32 @@ export const unlinkRunJudge = (
     body: JSON.stringify({ replacement_run_judge_id: replacementRunJudgeId }),
   });
 
-/** Désigne le principal d'un run : celui que la matrice affiche. */
+/** Designates a run's principal: the one the matrix shows. */
 export const designateRunPrincipal = (runId: string, runJudgeId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/judges/${runJudgeId}/principal`, {
     method: "POST",
   });
 
-/** Remplit les lignes de score en attente de ce run — l'ancien bouton
- *  d'éveil, généralisé à n'importe quel juge. Sans corps : le job retrouve
- *  lui-même ce qui reste. */
+/** Fills in this run's pending score rows — the old awareness button,
+ *  generalised to any judge. With no body: the job finds what is left on its
+ *  own. */
 export const catchUp = (runId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/catchup`, { method: "POST" });
 
 export const cancelRun = (runId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/cancel`, { method: "POST" });
 
-/** Relance les cases en erreur, dans ce même run. */
+/** Replays the cells in error, within that same run. */
 export const retryFailedCells = (runId: string) =>
   request<{ ok: true; retried: number }>(`/api/runs/${runId}/retry`, {
     method: "POST",
   });
 
-/** Ajoute une sous-matrice à un run : des scénarios, des modèles, des essais.
+/** Adds a sub-matrix to a run: scenarios, models, attempts.
  *
- * `draftId` quand cette extension applique un brouillon : la route s'en sert
- * pour refuser un brouillon déjà appliqué, et pour le marquer lancé elle-même
- * une fois l'extension partie. */
+ * `draftId` when this extension applies a draft: the route uses it to refuse a
+ * draft already applied, and to mark it launched itself once the extension has
+ * gone. */
 export const extendRun = (
   runId: string,
   body: ExtendRequest,
@@ -168,9 +166,9 @@ export const extendRun = (
     { method: "POST", body: JSON.stringify(body) },
   );
 
-/** Met de côté une extension composée à la main, sans l'appliquer au run —
- *  le même geste que « Save as draft » sur le formulaire de composition, pour
- *  agrandir un run existant plutôt qu'en lancer un nouveau. */
+/** Sets aside an extension composed by hand, without applying it to the run —
+ *  the same gesture as "Save as draft" on the composition form, to enlarge an
+ *  existing run rather than launch a new one. */
 export const saveExtendDraft = (runId: string, extension: ExtendRequest) =>
   request<{ id: string }>(`/api/runs/${runId}/extend/draft`, {
     method: "POST",
@@ -183,34 +181,33 @@ export const saveNotes = (runId: string, notes: string) =>
     body: JSON.stringify({ notes }),
   });
 
-/** Le contenu d'un brouillon soumis par un agent, pour ouvrir le formulaire ou
- *  le panneau d'extension dessus plutôt que de le montrer dans une page à
- *  part. Porte aussi `mine` — calculé par la route, jamais comparé ici : le
- *  navigateur ne connaît pas l'adresse de qui regarde. */
+/** The content of a draft submitted by an agent, to open the form or the
+ *  extension panel on it rather than show it on a separate page. Also carries
+ *  `mine` — computed by the route, never compared here: the browser does not
+ *  know the address of whoever is looking. */
 export const getDraft = (draftId: string) =>
   request<DraftRead>(`/api/runs/drafts/${draftId}`);
 
-/** L'adresse de qui regarde, pour pouvoir filtrer « les miens ». */
+/** The address of whoever is looking, so as to filter "mine". */
 export const getMe = () => request<{ email: string }>("/api/me");
 
-/** Les brouillons en attente, de qui que ce soit. `withLaunched` y ajoute
- *  ceux qui ont déjà servi — on peut vouloir relancer la même chose. */
+/** The waiting drafts, whoever they belong to. `withLaunched` adds those that
+ *  have already served — one may want to relaunch the same thing. */
 export const getDrafts = (withLaunched = false) =>
   request<Draft[]>(`/api/runs/drafts${withLaunched ? "?launched=1" : ""}`);
 
-/** Met le formulaire de côté, valide ou non. Rend l'identifiant du brouillon. */
+/** Sets the form aside, valid or not. Returns the draft's identifier. */
 export const saveDraft = (config: EvalRunConfig, csvText: string | null) =>
   request<{ id: string }>("/api/runs/drafts", {
     method: "POST",
     body: JSON.stringify({ config, csv_text: csvText }),
   });
 
-/** Réécrit un brouillon rouvert — en place pour son auteur, remplacer plutôt
- *  qu'en semer un second. Pour n'importe qui d'autre, la réécriture pose un
- *  nouveau brouillon à la place : `forked` le dit, avec l'adresse à suivre —
- *  l'original reste intact. Sert aussi bien un brouillon de run qu'un
- *  brouillon d'extension : la route lit le genre depuis celui qu'elle a en
- *  base. */
+/** Rewrites a reopened draft — in place for its author, replacing rather than
+ *  sowing a second one. For anyone else, the rewrite lays down a new draft
+ *  instead: `forked` says so, with the address to follow — the original stays
+ *  intact. Serves a run draft as well as an extension draft: the route reads the
+ *  kind from the one it has in the database. */
 export const updateDraft = (
   draftId: string,
   config: EvalRunConfig | ExtendRequest,
@@ -224,30 +221,30 @@ export const updateDraft = (
     },
   );
 
-/** Jette un brouillon : il sort de la liste et son adresse cesse de répondre. */
+/** Discards a draft: it leaves the list and its address stops answering. */
 export const discardDraft = (draftId: string) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}`, { method: "DELETE" });
 
-/** Marque un brouillon comme lancé. Son adresse reste ouverte, contrairement
- *  à la corbeille ; ce qu'il a produit se lit sur le run. */
+/** Marks a draft as launched. Its address stays open, unlike the bin; what it
+ *  produced is read on the run. */
 export const markDraftLaunched = (draftId: string) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}`, {
     method: "PATCH",
     body: JSON.stringify({ launched: true }),
   });
 
-/** Écarte un run des listes et de la lecture publique. Rien n'est effacé. */
+/** Sets a run aside from the lists and from public reading. Nothing is erased. */
 export const softDeleteRun = (runId: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/delete`, { method: "POST" });
 
-/** Écrite après coup, distincte des notes qui sont le préambule. */
+/** Written afterwards, distinct from the notes, which are the preamble. */
 export const saveAnalysis = (runId: string, analysis: string) =>
   request<{ ok: true }>(`/api/runs/${runId}/analysis`, {
     method: "PUT",
     body: JSON.stringify({ analysis }),
   });
 
-/** Publie un run, ou le dépublie. Rend l'adresse publique, ou null. */
+/** Publishes a run, or unpublishes it. Returns the public address, or null. */
 export const publishRun = (runId: string, isPublic: boolean) =>
   request<{ ok: true; url: string | null }>(`/api/runs/${runId}/publish`, {
     method: "POST",
@@ -256,17 +253,17 @@ export const publishRun = (runId: string, isPublic: boolean) =>
 
 export const getTags = () => request<Tag[]>("/api/tags");
 
-/** Les tags de tous les runs et de tous les brouillons, en un seul appel —
- *  ce que la liste des runs affiche en pastilles sur chaque ligne. Une
- *  requête par ligne serait absurde pour une liste qui en compte des
- *  dizaines. */
+/** The tags of every run and every draft, in a single call — what the runs
+ *  list shows as pills on each row. One request per row would be absurd for a
+ *  list holding dozens of them. */
 export const getTagAssignments = () =>
   request<{ runs: Record<string, Tag[]>; drafts: Record<string, Tag[]> }>(
     "/api/tags/assignments",
   );
 
-/** Crée un tag, ou rend celui qui porte déjà ce libellé — la route ne
- *  distingue pas les deux cas, et l'appelant n'a pas besoin qu'elle le fasse. */
+/** Creates a tag, or returns the one that already carries this label — the
+ *  route does not distinguish the two cases, and the caller has no need for it
+ *  to. */
 export const createTag = (label: string) =>
   request<Tag>("/api/tags", {
     method: "POST",
@@ -276,22 +273,22 @@ export const createTag = (label: string) =>
 export const getRunTags = (runId: string) =>
   request<Tag[]>(`/api/runs/${runId}/tags`);
 
-/** Pose la liste des tags d'un run, telle quelle : ce qu'elle contenait avant
- *  est remplacé, pas complété. */
+/** Lays down a run's list of tags, as it stands: what it held before is
+ *  replaced, not completed. */
 export const setRunTags = (runId: string, tagIds: number[]) =>
   request<{ ok: true }>(`/api/runs/${runId}/tags`, {
     method: "PUT",
     body: JSON.stringify({ tag_ids: tagIds }),
   });
 
-/** Jumelle de `setRunTags`, pour un brouillon plutôt qu'un run. */
+/** Twin of `setRunTags`, for a draft rather than a run. */
 export const setDraftTags = (draftId: string, tagIds: number[]) =>
   request<{ ok: true }>(`/api/runs/drafts/${draftId}/tags`, {
     method: "PUT",
     body: JSON.stringify({ tag_ids: tagIds }),
   });
 
-/** Estime un run. La longueur supposée voyage dans la config. */
+/** Estimates a run. The assumed length travels in the config. */
 export const estimateRun = (config: EvalRunConfig) =>
   request<CostEstimate>("/api/estimate", {
     method: "POST",
@@ -304,34 +301,34 @@ export const previewJudgePrompt = (criterion: string, rubric: RubricLevel[]) =>
     body: JSON.stringify({ criterion, rubric }),
   });
 
-/** URL d'un export CSV. Le navigateur télécharge : pas de fetch intermédiaire. */
+/** URL of a CSV export. The browser downloads: no intermediate fetch. */
 export function exportUrl(
   runId: string,
   kind: "matrix" | "details",
   view: MatrixView = PLAIN_VIEW,
 ): string {
-  // Le détail porte les notes brutes du juge : le relire autrement n'aurait pas
-  // de sens, et lui coller une vue dans l'URL laisserait croire le contraire.
+  // The details carry the judge's raw grades: rereading them any other way
+  // would make no sense, and sticking a view in the URL would suggest otherwise.
   const query = kind === "matrix" ? viewToQuery(view) : "";
   return `/api/runs/${runId}/export/${kind}${query}`;
 }
 
-/** Le viewer d'Inspect, ouvert sur les journaux d'un run. */
+/** Inspect's viewer, opened on a run's logs. */
 export function inspectViewUrl(runId: string): string {
   return `/inspect-view/${runId}`;
 }
 
-/** Ce run a-t-il des journaux à montrer ?
+/** Does this run have logs to show?
  *
- * La question se pose au manifeste, et non à une route dédiée. Deux raisons.
- * Il monte en dernier, donc sa présence dit que les journaux l'ont précédé ; et
- * le viewer refuse un dossier qui n'en a pas — le bouton n'apparaît ainsi que
- * quand il mène quelque part. Il vit sous `/inspect-view`, déjà ouvert au
- * public et déjà gardé par `canReadRun`, ce qui fait qu'un inconnu devant un
- * run publié pose la même question que son propriétaire.
+ * The question is asked of the manifest, and not of a dedicated route. Two
+ * reasons. It goes up last, so its presence says the logs preceded it; and the
+ * viewer refuses a folder that has none — the button therefore appears only when
+ * it leads somewhere. It lives under `/inspect-view`, already open to the public
+ * and already guarded by `canReadRun`, which means a stranger in front of a
+ * published run asks the same question as its owner.
  *
- * Faux en cas de panne comme en cas d'absence : un bouton qui n'apparaît pas
- * vaut mieux qu'un bouton qui mène à une page vide. */
+ * False on a breakdown as much as on an absence: a button that does not appear
+ * is better than a button that leads to an empty page. */
 export async function hasInspectLogs(runId: string): Promise<boolean> {
   try {
     const response = await fetch(
@@ -348,18 +345,18 @@ export function sourceCsvUrl(runId: string): string {
   return `/api/runs/${runId}/source`;
 }
 
-/** Le CSV d'origine en texte, pour repartir du même lot dans le formulaire. */
+/** The original CSV as text, to start again from the same batch in the form. */
 export async function sourceCsvText(runId: string): Promise<string> {
   const response = await fetch(sourceCsvUrl(runId), { cache: "no-store" });
   if (!response.ok) throw new Error(await readError(response));
   return (await response.text()).replace(/^﻿/, "");
 }
 
-/** Le CSV de la matrice en texte, pour le presse-papier.
+/** The matrix CSV as text, for the clipboard.
  *
- * Ne passe pas par `request`, qui attend du JSON. Le BOM que sert la route est
- * là pour Excel ; collé dans un éditeur il apparaîtrait comme un caractère
- * parasite en tête de fichier. */
+ * Does not go through `request`, which expects JSON. The BOM the route serves is
+ * there for Excel; pasted into an editor it would appear as a stray character at
+ * the head of the file. */
 export async function matrixCsvText(
   runId: string,
   view: MatrixView = PLAIN_VIEW,
@@ -378,8 +375,8 @@ export interface McpGrant {
   refresh_expires_at: string;
   last_used_at: string | null;
   client_label: string | null;
-  /** `authorization_code` : née d'un tour d'autorisation complet.
-   *  `refresh_token` : née d'une rotation, donc d'une chaîne qui vit. */
+  /** `authorization_code`: born of a full authorisation round.
+   *  `refresh_token`: born of a rotation, hence of a chain that lives on. */
   born: "authorization_code" | "refresh_token";
 }
 
@@ -391,20 +388,21 @@ export const revokeMcpConnection = (accessTokenHash: string) =>
     body: JSON.stringify({ access_token_hash: accessTokenHash }),
   });
 
-/** Tout couper. Borné à l'email de la session côté route, jamais ici. */
+/** Cut everything off. Bounded to the session's email on the route side, never
+ *  here. */
 export const revokeAllMcpConnections = () =>
   request<{ ok: true; revoked: number }>("/api/mcp/connections", {
     method: "DELETE",
     body: JSON.stringify({ all: true }),
   });
 
-/** Le profil de qui regarde : ses deux plafonds, et ce qu'un agent a lancé
- *  pour son compte sur l'heure qui vient de s'écouler. */
+/** The profile of whoever is looking: their two caps, and what an agent has
+ *  launched on their behalf over the hour just past. */
 export const getProfile = () =>
   request<{ profile: Profile; activity: ProfileActivity }>("/api/profile");
 
-/** Change les deux plafonds. Bornés à l'email de la session côté route,
- *  jamais ici — comme les connexions MCP. */
+/** Changes the two caps. Bounded to the session's email on the route side,
+ *  never here — like the MCP connections. */
 export const updateProfileCaps = (caps: {
   max_usd_per_run: number;
   max_usd_per_hour: number;
@@ -414,7 +412,7 @@ export const updateProfileCaps = (caps: {
     body: JSON.stringify(caps),
   });
 
-/** Écrit la surcharge du conseil, ou `null` pour remettre le défaut. */
+/** Writes the advice override, or `null` to restore the default. */
 export const updateScenarioAdvice = (advice: string | null) =>
   updateAdvice("scenario", advice);
 
@@ -429,8 +427,8 @@ export const updateAdvice = (topic: AdviceTopic, advice: string | null) =>
     body: JSON.stringify({ advice_topic: topic, scenario_advice: advice }),
   });
 
-/** Écrit les favoris de qui est connecté. Envoyés seuls : la route applique
- *  un réglage à la fois — voir `profilePatchProblem`. */
+/** Writes the favourites of whoever is signed in. Sent alone: the route applies
+ *  one setting at a time — see `profilePatchProblem`. */
 export const updateProfileFavorites = (favorite_models: string[]) =>
   request<{ profile: Profile }>("/api/profile", {
     method: "PATCH",

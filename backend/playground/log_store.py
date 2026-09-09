@@ -1,17 +1,17 @@
-"""Les journaux d'Inspect, montés dans Supabase Storage.
+"""Inspect's logs, uploaded to Supabase Storage.
 
-Inspect écrit un `.eval` par passe dans `logs_dir/<run_id>` — run initial,
-rejugement, approfondissement. Ces fichiers sont la seule trace de ce qui est
-réellement parti aux fournisseurs : chaque appel avec ses messages, la vue
-miroir de l'adversaire, le prompt du juge. La base, elle, ne garde que le
-transcript reconstruit du point de vue de la cible.
+Inspect writes one `.eval` per pass into `logs_dir/<run_id>` — initial run,
+rejudging, deepening. Those files are the only trace of what actually went to
+the providers: every call with its messages, the adversary's mirror view, the
+judge prompt. The database keeps only the transcript rebuilt from the target's
+point of view.
 
-Dans un job Cloud Run ils s'écrivent sur un disque qui meurt avec le conteneur.
-Ce module les monte avant que ça arrive.
+In a Cloud Run job they are written to a disk that dies with the container.
+This module uploads them before that happens.
 
-Storage n'est pas PostgREST — ni le même service, ni la même forme d'URL — d'où
-un module à part plutôt qu'une méthode de plus sur `supabase_store.Supabase`,
-dont le nom promet des tables.
+Storage is not PostgREST — neither the same service nor the same shape of URL —
+hence a module of its own rather than one more method on
+`supabase_store.Supabase`, whose name promises tables.
 """
 
 import os
@@ -21,24 +21,24 @@ from pathlib import Path
 
 import httpx
 
-# Privé, comme `sample_model_usage` dans `scoring.py`. Le viewer refuse un
-# dossier sans manifeste — « Please be sure you have deployed a manifest » — et
-# c'est inspect qui sait le composer, dans la version même qui a écrit les
-# journaux. Le fabriquer nous-mêmes reviendrait à deviner une forme qui n'est
-# pas la nôtre.
+# Private, like `sample_model_usage` in `scoring.py`. The viewer refuses a
+# directory without a manifest — "Please be sure you have deployed a manifest" —
+# and inspect is what knows how to compose one, in the very version that wrote
+# the logs. Building it ourselves would mean guessing at a shape that is not
+# ours.
 from inspect_ai.log._file import write_log_listing
 
 BUCKET = "inspect-logs"
-"""Le bucket, privé. Public, il suffirait à contourner `is_public` : les
-journaux ne sont servis que par une route qui vérifie d'abord qui regarde."""
+"""The bucket, private. Public, it would be enough to bypass `is_public`: the
+logs are served only by a route that first checks who is looking."""
 
 
 @dataclass
 class Storage:
-    """Le strict nécessaire de Supabase Storage.
+    """The strict minimum of Supabase Storage.
 
-    `client` est injectable pour que les tests n'aient besoin ni de réseau ni de
-    bucket : c'est le seul point par lequel ce module touche le monde extérieur.
+    `client` is injectable so that the tests need neither network nor bucket: it
+    is the only point at which this module touches the outside world.
     """
 
     url: str
@@ -48,7 +48,7 @@ class Storage:
 
     @classmethod
     def from_env(cls) -> "Storage":
-        """Construit le client depuis l'environnement, comme `Supabase`."""
+        """Builds the client from the environment, like `Supabase`."""
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         if not url or not key:
@@ -62,18 +62,18 @@ class Storage:
             self.client = httpx.Client(
                 base_url=self.url,
                 headers={"apikey": self.key, "Authorization": f"Bearer {self.key}"},
-                # Plus généreux que les 30 s de PostgREST : on pousse ici des
-                # fichiers, pas des lignes.
+                # More generous than PostgREST's 30 s: what goes up here is
+                # files, not rows.
                 timeout=120.0,
             )
         return self.client
 
     def upload(self, path: str, data: bytes) -> None:
-        """Dépose un objet, en écrasant celui qui porterait déjà ce nom.
+        """Puts an object down, overwriting one that already bears the name.
 
-        `x-upsert` n'est pas une précaution contre nous-mêmes — chaque passe
-        écrit un nom horodaté distinct — mais contre Cloud Run, qui rejoue une
-        tâche échouée avec le même `EVAL_RUN_ID`.
+        `x-upsert` is not a precaution against ourselves — each pass writes a
+        distinct timestamped name — but against Cloud Run, which replays a
+        failed task with the same `EVAL_RUN_ID`.
         """
         response = self._client().post(
             f"/storage/v1/object/{self.bucket}/{path}",
@@ -92,18 +92,19 @@ class Storage:
 def upload_logs(
     run_id: str, logs_dir: Path, storage: Storage | None = None
 ) -> list[str]:
-    """Monte les `.eval` d'un run, et ne fait jamais échouer ce run.
+    """Uploads a run's `.eval` files, and never makes that run fail.
 
-    Un run dont la matrice est complète et notée est un run réussi. Perdre son
-    journal est ennuyeux ; le marquer `error` pour ça serait faux. Tout ce qui
-    casse ici — bucket absent, fichier trop gros, réseau — s'écrit sur `stderr`
-    et s'arrête là.
+    A run whose matrix is complete and graded is a successful run. Losing its
+    log is annoying; marking it `error` for that would be false. Everything that
+    breaks here — missing bucket, oversized file, network — is written to
+    `stderr` and stops there.
 
-    Le manifeste `listing.json` est écrit par inspect avant l'envoi et monte
-    avec les journaux : le viewer refuse un dossier qui n'en a pas.
+    The `listing.json` manifest is written by inspect before sending and goes up
+    with the logs: the viewer refuses a directory without one.
 
     Returns:
-        Les noms montés. Vide si le dossier n'existe pas, ou si tout a échoué.
+        The names uploaded. Empty if the directory does not exist, or if
+        everything failed.
     """
     directory = logs_dir / run_id
     if not directory.is_dir():
@@ -111,30 +112,30 @@ def upload_logs(
 
     try:
         storage = storage or Storage.from_env()
-    except Exception as error:  # noqa: BLE001 — voir la docstring
-        print(f"[log_store] pas de client Storage : {error}", file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 — see the docstring
+        print(f"[log_store] no Storage client: {error}", file=sys.stderr)
         return []
 
     try:
         write_log_listing(str(directory))
-    except Exception as error:  # noqa: BLE001 — voir la docstring
-        # Sans manifeste le viewer ne listera rien, mais un `.eval` en sécurité
-        # vaut mieux qu'un `.eval` perdu : on monte quand même.
-        print(f"[log_store] manifeste non écrit : {error}", file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 — see the docstring
+        # Without a manifest the viewer will list nothing, but an `.eval` kept
+        # safe beats an `.eval` lost: we upload anyway.
+        print(f"[log_store] manifest not written: {error}", file=sys.stderr)
 
-    # Les journaux d'abord, le manifeste en dernier : il nomme des fichiers, et
-    # il ne doit jamais en nommer un qui n'est pas encore monté.
-    fichiers = sorted(directory.glob("*.eval"))
+    # Logs first, manifest last: it names files, and it must never name one
+    # that is not uploaded yet.
+    files = sorted(directory.glob("*.eval"))
     listing = directory / "listing.json"
     if listing.is_file():
-        fichiers.append(listing)
+        files.append(listing)
 
-    montés: list[str] = []
-    for path in fichiers:
+    uploaded: list[str] = []
+    for path in files:
         try:
             storage.upload(f"{run_id}/{path.name}", path.read_bytes())
-        except Exception as error:  # noqa: BLE001 — voir la docstring
-            print(f"[log_store] {path.name} non monté : {error}", file=sys.stderr)
+        except Exception as error:  # noqa: BLE001 — see the docstring
+            print(f"[log_store] {path.name} not uploaded: {error}", file=sys.stderr)
             continue
-        montés.append(path.name)
-    return montés
+        uploaded.append(path.name)
+    return uploaded

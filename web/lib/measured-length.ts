@@ -1,47 +1,47 @@
-// Ce qu'un run terminé sait dire de la longueur de ses propres réponses.
+// What a finished run can say about the length of its own answers.
 //
-// Le devis d'un run neuf repose sur un nombre déclaré : personne n'a de données
-// sur une matrice qui n'a jamais tourné. Une extension, elle, prolonge un run
-// qui a fini — ses jetons sont facturés, comptés, enregistrés. Les redemander à
-// quelqu'un serait lui faire deviner ce qu'on sait déjà.
+// A fresh run's quote rests on a declared number: nobody has data on a matrix
+// that has never run. An extension, though, prolongs a run that has finished —
+// its tokens are billed, counted, recorded. Asking someone for them again would
+// be making them guess what we already know.
 //
-// Rien ici ne touche à la base ni au réseau : le module prend des cases et rend
-// des nombres, pour qu'il se teste seul.
+// Nothing here touches the database or the network: the module takes cells and
+// returns numbers, so that it tests on its own.
 import { SHARED_PRICING as S } from "./shared.ts";
 import type { EvalModels, ModelUsage, SampleStatus } from "./types";
 
-/** Ce qu'une case doit porter pour être mesurable. Sciemment plus étroit que
- *  `EvalSample` : ni transcript, ni note, ni date — la requête n'a donc que
- *  cinq colonnes à ramener, là où les transcripts pèsent des centaines de
- *  kilo-octets. */
+/** What a cell must carry to be measurable. Knowingly narrower than
+ *  `EvalSample`: no transcript, no grade, no date — the query therefore has
+ *  only five columns to bring back, where the transcripts weigh hundreds of
+ *  kilobytes. */
 export interface MeasurableCell {
   scenario_index: number;
   target_model: string;
   status: SampleStatus;
-  /** La profondeur à laquelle cette case-là a joué, et non celle du run : un
-   *  run approfondi porte des cases plus profondes que d'autres, et
-   *  `config.turns` ne nomme que la dernière profondeur demandée. `null` pour
-   *  les cases antérieures à la colonne, qui retombent alors sur celle du run
-   *  — même convention que `groupByModelAndDepth`. */
+  /** The depth at which that particular cell played, and not the run's: a
+   *  deepened run carries cells deeper than others, and `config.turns` names
+   *  only the last depth asked for. `null` for the cells predating the column,
+   *  which then fall back on the run's — same convention as
+   *  `groupByModelAndDepth`. */
   turns_done: number | null;
   usage: Record<string, ModelUsage>;
 }
 
 export interface MeasuredLengths {
-  /** Jetons de sortie par tour, pour chaque scénario qui a des cases propres.
-   *  Un scénario absent n'en a aucune. */
+  /** Output tokens per turn, for each scenario that has cells of its own. An
+   *  absent scenario has none. */
   byScenario: Map<number, number>;
-  /** La même chose sur tout le run, mise en commun. `null` si rien n'est
-   *  mesurable. */
+  /** The same thing across the whole run, pooled. `null` if nothing is
+   *  measurable. */
   run: number | null;
-  /** Jetons de sortie par tour d'adversaire, ou `null` — run à un seul tour,
-   *  adversaire cumulant les rôles, ou rien de mesurable. */
+  /** Output tokens per adversary turn, or `null` — a single-turn run, an
+   *  adversary holding several roles at once, or nothing measurable. */
   adversary: number | null;
-  /** Combien de cases terminées ont été écartées parce que leur modèle évalué
-   *  jouait aussi un autre rôle. Sert à le dire à l'écran plutôt qu'à le taire. */
+  /** How many finished cells were set aside because their evaluated model was
+   *  also playing another role. Used to say so on screen rather than hide it. */
   skipped: number;
-  /** Combien de cases ont effectivement porté la mesure. Un devis appuyé sur
-   *  deux cases ne se lit pas comme un devis appuyé sur deux cents. */
+  /** How many cells actually carried the measurement. A quote resting on two
+   *  cells does not read like a quote resting on two hundred. */
   kept: number;
 }
 
@@ -50,141 +50,139 @@ interface Pool {
   calls: number;
 }
 
-const ajouter = (pool: Pool, tokens: number, calls: number): void => {
+const addTo = (pool: Pool, tokens: number, calls: number): void => {
   pool.tokens += tokens;
   pool.calls += calls;
 };
 
-/** La moyenne d'un bassin, ou `null` quand il n'y a rien à en tirer.
+/** A pool's mean, or `null` when there is nothing to draw from it.
  *
- * Un total nul n'est pas une mesure à zéro : un run dont la sortie a été
- * intégralement bloquée par le fournisseur n'a pas appris que les réponses
- * sont gratuites, il n'a rien appris du tout. Le laisser passer chiffrait
- * l'extension à un jeton par tour — `clamp` remontant le zéro à un — sous une
- * phrase annonçant « 0 output tokens per turn ». C'est le même traitement
- * qu'une case sans compteur, muette plutôt que nulle.
+ * A null total is not a measurement of zero: a run whose output was entirely
+ * blocked by the provider has not learned that answers are free, it has learned
+ * nothing at all. Letting it through was costing the extension at one token per
+ * turn — `clamp` raising the zero to one — under a sentence announcing "0 output
+ * tokens per turn". It is the same treatment as a cell with no counter: mute
+ * rather than null.
  *
- * Le garde-fou porte sur le résultat arrondi, pas sur le total brut : un
- * bassin non vide peut arrondir à zéro (quelques jetons sur des dizaines
- * d'appels) sans que le total soit nul lui-même, et cette moyenne-là est
- * tout aussi peu une mesure — elle rendrait le même « 0 output tokens per
- * turn » par un autre chemin. */
-const moyenne = (pool: Pool): number | null => {
+ * The guard bears on the rounded result, not on the raw total: a non-empty pool
+ * can round to zero (a few tokens over dozens of calls) without the total being
+ * null itself, and that mean is just as little a measurement — it would return
+ * the same "0 output tokens per turn" by another route. */
+const mean = (pool: Pool): number | null => {
   if (pool.calls === 0) return null;
-  const valeur = Math.round(pool.tokens / pool.calls);
-  return valeur > 0 ? valeur : null;
+  const value = Math.round(pool.tokens / pool.calls);
+  return value > 0 ? value : null;
 };
 
-/** Mesure les longueurs de sortie d'un run terminé.
+/** Measures the output lengths of a finished run.
  *
- * Le dénominateur d'une case est *sa* profondeur — `turns_done` —, pas celle
- * que le run affiche aujourd'hui : une extension peut relever `turns` sans
- * approfondir une seule case, et l'approfondissement lui-même ne touche que
- * les cases choisies. Un run en porte donc couramment à des profondeurs
- * mêlées, et les diviser toutes par la plus récente rend une longueur d'autant
- * plus basse que le run a été poussé loin. `turns` reste le repli des cases
- * antérieures à la colonne.
+ * A cell's denominator is *its* depth — `turns_done` — not the one the run shows
+ * today: an extension can raise `turns` without deepening a single cell, and the
+ * deepening itself touches only the chosen cells. A run therefore commonly
+ * carries cells at mixed depths, and dividing them all by the most recent
+ * returns a length all the lower for how far the run was pushed. `turns` stays
+ * the fallback for cells predating the column.
  *
- * Le dénominateur est la profondeur, pas le nombre d'appels réellement facturés :
- * l'estimateur n'ajoute la réponse du modèle évalué que `turns` fois par
- * conversation, n'ayant aucun modèle des appels d'outils. Diviser par les
- * appels réels lui ferait rendre moins que le total observé, d'autant plus
- * qu'un scénario emploie des outils. En divisant par les tours, la mesure
- * absorbe cette inflation et le devis reproduit exactement ce qu'on a payé.
+ * The denominator is the depth, not the number of calls actually billed: the
+ * estimator only adds the evaluated model's answer `turns` times per
+ * conversation, having no model of tool calls. Dividing by the real calls would
+ * make it return less than the observed total, all the more so as a scenario
+ * uses tools. By dividing by the turns, the measurement absorbs that inflation
+ * and the quote reproduces exactly what was paid.
  *
- * Une case dont le modèle évalué est aussi juge ou adversaire est écartée :
- * `usage` est indexé par nom de modèle et jamais par rôle, si bien que ses
- * réponses et ses verdicts s'additionnent sur la même ligne — et un
- * re-jugement, que `add_usage` cumule, aggrave encore le mélange. Les écarter
- * ne perd rien : la longueur étant une propriété du scénario et non du modèle,
- * la mesurer sur les modèles qui ne cumulent pas les rôles vaut autant que de
- * la mesurer sur tous. */
+ * A cell whose evaluated model is also judge or adversary is set aside: `usage`
+ * is indexed by model name and never by role, so that its answers and its
+ * verdicts add up on the same line — and a re-judgement, which `add_usage`
+ * accumulates, makes the mixture worse still. Setting them aside loses nothing:
+ * the length being a property of the scenario and not of the model, measuring it
+ * on the models that do not hold several roles is worth as much as measuring it
+ * on all of them. */
 export function measureRun(
   cells: MeasurableCell[],
   models: EvalModels,
   turns: number,
 ): MeasuredLengths {
-  const autresRôles = new Set(
+  const otherRoles = new Set(
     [models.judge, models.adversary].filter((model): model is string =>
       Boolean(model),
     ),
   );
-  const adversaire = turns > 1 ? models.adversary : null;
-  /** La profondeur de cette case, ou celle du run pour une ligne écrite avant
-   *  que la colonne n'existe. */
-  const profondeur = (cell: MeasurableCell): number => cell.turns_done ?? turns;
-  // Un adversaire qui est aussi évalué ou juge est illisible pour la même
-  // raison que les cibles qui cumulent.
-  const adversaireLisible =
-    adversaire != null &&
-    adversaire !== models.judge &&
-    !models.targets.includes(adversaire);
+  const adversary = turns > 1 ? models.adversary : null;
+  /** This cell's depth, or the run's for a row written before the column
+   *  existed. */
+  const depthOf = (cell: MeasurableCell): number => cell.turns_done ?? turns;
+  // An adversary that is also evaluated or judge is unreadable for the same
+  // reason as the targets that hold several roles.
+  const adversaryReadable =
+    adversary != null &&
+    adversary !== models.judge &&
+    !models.targets.includes(adversary);
 
-  const parScénario = new Map<number, Pool>();
+  const perScenario = new Map<number, Pool>();
   const run: Pool = { tokens: 0, calls: 0 };
-  const adversairePool: Pool = { tokens: 0, calls: 0 };
+  const adversaryPool: Pool = { tokens: 0, calls: 0 };
   let skipped = 0;
   let kept = 0;
 
   for (const cell of cells) {
     if (cell.status !== "done") continue;
 
-    if (adversaireLisible) {
-      const jetons = cell.usage[adversaire]?.output_tokens;
-      // Une relance de moins que de tours, et zéro relance pour une case qui
-      // s'est réglée au premier : l'y compter diviserait par zéro.
-      const relances = profondeur(cell) - 1;
-      if (jetons != null && relances > 0) {
-        ajouter(adversairePool, jetons, relances);
+    if (adversaryReadable) {
+      const tokens = cell.usage[adversary]?.output_tokens;
+        // One push fewer than there are turns, and zero pushes for a cell that
+        // settled at the first: counting it there would divide by zero.
+      const pushes = depthOf(cell) - 1;
+      if (tokens != null && pushes > 0) {
+        addTo(adversaryPool, tokens, pushes);
       }
     }
 
-    if (autresRôles.has(cell.target_model)) {
+    if (otherRoles.has(cell.target_model)) {
       skipped += 1;
       continue;
     }
-    const jetons = cell.usage[cell.target_model]?.output_tokens;
-    // Une case sans compteur n'est pas une case à zéro jeton : elle est muette,
-    // et la compter tirerait la moyenne vers le bas sans rien mesurer.
-    if (jetons == null) continue;
+    const tokens = cell.usage[cell.target_model]?.output_tokens;
+      // A cell with no counter is not a cell at zero tokens: it is mute, and
+      // counting it would drag the mean down without measuring anything.
+    if (tokens == null) continue;
 
-    const tours = profondeur(cell);
-    if (tours <= 0) continue;
-    const pool = parScénario.get(cell.scenario_index) ?? { tokens: 0, calls: 0 };
-    ajouter(pool, jetons, tours);
-    parScénario.set(cell.scenario_index, pool);
-    ajouter(run, jetons, tours);
+    const turns = depthOf(cell);
+    if (turns <= 0) continue;
+    const pool = perScenario.get(cell.scenario_index) ?? { tokens: 0, calls: 0 };
+    addTo(pool, tokens, turns);
+    perScenario.set(cell.scenario_index, pool);
+    addTo(run, tokens, turns);
     kept += 1;
   }
 
   const byScenario = new Map<number, number>();
-  for (const [index, pool] of parScénario) {
-    const valeur = moyenne(pool);
-    if (valeur != null) byScenario.set(index, valeur);
+  for (const [index, pool] of perScenario) {
+    const value = mean(pool);
+    if (value != null) byScenario.set(index, value);
   }
 
   return {
     byScenario,
-    run: moyenne(run),
-    adversary: adversaireLisible ? moyenne(adversairePool) : null,
+    run: mean(run),
+    adversary: adversaryReadable ? mean(adversaryPool) : null,
     skipped,
     kept,
   };
 }
 
-/** La longueur à supposer pour chacun de ces scénarios, dans l'ordre donné.
+/** The length to assume for each of these scenarios, in the order given.
  *
- * La cascade dit ce qu'on sait, du plus précis au plus vague : la mesure de ce
- * scénario, sinon celle du run — un scénario ajouté ressemblera aux
- * précédents —, sinon ce que l'auteur avait déclaré, sinon la moyenne générale
- * pour les runs antérieurs au champ. */
+ * The cascade says what is known, from the most precise to the vaguest: this
+ * scenario's measurement, failing that the run's — a scenario added will
+ * resemble the ones before — failing that what the author had declared, failing
+ * that the general average for runs predating the field. */
 export function answerLengthsFor(
   scenarioIndices: number[],
   measured: MeasuredLengths,
   declared: number | undefined,
 ): number[] {
-  const repli = measured.run ?? declared ?? S.default_response_tokens;
+  const fallback = measured.run ?? declared ?? S.default_response_tokens;
   return scenarioIndices.map(
-    (index) => measured.byScenario.get(index) ?? repli,
+    (index) => measured.byScenario.get(index) ?? fallback,
   );
 }

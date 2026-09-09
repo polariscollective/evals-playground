@@ -20,30 +20,29 @@ function tokenResponse(pair: {
       token_type: "Bearer",
       expires_in: pair.expiresIn,
       refresh_token: pair.refreshToken,
-      // `offline_access` avec `evals`, et pas `evals` seul : un jeton de
-      // rafraîchissement est toujours émis, et rendre une portée plus étroite
-      // que celle demandée dit au client qu'il ne l'a pas obtenue (RFC 6749
-      // §5.1). Il en conclurait n'avoir aucun rafraîchissement, et la connexion
-      // mourrait en silence au bout d'une heure.
+        // `offline_access` with `evals`, and not `evals` alone: a refresh token is
+        // always issued, and returning a scope narrower than the one asked for
+        // tells the client it did not get it (RFC 6749 §5.1). It would conclude it
+        // had no refresh, and the connection would die in silence after an hour.
       scope: "evals offline_access",
     },
-    // RFC 6749 §5.1 : une réponse de jeton porte toujours cet en-tête. Rien ne
-    // met en cache cette route aujourd'hui — elle est dynamique — donc ce
-    // n'est encore qu'une question de conformité, pas un bug vécu.
+    // RFC 6749 §5.1: a token response always carries this header. Nothing caches
+    // this route today — it is dynamic — so it is still only a matter of
+    // conformance, not a bug lived through.
     { headers: { "Cache-Control": "no-store" } },
   );
 }
 
-/** L'échange de code, et le rafraîchissement — les deux à la même adresse,
- *  distingués par `grant_type`, en `application/x-www-form-urlencoded` comme
- *  l'exige la RFC 6749 §4.1.3. `request.formData()` le lit nativement, ce
- *  format et `multipart/form-data` tous les deux. */
+/** The code exchange, and the refresh — both at the same address, told apart by
+ *  `grant_type`, in `application/x-www-form-urlencoded` as RFC 6749 §4.1.3
+ *  demands. `request.formData()` reads it natively, that format and
+ *  `multipart/form-data` both. */
 export async function POST(request: Request) {
   const form = await request.formData();
   const grantType = form.get("grant_type");
-  // Le seul indice sur qui appelle : l'échange se fait de serveur à serveur,
-  // sans session ni navigateur. Gardé tel quel sur le grant, il permet de
-  // distinguer claude.ai d'un client qui ferait son propre OAuth en local.
+  // The only clue about who is calling: the exchange happens server to server,
+  // with no session and no browser. Kept as it stands on the grant, it allows
+  // telling claude.ai apart from a client doing its own OAuth locally.
   const userAgent = request.headers.get("user-agent");
 
   if (grantType === "authorization_code") {

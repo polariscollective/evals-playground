@@ -1,57 +1,57 @@
 import type { Cell, RubricLevel } from "./types";
 
-/** La note telle qu'on l'écrit à l'écran.
+/** The grade as it is written on screen.
  *
- * Un entier reste un entier : `2` et non `2.0`. Les échelles sont écrites à la
- * main, le plus souvent en nombres ronds, et une décimale parasite fait lire
- * une précision qui n'existe pas. Miroir de `format_value` côté serveur. */
+ * A whole number stays a whole number: `2`, not `2.0`. Scales are written by
+ * hand, most often in round numbers, and a stray decimal reads as a precision
+ * that does not exist. Mirror of `format_value` on the server side. */
 export function formatValue(value: number): string {
   return Number.isInteger(value) ? String(value) : String(value);
 }
 
-/** Une moyenne, arrondie comme on la lit : deux décimales, sans zéros inutiles. */
+/** A mean, rounded as it is read: two decimals, with no useless zeros. */
 export function formatMean(mean: number): string {
   return Number.isInteger(mean) ? String(mean) : mean.toFixed(2);
 }
 
-/** Les bornes de l'échelle, dans l'ordre.
+/** The scale's bounds, in order.
  *
- * Tolère une échelle absente. Le schéma en exige deux paliers, et la migration
- * en donne une à tout run qui n'en avait pas — mais un serveur d'une version
- * antérieure, lui, renvoie des runs sans échelle du tout. Une page entière qui
- * s'effondre sur un champ manquant est un mauvais échange contre une matrice
- * hachurée, qui dit la même chose sans rien casser.
+ * Tolerates a missing scale. The schema demands two levels, and the migration
+ * gives one to any run that had none — but a server from an earlier version
+ * returns runs with no scale at all. A whole page collapsing on a missing field
+ * is a bad trade against a hatched matrix, which says the same thing without
+ * breaking anything.
  *
- * Des bornes égales plutôt qu'un `0–1` inventé : `positionOnScale` et
- * `cellStyle` les traitent alors comme « pas d'échelle », au lieu de colorer
- * des cases selon une graduation que personne n'a écrite. */
+ * Equal bounds rather than an invented `0–1`: `positionOnScale` and `cellStyle`
+ * then treat them as "no scale", instead of colouring cells by a graduation
+ * nobody wrote. */
 export function rubricBounds(
   rubric: RubricLevel[] | undefined,
 ): { min: number; max: number } {
-  // Les paliers hors moyenne sont écartés : un « sans objet » à -1 tirerait
-  // sinon la borne basse vers lui, et toute la matrice changerait de couleur
-  // pour un palier qui ne mesure rien.
-  const comptes = (rubric ?? []).filter((level) => !level.excluded);
-  if (!comptes.length) return { min: 0, max: 0 };
-  const values = comptes.map((level) => level.value);
+  // The levels outside the mean are set aside: a "not applicable" at -1 would
+  // otherwise pull the lower bound towards it, and the whole matrix would change
+  // colour for a grade that measures nothing.
+  const counted = (rubric ?? []).filter((level) => !level.excluded);
+  if (!counted.length) return { min: 0, max: 0 };
+  const values = counted.map((level) => level.value);
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 
-/** L'échelle triée de la note la plus basse à la plus haute.
+/** The scale sorted from lowest grade to highest.
  *
- * Une échelle présentée dans le désordre se lit comme une liste d'options sans
- * progression, alors que l'ordre est précisément ce qui en fait une échelle. */
+ * A scale presented out of order reads as a list of options with no
+ * progression, when the order is precisely what makes it a scale. */
 export function sortedRubric(
   rubric: RubricLevel[] | undefined,
 ): RubricLevel[] {
   return [...(rubric ?? [])].sort((a, b) => a.value - b.value);
 }
 
-/** Où tombe une moyenne sur l'échelle, entre 0 et 1.
+/** Where a mean falls on the scale, between 0 and 1.
  *
- * `null` quand l'échelle est dégénérée — un seul palier, que la validation
- * interdit, mais qu'un run abîmé pourrait porter. Diviser par zéro donnerait
- * une couleur arbitraire présentée comme un résultat. */
+ * `null` when the scale is degenerate — a single level, which validation
+ * forbids, but which a damaged run could carry. Dividing by zero would give an
+ * arbitrary colour presented as a result. */
 export function positionOnScale(
   mean: number,
   rubric: RubricLevel[] | undefined,
@@ -61,11 +61,11 @@ export function positionOnScale(
   return (mean - min) / (max - min);
 }
 
-/** Échelle de chaleur : le bas de l'échelle est clair, le haut est foncé.
+/** A heat scale: the bottom of the scale is light, the top is dark.
  *
- * Le rouge reste réservé à l'adversaire. Une case dont rien n'a pu être noté
- * est hachurée : ce n'est pas la même chose qu'une case au plus bas, et les
- * confondre serait le pire contresens possible sur cet écran. */
+ * Red stays reserved for the adversary. A cell where nothing could be graded is
+ * hatched: that is not the same as a cell at the bottom, and confusing the two
+ * would be the worst possible misreading on this screen. */
 export function cellStyle(
   cell: Cell | undefined,
   rubric: RubricLevel[] | undefined,
@@ -82,10 +82,10 @@ export function cellStyle(
   return "bg-amber-700 text-amber-50";
 }
 
-/** La répartition des notes d'une case, pour l'infobulle.
+/** The distribution of a cell's grades, for the tooltip.
  *
- * Une moyenne de 1,5 obtenue « toujours 1,5 » et « moitié 0, moitié 3 » ne
- * disent pas la même chose du modèle. */
+ * A mean of 1.5 obtained as "always 1.5" and as "half 0, half 3" do not say the
+ * same thing about the model. */
 export function distribution(scores: (number | null)[]): string {
   const counts = new Map<number, number>();
   let unjudged = 0;

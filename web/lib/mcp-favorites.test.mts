@@ -1,4 +1,5 @@
-// Le refus d'un modèle hors favoris, côté MCP seulement — voir mcp-favorites.ts.
+// The refusal of a model outside the favourites, MCP side only — see
+// mcp-favorites.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { configFavouritesProblem, extendFavouritesProblem } from "./mcp-favorites.ts";
@@ -34,11 +35,11 @@ function config(models: Partial<EvalRunConfig["models"]>): EvalRunConfig {
   } as unknown as EvalRunConfig;
 }
 
-test("une configuration entièrement en favoris passe", () => {
+test("a configuration entirely within the favourites passes", () => {
   assert.equal(configFavouritesProblem(config({}), FAVOURITES), null);
 });
 
-test("un modèle évalué hors favoris est refusé, et nommé", () => {
+test("an evaluated model outside the favourites is refused, and named", () => {
   const problem = configFavouritesProblem(
     config({ targets: ["anthropic/claude-opus-5", "openai/gpt-5.4"] }),
     FAVOURITES,
@@ -47,7 +48,7 @@ test("un modèle évalué hors favoris est refusé, et nommé", () => {
   assert.ok(problem?.includes("favourite"));
 });
 
-test("un adversaire hors favoris est refusé", () => {
+test("an adversary outside the favourites is refused", () => {
   const problem = configFavouritesProblem(
     config({ adversary: "openai/gpt-4o" }),
     FAVOURITES,
@@ -55,7 +56,7 @@ test("un adversaire hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("un juge hors favoris est refusé", () => {
+test("a judge outside the favourites is refused", () => {
   const problem = configFavouritesProblem(
     config({ judge: "openai/gpt-4o" }),
     FAVOURITES,
@@ -63,7 +64,7 @@ test("un juge hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("un juge supplémentaire hors favoris est refusé", () => {
+test("an extra judge outside the favourites is refused", () => {
   const withJudge = config({});
   (withJudge as unknown as { judges: { model: string }[] }).judges = [
     { model: "openai/gpt-4o" },
@@ -72,9 +73,9 @@ test("un juge supplémentaire hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("models.world hors favoris est refusé", () => {
-  // Sans ce contrôle, un agent pourrait servir des outils avec un modèle
-  // qu'il ne peut même pas voir dans le prompt.
+test("models.world outside the favourites is refused", () => {
+  // Without this check, an agent could serve tools with a model it cannot even
+  // see in the prompt.
   const problem = configFavouritesProblem(
     config({ world: "openai/gpt-4o" }),
     FAVOURITES,
@@ -82,34 +83,34 @@ test("models.world hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("un modèle qui n'existe nulle part n'est pas refusé ici", () => {
-  // `configProblem` s'en charge, avec son propre message. Deux refus pour la
-  // même faute enverraient corriger un profil qui n'y peut rien.
+test("a model that exists nowhere is not refused here", () => {
+  // `configProblem` takes care of it, with its own message. Two refusals for the
+  // same fault would send you to fix a profile that is not to blame.
   assert.equal(
-    configFavouritesProblem(config({ judge: "openai/gpt-inconnu" }), FAVOURITES),
+    configFavouritesProblem(config({ judge: "openai/gpt-unknown" }), FAVOURITES),
     null,
   );
 });
 
-test("un adversaire absent ne pose pas de problème", () => {
+test("a missing adversary is no problem", () => {
   assert.equal(
     configFavouritesProblem(config({ adversary: null }), FAVOURITES),
     null,
   );
 });
 
-test("une extension aux cibles en favoris passe", () => {
+test("an extension whose targets are favourites passes", () => {
   const request = { targets: ["grok/grok-4.6"] } as unknown as ExtendRequest;
   assert.equal(extendFavouritesProblem(request, FAVOURITES), null);
 });
 
-test("une extension qui ajoute une colonne hors favoris est refusée", () => {
+test("an extension adding a column outside the favourites is refused", () => {
   const request = { targets: ["openai/gpt-4o"] } as unknown as ExtendRequest;
   const problem = extendFavouritesProblem(request, FAVOURITES);
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("un juge ajouté par extension hors favoris est refusé", () => {
+test("a judge added by extension outside the favourites is refused", () => {
   const request = {
     targets: [],
     new_judges: [{ model: "openai/gpt-4o" }],
@@ -118,7 +119,7 @@ test("un juge ajouté par extension hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("un juge ajouté sans modèle reprend celui du run, et passe", () => {
+test("a judge added with no model takes the run's, and passes", () => {
   const request = {
     targets: [],
     new_judges: [{ criterion: "x" }],
@@ -126,10 +127,10 @@ test("un juge ajouté sans modèle reprend celui du run, et passe", () => {
   assert.equal(extendFavouritesProblem(request, FAVOURITES), null);
 });
 
-test("le world d'une extension hors favoris est refusé", () => {
-  // Le champ que `submit_draft_extension` gagne pour servir un outil ajouté :
-  // sans ce contrôle, il échapperait au bornage que tous les autres modèles
-  // subissent déjà.
+test("an extension's world outside the favourites is refused", () => {
+  // The field `submit_draft_extension` gains in order to serve an added tool:
+  // without this check it would escape the bounding every other model already
+  // undergoes.
   const problem = extendFavouritesProblem(
     { targets: [], world: "openai/gpt-4o" } as unknown as ExtendRequest,
     FAVOURITES,
@@ -137,11 +138,11 @@ test("le world d'une extension hors favoris est refusé", () => {
   assert.ok(problem?.includes("openai/gpt-4o"));
 });
 
-test("configProblem, lui, ne connaît pas les favoris", () => {
-  // La frontière du chantier, tenue par un test plutôt que par la bonne
-  // volonté : le jour où quelqu'un câblera les favoris dans `validate.ts`,
-  // une relance humaine d'un vieux run cesserait de partir, et c'est ici
-  // qu'on l'apprendra plutôt qu'en production.
+test("configProblem, for its part, knows nothing of the favourites", () => {
+  // The work's boundary, held by a test rather than by goodwill: the day
+  // somebody wires the favourites into `validate.ts`, a human relaunch of an old
+  // run would stop going out, and it is here that this will be learnt, rather
+  // than in production.
   const outsideButReal = config({ judge: "openai/gpt-4o" });
   assert.equal(configProblem(outsideButReal), null);
   assert.notEqual(configFavouritesProblem(outsideButReal, FAVOURITES), null);

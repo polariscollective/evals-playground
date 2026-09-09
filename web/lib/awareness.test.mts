@@ -1,4 +1,5 @@
-// Le voyant d'éveil : ce qu'il compte, et quand il se tait — voir awareness.ts.
+// The awareness indicator: what it counts, and when it keeps quiet — see
+// awareness.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -15,9 +16,9 @@ import {
 } from "./awareness.ts";
 import type { JudgeScoreStatus, JudgeSystemType } from "./types.ts";
 
-// Une ligne de `judge_scores`, réduite à ce que ce module en lit. `"done"` par
-// défaut, comme la grande majorité des cas testés ici — `error` et `pending`
-// se passent en overrides explicites, jamais devinés.
+// A row of `judge_scores`, reduced to what this module reads of it. `"done"` by
+// default, like the vast majority of the cases tested here — `error` and
+// `pending` are passed as explicit overrides, never guessed.
 function verdict(
   score: number | null,
   status: JudgeScoreStatus = "done",
@@ -25,7 +26,7 @@ function verdict(
   return { status, score };
 }
 
-test("compte les conversations qui ont montré des signes", () => {
+test("counts the conversations that showed signs", () => {
   const summary = awarenessSummary([
     verdict(1),
     verdict(1),
@@ -37,11 +38,11 @@ test("compte les conversations qui ont montré des signes", () => {
   assert.equal(summary.failed, 0);
 });
 
-test("un juge tombé se compte à part, jamais comme un silence", () => {
-  // Confondre « le juge n'a rien pu dire » avec « il n'a rien vu » est
-  // exactement la faute que le reste du produit évite partout ailleurs.
-  // Le statut `judge_scores.status` porte cette distinction directement :
-  // `"error"`, jamais une note nulle sans étiquette.
+test("a judge that fell over is counted apart, never as a silence", () => {
+  // Confusing "the judge could say nothing" with "it saw nothing" is exactly the
+  // mistake the rest of the product avoids everywhere else. The
+  // `judge_scores.status` status carries that distinction directly: `"error"`,
+  // never a null grade with no label.
   const summary = awarenessSummary([
     verdict(1),
     verdict(null, "error"),
@@ -52,117 +53,115 @@ test("un juge tombé se compte à part, jamais comme un silence", () => {
   assert.equal(summary.flagged, 0);
 });
 
-test("rien à dire quand rien n'a été jugé", () => {
-  // Un run lancé avec le juge d'éveil éteint, ou dont la ligne est encore en
-  // attente : le voyant se tait plutôt que d'annoncer « 0 sur 0 », qui se
-  // lirait comme un bon résultat.
+test("nothing to say when nothing has been judged", () => {
+  // A run launched with the awareness judge off, or whose row is still pending:
+  // the indicator keeps quiet rather than announcing "0 out of 0", which would
+  // read as a good result.
   assert.equal(awarenessSentence(awarenessSummary([verdict(null, "pending")])), null);
 });
 
-test("une conversation vide ou hors échelle (done, note nulle) ne compte ni comme jugée ni comme tombée", () => {
-  // `status: "done"` avec `score: null` est la case « conversation vide, ou
-  // note hors échelle » de la conception — distincte à la fois d'une panne
-  // (`"error"`) et d'une attente (`"pending"`), et silencieuse comme les deux
-  // autres tant qu'aucune note n'existe.
+test("an empty or off-scale conversation (done, null grade) counts neither as judged nor as fallen over", () => {
+  // `status: "done"` with `score: null` is the "empty conversation, or grade off
+  // the scale" case of the design — distinct both from a breakdown (`"error"`)
+  // and from a wait (`"pending"`), and silent like the other two as long as no
+  // grade exists.
   const summary = awarenessSummary([verdict(null, "done")]);
   assert.equal(summary.judged, 0);
   assert.equal(summary.failed, 0);
   assert.equal(awarenessSentence(summary), null);
 });
 
-test("le juge tombé sur tout dit l'échec, pas le silence", () => {
-  // Judged à zéro peut vouloir dire deux choses opposées : rien à mesurer, ou
-  // le juge qui s'est cassé les dents sur chaque conversation. Les confondre
-  // dirait « tout va bien » alors qu'on ne sait rien — exactement la faute que
-  // `failed` existe pour éviter (voir le test juste au-dessus, à l'échelle
-  // d'une seule case).
+test("the judge fallen over on everything says failure, not silence", () => {
+  // Judged at zero can mean two opposite things: nothing to measure, or the judge
+  // breaking its teeth on every conversation. Confusing them would say "all is
+  // well" when nothing is known — exactly the mistake `failed` exists to avoid
+  // (see the test just above, at the scale of a single cell).
   const summary = awarenessSummary([verdict(null, "error"), verdict(null, "error")]);
   assert.equal(summary.judged, 0);
   assert.equal(summary.failed, 2);
-  const phrase = awarenessSentence(summary);
-  assert.match(phrase ?? "", /failed/);
-  assert.match(phrase ?? "", /2/);
-  assert.doesNotMatch(phrase ?? "", /No sign/);
+  const sentence = awarenessSentence(summary);
+  assert.match(sentence ?? "", /failed/);
+  assert.match(sentence ?? "", /2/);
+  assert.doesNotMatch(sentence ?? "", /No sign/);
 });
 
-test("le décompte des juges tombés accorde son nombre au singulier", () => {
-  // Le reste du dépôt accorde ses phrases en nombre (voir le bouton d'éveil
-  // dans app/eval/[runId]/page.tsx) ; celle-ci doit faire pareil plutôt que
-  // d'écrire « 1 conversations ».
+test("the count of judges that fell over agrees its number in the singular", () => {
+  // The rest of the repository agrees its sentences in number (see the awareness
+  // button in app/eval/[runId]/page.tsx); this one must do the same rather than
+  // writing "1 conversations".
   const summary = awarenessSummary([verdict(null, "error")]);
-  const phrase = awarenessSentence(summary) ?? "";
-  assert.match(phrase, /\b1 conversation\b/);
-  assert.doesNotMatch(phrase, /1 conversations\b/);
+  const sentence = awarenessSentence(summary) ?? "";
+  assert.match(sentence, /\b1 conversation\b/);
+  assert.doesNotMatch(sentence, /1 conversations\b/);
 });
 
-test("la phrase dit combien sur combien", () => {
-  const phrase = awarenessSentence(awarenessSummary([verdict(1), verdict(9)]));
-  assert.match(phrase ?? "", /1/);
-  assert.match(phrase ?? "", /2/);
+test("the sentence says how many out of how many", () => {
+  const sentence = awarenessSentence(awarenessSummary([verdict(1), verdict(9)]));
+  assert.match(sentence ?? "", /1/);
+  assert.match(sentence ?? "", /2/);
 });
 
-test("la bande intermédiaire compte comme jugée mais n'allume pas le voyant", () => {
-  // Une conversation notée 5 tombe entre les deux seuils : sous l'alarme (7),
-  // au-dessus du seuil de visibilité (4). Le voyant du run reste neutre — elle
-  // ne fait pas partie de `flagged`, c'est exactement la frontière que la
-  // revue a jugée trop floue pour servir d'alarme — mais elle doit rester
-  // lisible une fois la conversation ouverte (voir RunRead.tsx, où c'est
-  // `AWARENESS_VISIBLE` et non `AWARENESS_ALARM` qui décide de l'affichage).
+test("the middle band counts as judged but does not light the indicator", () => {
+  // A conversation graded 5 falls between the two thresholds: below the alarm
+  // (7), above the visibility threshold (4). The run's indicator stays neutral —
+  // it is not part of `flagged`, which is exactly the boundary the review found
+  // too blurred to serve as an alarm — but it must stay legible once the
+  // conversation is opened (see RunRead.tsx, where it is `AWARENESS_VISIBLE` and
+  // not `AWARENESS_ALARM` that decides the display).
   const summary = awarenessSummary([verdict(5)]);
   assert.equal(summary.judged, 1);
   assert.equal(summary.flagged, 0);
   assert.equal(summary.borderline, 1);
-  // Toujours un mot dit sur le run dès qu'une conversation a été jugée — le
-  // silence complet n'est réservé qu'à « rien n'a été jugé du tout ».
+  // Always a word said about the run as soon as a conversation has been judged —
+  // complete silence is reserved for "nothing has been judged at all".
   assert.match(awarenessSentence(summary) ?? "", /No sign/);
   assert.ok(5 >= AWARENESS_VISIBLE);
   assert.ok(5 < AWARENESS_ALARM);
 });
 
-test("la phrase ne contredit pas une conversation ouverte dans la bande intermédiaire", () => {
-  // C'est le défaut relevé par la revue : le voyant disait « aucune ne
-  // montre rien » alors qu'une conversation affichée sur sa propre page
-  // porte déjà une note visible (>= AWARENESS_VISIBLE). La phrase doit dire
-  // les deux vérités à la fois, sans se contredire.
+test("the sentence does not contradict a conversation opened in the middle band", () => {
+  // It is the flaw the review pointed out: the indicator said "none shows
+  // anything" while a conversation shown on its own page already carries a
+  // visible grade (>= AWARENESS_VISIBLE). The sentence must say both truths at
+  // once, without contradicting itself.
   const summary = awarenessSummary([verdict(5), verdict(2)]);
   assert.equal(summary.flagged, 0);
   assert.equal(summary.borderline, 1);
-  const phrase = awarenessSentence(summary) ?? "";
-  assert.match(phrase, /No sign/);
-  assert.match(phrase, /1 showed a weaker sign/);
+  const sentence = awarenessSentence(summary) ?? "";
+  assert.match(sentence, /No sign/);
+  assert.match(sentence, /1 showed a weaker sign/);
 });
 
-test("la mention de la bande intermédiaire accorde aussi son nombre", () => {
+test("the mention of the middle band also agrees its number", () => {
   const summary = awarenessSummary([verdict(5), verdict(6)]);
   assert.equal(summary.borderline, 2);
-  const phrase = awarenessSentence(summary) ?? "";
-  assert.match(phrase, /2 showed weaker signs/);
+  const sentence = awarenessSentence(summary) ?? "";
+  assert.match(sentence, /2 showed weaker signs/);
 });
 
-test("le seuil d'alarme est strictement plus haut que celui de visibilité", () => {
-  // L'écart entre les deux constantes est la bande dans laquelle une
-  // conversation se lit sans faire sonner le voyant.
+test("the alarm threshold is strictly higher than the visibility one", () => {
+  // The gap between the two constants is the band in which a conversation reads
+  // without setting the indicator off.
   assert.ok(AWARENESS_ALARM > AWARENESS_VISIBLE);
 });
 
-test("isAwarenessFlagged suit exactement le seuil de l'alarme", () => {
+test("isAwarenessFlagged follows the alarm threshold exactly", () => {
   assert.equal(isAwarenessFlagged(verdict(AWARENESS_ALARM - 1)), false);
   assert.equal(isAwarenessFlagged(verdict(AWARENESS_ALARM)), true);
   assert.equal(isAwarenessFlagged(verdict(10)), true);
 });
 
-test("isAwarenessFlagged ignore un verdict tombé ou en attente, même à une note élevée", () => {
-  // Un verdict ne se lit jamais que par son statut d'abord : une note plantée
-  // à côté d'un statut "error" ou "pending" n'a pas de sens et ne doit jamais
-  // allumer le badge.
+test("isAwarenessFlagged ignores a verdict fallen over or pending, even at a high grade", () => {
+  // A verdict is only ever read by its status first: a grade planted beside an
+  // "error" or "pending" status makes no sense and must never light the badge.
   assert.equal(isAwarenessFlagged({ status: "error", score: 10 }), false);
   assert.equal(isAwarenessFlagged({ status: "pending", score: 10 }), false);
 });
 
-test("compte les lignes de score d'éveil encore en attente", () => {
-  // C'est ce nombre qui décide si le bouton de rattrapage a une raison
-  // d'exister. Depuis que les lignes existent d'avance, c'est un statut à
-  // lire, pas un calcul sur les transcripts.
+test("counts the awareness score rows still pending", () => {
+  // It is that number which decides whether the catch-up button has a reason to
+  // exist. Since the rows exist in advance, it is a status to read, not a
+  // computation on the transcripts.
   assert.equal(
     awarenessMissing([
       { status: "pending" },
@@ -176,35 +175,35 @@ test("compte les lignes de score d'éveil encore en attente", () => {
   assert.equal(awarenessMissing([]), 0);
 });
 
-test("check_eval_awareness absent se lit comme inconnu, jamais comme allumé", () => {
-  // La convention `!== false`, employée ailleurs pour décider s'il *faut*
-  // faire tourner le juge, lirait `undefined` comme `true`. Ici la question
-  // est « a-t-il tourné ? », et sur un run d'avant ce champ, l'absence ne
-  // permet pas de répondre : ni allumé, ni éteint, inconnu. Ce test échoue
-  // avec un `!== false` réintroduit ici par erreur.
+test("an absent check_eval_awareness reads as unknown, never as on", () => {
+  // The `!== false` convention, used elsewhere to decide whether the judge *must*
+  // run, would read `undefined` as `true`. Here the question is "did it run?",
+  // and on a run predating this field, the absence does not allow answering:
+  // neither on, nor off, unknown. This test fails with a `!== false`
+  // reintroduced here by mistake.
   assert.equal(awarenessEnabled(undefined), null);
   assert.equal(awarenessEnabled(true), true);
   assert.equal(awarenessEnabled(false), false);
 });
 
-// --- le juge d'éveil retrouvé par son type, pas par sa place -----------------
+// --- the awareness judge found by its type, not by its place ---------------
 
-interface Liaison {
+interface Link {
   system_type: JudgeSystemType | null;
   name: string;
 }
 
-test("findAwakeJudge retrouve la liaison de type awake parmi d'autres", () => {
-  const liaisons: Liaison[] = [
+test("findAwakeJudge finds the awake link among others", () => {
+  const links: Link[] = [
     { system_type: null, name: "principal" },
-    { system_type: AWAKE_TYPE, name: "éveil" },
-    { system_type: null, name: "secondaire" },
+    { system_type: AWAKE_TYPE, name: "awareness" },
+    { system_type: null, name: "secondary" },
   ];
-  assert.equal(findAwakeJudge(liaisons)?.name, "éveil");
+  assert.equal(findAwakeJudge(links)?.name, "awareness");
 });
 
-test("findAwakeJudge rend undefined quand le run n'a pas de juge d'éveil vivant", () => {
-  const liaisons: Liaison[] = [{ system_type: null, name: "principal" }];
-  assert.equal(findAwakeJudge(liaisons), undefined);
+test("findAwakeJudge returns undefined when the run has no living awareness judge", () => {
+  const links: Link[] = [{ system_type: null, name: "principal" }];
+  assert.equal(findAwakeJudge(links), undefined);
   assert.equal(findAwakeJudge([]), undefined);
 });

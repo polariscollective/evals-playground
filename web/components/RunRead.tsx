@@ -1,33 +1,30 @@
 "use client";
 
-// Ce qu'on lit d'un run — la matrice ouverte case par case, les scénarios, les
-// outils, le juge, les trajectoires.
+// What one reads of a run — the matrix opened cell by cell, the scenarios, the
+// tools, the judge, the trajectories.
 //
-// Extrait de la page privée pour que la page publique montre exactement la
-// même chose. La version d'avant en donnait une version appauvrie, au motif
-// que la lecture seule devait être une propriété du fichier : c'était vrai
-// pour l'écriture, et payé par une lecture inférieure alors que lire n'a
-// jamais été le danger.
+// Taken out of the private page so that the public page shows exactly the same
+// thing. The previous version gave an impoverished version of it, on the grounds
+// that read-only had to be a property of the file: that was true of writing, and
+// paid for by an inferior reading when reading was never the danger.
 //
-// Ce qui protège vraiment n'est pas l'absence de boutons ici mais
-// `requireUser()` sur chaque route qui écrit, et `loadPublicRun` sur ce qui se
-// lit. Ce fichier ajoute une garantie de plus, tenue par le compilateur : ses
-// composants prennent un `PublicRunDetail`, dont le `run` n'a pas de
-// `user_email`, et dont les juges n'ont pas de `created_by` (voir
-// `PublicJudge`, `lib/public-run.ts`). Rendre l'une de ces deux adresses est
-// une erreur de compilation, pas une vigilance à tenir. `page.tsx` (privé)
-// passe un `RunDetail` complet à ces mêmes composants sans conversion : il en
-// porte structurellement plus que ce qu'ils exigent, ce que TypeScript
-// accepte déjà pour `run.user_email`.
+// What really protects is not the absence of buttons here but `requireUser()` on
+// every route that writes, and `loadPublicRun` on what is read. This file adds
+// one more guarantee, held by the compiler: its components take a
+// `PublicRunDetail`, whose `run` has no `user_email`, and whose judges have no
+// `created_by` (see `PublicJudge`, `lib/public-run.ts`). Rendering either of
+// those two addresses is a compilation error, not a vigilance to keep up.
+// `page.tsx` (private) passes a whole `RunDetail` to those same components with
+// no conversion: it structurally carries more than they demand, which TypeScript
+// already accepts for `run.user_email`.
 //
-// DEPUIS LES JUGES MULTIPLES — `RunDetail.judges` (`lib/types.ts`) est
-// maintenant attaché pour de vrai par `loadRun`/`attachJudges`
-// (`lib/runs.ts`), sur demande (`withJudges`) : voir
-// `app/api/runs/[runId]/route.ts`, qui le demande toujours, et
-// `.superpowers/sdd/task-9-report.md` pour la plomberie complète. Ce fichier
-// n'a donc plus besoin de dégrader pour un `judges` toujours `undefined` —
-// seulement pour le cas, réel, d'un appelant qui ne l'a pas demandé (un run
-// encore en cours d'ouverture, ou un futur appelant plus léger).
+// SINCE THE MULTIPLE JUDGES — `RunDetail.judges` (`lib/types.ts`) is now
+// attached for real by `loadRun`/`attachJudges` (`lib/runs.ts`), on demand
+// (`withJudges`): see `app/api/runs/[runId]/route.ts`, which always asks for it,
+// and `.superpowers/sdd/task-9-report.md` for the whole plumbing. This file
+// therefore no longer needs to degrade for a `judges` that is always `undefined`
+// — only for the real case of a caller that did not ask for it (a run still
+// being opened, or a future lighter caller).
 import { useEffect, useState } from "react";
 import { Collapsible } from "@/components/Collapsible";
 import { Dialog } from "@/components/Dialog";
@@ -65,19 +62,19 @@ import type {
   SampleStatus,
 } from "@/lib/types";
 
-// --- Juges multiples : lecture ----------------------------------------------
+// --- Multiple judges: reading -----------------------------------------------
 //
-// Les composants ci-dessous sont partagés par la page privée (`RunDetail`,
-// juges complets) et la page publique (`PublicRunDetail`, `created_by`
-// retiré de chaque juge) : ils prennent donc le type le plus restreint des
-// deux, `PublicRunJudgeView`/`PublicJudge` — un `RunJudgeView` complet le
-// satisfait déjà par structure. `JudgeVerdictEntry` (`lib/types.ts`), lui, ne
-// distingue pas les deux : aucune de ses valeurs ne nomme personne.
+// The components below are shared by the private page (`RunDetail`, whole
+// judges) and the public page (`PublicRunDetail`, `created_by` removed from each
+// judge): they therefore take the more restricted of the two types,
+// `PublicRunJudgeView`/`PublicJudge` — a whole `RunJudgeView` satisfies it
+// structurally already. `JudgeVerdictEntry` (`lib/types.ts`), for its part, does
+// not tell the two apart: none of its values names anybody.
 
-/** En attente : ni notée, ni tombée. Le même défaut que `loadRuns` rend déjà
- *  pour une conversation sans principal vivant (`principalVerdictsByRun`,
- *  `runs.ts`) — une absence de donnée n'est pas différente, pour l'affichage,
- *  d'un juge qui n'est pas encore passé. */
+/** Waiting: neither graded, nor fallen over. The same default `loadRuns` already
+ *  returns for a conversation with no living principal (`principalVerdictsByRun`,
+ *  `runs.ts`) — an absence of data is no different, for display, from a judge
+ *  that has not yet been through. */
 const PENDING_VERDICT: JudgeVerdictEntry = {
   status: "pending",
   score: null,
@@ -85,20 +82,20 @@ const PENDING_VERDICT: JudgeVerdictEntry = {
   error: null,
 };
 
-/** Le principal vivant de la liste, ou `undefined` — `judges` pas encore
- *  chargé, ou improbable liste sans principal. Au plus un principal vivant
- *  est garanti en base (invariant 1 de la conception) : cette fonction n'a
- *  donc jamais à choisir entre plusieurs candidats. */
+/** The list's living principal, or `undefined` — `judges` not loaded yet, or an
+ *  improbable list with no principal. At most one living principal is guaranteed
+ *  in the database (design invariant 1): this function therefore never has to
+ *  choose between several candidates. */
 export function principalJudge(
   judges: PublicRunJudgeView[] | undefined,
 ): PublicRunJudgeView | undefined {
   return judges?.find((judge) => judge.is_principal);
 }
 
-/** Le verdict de ce juge sur cette conversation, ou l'attente par défaut si
- *  le juge est absent (`judges` pas chargé) ou n'a pas encore cette ligne —
- *  y compris un juge secondaire dont seule l'identité a été ramenée, sans
- *  ses notes (voir `attachJudges`, `lib/runs.ts`). */
+/** This judge's verdict on this conversation, or the default waiting state if the
+ *  judge is absent (`judges` not loaded) or does not have this row yet —
+ *  a secondary judge whose identity alone was brought back, without its grades,
+ *  included (see `attachJudges`, `lib/runs.ts`). */
 export function verdictOf(
   judge: PublicRunJudgeView | undefined,
   sampleId: string,
@@ -106,11 +103,11 @@ export function verdictOf(
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
 }
 
-/** Un court libellé pour un juge, dans la liste des « autres juges ».
+/** A short label for a judge, in the list of "other judges".
  *
- * Un juge système ne porte ni critère ni échelle en base — voir la
- * conception, section « Les juges système » — son texte vit dans le code qui
- * le construit, jamais ici : `awake` est le seul aujourd'hui. */
+ * A system judge carries neither criterion nor scale in the database — see the
+ * design, section « Les juges système » — its text lives in the code that builds
+ * it, never here: `awake` is the only one today. */
 function judgeLabel(judge: PublicJudge): string {
   if (judge.system_type === AWAKE_TYPE) return "Eval awareness (built-in, 1–10)";
   const text = (judge.criterion ?? "").trim();
@@ -118,12 +115,13 @@ function judgeLabel(judge: PublicJudge): string {
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
-/** Combien d'essais chaque couple scénario × modèle a déjà : le moins, le plus.
+/** How many attempts each scenario × model pair already has: the fewest, the
+ *  most.
  *
- * Un run complété n'avance pas au même rythme partout — un modèle ajouté en
- * cours de route a moins d'essais que les premiers, et la moyenne d'une case
- * porte alors sur moins de conversations que celle d'à côté. Le dire est le prix
- * d'une matrice qu'on peut agrandir. */
+ * A completed run does not advance at the same pace everywhere — a model added
+ * along the way has fewer attempts than the first ones, and a cell's average then
+ * rests on fewer conversations than the one beside it. Saying so is the price of
+ * a matrix one can enlarge. */
 export function repetitionRange(samples: EvalSample[]): [number, number] {
   const counts = new Map<string, number>();
   for (const sample of samples) {
@@ -139,17 +137,18 @@ export function shortModel(id: string): string {
   return id.split("/").pop() ?? id;
 }
 
-/** La note d'un juge sur une tentative, avec le sens que l'échelle lui donne.
+/** A judge's grade on an attempt, with the meaning the scale gives it.
  *
- * Le nombre seul ne dit rien : c'est la phrase écrite à côté qui porte le
- * jugement, et la relire ici évite de remonter à l'échelle à chaque tentative.
+ * The number alone says nothing: it is the sentence written beside it that
+ * carries the judgement, and rereading it here saves going back up to the scale
+ * on every attempt.
  *
- * Depuis les juges multiples, la note ne vit plus sur la tentative
- * (`EvalSample`) mais dans une ligne de `judge_scores`, une par juge — d'où
- * `status` (l'exécution) et `verdict` (CE juge) séparés : une tentative qui a
- * fini de jouer peut très bien n'avoir encore aucune note d'un juge donné.
- * `executionError` reste celui de la tentative, jamais celui du juge — voir
- * `EvalSample.error` dans `lib/types.ts` pour cette distinction. */
+ * Since the multiple judges, the grade no longer lives on the attempt
+ * (`EvalSample`) but in a row of `judge_scores`, one per judge — hence `status`
+ * (the execution) and `verdict` (THIS judge) kept apart: an attempt that has
+ * finished playing may very well have no grade at all from a given judge.
+ * `executionError` stays the attempt's, never the judge's — see `EvalSample.error`
+ * in `lib/types.ts` for that distinction. */
 export function ScoreBadge({
   status,
   verdict,
@@ -179,7 +178,7 @@ export function ScoreBadge({
     );
   }
   if (status === "cancelled") {
-    // Pas rouge : on a décidé de ne pas la faire, elle n'a pas cassé.
+    // Not red: we decided not to do it, it did not break.
     return (
       <span className="rounded bg-zinc-200 px-2 py-0.5 text-xs text-zinc-700">
         not run
@@ -187,8 +186,8 @@ export function ScoreBadge({
     );
   }
   if (verdict.status === "error") {
-    // Le juge est tombé sur une conversation par ailleurs valide — jamais
-    // confondu avec `status === "error"` ci-dessus, qui est l'exécution.
+    // The judge fell over on an otherwise valid conversation — never confused
+    // with `status === "error"` above, which is the execution.
     return (
       <span
         className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-900"
@@ -211,8 +210,8 @@ export function ScoreBadge({
   const meaning = level?.meaning;
 
   if (level?.excluded) {
-    // Le juge a répondu, mais sa réponse reste hors moyenne : ni une note, ni
-    // une absence de note.
+    // The judge answered, but its answer stays out of the average: neither a
+    // grade, nor an absence of grade.
     return (
       <span
         className="rounded border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600"
@@ -239,18 +238,18 @@ export function ScoreBadge({
   );
 }
 
-/** Les outils du run, tels qu'ils ont été présentés au modèle.
+/** The run's tools, as they were presented to the model.
  *
- * Mot pour mot, description comprise : sans elle on ne peut pas relire une
- * décision d'appel, puisque c'est le seul texte que le modèle avait sous les
- * yeux au moment de décider. Le compte d'appels réels est là parce qu'un outil
- * défini et jamais appelé est un résultat, pas un oubli. */
+ * Word for word, description included: without it one cannot reread a decision to
+ * call, since it is the only text the model had before its eyes at the moment of
+ * deciding. The count of real calls is there because a tool defined and never
+ * called is a result, not an oversight. */
 export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
   const { config } = detail.run;
   const tools = config.tools ?? [];
   if (tools.length === 0) return null;
 
-  const appels = (name: string) =>
+  const callCount = (name: string) =>
     detail.samples.reduce(
       (total, sample) =>
         total +
@@ -319,7 +318,7 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
       )}
 
       {tools.map((tool) => {
-        const offert = config.scenarios.filter((scenario) =>
+        const offeredTo = config.scenarios.filter((scenario) =>
           toolsFor(config, scenario).some((entry) => entry.name === tool.name),
         ).length;
         return (
@@ -327,8 +326,8 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <code className="text-sm font-medium">{tool.name}</code>
               <span className="text-xs text-zinc-500">
-                offered to {offert} of {config.scenarios.length} scenarios ·
-                called {appels(tool.name)}×
+                offered to {offeredTo} of {config.scenarios.length} scenarios ·
+                called {callCount(tool.name)}×
               </span>
             </div>
             <p className="text-sm whitespace-pre-wrap text-zinc-800">
@@ -361,9 +360,9 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
                 returns: <span className="font-mono">{tool.result || "(empty)"}</span>
               </p>
             )}
-            {/* Le second axe, à côté du premier et jamais à sa place : un outil
-                fixe qui écrit affiche les deux lignes, et c'est la forme
-                courante des outils d'écriture. */}
+            {/* The second axis, beside the first and never in its place: a fixed
+                tool that writes shows both lines, and that is the ordinary form of
+                the writing tools. */}
             {writesWorld(tool) && (
               <p className="text-xs text-zinc-500">
                 changes the world:{" "}
@@ -379,12 +378,12 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
   );
 }
 
-/** Ce qui définit une ligne de la matrice, réuni.
+/** What defines a row of the matrix, gathered together.
  *
- * « Pourquoi cette ligne » est la question qu'on se pose devant une matrice, et
- * le titre seul n'y répond pas — surtout sur douze scénarios dont les titres se
- * ressemblent parce qu'ils ne varient que d'un axe. La note y répond ; le reste
- * est là pour vérifier qu'elle dit vrai.
+ * "Why this row" is the question one asks in front of a matrix, and the title
+ * alone does not answer it — especially over twelve scenarios whose titles
+ * resemble one another because they vary on one axis alone. The note answers it;
+ * the rest is there to check that it tells the truth.
  */
 export function ScenarioModal({
   run,
@@ -421,9 +420,9 @@ export function ScenarioModal({
         {scenario.note ? (
           <div className="rounded border border-teal-300 bg-teal-50 p-3">
             <p className="mb-1 text-xs font-medium text-teal-900">
-              {/* Une note de laboratoire, pas une consigne : le modèle et le
-                  juge ne la voient jamais. Le dire ici évite qu'on l'écrive un
-                  jour comme si elle comptait. */}
+              {/* A laboratory note, not an instruction: the model and the judge
+                  never see it. Saying so here keeps it from one day being written
+                  as if it counted. */}
               Note — for whoever reads the matrix. Neither the model nor the
               judge saw this.
             </p>
@@ -503,33 +502,33 @@ export function ScenarioModal({
   );
 }
 
-/** Une ligne pour un juge secondaire ou système, dans la liste des « autres
- *  juges » — jamais le principal, déjà affiché par le bloc qui l'entoure.
+/** A row for a secondary or system judge, in the list of "other judges" — never
+ *  the principal, already shown by the block surrounding it.
  *
- * `onUnlink`/`onView` absents : lecture pure, c'est ce qui garde ce composant
- * utilisable depuis la page publique — voir `JudgeBlock`. « View » n'apparaît
- * jamais pour un juge système : sa question ne vient pas de l'utilisateur et
- * son échelle est fixe (voir la conception, section « Les juges système ») —
- * l'afficher ferait lire la matrice sur une question que personne n'a écrite.
- * Le bouton qui écrit — « Make principal » — a migré dans `JudgeBlock`, sur
- * le juge affiché plutôt que sur chaque ligne : voir son commentaire. */
-/** Ce que délier coûte, dit une fois pour les deux chemins — le juge
- *  secondaire ici même, le principal dans `PrincipalUnlink`.
+ * `onUnlink`/`onView` absent: pure reading, which is what keeps this component
+ * usable from the public page — see `JudgeBlock`. "View" never appears for a
+ * system judge: its question does not come from the user and its scale is fixed
+ * (see the design, section « Les juges système ») — showing it would have the
+ * matrix read on a question nobody wrote. The button that writes — "Make
+ * principal" — has migrated into `JudgeBlock`, onto the judge shown rather than
+ * onto each row: see its comment. */
+/** What unlinking costs, said once for both paths — the secondary judge right
+ *  here, the principal in `PrincipalUnlink`.
  *
- * Les trois phrases sont vérifiées, pas supposées :
+ * The three sentences are checked, not assumed:
  *
- * - **Sans retour** : `run_judges_unlink` pose `deleted_at`, et rien ne le
- *   remet à null — ni l'application, ni le MCP. La ligne reste en base pour
- *   qu'on sache que ce run a été jugé par celui-là, mais aucun geste ne la
- *   ramène.
- * - **Les notes ne reviennent pas** : elles ne sont pas effacées non plus (la
- *   clé étrangère `on delete cascade` existe et ne se déclenche jamais, voir
- *   le commentaire de `run_judges.deleted_at`), mais plus rien ne les montre —
- *   la lecture filtre sur les liaisons vivantes. Reposer le même juge crée une
- *   liaison NEUVE, dont les verdicts repartent en attente et se repaient.
- * - **Une copie ne le porte pas** : dupliquer un run dérive sa configuration
- *   des liaisons vivantes (`withLiveJudges`, appelé par `app/page.tsx`), donc
- *   un juge délié n'y figure plus. */
+ * - **No way back**: `run_judges_unlink` sets `deleted_at`, and nothing puts it
+ *   back to null — neither the application, nor the MCP. The row stays in the
+ *   database so that one knows this run was judged by that judge, but no gesture
+ *   brings it back.
+ * - **The grades do not come back**: they are not erased either (the
+ *   `on delete cascade` foreign key exists and never fires, see the comment on
+ *   `run_judges.deleted_at`), but nothing shows them any more — the reading
+ *   filters on the living bindings. Laying the same judge down again creates a
+ *   FRESH binding, whose verdicts start out waiting and are paid for over.
+ * - **A copy does not carry it**: duplicating a run derives its configuration
+ *   from the living bindings (`withLiveJudges`, called by `app/page.tsx`), so an
+ *   unlinked judge no longer figures there. */
 function UnlinkConsequences() {
   return (
     <ul className="list-disc space-y-1 pl-4">
@@ -552,24 +551,23 @@ function OtherJudgeRow({
   onView,
 }: {
   judge: PublicRunJudgeView;
-  /** Ce juge est celui qu'on regarde en ce moment — un choix purement local
-   *  (voir `JudgeBlock`), jamais écrit en base. */
+  /** This judge is the one being looked at right now — a purely local choice (see
+   *  `JudgeBlock`), never written to the database. */
   viewing: boolean;
-  /** Le principal figure dans cette liste comme les autres, pour qu'on
-   *  puisse y REVENIR après en avoir regardé un autre : sans lui, une fois
-   *  parti sur un secondaire, plus rien ne ramenait — il disparaissait de
-   *  l'écran entièrement. Il n'a pas de bouton « Unlink » ici : le délier
-   *  demande de désigner un remplaçant, ce que `PrincipalUnlink` fait
-   *  au-dessus, avec son sélecteur. */
+  /** The principal figures in this list like the others, so that one can COME BACK
+   *  to it after having looked at another: without it, once gone off to a
+   *  secondary, nothing brought one back — it left the screen entirely. It has no
+   *  "Unlink" button here: unlinking it demands designating a replacement, which
+   *  `PrincipalUnlink` does above, with its selector. */
   isPrincipal?: boolean;
   onUnlink?: (runJudgeId: string) => Promise<void>;
   onView?: (runJudgeId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  // Délier ne se rattrape pas, et le bouton était à un clic : demander
-  // d'abord. Le principal a déjà son étape à lui — voir `PrincipalUnlink`,
-  // qui dit les mêmes conséquences par la même fonction.
+  // Unlinking cannot be taken back, and the button was one click away: ask first.
+  // The principal already has a step of its own — see `PrincipalUnlink`, which
+  // says the same consequences through the same function.
   const [asking, setAsking] = useState(false);
 
   const unlink = async () => {
@@ -638,9 +636,9 @@ function OtherJudgeRow({
       )}
       <ConfirmDialog
         open={asking}
-        // Titre court et fixe : un critère finit souvent par un point
-        // d'interrogation, et le coller dans le titre en produisait deux.
-        // La question posée par ce juge est dans le corps, où elle a la place.
+        // A short, fixed title: a criterion often ends with a question mark, and
+        // pasting it into the title produced two.
+        // The question this judge puts is in the body, where it has the room.
         title="Unlink this judge?"
         confirmLabel="Unlink this judge"
         tone="warning"
@@ -660,15 +658,15 @@ function OtherJudgeRow({
   );
 }
 
-/** Le bouton qui fait du juge affiché le principal — la seule écriture de ce
- *  fichier sur ce sujet, voir la route `.../judges/[id]/principal`
- *  (`lib/runs.ts`, `designatePrincipal`). N'apparaît que dans `JudgeBlock`,
- *  et seulement quand on regarde déjà un juge qui n'est pas le principal :
- *  regarder n'est pas décider, mais ce bouton est le geste explicite qui fait
- *  passer de l'un à l'autre. Un refus de la base (base d'un juge déjà délié,
- *  par exemple par quelqu'un d'autre entretemps) arrive déjà traduit en
- *  anglais lisible — voir `designatePrincipal`, qui classe le refus Postgres
- *  via `run-judges-refusal.ts` avant qu'il n'atteigne cette route. */
+/** The button that makes the shown judge the principal — this file's only write
+ *  on that subject, see the `.../judges/[id]/principal` route (`lib/runs.ts`,
+ *  `designatePrincipal`). Appears only in `JudgeBlock`, and only when one is
+ *  already looking at a judge that is not the principal: looking is not deciding,
+ *  but this button is the explicit gesture that moves from one to the other. A
+ *  refusal from the database (the base of an already unlinked judge, by somebody
+ *  else in the meantime for instance) arrives already translated into readable
+ *  English — see `designatePrincipal`, which classifies the Postgres refusal
+ *  through `run-judges-refusal.ts` before it reaches this route. */
 function MakePrincipalButton({
   runJudgeId,
   onDesignatePrincipal,
@@ -709,19 +707,18 @@ function MakePrincipalButton({
   );
 }
 
-/** Délier le principal — toujours un juge ordinaire — avec le remplaçant que
- *  le déclencheur en base exige dans le même geste. Le remplaçant doit
- *  lui-même être ordinaire : un juge système (l'éveil) ne peut pas devenir
- *  principal, sa question et son échelle n'appartenant pas à l'utilisateur
- *  (voir `judgeLabel`) — le proposer présélectionnerait un choix qui casse
- *  silencieusement l'écran.
+/** Unlink the principal — always an ordinary judge — with the replacement the
+ *  database trigger demands in the same gesture. The replacement must itself be
+ *  ordinary: a system judge (the awareness one) cannot become principal, its
+ *  question and its scale not belonging to the user (see `judgeLabel`) —
+ *  offering it would preselect a choice that silently breaks the screen.
  *
- * Un run garde toujours au moins un juge ordinaire vivant : délier le
- * dernier n'est pas permis, ni ici ni en base. Sans autre juge ORDINAIRE pour
- * prendre le relais, ce composant ne propose donc rien à cliquer — juste
- * l'explication ; le seul chemin est d'ajouter un juge ordinaire d'abord.
+ * A run always keeps at least one living ordinary judge: unlinking the last one
+ * is not allowed, neither here nor in the database. With no other ORDINARY judge
+ * to take over, this component therefore offers nothing to click — only the
+ * explanation; the only path is to add an ordinary judge first.
  *
- * N'apparaît que si `onUnlink` est fourni — jamais sur la page publique. */
+ * Appears only if `onUnlink` is provided — never on the public page. */
 function PrincipalUnlink({
   principal,
   others,
@@ -738,7 +735,7 @@ function PrincipalUnlink({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  // Rien à cliquer : dire pourquoi plutôt que de griser sans explication.
+  // Nothing to click: say why rather than greying out with no explanation.
   if (ordinaryOthers.length === 0) {
     return (
       <p className="text-xs text-zinc-500">
@@ -775,10 +772,10 @@ function PrincipalUnlink({
   return (
     <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm">
       <p className="text-xs text-amber-900">
-        {/* Le déclencheur différé refuse de délier le principal sans
-            remplaçant tant qu'il reste d'autres juges vivants — voir le
-            commentaire d'`unlinkJudge`, `lib/runs.ts`. Le choisir ici est
-            donc obligatoire, pas une simple commodité. */}
+        {/* The deferred trigger refuses to unlink the principal with no replacement
+            as long as other living judges remain — see the comment on
+            `unlinkJudge`, `lib/runs.ts`. Choosing one here is therefore compulsory,
+            not a mere convenience. */}
         This judge is the principal — the matrix follows it. Choose who
         takes over before unlinking it.
       </p>
@@ -820,26 +817,25 @@ function PrincipalUnlink({
   );
 }
 
-/** Ce que le juge AFFICHÉ a été chargé de regarder — le principal par défaut,
- *  un autre juge ordinaire si on a choisi de le regarder — et l'accès aux
- *  autres juges non supprimés du run.
+/** What the SHOWN judge was charged with looking at — the principal by default,
+ *  another ordinary judge if one chose to look at it — and access to the run's
+ *  other undeleted judges.
  *
- * Regarder n'est pas décider : `displayedRunJudgeId`/`onSelectDisplayed`
- * changent ce que cet écran montre, jamais ce que la base tient pour
- * principal. C'est `onDesignatePrincipal` qui écrit, et seulement quand on le
- * demande explicitement — voir `MakePrincipalButton`, qui n'apparaît que
- * lorsque le juge affiché n'est pas le principal.
+ * Looking is not deciding: `displayedRunJudgeId`/`onSelectDisplayed` change what
+ * this screen shows, never what the database holds as principal. It is
+ * `onDesignatePrincipal` that writes, and only when one asks for it explicitly —
+ * see `MakePrincipalButton`, which appears only when the shown judge is not the
+ * principal.
  *
- * `onUnlink`/`onDesignatePrincipal`/`onSelectDisplayed` : présents seulement
- * sur l'écran privé (`app/eval/[runId]/page.tsx`) — la page publique, via
- * `SharedRunView.tsx`, appelle ce composant sans eux : pas de sélecteur ni de
- * bouton d'écriture, exactement comme le reste de ce fichier (voir son
- * en-tête). Elle ne montre donc jamais que le principal.
+ * `onUnlink`/`onDesignatePrincipal`/`onSelectDisplayed`: present only on the
+ * private screen (`app/eval/[runId]/page.tsx`) — the public page, through
+ * `SharedRunView.tsx`, calls this component without them: no selector and no
+ * write button, exactly like the rest of this file (see its header). It therefore
+ * never shows anything but the principal.
  *
- * `detail.judges` absent (voir l'en-tête de ce fichier) : ce bloc retombe sur
- * `config.criterion`/`config.rubric`/`config.models.judge` et ne montre
- * aucun autre juge — le comportement d'avant les juges multiples, à la
- * lettre. */
+ * `detail.judges` absent (see this file's header): this block falls back on
+ * `config.criterion`/`config.rubric`/`config.models.judge` and shows no other
+ * judge — the behaviour from before the multiple judges, to the letter. */
 export function JudgeBlock({
   detail,
   onUnlink,
@@ -850,12 +846,12 @@ export function JudgeBlock({
   detail: PublicRunDetail;
   onUnlink?: (runJudgeId: string, replacementRunJudgeId?: string) => Promise<void>;
   onDesignatePrincipal?: (runJudgeId: string) => Promise<void>;
-  /** Le juge qu'on regarde en ce moment. `undefined`, ou un identifiant qui
-   *  ne désigne plus un juge ordinaire vivant de ce run (délié entretemps,
-   *  ou jamais valide), retombe sur le principal — jamais une page blanche. */
+  /** The judge being looked at right now. `undefined`, or an identifier that no
+   *  longer designates a living ordinary judge of this run (unlinked in the
+   *  meantime, or never valid), falls back on the principal — never a blank page. */
   displayedRunJudgeId?: string;
-  /** Change `displayedRunJudgeId` chez l'appelant. Absent : pas de sélecteur,
-   *  ce bloc n'affiche alors jamais que le principal. */
+  /** Changes `displayedRunJudgeId` at the caller's. Absent: no selector, and this
+   *  block then never shows anything but the principal. */
   onSelectDisplayed?: (runJudgeId: string) => void;
 }) {
   const { config } = detail.run;
@@ -867,19 +863,18 @@ export function JudgeBlock({
     (judge) => judge.run_judge_id !== principal?.run_judge_id,
   );
 
-  // Le juge affiché : celui choisi localement s'il vit encore et reste
-  // ordinaire, sinon le principal. Un choix de lecture, jamais une écriture —
-  // il se perd au rechargement et ne change rien pour personne d'autre.
-  // Jamais un juge système : son échelle ne se lit pas comme une grille de
-  // notation (voir `judgeLabel`), et il ne peut de toute façon pas devenir
-  // principal.
+  // The shown judge: the one chosen locally if it still lives and stays ordinary,
+  // otherwise the principal. A reading choice, never a write — it is lost on
+  // reload and changes nothing for anybody else.
+  // Never a system judge: its scale does not read as a grading grid (see
+  // `judgeLabel`), and it cannot become principal anyway.
   //
-  // Un run garde toujours au moins un juge ordinaire vivant — `PrincipalUnlink`
-  // plus bas refuse de délier le dernier — donc `principal` ne devrait jamais
-  // manquer. S'il manque quand même (incohérence, run migré depuis l'ancien
-  // monde), se rabattre sur le premier juge ordinaire vivant plutôt que sur
-  // rien : c'est ce qui permet au bandeau ci-dessous de rester actionnable
-  // plutôt que de disparaître avec le seul geste qui répare la situation.
+  // A run always keeps at least one living ordinary judge — `PrincipalUnlink`
+  // further down refuses to unlink the last one — so `principal` should never be
+  // missing. If it is missing all the same (an inconsistency, a run migrated from
+  // the old world), fall back on the first living ordinary judge rather than on
+  // nothing: that is what lets the banner below stay actionable rather than
+  // disappearing along with the one gesture that repairs the situation.
   const displayedJudge =
     others.find(
       (judge) =>
@@ -887,45 +882,44 @@ export function JudgeBlock({
     ) ??
     principal ??
     others.find((judge) => judge.system_type === "ordinary");
-  // Vrai seulement s'il existe un principal ET que c'est lui qu'on regarde.
-  // Un principal devrait toujours exister (voir ci-dessus) : le cas
-  // `principal === undefined` n'est pas censé se produire, mais s'il
-  // survient, il doit se voir — jamais se faire passer en silence pour
-  // « on regarde déjà le principal », ce qui masquerait précisément le
-  // bandeau « Make principal » qui permet d'en sortir.
+  // True only if a principal exists AND it is the one being looked at.
+  // A principal should always exist (see above): the `principal === undefined`
+  // case is not supposed to happen, but if it does arise it must show — never
+  // silently pass for "we are already looking at the principal", which would hide
+  // precisely the "Make principal" banner that lets one get out of it.
   const viewingPrincipal =
     principal !== undefined && displayedJudge?.run_judge_id === principal.run_judge_id;
 
-  // Le juge affiché fait foi une fois attaché — il peut différer de `config`
-  // si un autre juge a repris le titre depuis le lancement, ou si on a choisi
-  // d'en regarder un autre. Sans lui, `config` reste la seule source, comme
-  // avant les juges multiples.
+  // The shown judge is authoritative once attached — it may differ from `config`
+  // if another judge has taken over the title since the launch, or if one chose to
+  // look at another. Without it, `config` stays the only source, as before the
+  // multiple judges.
   const judgeModel = displayedJudge?.judge.model ?? config.models.judge;
   const criterion = displayedJudge?.judge.criterion ?? config.criterion;
   const rubric = displayedJudge?.judge.rubric ?? config.rubric;
 
-  // Le voyant d'éveil : un chiffre pour tout le run, calculé ici plutôt que
-  // dans un en-tête séparé pour qu'il s'affiche pareil sur la page privée et
-  // sur la page publique, qui partagent ce composant mais n'ont pas le même
-  // en-tête. Quand il sonne, on descend dans les conversations — d'où le fait
-  // qu'il ne dise pas lesquelles. La liaison `awake` du run, si le run en a
-  // une — voir `findAwakeJudge`, `lib/awareness.ts`, dont la contrainte
-  // générique n'accepte plus `RunJudgeView` : `AWAKE_TYPE` seul, comme
-  // `lib/runs.ts` le fait déjà pour la même raison.
+  // The eval-awareness indicator: one figure for the whole run, computed here
+  // rather than in a separate header so that it shows the same way on the private
+  // page and on the public page, which share this component but do not have the
+  // same header. When it sounds, one goes down into the conversations — hence the
+  // fact that it does not say which. The run's `awake` binding, if the run has one
+  // — see `findAwakeJudge`, `lib/awareness.ts`, whose generic constraint no longer
+  // accepts `RunJudgeView`: `AWAKE_TYPE` alone, as `lib/runs.ts` already does for
+  // the same reason.
   const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
   const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
   const awarenessPhrase = awarenessSentence(awareness);
 
-  // Le voyant des résultats servis, juste à côté de celui de l'éveil — et
-  // croisé avec lui, ce qui est tout son intérêt. Une note d'éveil haute est
-  // sinon une impasse : on sait que le modèle a flairé quelque chose, on ne
-  // sait pas quoi. Muet sur un run qui n'a servi aucun outil.
+  // The served-results indicator, right beside the awareness one — and crossed
+  // with it, which is its whole point. A high awareness grade is otherwise a dead
+  // end: one knows the model sensed something, one does not know what. Silent on a
+  // run that served no tool.
   const toolResults = detail.tool_results ?? [];
   const served = servedSummary(toolResults);
-  // Les transcripts ne sont chargés que sur demande. Sans eux, on ne sait pas
-  // quelle conversation a vu quel résultat : le croisement se tait plutôt que
-  // d'annoncer zéro, qui se lirait « aucune » au lieu de « on ne sait pas ».
-  const peutCroiser = detail.samples.some(
+  // The transcripts are loaded on demand only. Without them, one does not know
+  // which conversation saw which result: the crossing keeps quiet rather than
+  // announcing zero, which would read as "none" instead of "we do not know".
+  const canCrossCheck = detail.samples.some(
     (sample) => (sample.messages ?? []).length > 0,
   );
   const servedJoin = awarenessJoin(
@@ -938,7 +932,7 @@ export function JudgeBlock({
     })),
     toolResults,
   );
-  const servedPhrase = servedSentence(served, peutCroiser ? servedJoin : null);
+  const servedPhrase = servedSentence(served, canCrossCheck ? servedJoin : null);
 
   return (
     <>
@@ -975,11 +969,11 @@ export function JudgeBlock({
           </tbody>
         </table>
 
-        {/* Regarder n'est pas décider : ce bandeau ne dit rien tant qu'on
-            regarde le principal, mais dès qu'on regarde un autre juge, il dit
-            lequel des deux gestes est en train de se faire — et que l'export
-            et les outils MCP, eux, ne suivent que le principal, jamais ce
-            qu'on a choisi de regarder ici. */}
+        {/* Looking is not deciding: this banner says nothing as long as one is
+            looking at the principal, but as soon as one looks at another judge it
+            says which of the two gestures is being made — and that the export and
+            the MCP tools, for their part, follow the principal alone, never what one
+            chose to look at here. */}
         {!viewingPrincipal && displayedJudge && (
           <div className="space-y-1 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
             <p>
@@ -1001,19 +995,18 @@ export function JudgeBlock({
           <PrincipalUnlink principal={principal} others={others} onUnlink={onUnlink} />
         )}
 
-        {/* Par défaut on ne voit que le principal, comme avant les juges
-            multiples — voir la conception, section « L'écran ». `others`
-            vide (aucun autre juge, ou `detail.judges` pas encore fourni) :
-            rien derrière le bouton, il ne sert donc à rien. C'est ici que
-            vit le sélecteur d'affichage — un juge ordinaire de cette liste
-            devient le juge affiché en cliquant « View », sans rien écrire. */}
-        {/* La liste porte TOUS les juges du run, le principal en tête.
-            L'exclure était un cul-de-sac : « View » n'existait que pour les
-            autres, si bien qu'une fois parti sur un secondaire plus rien ne
-            ramenait au principal — il quittait l'écran entièrement. Il y
-            figure donc comme les autres, marqué, avec son « View » ; ce qu'il
-            n'a pas ici, c'est « Unlink », qui demande un remplaçant et vit
-            au-dessus dans `PrincipalUnlink`. */}
+        {/* By default one sees only the principal, as before the multiple judges —
+            see the design, section « L'écran ». `others` empty (no other judge, or
+            `detail.judges` not provided yet): nothing behind the button, so it
+            serves no purpose. It is here that the display selector lives — an
+            ordinary judge of this list becomes the shown judge on clicking "View",
+            writing nothing. */}
+        {/* The list carries ALL the run's judges, the principal at the head.
+            Excluding it was a dead end: "View" existed only for the others, so that
+            once gone off to a secondary nothing brought one back to the principal —
+            it left the screen entirely. It therefore figures there like the others,
+            marked, with its own "View"; what it does not have here is "Unlink",
+            which demands a replacement and lives above in `PrincipalUnlink`. */}
         {others.length > 0 && (
           <div className="border-t border-zinc-200 pt-2">
             <button
@@ -1088,8 +1081,8 @@ export function DetailModal({
     (sample) =>
       sample.scenario_index === scenarioIndex && sample.target_model === target,
   );
-  // Le principal fait foi pour l'échelle de cette fenêtre — même repli que
-  // `JudgeBlock` quand `detail.judges` n'est pas encore fourni.
+  // The principal is authoritative for this window's scale — the same fallback as
+  // `JudgeBlock` when `detail.judges` is not provided yet.
   const rubric = principalJudge(detail.judges)?.judge.rubric ?? detail.run.config.rubric;
 
   useEffect(() => {
@@ -1140,10 +1133,10 @@ export function DetailModal({
           )}
         </div>
 
-        {/* Ce que cette case avait réellement sous la main : un scénario peut
-            n'avoir reçu aucun outil quand les autres les ont tous, et c'est
-            souvent la comparaison qu'on cherche. Avec la description, sans
-            laquelle on ne peut pas relire une décision d'appel. */}
+        {/* What this cell really had to hand: a scenario may have received no tool
+            when the others have them all, and that is often the comparison one is
+            after. With the description, without which one cannot reread a decision
+            to call. */}
         {(detail.run.config.tools ?? []).length > 0 && scenario && (
           <div className="rounded border border-zinc-300">
             <button
@@ -1233,29 +1226,28 @@ export function AttemptView({
   runTurns,
 }: {
   attempt: EvalSample;
-  /** Tous les juges vivants du run, avec leur verdict sur chaque
-   *  conversation — voir `RunJudgeView` (`lib/types.ts`). `undefined` quand
-   *  l'appelant n'a pas demandé cette jointure (voir `loadRun`'s
-   *  `withJudges`) : cette vue retombe alors sur l'attente par défaut pour
-   *  le principal, et ne montre aucun autre juge. */
+  /** All the run's living judges, with their verdict on each conversation — see
+   *  `RunJudgeView` (`lib/types.ts`). `undefined` when the caller did not ask for
+   *  that join (see `loadRun`'s `withJudges`): this view then falls back on the
+   *  default waiting state for the principal, and shows no other judge. */
   judges: PublicRunJudgeView[] | undefined;
   rubric: RubricLevel[];
-  /** La profondeur demandée par le run, pour ne signaler que les tentatives
-   *  qui s'en écartent — voir le commentaire sur `turns_done` plus bas. */
+  /** The depth the run asked for, so as to flag only the attempts that depart from
+   *  it — see the comment on `turns_done` further down. */
   runTurns: number;
 }) {
-  // Repliée par défaut : dix répétitions de dix tours feraient un mur de texte
-  // où l'on ne retrouve plus la tentative qu'on cherchait.
+  // Folded by default: ten repetitions of ten turns would make a wall of text
+  // where one no longer finds the attempt one was after.
   const [open, setOpen] = useState(false);
 
   const principal = principalJudge(judges);
   const principalVerdict = verdictOf(principal, attempt.id);
   const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
   const awakeVerdict = awake ? verdictOf(awake, attempt.id) : null;
-  // Les juges non supprimés de ce run, sauf le principal (déjà affiché
-  // ci-dessus) et l'éveil (traité à part, avec son propre seuil de
-  // visibilité) — c'est cette liste qu'une conversation dépliée doit encore
-  // montrer pour tenir « tous les juges non supprimés » de la conception.
+  // This run's undeleted judges, except the principal (already shown above) and
+  // the awareness one (dealt with apart, with its own visibility threshold) — it
+  // is that list an unfolded conversation must still show so as to hold the
+  // design's "all the undeleted judges".
   const others = (judges ?? []).filter(
     (judge) => judge.run_judge_id !== principal?.run_judge_id && judge !== awake,
   );
@@ -1289,11 +1281,11 @@ export function AttemptView({
           </span>
         )}
         {attempt.turns_done !== null && attempt.turns_done !== runTurns && (
-          // Un renseignement, pas une réserve : cette tentative s'est réglée
-          // avant la profondeur du run, et l'y pousser plus loin n'aurait
-          // rien appris — c'est même la question qu'on pose à un run de ce
-          // genre. Silencieux quand la tentative est allée aussi loin que le
-          // run : l'en-tête du run le dit déjà, le répéter n'apprend rien.
+          // A piece of information, not a reservation: this attempt settled before
+          // the run's depth, and pushing it further would have taught nothing — it
+          // is even the question one puts to a run of this kind. Silent when the
+          // attempt went as far as the run: the run's header says so already, and
+          // repeating it teaches nothing.
           <span className="text-xs text-zinc-500">
             settled at {attempt.turns_done} turn
             {attempt.turns_done > 1 ? "s" : ""}
@@ -1308,8 +1300,8 @@ export function AttemptView({
         </span>
       </button>
 
-      {/* La justification du juge principal reste visible repliée : c'est
-          elle qui dit si cette tentative mérite qu'on l'ouvre. */}
+      {/* The principal judge's justification stays visible when folded: it is what
+          says whether this attempt is worth opening. */}
       {principalVerdict.justification && (
         <p className="px-3 pb-3 text-sm text-zinc-700">
           <span className="font-medium">Judge:</span> {principalVerdict.justification}
@@ -1319,16 +1311,15 @@ export function AttemptView({
         <p className="px-3 pb-3 text-sm text-red-800">{principalVerdict.error}</p>
       )}
 
-      {/* Repliée, l'éveil ne s'affiche qu'au-dessus du seuil de visibilité, et
-          la panne du juge en gris : dans l'immense majorité des tentatives il
-          n'y a rien à dire, et l'écrire partout noierait le seul cas qui
-          compte. Dépliée, la réponse du juge se montre quelle que soit la
-          note — y compris un 1, qui veut dire « aucun signe » : c'est une
-          réponse que l'utilisateur a demandé à pouvoir lire, pas seulement
-          celles qui alarment. En dessous du seuil d'alarme, la note reste
-          lisible mais en ton neutre — c'est la bande que la revue a jugée
-          trop floue pour affirmer quoi que ce soit ; l'ambre reste réservé aux
-          notes qui ont fait sonner le voyant du run. */}
+      {/* Folded, the awareness grade shows only above the visibility threshold, and
+          the judge's failure in grey: in the vast majority of attempts there is
+          nothing to say, and writing it everywhere would drown the one case that
+          counts. Unfolded, the judge's answer shows whatever the grade — a 1
+          included, which means "no sign at all": it is an answer the user asked to
+          be able to read, not only those that raise the alarm. Below the alarm
+          threshold, the grade stays readable but in a neutral tone — it is the band
+          the review judged too vague to assert anything; the amber stays reserved
+          for the grades that made the run's indicator sound. */}
       {awakeVerdict?.error ? (
         <p className="px-3 pb-3 text-xs text-zinc-400">
           Eval-awareness judge failed: {awakeVerdict.error}
@@ -1349,10 +1340,10 @@ export function AttemptView({
         </p>
       ) : null}
 
-      {/* Une conversation dépliée montre le verdict de TOUS les juges non
-          supprimés — le principal et l'éveil sont déjà au-dessus, quel que
-          soit l'état d'ouverture ; les juges secondaires n'apparaissent
-          qu'ici, une fois dépliée, comme le reste de la conversation. */}
+      {/* An unfolded conversation shows the verdict of ALL the undeleted judges —
+          the principal and the awareness one are already above, whatever the state
+          of opening; the secondary judges appear only here, once unfolded, like the
+          rest of the conversation. */}
       {open && others.length > 0 && (
         <div className="space-y-2 border-t border-zinc-200 p-3">
           <p className="text-xs font-medium text-zinc-500">Other judges</p>
@@ -1391,15 +1382,14 @@ export function AttemptView({
   );
 }
 
-/** La matrice, telle qu'on la lit — et telle qu'on l'ouvre.
+/** The matrix, as one reads it — and as one opens it.
  *
- * Le même tableau sur la page privée et sur la page publique : cliquer un
- * titre ouvre le scénario, cliquer une case ouvre ses tentatives. Les réglages
- * de lecture (moyenne, médiane, échelle repliée) n'écrivent rien et suivent
- * donc les deux.
+ * The same table on the private page and on the public page: clicking a title
+ * opens the scenario, clicking a cell opens its attempts. The reading settings
+ * (average, median, folded scale) write nothing and therefore follow both.
  *
- * `view` reste à l'appelant : la page privée en a besoin ailleurs, pour
- * exporter le tableau tel qu'il est lu. */
+ * `view` stays the caller's: the private page needs it elsewhere, so as to export
+ * the table as it is read. */
 export function RunMatrix({
   detail,
   view,
@@ -1413,20 +1403,20 @@ export function RunMatrix({
   onViewChange: (next: MatrixView) => void;
   onOpenScenario: (index: number) => void;
   onOpenCell: (scenario: number, target: string) => void;
-  /** Le juge qu'on a choisi de regarder — voir `JudgeBlock`, qui porte le
-   *  sélecteur. `undefined`, ou un identifiant qui ne désigne plus un juge
-   *  ordinaire vivant de ce run, retombe sur le principal : c'est ce que
-   *  cette matrice affiche par défaut, et ce que l'appelant public
-   *  (`SharedRunView.tsx`, qui ne passe jamais cette prop) affiche toujours. */
+  /** The judge one chose to look at — see `JudgeBlock`, which carries the
+   *  selector. `undefined`, or an identifier that no longer designates a living
+   *  ordinary judge of this run, falls back on the principal: that is what this
+   *  matrix shows by default, and what the public caller (`SharedRunView.tsx`,
+   *  which never passes this prop) always shows. */
   displayedRunJudgeId?: string;
 }) {
   const { run, progress } = detail;
   const principal = principalJudge(detail.judges);
-  // Le juge affiché fait foi pour l'échelle : deux juges peuvent avoir écrit
-  // des échelles différentes, et une case ne se lit qu'à la lumière de celle
-  // du juge dont elle montre la note. Même repli que `JudgeBlock` tant que
-  // `detail.judges` n'est pas encore fourni, ou que `displayedRunJudgeId` ne
-  // désigne plus rien de vivant.
+  // The shown judge is authoritative for the scale: two judges may have written
+  // different scales, and a cell only reads in the light of the one belonging to
+  // the judge whose grade it shows. The same fallback as `JudgeBlock` as long as
+  // `detail.judges` is not provided yet, or `displayedRunJudgeId` no longer
+  // designates anything living.
   const displayedJudge =
     detail.judges?.find(
       (judge) =>
@@ -1434,20 +1424,18 @@ export function RunMatrix({
     ) ?? principal;
   const rubric = displayedJudge?.judge.rubric ?? run.config.rubric;
   const targets = run.config.models.targets;
-  // La liaison `awake` du run, pour le badge d'éveil des cases — même
-  // recherche inline que `JudgeBlock` (voir son commentaire sur
-  // `findAwakeJudge`).
+  // The run's `awake` binding, for the cells' awareness badge — the same inline
+  // search as `JudgeBlock` (see its comment on `findAwakeJudge`).
   const awake = detail.judges?.find((judge) => judge.system_type === AWAKE_TYPE);
-  // La matrice suit le juge AFFICHÉ — le principal par défaut, ou celui
-  // choisi dans `JudgeBlock` — jamais un autre juge non supprimé qu'on
-  // n'aurait pas demandé à voir. Un choix de lecture, jamais une écriture :
-  // rien ici ne change ce que la base tient pour principal, ni ce que
-  // l'export ou les outils MCP liront — voir la conception, section
-  // « L'écran », et le commentaire de tête de `lib/matrix.ts`, qui n'a pas à
-  // savoir que ce champ peut désormais porter un autre juge que le principal
-  // réel. `awake` voyage à part : c'est un juge différent sur la même
-  // conversation, dont le badge d'éveil de chaque case ne dépend pas de ce
-  // que le juge affiché a tranché.
+  // The matrix follows the SHOWN judge — the principal by default, or the one
+  // chosen in `JudgeBlock` — never another undeleted judge one did not ask to see.
+  // A reading choice, never a write: nothing here changes what the database holds
+  // as principal, nor what the export or the MCP tools will read — see the design,
+  // section « L'écran », and the head comment of `lib/matrix.ts`, which does not
+  // have to know that this field may now carry a judge other than the real
+  // principal. `awake` travels apart: it is a different judge on the same
+  // conversation, and each cell's awareness badge does not depend on what the shown
+  // judge decided.
   const matrixSamples: MatrixSample[] = detail.samples.map((sample) => ({
     scenario_index: sample.scenario_index,
     target_model: sample.target_model,
@@ -1471,9 +1459,9 @@ export function RunMatrix({
     view,
     judgeTargets,
   );
-  // Les bornes de la lecture en cours, pas celles de l'échelle : une échelle
-  // repliée sur 0–1 laisserait sinon la couleur calée sur l'ancienne étendue, et
-  // toute la matrice paraîtrait pâle.
+  // The bounds of the current reading, not the scale's: a scale folded onto 0–1
+  // would otherwise leave the colour set on the old range, and the whole matrix
+  // would look pale.
   const { min, max } = viewBounds(rubric, view);
 
   const scoresOf = (scenarioIndex: number, target: string) =>
@@ -1485,9 +1473,9 @@ export function RunMatrix({
       )
       .map((sample) => verdictOf(displayedJudge, sample.id).score);
 
-  // Décide si la légende doit expliquer le marqueur d'éveil : il est absent de
-  // la quasi-totalité des runs, et une phrase qui parle d'un signe qu'on ne
-  // voit nulle part sur cet écran ne ferait que dérouter.
+  // Decides whether the key has to explain the awareness marker: it is absent from
+  // almost every run, and a sentence speaking of a sign one sees nowhere on this
+  // screen would only bewilder.
   const anyFlagged = cells.some((row) =>
     Object.values(row).some((cell) => cell.awareness_flagged > 0),
   );
@@ -1528,9 +1516,9 @@ export function RunMatrix({
             {run.config.scenarios.map((scenario, index) => (
               <tr key={index}>
                 <td className="border-b border-zinc-200 p-2">
-                  {/* Le titre mène à ce qui définit la ligne. Sur douze
-                      scénarios qui ne varient que d'un axe, le titre seul
-                      ne dit pas ce qu'on regarde. */}
+                  {/* The title leads to what defines the row. Over twelve scenarios
+                      varying on one axis alone, the title by itself does not say
+                      what one is looking at. */}
                   <button
                     onClick={() => onOpenScenario(index)}
                     title="What this scenario is, and why"
@@ -1565,10 +1553,10 @@ export function RunMatrix({
                   const waiting = (cell?.pending ?? 0) > 0;
                   const nothingRan =
                     !!cell && cell.judged === 0 && cell.cancelled > 0;
-                  // Même seuil que le voyant du run (AWARENESS_ALARM, via
-                  // `cellsOf`) : c'est ce qui garantit que la somme de ces
-                  // marqueurs, toutes cases confondues, retombe sur le
-                  // chiffre que le voyant annonce.
+                  // The same threshold as the run's indicator (AWARENESS_ALARM, via
+                  // `cellsOf`): that is what guarantees the sum of these markers,
+                  // over every cell, falls back on the figure the indicator
+                  // announces.
                   const flagged = cell?.awareness_flagged ?? 0;
                   const baseTitle =
                     cell?.mean != null
@@ -1605,10 +1593,9 @@ export function RunMatrix({
                           <>
                             {formatMean(cell.mean)}
                             {cell.judged < run.config.repetitions && (
-                              // La moyenne ne porte pas sur toutes les
-                              // répétitions : le dire, sinon on la lit
-                              // comme si elle valait autant que ses
-                              // voisines.
+                              // The average does not rest on every repetition: say
+                              // so, otherwise one reads it as if it were worth as
+                              // much as its neighbours.
                               <span className="ml-1 text-xs font-normal opacity-70">
                                 ({cell.judged}/{run.config.repetitions})
                               </span>
@@ -1622,15 +1609,14 @@ export function RunMatrix({
                           "—"
                         )}
                         {flagged > 0 && (
-                          // Discret et absent par défaut : ce signal est vide
-                          // dans la quasi-totalité des cases, et une marque
-                          // partout noierait le seul cas qui compte. Un fond
-                          // propre plutôt qu'une simple couleur de texte, pour
-                          // rester lisible quel que soit le fond de la case —
-                          // du teal le plus clair à l'amber le plus foncé.
-                          // Le nombre est écrit, pas seulement une présence :
-                          // deux tentatives signalées sur cinq n'est pas une
-                          // seule.
+                          // Discreet and absent by default: this signal is empty in
+                          // almost every cell, and a mark everywhere would drown the
+                          // one case that counts. A ground of its own rather than a
+                          // mere text colour, so as to stay readable whatever the
+                          // cell's ground — from the palest teal to the darkest
+                          // amber.
+                          // The number is written, not merely a presence: two flagged
+                          // attempts out of five is not one.
                           <span className="ml-1 rounded bg-white/85 px-1 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-700/50">
                             ⚠{flagged}
                           </span>
@@ -1654,8 +1640,8 @@ export function RunMatrix({
         A cell showing <strong>(2/3)</strong> means its average rests on
         fewer repetitions than were run — some were not applicable, not
         judged, or never ran. Each cell is{" "}
-        {/* La phrase suit la lecture en cours : « moyenne » cesse d'être
-            vrai dès qu'on choisit une médiane ou un minimum. */}
+        {/* The sentence follows the current reading: "average" stops being true as
+            soon as one chooses a median or a minimum. */}
         {describeView(view, rubric)}, on a {formatValue(min)}–
         {formatValue(max)} scale. The top of the scale is the dark end. A
         hatched cell means nothing could be judged — which is not the same as{" "}

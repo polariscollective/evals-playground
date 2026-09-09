@@ -1,42 +1,46 @@
-// Ce qui ne passe pas par la porte, en une seule liste.
+// What does not go through the door, in one single list.
 //
-// Le proxy ne peut pas appeler cette fonction : Next exige que `matcher` soit
-// une constante analysable à la compilation et ignore toute valeur calculée —
-// le proxy tournerait alors sur tous les chemins, `_next/static` compris. Le
-// littéral reste donc écrit là-bas, et un test tient leur accord.
+// The proxy cannot call this function: Next demands that `matcher` be a constant
+// analysable at compile time and ignores any computed value — the proxy would
+// then run on every path, `_next/static` included. The literal therefore stays
+// written over there, and a test holds their agreement.
 
-/** Les répertoires ouverts, ancrés sur `/` ou la fin exacte. Sans l'ancrage, un
- *  simple préfixe laisserait passer un chemin voisin plus long.
+/** The open directories, anchored on `/` or the exact end. Without the anchor,
+ *  a plain prefix would let a longer neighbouring path through.
  *
- * Ouvrir un chemin ici ne le rend pas sûr : ça enlève seulement la porte. Ce
- * qui reste derrière doit s'autoriser lui-même. `prompt`, `validate` et
- * `scenario-advice` ne lisent rien de privé — un texte fixe, un verdict sur ce
- * que l'appelant envoie déjà, ou le conseil par défaut, jamais la surcharge
- * qu'un profil aurait écrite : sans session, on ne sait pas qui demande, donc
- * rien qui dépende de qui demande ne peut sortir ici. `shared`, lui, lit la
- * base : c'est `loadPublicRun` qui refuse un run non publié, avec le même
- * message qu'un run inconnu, et c'est lui qui fait autorité — pas cette
- * liste. Toute future entrée sous ce préfixe hérite de cette obligation,
- * silencieusement : rien ici ne la rappelle par fichier. */
+ * Opening a path here does not make it safe: it only removes the door. What
+ * remains behind must authorise itself. `prompt`, `validate` and
+ * `scenario-advice` read nothing private — a fixed text, a verdict on what the
+ * caller already sends, or the default advice, never the override a profile
+ * might have written: with no session we do not know who is asking, so nothing
+ * that depends on who is asking can leave here. `shared`, for its part, reads
+ * the database: it is `loadPublicRun` that refuses an unpublished run, with the
+ * same message as an unknown run, and it is that function which is
+ * authoritative — not this list. Any future entry under that prefix inherits
+ * the same obligation, silently: nothing here recalls it file by file. */
 export const OPEN_PREFIXES = [
-  // La connexion elle-même, sans quoi personne ne peut entrer.
+  // Signing in itself, without which nobody can get in.
   "api/auth",
-  // Le mode d'emploi et le vérificateur : ils s'adressent à un agent, qui n'a
-  // pas de session et ne saurait pas en obtenir une.
+  // The page that asks. Same status as `api/auth`, and for the same reason:
+  // no one can sign in through a page that requires being signed in. Safe
+  // behind an open door — it reads nothing and writes nothing.
+  "signin",
+  // The instructions and the checker: they address an agent, which has no
+  // session and would not know how to obtain one.
   "prompt",
   "validate",
-  // Le conseil d'écriture de scénario, toujours sa version par défaut — voir
-  // le commentaire de tête. Même public que `prompt` et `validate` : un agent
-  // sans session, à qui le prompt donne cette adresse.
+  // The scenario-writing advice, always its default version — see the head
+  // comment. The same audience as `prompt` and `validate`: an agent with no
+  // session, to which the prompt gives this address.
   "scenario-advice",
-  // Un run publié.
+  // A published run.
   "shared",
-  // Le viewer d'Inspect et les journaux qu'il lit. Même obligation que
-  // `shared`, et c'est `canReadRun` qui la tient : un run mis à la corbeille ou
-  // non publié se refuse à un inconnu, avec le 404 d'un run qui n'existe pas.
+  // Inspect's viewer and the logs it reads. The same obligation as `shared`,
+  // and it is `canReadRun` that holds it: a run in the bin or unpublished is
+  // refused to a stranger, with the 404 of a run that does not exist.
   "inspect-view",
-  // Le connecteur MCP et son serveur d'autorisation : une machine sans
-  // session, comme prompt et validate.
+  // The MCP connector and its authorisation server: a machine with no session,
+  // like prompt and validate.
   "mcp",
   ".well-known",
   "_next/static",
@@ -53,13 +57,13 @@ export const OPEN_PREFIXES = [
  * alone. */
 export const OPEN_FILES = ["favicon.ico", "icon.svg"];
 
-/** Le point est le seul caractère de ces chemins qu'une expression régulière
- *  lirait autrement que lui-même. */
+/** The dot is the only character in these paths a regular expression would
+ *  read as anything other than itself. */
 function escaped(path: string): string {
   return path.replace(/\./g, "\\.");
 }
 
-/** Le motif que Next donne au proxy : tout, sauf ce qui précède. */
+/** The pattern Next gives the proxy: everything, except what precedes. */
 export function proxyMatcher(): string {
   const alternatives = [
     ...OPEN_PREFIXES.map((prefix) => `${escaped(prefix)}(?:/|$)`),
@@ -68,10 +72,11 @@ export function proxyMatcher(): string {
   return `/((?!${alternatives.join("|")}).*)`;
 }
 
-/** Ce chemin passe-t-il sans session ?
+/** Does this path go through without a session?
  *
- * Dérivé du motif et non réécrit à côté : deux formulations de la même règle
- * finiraient par ne plus dire pareil, et c'est cette dérive-là qu'on teste. */
+ * Derived from the pattern and not rewritten beside it: two formulations of the
+ * same rule would end up saying different things, and it is that drift the test
+ * is for. */
 export function isOpen(pathname: string): boolean {
   return !new RegExp(`^${proxyMatcher()}$`).test(pathname);
 }

@@ -1,20 +1,20 @@
 "use client";
 
-/** Les tags de la liste des runs, gardés en mémoire pour toute la visite.
+/** The tags of the runs list, kept in memory for the whole visit.
  *
- * Même raison que `runs-store`, et le même défaut corrigé : le catalogue et les
- * affectations vivaient dans l'état local de la page des runs, donc repartaient
- * de zéro à chaque visite. Les deux réponses sont minuscules — 223 octets et
- * 1 Ko — mais elles coûtent un aller-retour chacune, et les pastilles
- * apparaissaient une demi-seconde après les lignes qu'elles décorent.
+ * The same reason as `runs-store`, and the same fault fixed: the catalogue and
+ * the assignments lived in the runs page's local state, and so started from
+ * scratch at every visit. Both responses are tiny — 223 bytes and 1 KB — but
+ * they cost a round trip each, and the pills appeared half a second after the
+ * rows they decorate.
  *
- * C'est de la latence, pas du volume : exactement ce qu'un cache règle.
+ * That is latency, not volume: exactly what a cache settles.
  *
- * Les deux vont ensemble et se rechargent ensemble. Le catalogue seul ne suffit
- * pas — il faut savoir quel tag est posé sur quelle ligne — et les affectations
- * seules non plus : `TagField` a besoin du catalogue pour ses suggestions. Un
- * retrait pouvant vider un tag de son dernier lien et le faire disparaître du
- * catalogue, les relire d'un même geste est ce qui les tient d'accord.
+ * The two go together and reload together. The catalogue alone is not enough —
+ * it must be known which tag is on which row — and the assignments are not
+ * enough either: `TagField` needs the catalogue for its suggestions. A removal
+ * being able to empty a tag of its last link and make it disappear from the
+ * catalogue, reading them back in one gesture is what keeps them in agreement.
  */
 
 import { useSyncExternalStore } from "react";
@@ -32,9 +32,9 @@ export interface TagsState {
   assignments: TagAssignments;
 }
 
-/** Vide plutôt qu'absent : ce ne sont que des pastilles à côté d'une ligne.
- *  Une lecture ratée doit laisser la page se dessiner sans elles, jamais la
- *  casser — le comportement que la page tenait déjà avant ce magasin. */
+/** Empty rather than absent: these are only pills beside a row. A failed read
+ *  must let the page draw itself without them, never break it — the behaviour
+ *  the page already held before this store. */
 const EMPTY: TagsState = { catalog: [], assignments: { runs: {}, drafts: {} } };
 
 const tags = createResource<TagsState>(async () => {

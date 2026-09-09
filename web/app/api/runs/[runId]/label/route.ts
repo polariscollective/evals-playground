@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun, saveLabel } from "@/lib/runs";
 
-/** Renomme un run.
+/** Renames a run.
  *
- * Ouvert à toute session, comme les notes et l'analyse juste à côté : cette
- * application est celle d'une équipe qui regarde les mêmes runs, et rien
- * ailleurs dans ses routes ne réserve l'écriture au créateur. L'outil MCP,
- * lui, la réserve — un agent n'a pas à renommer ce qu'il n'a pas lancé. */
+ * Open to any session, like the notes and the analysis right beside it: this
+ * application is that of a team looking at the same runs, and nothing elsewhere
+ * in its routes reserves writing to the creator. The MCP tool, for its part,
+ * does reserve it — an agent has no business renaming what it did not launch. */
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -22,9 +22,8 @@ export async function PUT(
   }
 
   try {
-    // Vérifier l'existence d'abord : un PATCH PostgREST sur un identifiant
-    // inconnu ne touche aucune ligne et répond 204, ce qui se lirait comme un
-    // enregistrement réussi.
+    // Check existence first: a PostgREST PATCH on an unknown identifier touches
+    // no row and answers 204, which would read as a successful save.
     await loadRun(runId);
   } catch (error) {
     if (error instanceof NotFound) {
@@ -33,7 +32,7 @@ export async function PUT(
     throw error;
   }
 
-  // Vidé vaut « pas de nom », pas « nom vide » — voir `saveLabel`.
+  // Emptied means "no name", not "empty name" — see `saveLabel`.
   const trimmed = body.label.trim();
   await saveLabel(runId, trimmed === "" ? null : trimmed);
   return NextResponse.json({ ok: true, label: trimmed === "" ? null : trimmed });

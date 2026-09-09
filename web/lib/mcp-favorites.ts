@@ -1,20 +1,21 @@
-// Le refus d'un modèle hors favoris — et cet endroit est le seul.
+// The refusal of a model outside the favourites — and this is the only place.
 //
-// `configProblem` continue de valider contre le catalogue ENTIER, et c'est
-// voulu : un run déjà lancé doit s'afficher avec ses modèles, et une relance
-// pré-remplie doit rester lançable à la main. C'est l'agent qu'on borne, pas
-// la personne.
+// `configProblem` goes on validating against the WHOLE catalogue, and that is
+// deliberate: a run already launched must show with its models, and a
+// pre-filled relaunch must stay launchable by hand. It is the agent that is
+// bounded, not the person.
 //
-// D'où ce module à part plutôt qu'une branche dans `validate.ts` : le jour où
-// quelqu'un ajoutera un appelant à `configProblem`, il n'héritera pas d'un
-// refus qui n'a de sens que par MCP.
+// Hence this module of its own rather than a branch in `validate.ts`: the day
+// somebody adds a caller to `configProblem`, it will not inherit a refusal that
+// only makes sense through MCP.
 import { notFavouriteProblem } from "./favorite-models.ts";
 import type { EvalRunConfig, ExtendRequest } from "./types";
 
-/** Le premier modèle hors favoris d'une liste, formulé, ou `null`.
+/** The first model outside the favourites in a list, put into words, or
+ *  `null`.
  *
- * Le premier et non tous : le message dit quoi faire, et une énumération de
- * cinq refus n'aide pas plus qu'un seul à retrouver son profil. */
+ * The first and not all: the message says what to do, and an enumeration of
+ * five refusals helps no more than one in finding your profile again. */
 function firstProblem(
   entries: { id: string | null | undefined; where: string }[],
   favorites: readonly string[],
@@ -26,7 +27,7 @@ function firstProblem(
   return null;
 }
 
-/** Ce qui, dans les modèles d'un run, n'est pas dans les favoris de
+/** What, among a run's models, is not in the favourites of
  *  l'appelant — ou `null`. */
 export function configFavouritesProblem(
   config: EvalRunConfig,
@@ -50,13 +51,13 @@ export function configFavouritesProblem(
   );
 }
 
-/** Ce qui, dans les modèles qu'une extension ajoute, n'est pas dans les
+/** What, among the models an extension adds, is not in the
  *  favoris de l'appelant — ou `null`.
  *
- * Ne regarde que ce que l'extension AJOUTE. Les colonnes déjà jouées du run
- * ne sont pas rejugées ici : elles ont été lancées, elles existent, et les
- * refuser rétroactivement empêcherait d'approfondir un run dont un modèle a
- * quitté les favoris entre-temps. */
+ * Looks only at what the extension ADDS. The run's already-played columns are
+ * not judged again here: they were launched, they exist, and refusing them
+ * retroactively would stop a run being deepened when one of its models has left
+ * the favourites in the meantime. */
 export function extendFavouritesProblem(
   request: ExtendRequest,
   favorites: readonly string[],
@@ -68,14 +69,14 @@ export function extendFavouritesProblem(
         where: `targets[${index}]`,
       })),
       ...(request.new_judges ?? []).map((judge, index) => ({
-        // Un juge sans modèle reprend celui du run, qui est déjà lancé :
-        // rien à vérifier, `notFavouriteProblem` laisse passer la chaîne vide.
+        // A judge with no model takes the run's, which is already launched:
+        // nothing to check, `notFavouriteProblem` lets the empty string pass.
         id: judge.model,
         where: `new_judges[${index}].model`,
       })),
-      // Une extension sans monde propre reprend celui du run, déjà lancé —
-      // même remarque que pour `new_judges` ci-dessus. `notFavouriteProblem`
-      // laisse passer la chaîne vide.
+      // An extension with no world of its own takes the run's, already
+      // launched — the same remark as for `new_judges` above.
+      // `notFavouriteProblem` lets the empty string pass.
       { id: request.world, where: "world" },
     ],
     favorites,

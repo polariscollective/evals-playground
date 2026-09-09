@@ -1,22 +1,21 @@
-// Le prompt qui apprend à un agent à écrire un run.
+// The prompt that teaches an agent to write a run.
 //
-// C'est un livrable, pas une aide en ligne : il est lu par une machine, et ce
-// qu'il omet devient un fichier refusé. Il énonce donc les règles que
-// `configProblem` applique réellement — si l'une change là-bas, elle doit
-// changer ici, sans quoi on promet à un agent un format qu'on rejettera.
+// It is a deliverable, not online help: it is read by a machine, and what it
+// leaves out becomes a refused file. It therefore states the rules
+// `configProblem` really applies — if one changes over there, it must change
+// here, without which we promise an agent a format we will reject.
 //
-// Deux lecteurs, deux sorties, un seul gabarit. `/prompt` est collé par un
-// humain chez un agent qui n'a que HTTP ; `read_prompt` est lu par un agent qui
-// tient déjà les outils. Ils décrivent le même format — ce qui les sépare tient
-// en cinq passages : quatre disent par où le document repart, le cinquième où
-// trouver le conseil d'écriture de scénario.
+// Two readers, two outputs, one single template. `/prompt` is pasted by a human
+// into an agent that has nothing but HTTP; `read_prompt` is read by an agent
+// that already holds the tools. They describe the same format — what separates
+// them fits in five passages: four say where the document goes back to, the
+// fifth where to find the scenario writing advice.
 //
-// La liste des modèles est passée en argument plutôt qu'écrite en dur : elle
-// vient du catalogue, et un agent qui invente un identifiant produit un run qui
-// meurt au premier appel. Le canal MCP reçoit en plus les deux plafonds de
-// l'appelant — son profil, jamais une variable d'environnement, voir
-// `mcp-budget.ts` — pour lui dire sous quel budget `launch_draft` le laisse
-// lancer aujourd'hui.
+// The list of models is passed as an argument rather than written in: it comes
+// from the catalogue, and an agent that invents an identifier produces a run
+// that dies at the first call. The MCP channel also receives the caller's two
+// caps — their profile, never an environment variable, see `mcp-budget.ts` — to
+// tell it under what budget `launch_draft` lets it launch today.
 import { catalog } from "./catalog.ts";
 import { formatUsd } from "./mcp-budget.ts";
 import type { ProviderInfo } from "./types";
@@ -575,27 +574,27 @@ eval-awareness judge will catch after I have paid for the run.
 {{CLOSING}}
 `;
 
-/** Les cinq passages qui dépendent du lecteur.
+/** The five passages that depend on the reader.
  *
- * Le reste du document — les règles, l'échelle, les notes, l'historique, les
- * outils — ne dépend de rien et n'existe qu'une fois : c'est là que vit ce que
- * `configProblem` accepte réellement, et deux copies dériveraient. */
+ * The rest of the document — the rules, the scale, the notes, the history, the
+ * tools — depends on nothing and exists only once: that is where what
+ * `configProblem` really accepts lives, and two copies would drift. */
 interface Channel {
-  /** Comment s'assurer que le document passe, et par où il repart. */
+  /** How to make sure the document passes, and where it goes back to. */
   check: string;
-  /** Pourquoi on écrit quand même tous les scénarios. */
+  /** Why every scenario is written out all the same. */
   sample: string;
-  /** Ce qu'on fait quand ils viennent d'un tableur. */
+  /** What to do when they come from a spreadsheet. */
   csv: string;
-  /** Où trouver le conseil d'écriture de scénario. */
+  /** Where to find the scenario writing advice. */
   advice: string;
-  /** Où l'expérience à mener est écrite. */
+  /** Where the experiment to run is written. */
   closing: string;
 }
 
-/** Le canal HTTP : un humain colle ce texte chez un agent qui n'a que des
- *  requêtes pour toucher l'application. D'où l'origine absolue, et un document
- *  qu'il rend à l'écran plutôt qu'il ne dépose. */
+/** The HTTP channel: a human pastes this text into an agent that has nothing
+ *  but requests to reach the application. Hence the absolute origin, and a
+ *  document it renders on screen rather than deposits. */
 const HTTP: Channel = {
   check: `## Check it before you give it to me
 
@@ -673,9 +672,9 @@ REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
 is missing.`,
 };
 
-/** Le canal MCP : l'agent lit ce texte avec les outils déjà en main. Lui
- *  montrer /validate serait lui montrer une porte qu'il n'a pas à prendre —
- *  `submit_draft_run` valide, chiffre et dépose, et ne lance rien. */
+/** The MCP channel: the agent reads this text with the tools already in hand.
+ *  Showing it /validate would be showing it a door it has no business taking —
+ *  `submit_draft_run` validates, costs and deposits, and launches nothing. */
 const MCP: Channel = {
   check: `## Check it, and that is also how you hand it over
 
@@ -774,15 +773,15 @@ have not said it clearly enough for you to write the scale from it, ask me
 before writing anything.`,
 };
 
-/** Un catalogue de fournisseurs mis à plat, sous la forme `${provider.label}
- *  ${model.label}` qu'affichent tous les lecteurs de la liste de modèles.
+/** A catalogue of providers flattened out, in the `${provider.label}
+ *  ${model.label}` form every reader of the model list shows.
  *
- * Partagée entre `agentModels` (favoris de l'appelant, canaux `/prompt` et
- * `read_prompt`) et `PromptGuide` (favoris de qui regarde l'écran) : les deux
- * mettent en forme le même catalogue, et l'avoir écrit deux fois est
- * justement ce qui a laissé `PromptGuide` publier les quarante et un modèles
- * pendant que les autres canaux filtraient déjà. Un seul endroit qui sait
- * fabriquer l'étiquette ne peut plus diverger en silence. */
+ * Shared between `agentModels` (the caller's favourites, the `/prompt` and
+ * `read_prompt` channels) and `PromptGuide` (the favourites of whoever is
+ * looking at the screen): the two lay out the same catalogue, and having
+ * written it twice is precisely what let `PromptGuide` publish all forty-one
+ * models while the other channels were already filtering. One place that knows
+ * how to make the label can no longer diverge in silence. */
 export function catalogModelOptions(
   providers: readonly ProviderInfo[],
 ): { id: string; label: string; favorite: boolean }[] {
@@ -795,17 +794,17 @@ export function catalogModelOptions(
   );
 }
 
-/** Les modèles que le prompt publie, sous la forme que lit `agentPrompt` —
- *  partagée entre `/prompt` et l'outil MCP `read_prompt`, pour qu'une seule
- *  liste existe.
+/** The models the prompt publishes, in the shape `agentPrompt` reads — shared
+ *  between `/prompt` and the MCP tool `read_prompt`, so that only one list
+ *  exists.
  *
- * Filtrée aux favoris de l'appelant : le prompt dit « Use these identifiers
- * exactly », et un agent qui y lirait un modèle que `submit_draft_run`
- * refuse ensuite aurait été envoyé dans le mur par le texte lui-même.
+ * Filtered to the caller's favourites: the prompt says "Use these identifiers
+ * exactly", and an agent that read there a model `submit_draft_run` then
+ * refuses would have been sent into the wall by the text itself.
  *
- * L'ordre reste celui du catalogue, jamais celui des favoris : deux appels
- * doivent rendre le même texte, et une liste réordonnée en base ferait
- * varier un document qui ne change pas de sens. */
+ * The order stays the catalogue's, never the favourites': two calls must return
+ * the same text, and a list reordered in the database would make a document
+ * vary that has not changed meaning. */
 export function agentModels(
   favorites: readonly string[],
 ): { id: string; label: string }[] {
@@ -814,19 +813,19 @@ export function agentModels(
     .map(({ id, label }) => ({ id, label }));
 }
 
-/** Les deux plafonds d'un profil, tels que `mcpAgentPrompt` les reçoit —
- *  jamais lus ici, seulement mis en forme. */
+/** A profile's two caps, as `mcpAgentPrompt` receives them — never read here,
+ *  only laid out. */
 export interface AgentCaps {
   maxUsdPerRun: number;
   maxUsdPerHour: number;
 }
 
-/** Le gabarit rempli pour un canal donné.
+/** The template filled in for a given channel.
  *
- * `caps` ne sert qu'au canal MCP — `{{CAPS}}` n'apparaît dans aucun texte du
- * canal HTTP, donc le remplacement y est sans effet. `null` dit que le profil
- * n'a pas pu être lu à cet instant, pas que l'appelant n'a pas de plafond :
- * personne n'a de plafond illimité, une valeur ici serait devinée. */
+ * `caps` serves the MCP channel only — `{{CAPS}}` appears in no text of the
+ * HTTP channel, so the replacement has no effect there. `null` says the profile
+ * could not be read at that moment, not that the caller has no cap: nobody has
+ * an unlimited cap, and a value here would be guessed. */
 function fill(
   models: { id: string; label: string }[],
   channel: Channel,
@@ -839,10 +838,10 @@ function fill(
     ? `${formatUsd(caps.maxUsdPerRun)} per run and ${formatUsd(caps.maxUsdPerHour)} per rolling hour`
     : "not available right now — submit_draft_run or submit_draft_extension will report them " +
       "when you submit a draft, and launch_draft enforces them either way";
-  // Le gabarit porte de vrais identifiants, pas des points de suspension.
-  // Un document qui le recopie sans le remplir doit tourner ; il ne doit
-  // surtout pas passer la validation en portant un modèle qui n'existe pas,
-  // ce qui était le cas tant que le gabarit écrivait `adversary: ...`.
+  // The template carries real identifiers, not ellipses. A document that copies
+  // it without filling it in must run; above all it must not pass validation
+  // while carrying a model that does not exist, which was the case as long as
+  // the template wrote `adversary: ...`.
   const example = (rank: number) => models[rank]?.id ?? models[0]?.id ?? "";
   return TEMPLATE.replace("{{MODELS}}", list)
     .replaceAll("{{TARGET}}", example(1))
@@ -857,15 +856,15 @@ function fill(
     .replace("{{CAPS}}", capsText);
 }
 
-/** Le prompt tel que le sert `/prompt`, avec l'adresse du vérificateur.
+/** The prompt as `/prompt` serves it, with the validator's address.
  *
- * `origin` est laissé vide quand on ne le connaît pas : l'adresse devient
- * `/validate`, qu'un agent ayant lu `/prompt` résout de lui-même — même chose
- * pour `{{ORIGIN}}`, qui pointe vers `/scenario-advice` — la route publique,
- * pas `/scenarios`, la page privée que lit un humain. Ceux qui le connaissent
- * le passent — la fenêtre le lit dans le navigateur, la route dans les
- * en-têtes — parce qu'un prompt copié-collé arrive chez un agent qui n'a plus
- * aucun contexte d'hôte. */
+ * `origin` is left empty when it is not known: the address becomes `/validate`,
+ * which an agent that has read `/prompt` resolves by itself — same for
+ * `{{ORIGIN}}`, which points at `/scenario-advice`, the public route, not
+ * `/scenarios`, the private page a human reads. Those that know it pass it —
+ * the window reads it in the browser, the route in the headers — because a
+ * copy-pasted prompt arrives at an agent that has no host context left at
+ * all. */
 export function agentPrompt(
   models: { id: string; label: string }[],
   origin = "",
@@ -875,18 +874,18 @@ export function agentPrompt(
     .replaceAll("{{ORIGIN}}", origin);
 }
 
-/** Le même document pour `read_prompt`, c'est-à-dire pour un agent qui tient
- *  déjà les outils.
+/** The same document for `read_prompt`, that is, for an agent that already
+ *  holds the tools.
  *
- * Aucune origine à passer : il n'y a plus d'URL à joindre. Ce qui remplaçait
- * `{{VALIDATE}}` est ici `submit_draft_run`, qui valide, chiffre et dépose sans
- * rien lancer — donner en plus l'adresse du vérificateur enverrait l'agent
- * frapper à une porte HTTP qu'il n'a aucune raison d'ouvrir.
+ * No origin to pass: there is no URL left to reach. What used to replace
+ * `{{VALIDATE}}` is here `submit_draft_run`, which validates, costs and
+ * deposits without launching anything — giving the validator's address on top
+ * would send the agent knocking at an HTTP door it has no reason to open.
  *
- * `caps` porte les deux plafonds du profil de l'appelant — celui que
- * `read_prompt` a résolu via `callerEmail` avant d'appeler cette fonction, pas
- * un défaut de ce fichier. `null` quand le profil n'a pas pu être lu à cet
- * instant : le gabarit le dit plutôt que d'inventer un chiffre. */
+ * `caps` carries the two caps of the caller's profile — the one `read_prompt`
+ * resolved through `callerEmail` before calling this function, not a default of
+ * this file. `null` when the profile could not be read at that moment: the
+ * template says so rather than inventing a figure. */
 export function mcpAgentPrompt(
   models: { id: string; label: string }[],
   caps: AgentCaps | null,

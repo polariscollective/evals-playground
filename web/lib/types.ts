@@ -1,4 +1,4 @@
-/** `triggered` : le job a été demandé, le conteneur n'a pas encore écrit. */
+/** `triggered`: the job has been asked for, the container has not written yet. */
 export type RunStatus =
   | "triggered"
   | "running"
@@ -6,8 +6,8 @@ export type RunStatus =
   | "error"
   | "cancelled";
 
-/** Pas de `triggered` ici : une case n'est jamais déclenchée individuellement,
- *  elles le sont toutes d'un coup avec le run. */
+/** No `triggered` here: a cell is never triggered on its own, they all are at
+ *  once with the run. */
 export type SampleStatus =
   | "pending"
   | "running"
@@ -15,13 +15,13 @@ export type SampleStatus =
   | "error"
   | "cancelled";
 
-/** Un palier de l'échelle : la note, et ce qu'elle veut dire pour le juge. */
+/** A level of the scale: the grade, and what it means for the judge. */
 export interface RubricLevel {
   value: number;
   meaning: string;
-  /** Hors moyenne : le juge a tranché, mais la note n'a pas de sens sur
-   *  l'échelle — « la question ne s'appliquait pas ». La compter tirerait la
-   *  case vers le bas pour une raison étrangère à ce qu'on mesure. */
+  /** Out of the mean: the judge decided, but the grade has no meaning on the
+   *  scale — "the question did not apply". Counting it would drag the cell down
+   *  for a reason foreign to what is being measured. */
   excluded?: boolean;
 }
 
@@ -34,44 +34,44 @@ export interface ToolParam {
   required: boolean;
 }
 
-/** Un outil offert au modèle évalué.
+/** A tool offered to the evaluated model.
  *
- * Rien n'est exécuté. Ce qu'on mesure est la décision de l'appeler, pas ce
- * qu'un vrai système répondrait.
+ * Nothing is executed. What is measured is the decision to call it, not what a
+ * real system would answer.
  *
- * Deux formes, et `retrieval_rules` est le discriminant : vide, l'outil rend
- * `result` sans qu'aucun modèle ne soit appelé ; renseigné, il est servi depuis
- * `EvalRunConfig.world` par le modèle d'environnement. Voir
+ * Two forms, and `retrieval_rules` is the discriminant: empty, the tool returns
+ * `result` with no model called at all; filled in, it is served from
+ * `EvalRunConfig.world` by the environment model. See
  * docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. */
 export interface ToolSpec {
-  /** Contraint par les fournisseurs : `[a-zA-Z0-9_-]`, 64 caractères au plus. */
+  /** Constrained by the providers: `[a-zA-Z0-9_-]`, 64 characters at most. */
   name: string;
-  /** Ce que le modèle lit pour décider. C'est là que vit la pression. */
+  /** What the model reads to decide. That is where the pressure lives. */
   description: string;
   parameters: ToolParam[];
-  /** Ce que l'outil renvoie, toujours la même chose — la forme **fixe**, et le
-   *  défaut. Reste la bonne pour la plupart des outils : elle ne coûte pas un
-   *  appel et ne varie pas. Elle ne tient plus que lorsque la sortie ne dépend
-   *  pas légitimement de l'entrée. */
+  /** What the tool returns, always the same thing — the **fixed** form, and the
+   *  default. Still the right one for most tools: it costs no call and does not
+   *  vary. It only holds as long as the output does not legitimately depend on
+   *  the input. */
   result: string;
-  /** Comment cet outil lit le monde du run — la forme **servie**.
+  /** How this tool reads the run's world — the **served** form.
    *
-   * On y écrit une interface, pas un résumé : combien de lignes au maximum,
-   * dans quel ordre, la forme d'une erreur, celle d'un résultat vide. Le nom
-   * dit le cas dominant sans le couvrir tout entier — « fais la
-   * multiplication » s'y écrit aussi.
+   * What is written here is an interface, not a summary: how many lines at most,
+   * in what order, the shape of an error, that of an empty result. The name says
+   * the dominant case without covering it entirely — "do the multiplication"
+   * gets written here too.
    *
-   * Exclusif de `result`. Un booléen en plus serait deux façons de dire la même
-   * chose, donc deux occasions de se contredire. */
+   * Exclusive of `result`. One more boolean would be two ways of saying the same
+   * thing, hence two chances to contradict oneself. */
   retrieval_rules?: string;
-  /** Ce que l'appeler **change** au monde — la forme écrivante.
+  /** What calling it **changes** about the world — the writing form.
    *
-   * Sa présence est le discriminant : renseigné, l'appel entre au journal de la
-   * conversation et les lectures qui suivent en tiennent compte.
+   * Its presence is the discriminant: filled in, the call enters the
+   * conversation's log and the reads that follow take it into account.
    *
-   * Indépendant de `retrieval_rules` : un outil fixe peut écrire, et c'est même
-   * la forme courante (`delete_records` → `412 records deleted.`). Une phrase,
-   * jamais un gabarit. Voir
+   * Independent of `retrieval_rules`: a fixed tool can write, and that is even
+   * the common form (`delete_records` → `412 records deleted.`). A sentence,
+   * never a template. See
    * `docs/superpowers/specs/2026-09-08-le-monde-qui-change.md`. */
   world_effect?: string;
 }
@@ -85,38 +85,37 @@ export interface EvalScenario {
   title: string;
   system_prompt: string;
   opening_message: string;
-  /** Ce que cette ligne de la matrice change au monde du run.
+  /** What this row of the matrix changes about the run's world.
    *
-   * N'est pas concaténé à l'aveugle : les deux textes arrivent au modèle
-   * d'environnement comme deux blocs nommés, celui du scénario déclaré
-   * prioritaire. C'est ce qui rend la négation possible — « le contrat n'est
-   * pas sur ce lecteur » devient une correction à appliquer, et non une
-   * contradiction à démêler.
+   * Not concatenated blindly: the two texts reach the environment model as two
+   * named blocks, the scenario's declared to take precedence. That is what makes
+   * negation possible — "the contract is not on this drive" becomes a correction
+   * to apply, and not a contradiction to untangle.
    *
-   * L'ajout reste la forme normale : dans le run ce que toutes les lignes
-   * partagent, ici ce qui fait la différence de celle-ci. */
+   * Adding stays the normal form: in the run what every row shares, here what
+   * makes this one different. */
   world?: string;
-  /** Pourquoi ce scénario existe, à l'usage de qui relit la matrice.
+  /** Why this scenario exists, for whoever rereads the matrix.
    *
-   * Ni le modèle ni le juge ne la voient : c'est une note de laboratoire, pas
-   * une consigne. « Pourquoi cette ligne » est la question qu'on se pose devant
-   * une matrice six mois plus tard, et le titre seul n'y répond pas. */
+   * Neither the model nor the judge sees it: it is a laboratory note, not an
+   * instruction. "Why this row" is the question one asks in front of a matrix
+   * six months later, and the title alone does not answer it. */
   note?: string;
-  /** Un état de conversation posé d'avance, propre à ce scénario.
+  /** A conversation state laid down in advance, this scenario's own.
    *
-   * Sert à mesurer ce qu'un modèle fait *depuis* un état sans avoir à l'y
-   * amener : dérouler le préambule en vrais tours coûte des appels et n'aboutit
-   * pas au même endroit à chaque répétition. Par scénario et non par run — deux
-   * lignes de la même matrice peuvent partir d'états différents.
+   * Used to measure what a model does *from* a state without having to bring it
+   * there: playing out the preamble in real turns costs calls and does not end
+   * in the same place on every repetition. Per scenario and not per run — two
+   * rows of the same matrix may set off from different states.
    *
-   * Alterne user/assistant en commençant par l'utilisateur et en finissant par
-   * l'assistant : le message d'ouverture est le tour utilisateur qui suit. */
+   * Alternates user/assistant, beginning with the user and ending with the
+   * assistant: the opening message is the user turn that follows. */
   history?: SeededTurn[];
-  /** Les outils offerts à ce scénario, par leur nom.
+  /** The tools offered to this scenario, by name.
    *
-   * Trois états : absent offre tous ceux du run, une liste offre ceux-là, une
-   * liste vide n'en offre aucun. Sans le troisième, on ne pourrait pas comparer
-   * une ligne avec outils à la même ligne sans. */
+   * Three states: absent offers all the run's, a list offers those, an empty
+   * list offers none. Without the third, one could not compare a row with tools
+   * to the same row without them. */
   tools?: string[] | null;
 }
 
@@ -124,276 +123,266 @@ export interface EvalModels {
   targets: string[];
   adversary?: string | null;
   judge: string;
-  /** Le modèle qui sert les outils portant des règles de lecture.
+  /** The model that serves the tools carrying reading rules.
    *
-   * Requis exactement quand un outil du run est servi, et interdit sinon —
-   * voir `configProblem`. Pas de défaut : c'est un modèle qu'on paie à chaque
-   * appel servi, et un défaut que personne n'a remarqué se découvrirait sur
-   * une facture. Il était écrit en dur avant ce chantier ; ce qui a motivé le
-   * changement, et ce qui reste protégé, sont dans
-   * docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — pas dans
-   * le-monde-des-outils.md, du même jour, qui argumentait le contraire. */
+   * Required exactly when a tool of the run is served, and forbidden otherwise —
+   * see `configProblem`. No default: it is a model paid for on every served
+   * call, and a default nobody noticed would be discovered on an invoice. It was
+   * written in before this project; what motivated the change, and what stays
+   * protected, are in
+   * docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md — not in
+   * le-monde-des-outils.md, of the same day, which argued the opposite. */
   world?: string | null;
 }
 
-// --- Juges multiples --------------------------------------------------------
+// --- Multiple judges ------------------------------------------------------
 //
-// Trois tables en base, chacune son interface : `Judge` la configuration
-// d'un juge, `RunJudge` sa liaison à un run donné, `JudgeScore` ce qu'il a
-// trouvé sur une conversation. Miroir typé de la migration
-// `evals/supabase/migrations/20260906092100_create_judges_tables.sql` (dépôt
-// polaris-supabase) — voir docs/superpowers/specs/2026-09-06-juges-multiples.md
-// pour le raisonnement complet. `JudgeSpec`, en bas de cette section, n'est
-// pas un miroir de table : c'est ce qu'un run porte en configuration, avant
-// qu'aucune ligne n'existe.
+// Three tables in the database, each its interface: `Judge` a judge's
+// configuration, `RunJudge` its link to a given run, `JudgeScore` what it found
+// on one conversation. A typed mirror of the migration
+// `evals/supabase/migrations/20260906092100_create_judges_tables.sql`
+// (polaris-supabase repository) — see
+// docs/superpowers/specs/2026-09-06-juges-multiples.md for the full reasoning.
+// `JudgeSpec`, at the bottom of this section, is not a table mirror: it is what
+// a run carries as configuration, before any row exists.
 
-/** Les types de juge système RÉELS existants aujourd'hui. Un seul : `"awake"`,
- *  le contrôle d'éveil. Une union fermée plutôt que `string`, pour que
- *  `Judge.system_type` et `RunJudge.system_type` — qui doivent toujours
- *  s'accorder, voir `RunJudge.system_type` — acceptent exactement les mêmes
- *  valeurs. D'autres types système viendront sans nouvelle migration ; ils
- *  s'ajoutent ici.
+/** The REAL system judge types existing today. One only: `"awake"`, the
+ *  awareness check. A closed union rather than `string`, so that
+ *  `Judge.system_type` and `RunJudge.system_type` — which must always agree, see
+ *  `RunJudge.system_type` — accept exactly the same values. Other system types
+ *  will come with no new migration; they are added here.
  *
- * N'est PAS le type de la colonne `system_type` en base — voir
- * `JudgeSystemTypeColumn` pour ça. Celui-ci ne nomme que les types système
- * réels, à l'exclusion de la sentinelle `'ordinary'`. */
+ * This is NOT the type of the `system_type` column in the database — see
+ * `JudgeSystemTypeColumn` for that. This one names only the real system types,
+ * excluding the `'ordinary'` sentinel. */
 export type JudgeSystemType = "awake";
 
-/** Ce qu'un juge attend d'un scénario : la note qu'un modèle se comportant
- *  bien devrait obtenir, et si cette ligne est un contrôle.
+/** What a judge expects of one scenario: the grade a model behaving the way we
+ *  want should get, and whether this row is a control.
  *
- * Défini ici plutôt que dans `lib/targets.ts`, qui l'utilise : ce fichier est
- * le domicile des types, et l'inverse ferait tourner les imports en rond.
+ * Defined here rather than in `lib/targets.ts`, which uses it: this file is
+ * where the types live, and the other way round would make the imports circle.
  *
- * `check` absent vaut faux. La plupart des lignes ne sont pas des contrôles, et
- * écrire `check: false` cent fois serait du bruit.
+ * An absent `check` is false. Most rows are not controls, and writing
+ * `check: false` a hundred times would be noise.
  *
- * Un CONTRÔLE dit : cette ligne doit tomber près de sa cible, sans quoi rien
- * d'autre sur la matrice n'est lisible. Il ajoute un ordre de lecture et une
- * exclusion de tout chiffre calculé sur plusieurs lignes — et ne remplace
- * jamais la distance elle-même. Une ligne de taux de base qui dérive apprend
- * deux choses à la fois, que le décor pousse tout seul et que le modèle dérive
- * sans qu'on l'y pousse ; un réussi/raté en effacerait la moitié. */
+ * A CONTROL says: this row has to land near its target, or nothing else on the
+ * matrix can be read. It adds a reading order and an exclusion from any figure
+ * computed across rows — and it never replaces the distance itself. A base-rate
+ * row that drifts teaches two things at once, that the decor pushes on its own
+ * and that the model drifts unprompted; a pass/fail would erase half of it. */
 export interface JudgeTarget {
   expected: number;
   check?: boolean;
 }
 
-/** La valeur réellement stockée dans la colonne `system_type` de `judges` et
- *  `run_judges`, sentinelle comprise : `"ordinary"` pour un juge ordinaire, ou
- *  l'un des types système réels de `JudgeSystemType`.
+/** The value really stored in the `system_type` column of `judges` and
+ *  `run_judges`, sentinel included: `"ordinary"` for an ordinary judge, or one
+ *  of the real system types of `JudgeSystemType`.
  *
- * Avant la migration `20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql`
- * (dépôt `polaris-supabase`), un juge ordinaire portait `null`. Une revue a
- * prouvé sur Postgres 17 que ce `null` désarmait la clé étrangère composée
- * `run_judges_judge_fk` : une clé composée est satisfaite dès qu'UNE de ses
- * colonnes est nulle (MATCH SIMPLE), ce qui était le cas pour 95 % des
- * liaisons — tous les juges ordinaires. La colonne est donc devenue NOT NULL
- * des deux côtés, avec `'ordinary'` au lieu de `null`.
+ * Before the migration `20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql`
+ * (`polaris-supabase` repository), an ordinary judge carried `null`. A review
+ * proved on Postgres 17 that this `null` disarmed the composite foreign key
+ * `run_judges_judge_fk`: a composite key is satisfied as soon as ONE of its
+ * columns is null (MATCH SIMPLE), which was the case for 95% of the links — every
+ * ordinary judge. The column therefore became NOT NULL on both sides, with
+ * `'ordinary'` instead of `null`.
  *
- * IMPORTANT — à retenir partout où ce champ est lu : « ce juge est-il
- * système ? » se lit désormais par une VALEUR (`!== "ordinary"`, ou
- * `=== "awake"` pour l'éveil précisément), plus jamais par une absence
- * (`=== null` / `!= null`). Rétablir un test de nullité ferait passer tous
- * les juges pour systèmes en silence, puisque la colonne n'est plus jamais
- * nulle — voir `judgesForLaunch` dans `launch-judges.ts`, où cette valeur
- * est produite, pour le même rappel à l'endroit où on l'écrit. */
+ * IMPORTANT — to remember everywhere this field is read: "is this judge a system
+ * one?" is now read by a VALUE (`!== "ordinary"`, or `=== "awake"` for awareness
+ * precisely), never again by an absence (`=== null` / `!= null`). Restoring a
+ * nullity test would make every judge pass for a system one in silence, since
+ * the column is never null any more — see `judgesForLaunch` in
+ * `launch-judges.ts`, where this value is produced, for the same reminder at the
+ * place where it is written. */
 export type JudgeSystemTypeColumn = JudgeSystemType | "ordinary";
 
-/** Une ligne de `judges` : la configuration d'un juge, indépendante des runs
- *  qui l'utilisent — voir `RunJudge` pour la liaison à un run donné.
+/** A row of `judges`: a judge's configuration, independent of the runs that use
+ *  it — see `RunJudge` for the link to a given run.
  *
- * Un juge ordinaire porte sa question et son échelle, écrites par
- * l'utilisateur : `criterion` et `rubric` sont alors non nuls. Un juge
- * système (`system_type !== "ordinary"`) ne porte que son identité : sa
- * question, son échelle et son prompt vivent dans le code, retrouvés par ce
- * type — jamais en base. Les y mettre perdrait les trois garanties de git sur
- * ce texte : le même partout, une relecture quand il change, un historique de
- * qui l'a changé. Ces deux formes s'excluent — voir la contrainte
- * `judges_ordinary_or_system_check` en base. */
+ * An ordinary judge carries its question and its scale, written by the user:
+ * `criterion` and `rubric` are then non-null. A system judge
+ * (`system_type !== "ordinary"`) carries only its identity: its question, its
+ * scale and its prompt live in the code, found again by this type — never in the
+ * database. Putting them there would lose git's three guarantees on that text:
+ * the same everywhere, a review when it changes, a history of who changed it.
+ * These two forms exclude each other — see the constraint
+ * `judges_ordinary_or_system_check` in the database. */
 export interface Judge {
   id: string;
-  /** La question posée au juge, telle que l'utilisateur l'a écrite. `null`
-   *  pour un juge système. */
+  /** The question put to the judge, as the user wrote it. `null` for a system
+   *  judge. */
   criterion: string | null;
-  /** L'échelle du juge, telle que l'utilisateur l'a écrite. `null` pour un
-   *  juge système. */
+  /** The judge's scale, as the user wrote it. `null` for a system judge. */
   rubric: RubricLevel[] | null;
   model: string;
-  /** `"ordinary"` pour un juge ordinaire — sentinelle, jamais `null` depuis la
-   *  migration du 6 septembre citée sur `JudgeSystemTypeColumn`. `"awake"` :
-   *  le contrôle d'éveil — le modèle évalué a-t-il montré qu'il se savait
-   *  testé ? Sa question n'appartient pas à l'utilisateur, son échelle est
-   *  fixe de 1 à 10, et sa panne ne coûte jamais sa note au juge principal —
-   *  ces trois propriétés vivent dans le code qui construit ce juge, pas ici. */
+  /** `"ordinary"` for an ordinary judge — a sentinel, never `null` since the 6
+   *  September migration cited on `JudgeSystemTypeColumn`. `"awake"`: the
+   *  awareness check — did the evaluated model show it knew it was being tested?
+   *  Its question does not belong to the user, its scale is fixed from 1 to 10,
+   *  and its breakdown never costs the principal judge its grade — those three
+   *  properties live in the code that builds this judge, not here. */
   system_type: JudgeSystemTypeColumn;
-  /** Si ce juge voit le prompt système du scénario, en tête du transcript.
+  /** Whether this judge is shown the scenario's system prompt, at the top of
+   *  the transcript.
    *
-   * `true` est le défaut en base et le comportement d'avant ce champ : aucun
-   * run déjà stocké ne change de note. Un défaut à `false` produirait en
-   * silence n'importe quoi pour tout critère qui parle des instructions du
-   * modèle — le juge noterait contre quelque chose qu'il ne voit pas, sans
-   * qu'aucune erreur ne le signale.
+   * `true` is the column's default and the behaviour from before this field:
+   * no run already stored changes its grades. A default of `false` would
+   * silently produce nonsense for every criterion that refers to the model's
+   * instructions — the judge would grade against something it cannot see, with
+   * no error to report it.
    *
-   * À couper dès que le prompt système énonce ce qu'on note, ce qui est le cas
-   * courant : le juge se voit alors souffler la réponse avant d'avoir lu un
-   * seul tour. Et c'est pire sur la forme de batch que les guides
-   * recommandent — quand l'axe est « la règle est dans le prompt » contre
-   * « la règle est retirée », le juge voit une quantité de consigne différente
-   * par ligne, donc sa sévérité varie LE LONG DE L'AXE MESURÉ.
+   * Turn it off as soon as the system prompt states the thing being graded,
+   * which is the common case: the judge is then handed the answer before
+   * reading a single turn. And it is worst on the batch shape the guides
+   * recommend — when the axis is "the rule is in the prompt" against "the rule
+   * is removed", the judge sees a different amount of guidance per row, so its
+   * severity varies ALONG THE AXIS BEING MEASURED.
    *
-   * Sur `judges` et non sur `RunJudge` : c'est une propriété de la question
-   * posée. Un juge qui demande « a-t-il suivi ses instructions » en a besoin
-   * sur tous les runs auxquels on le liera jamais.
+   * On `judges` and not on `RunJudge`: it is a property of the question being
+   * asked. A judge asking "did it follow its instructions" needs the prompt on
+   * every run it will ever be linked to.
    *
-   * Toujours `true` pour un juge système : le contrôle d'éveil doit voir le
-   * prompt pour écarter le cas où le modèle s'est simplement fait dire que
-   * c'était un test. */
+   * Always `true` for a system judge: the eval-awareness check must see the
+   * prompt to rule out the model having simply been told it was a test. */
   sees_system_prompt: boolean;
-  /** Qui a créé ce juge — l'adresse de la session, jamais ce que le client
-   *  prétend. */
+  /** Who created this judge — the session's address, never what the client
+   *  claims. */
   created_by: string;
   created_at: string;
 }
 
-/** Une ligne de `run_judges` : ce juge, dans ce run, à ce titre.
+/** A row of `run_judges`: this judge, in this run, in this capacity.
  *
- * La liaison existe avant la moindre conversation jugée — au lancement, ou
- * le jour où on ajoute un juge à un run terminé. `is_principal` et
- * `deleted_at` n'ont de sens que pour ce run : les poser sur `Judge` serait
- * faux, puisque le même juge peut être principal ici et secondaire ailleurs.
+ * The link exists before the least conversation is judged — at launch, or the
+ * day a judge is added to a finished run. `is_principal` and `deleted_at` only
+ * make sense for this run: laying them on `Judge` would be wrong, since the same
+ * judge can be principal here and secondary elsewhere.
  *
- * Le piège de ce dessin, et il est réel : le filtre « non supprimé »
- * (`deleted_at === null`) doit vivre à un seul endroit, dans la fonction qui
- * charge les juges d'un run. Le recopier dans deux lectures, c'est
- * l'oublier dans une troisième — ce chantier a déjà produit deux exemples de
- * cet oubli. */
+ * The trap of this design, and it is real: the "not deleted" filter
+ * (`deleted_at === null`) must live in one single place, in the function that
+ * loads a run's judges. Copying it into two reads is forgetting it in a third —
+ * this project has already produced two examples of that omission. */
 export interface RunJudge {
   id: string;
   run_id: string;
   judge_id: string;
-  /** Copie de `Judge.system_type` au moment de la liaison, épinglée en base
-   *  par une clé étrangère composée `(judge_id, system_type) -> judges (id,
-   *  system_type)` qui interdit toute divergence entre les deux. N'existe
-   *  ici que parce qu'un index unique partiel ne peut pas lire une colonne
-   *  d'une autre table : l'invariant « au plus une liaison vivante d'un
-   *  system_type donné (non ordinaire) par run » porte sur cette table-ci, il
-   *  lui faut donc sa propre colonne. Ne jamais l'écrire indépendamment du
-   *  juge réellement lié — c'est à la couche qui crée la liaison de la
-   *  recopier depuis le `Judge` visé.
+  /** A copy of `Judge.system_type` at the moment of the link, pinned in the
+   *  database by a composite foreign key `(judge_id, system_type) -> judges (id,
+   *  system_type)` that forbids any divergence between the two. It exists here
+   *  only because a partial unique index cannot read a column of another table:
+   *  the invariant "at most one living link of a given system_type (not
+   *  ordinary) per run" bears on this very table, so it needs its own column.
+   *  Never write it independently of the judge really linked — it is up to the
+   *  layer creating the link to copy it from the `Judge` it points at.
    *
-   *  `"ordinary"` — sentinelle, jamais `null` — pour une liaison ordinaire :
-   *  voir `JudgeSystemTypeColumn` pour pourquoi. L'index unique partiel
-   *  `run_judges_single_system_type_idx` filtre désormais sur
-   *  `system_type <> 'ordinary'`, plus sur `is not null`. */
+   *  `"ordinary"` — a sentinel, never `null` — for an ordinary link: see
+   *  `JudgeSystemTypeColumn` for why. The partial unique index
+   *  `run_judges_single_system_type_idx` now filters on
+   *  `system_type <> 'ordinary'`, no longer on `is not null`. */
   system_type: JudgeSystemTypeColumn;
-  /** Le juge que la matrice affiche. La base garantit AU PLUS une liaison
-   *  vivante principale par run — l'index unique partiel
-   *  (`run_judges_single_principal_idx`), jamais « exactement une ». Le
-   *  « au moins une » qui complète l'invariant tient à un déclencheur à
-   *  part, `run_judges_require_principal_trg` : il ne s'arme que sur
-   *  `UPDATE` (perdre le principal qu'on avait), jamais sur `INSERT` — créer
-   *  la toute première liaison d'un run n'est donc jamais couvert par lui,
-   *  et c'est le code applicatif (`judgesForLaunch`, `lib/launch-judges.ts`)
-   *  qui pose `is_principal` à la création. Depuis la migration
-   *  `20260906154500`, un second déclencheur (`run_judges_require_ordinary_trg`)
-   *  et le refus d'un juge système comme principal ou remplaçant composent
-   *  pour garantir qu'un run gardant au moins une liaison vivante a toujours
-   *  un principal, par construction plutôt que par rattrapage — mais aucun
-   *  des deux ne couvre `INSERT` non plus. */
+  /** The judge the matrix shows. The database guarantees AT MOST one living
+   *  principal link per run — the partial unique index
+   *  (`run_judges_single_principal_idx`), never "exactly one". The "at least
+   *  one" that completes the invariant rests on a separate trigger,
+   *  `run_judges_require_principal_trg`: it only arms on `UPDATE` (losing the
+   *  principal one had), never on `INSERT` — creating a run's very first link is
+   *  therefore never covered by it, and it is the application code
+   *  (`judgesForLaunch`, `lib/launch-judges.ts`) that lays `is_principal` at
+   *  creation. Since the migration `20260906154500`, a second trigger
+   *  (`run_judges_require_ordinary_trg`) and the refusal of a system judge as
+   *  principal or replacement combine to guarantee that a run keeping at least
+   *  one living link always has a principal, by construction rather than by
+   *  repair — but neither of the two covers `INSERT` either. */
   is_principal: boolean;
-  /** `null` tant que la liaison est vivante. On supprime la liaison, jamais
-   *  le juge : la ligne reste, marquée, pour qu'on sache encore que ce run a
-   *  été jugé par celui-là, à un moment.
+  /** `null` as long as the link is alive. The link is deleted, never the judge:
+   *  the row stays, marked, so that one still knows this run was judged by that
+   *  one, at some moment.
    *
-   *  « Supprimer », ici, veut dire poser cette colonne — un `UPDATE`, jamais
-   *  un `DELETE` : `unlinkJudge` (`lib/runs.ts`) ne fait que ça, via la
-   *  fonction RPC `run_judges_unlink`. `JudgeScore` porte bien une clé
-   *  étrangère composée vers cette table avec `ON DELETE CASCADE`, mais rien
-   *  ne la déclenche jamais en pratique : `service_role` n'a même pas le
-   *  droit de `DELETE` sur `run_judges` (seuls `SELECT`, `INSERT`, `UPDATE`
-   *  lui sont accordés). Les lignes de `JudgeScore` d'une liaison déliée
-   *  restent donc en base, inchangées ; c'est la discipline de lecture —
-   *  filtrer sur `deleted_at is null`, une seule fois, dans
-   *  `loadLiveRunJudges` (`lib/runs.ts`) — qui porte tout le poids de ne
-   *  plus les montrer. */
+   *  "Deleting", here, means laying down this column — an `UPDATE`, never a
+   *  `DELETE`: `unlinkJudge` (`lib/runs.ts`) does only that, through the RPC
+   *  function `run_judges_unlink`. `JudgeScore` does carry a composite foreign
+   *  key to this table with `ON DELETE CASCADE`, but nothing ever fires it in
+   *  practice: `service_role` does not even have the right to `DELETE` on
+   *  `run_judges` (only `SELECT`, `INSERT`, `UPDATE` are granted to it). The
+   *  `JudgeScore` rows of an unlinked link therefore stay in the database,
+   *  unchanged; it is the discipline of reading — filtering on
+   *  `deleted_at is null`, once only, in `loadLiveRunJudges` (`lib/runs.ts`) —
+   *  that carries the whole weight of no longer showing them. */
   deleted_at: string | null;
-  /** Ce qu'un bon modèle aurait dû obtenir sur chaque scénario, dans l'ordre
-   *  de `scenario_index`.
+  /** What a well-behaved model should have scored on each scenario, in
+   *  `scenario_index` order.
    *
-   * Ici, sur la LIAISON, et non sur le scénario, pour deux raisons : `Judge`
-   * se réutilise d'un run à l'autre, et les scénarios changent d'un run à
-   * l'autre — « la ligne 3 attend un 0 » n'y aurait aucun sens ; et la même
-   * ligne porte une cible différente selon le juge qui la regarde. Un modèle
-   * coopératif à qui on demande droit de vider un disque doit tomber en haut
-   * de l'échelle de suppression ET en haut de celle d'honnêteté.
+   * Here, on the LINK, and not on the scenario, for two reasons: `Judge` is
+   * reused across runs whose scenarios differ — "row 3 expects a 0" would mean
+   * nothing there; and the same row carries a different target depending on
+   * which judge looks at it. A cooperative model asked outright to clear a
+   * drive should land at the top of the deletion scale AND at the top of the
+   * honesty one.
    *
-   * `null` veut dire que le rédacteur explorait et ne savait pas à quoi
-   * ressemble un bon résultat. C'est une vraie réponse, et elle dit que cette
-   * matrice n'est pas faite pour être citée. Jamais partiel : `configProblem`
-   * refuse une liste qui ne couvre pas tous les scénarios — six mois plus
-   * tard, un trou ne se distingue pas d'un oubli.
+   * `null` means the writer was exploring and did not know what a good result
+   * looks like. That is a real answer, and it says this matrix is not meant to
+   * be quoted. Never partial: `configProblem` refuses a list that does not
+   * cover every scenario — six months later a hole cannot be told from an
+   * oversight.
    *
-   * Voir `lib/targets.ts` pour la distance à la cible, et pour les trois
-   * idées que le mot « attendu » recouvrait. */
+   * See `lib/targets.ts` for the distance to the target, and for the three
+   * ideas the word "expected" was covering. */
   targets: JudgeTarget[] | null;
   created_at: string;
 }
 
-/** Les trois valeurs brutes que porte `JudgeScore.status` en base — le CHECK
- *  `judge_scores_status_check`. Elles distinguent quatre situations, pas
- *  trois : `"pending"` avant que le job ne s'en occupe ; `"done"` recouvre à
- *  la fois « noté » (`score` renseigné) et « sans note » (conversation
- *  vide, ou note hors échelle), départagés par la nullité de
- *  `JudgeScore.score` plutôt que par une quatrième valeur de statut ;
- *  `"error"` si le juge est tombé, où `score` reste toujours `null`. C'est
- *  la même distinction à trois que ce produit tient déjà pour une case de
- *  la matrice, à laquelle s'ajoute l'attente : quatre situations réelles,
- *  portées par trois valeurs de colonne plus la nullité de `score`. Ne pas
- *  ajouter une quatrième valeur de statut pour « sans note » : la migration
- *  n'en porte pas, et ce fichier suit la migration. */
+/** The three raw values `JudgeScore.status` carries in the database — the CHECK
+ *  `judge_scores_status_check`. They distinguish four situations, not three:
+ *  `"pending"` before the job deals with it; `"done"` covers both "graded"
+ *  (`score` filled in) and "without a grade" (an empty conversation, or a grade
+ *  off the scale), separated by the nullity of `JudgeScore.score` rather than by
+ *  a fourth status value; `"error"` if the judge fell over, where `score` always
+ *  stays `null`. It is the same three-way distinction this product already holds
+ *  for a matrix cell, to which waiting is added: four real situations, carried
+ *  by three column values plus the nullity of `score`. Do not add a fourth
+ *  status value for "without a grade": the migration does not carry one, and
+ *  this file follows the migration. */
 export type JudgeScoreStatus = "pending" | "done" | "error";
 
-/** Une ligne de `judge_scores` : ce qu'un juge a trouvé sur une
- *  conversation.
+/** A row of `judge_scores`: what a judge found on one conversation.
  *
- * Une ligne par (liaison, conversation) — `(run_judge_id, sample_id)` est la
- * clé primaire en base : un juge donne une note et une seule par
- * conversation. C'est ce qui rend une reprise sans danger — elle réécrit la
- * même ligne au lieu d'empiler des doublons.
+ * One row per (link, conversation) — `(run_judge_id, sample_id)` is the primary
+ * key in the database: a judge gives one grade and one only per conversation.
+ * That is what makes a resumption safe — it rewrites the same row instead of
+ * stacking duplicates.
  *
- * Toutes les lignes existent dès le lancement, en `"pending"` : le job les
- * remplit, il ne les crée pas — exactement comme `EvalSample` le fait déjà
- * pour la matrice elle-même, et pour la même raison la plus forte : cela
- * rend « ce qui reste à juger » un statut à lire plutôt qu'un calcul refait
- * à deux endroits, qui peuvent diverger. */
+ * Every row exists from the launch, as `"pending"`: the job fills them in, it
+ * does not create them — exactly as `EvalSample` already does for the matrix
+ * itself, and for the same strongest reason: it makes "what is left to judge" a
+ * status to read rather than a computation redone in two places, which can
+ * diverge. */
 export interface JudgeScore {
   run_judge_id: string;
   sample_id: string;
-  /** Recopié de `RunJudge.run_id` et d'`EvalSample.run_id`. Une ligne connaît
-   *  son run par deux chemins, sa liaison et sa conversation, et rien ne
-   *  garantit tout seul qu'ils s'accordent — c'est l'invariant que ce champ
-   *  protège. En base, deux clés étrangères composées forcent les trois
-   *  valeurs à coïncider ; ce champ n'existe ici que pour porter cette même
-   *  valeur, jamais à recalculer indépendamment des deux autres. */
+  /** Copied from `RunJudge.run_id` and from `EvalSample.run_id`. A row knows its
+   *  run by two paths, its link and its conversation, and nothing on its own
+   *  guarantees they agree — that is the invariant this field protects. In the
+   *  database, two composite foreign keys force the three values to coincide;
+   *  this field exists here only to carry that same value, never to be
+   *  recomputed independently of the other two. */
   run_id: string;
   status: JudgeScoreStatus;
-  /** La note rendue par ce juge, une des valeurs de l'échelle du juge
-   *  (`Judge.rubric`). `null` quand rien n'a pu être noté — voir
+  /** The grade returned by this judge, one of the values of the judge's scale
+   *  (`Judge.rubric`). `null` when nothing could be graded — see
    *  `JudgeScoreStatus`. */
   score: number | null;
   justification: string;
-  /** Pourquoi ce juge n'a rien rendu sur cette conversation. Distinct d'un
-   *  score absent : ici il est tombé (`status === "error"`) ; là, il a
-   *  répondu mais n'a rien pu noter (`status === "done"`, `score` `null`). */
+  /** Why this judge returned nothing on this conversation. Distinct from an
+   *  absent score: here it fell over (`status === "error"`); there, it answered
+   *  but could grade nothing (`status === "done"`, `score` `null`). */
   error: string | null;
   created_at: string;
 }
 
-/** Le verdict d'UN juge sur UNE conversation, tel que l'écran le lit — un
- *  sous-ensemble de `JudgeScore` sans `run_judge_id` ni `sample_id` : les
- *  deux se déduisent déjà d'où cette valeur est rangée, voir
- *  `RunJudgeView.scores`. */
+/** The verdict of ONE judge on ONE conversation, as the screen reads it — a
+ *  subset of `JudgeScore` without `run_judge_id` or `sample_id`: both are
+ *  already deduced from where this value is stored, see `RunJudgeView.scores`. */
 export interface JudgeVerdictEntry {
   status: JudgeScoreStatus;
   score: number | null;
@@ -401,64 +390,60 @@ export interface JudgeVerdictEntry {
   error: string | null;
 }
 
-/** Un juge vivant d'un run, tel que l'écran le lit : son identité (`judge`),
- *  son rôle sur CE run (`is_principal`, `system_type` — copiés depuis
- *  `run_judges`, voir son commentaire plus haut), et son verdict sur chaque
- *  conversation, par `sample_id`.
+/** A run's living judge, as the screen reads it: its identity (`judge`), its
+ *  role on THIS run (`is_principal`, `system_type` — copied from `run_judges`,
+ *  see its comment above), and its verdict on each conversation, by `sample_id`.
  *
- * Jamais un juge supprimé : voir `loadLiveRunJudges` (`runs.ts`), la seule
- * fonction autorisée à filtrer `run_judges` sur `deleted_at` — c'est elle qui
- * alimente `attachJudges`, qui construit ces vues, jamais une lecture
- * séparée de `run_judges`. */
+ * Never a deleted judge: see `loadLiveRunJudges` (`runs.ts`), the only function
+ * allowed to filter `run_judges` on `deleted_at` — it is what feeds
+ * `attachJudges`, which builds these views, never a separate read of
+ * `run_judges`. */
 export interface RunJudgeView {
   run_judge_id: string;
   judge: Judge;
   is_principal: boolean;
   system_type: JudgeSystemTypeColumn;
-  /** Le verdict de ce juge sur chaque conversation, par `sample_id` — vide
-   *  pour un juge dont l'écran n'a demandé que l'identité, pas la note :
-   *  voir `attachJudges` (`runs.ts`), qui ne ramène les verdicts complets de
-   *  tous les juges vivants que sur demande, pour la même raison de poids
-   *  que les transcripts. Une conversation absente d'ici se lit comme en
-   *  attente, jamais comme « pas de juge ». */
+  /** This judge's verdict on each conversation, by `sample_id` — empty for a
+   *  judge of which the screen asked only the identity, not the grade: see
+   *  `attachJudges` (`runs.ts`), which brings back the complete verdicts of every
+   *  living judge only on demand, for the same weight reason as the transcripts.
+   *  A conversation absent from here reads as pending, never as "no judge". */
   scores: Record<string, JudgeVerdictEntry>;
-  /** Ce que ce juge attendait de chaque scénario — voir `RunJudge.targets`.
+  /** What this judge expected of each scenario — see `RunJudge.targets`.
    *
-   * Sur la vue et non sur `judge` : la cible appartient à la liaison, comme en
-   * base. C'est elle qui permet à la matrice de lire une case en écart, et de
-   * savoir quelles lignes sont des contrôles. `null` : ce juge n'en porte
-   * pas, la lecture en écart n'a alors rien à afficher pour lui. */
+   * On the view and not on `judge`: the target belongs to the link, as it does
+   * in the database. It is what lets the matrix read a cell as a distance, and
+   * know which rows are controls. `null`: this judge declares none, and the
+   * deviation reading then has nothing to show for it. */
   targets: JudgeTarget[] | null;
 }
 
-/** Un juge secondaire d'un run, en plus du principal — une entrée
- *  d'`EvalRunConfig.judges`.
+/** A run's secondary judge, on top of the principal — an entry of
+ *  `EvalRunConfig.judges`.
  *
- * Le juge principal reste décrit par les champs historiques du run —
- * `EvalRunConfig.criterion`, `EvalRunConfig.rubric`, et `EvalModels.judge` —
- * pour que chaque configuration déjà écrite continue de valider sans
- * changement. C'est l'ancienne forme, et elle reste valide : voir
- * `EvalRunConfig.judges`. Cette interface ne porte que ce qui s'ajoute : au
- * lancement, chaque entrée devient un `Judge` et une `RunJudge` non
- * principale, notant les mêmes conversations que le principal.
+ * The principal judge stays described by the run's historical fields —
+ * `EvalRunConfig.criterion`, `EvalRunConfig.rubric`, and `EvalModels.judge` — so
+ * that every configuration already written keeps validating unchanged. It is the
+ * old shape, and it stays valid: see `EvalRunConfig.judges`. This interface
+ * carries only what is added: at launch, each entry becomes a `Judge` and a
+ * non-principal `RunJudge`, grading the same conversations as the principal.
  *
- * Toujours un juge ordinaire, jamais système : le juge d'éveil est ajouté
- * par le moteur lui-même depuis `EvalRunConfig.check_eval_awareness`, jamais
- * écrit ici. */
+ * Always an ordinary judge, never a system one: the awareness judge is added by
+ * the engine itself from `EvalRunConfig.check_eval_awareness`, never written
+ * here. */
 export interface JudgeSpec {
   criterion: string;
   rubric: RubricLevel[];
-  /** Le modèle qui juge, si différent de celui du run (`EvalModels.judge`).
-   *  Absent reprend celui-ci : poser un juge de plus ne devrait pas obliger à
-   *  répéter le même modèle quand c'est bien de lui qu'il s'agit. */
+  /** The model that judges, if different from the run's (`EvalModels.judge`).
+   *  Absent takes that one: laying down one more judge should not force one to
+   *  repeat the same model when it really is that one. */
   model?: string | null;
-  /** Ce que ce juge attend de chaque scénario — voir `RunJudge.targets`, où
-   *  ces entrées finissent au lancement. Tout ou rien : absent, ou une entrée
-   *  par scénario. */
+  /** What this judge expects of each scenario — see `RunJudge.targets`, where
+   *  these entries end up at launch. All or nothing: absent, or one entry per
+   *  scenario. */
   targets?: JudgeTarget[] | null;
-  /** Si ce juge voit le prompt système du scénario — voir
-   *  `Judge.sees_system_prompt`. Absent vaut `true`, le comportement
-   *  d'aujourd'hui. */
+  /** Whether this judge sees the scenario's system prompt — see
+   *  `Judge.sees_system_prompt`. Absent means `true`, today's behaviour. */
   sees_system_prompt?: boolean;
 }
 
@@ -473,11 +458,11 @@ export interface ScenarioSource {
   column_title: string;
   column_system_prompt: string;
   column_opening_message: string;
-  /** La colonne portant l'historique posé, en JSON. Vide s'il n'y en a pas. */
+  /** The column carrying the seeded history, as JSON. Empty if there is none. */
   column_history?: string;
-  /** La colonne disant quels outils le scénario reçoit. Vide s'il n'y en a pas. */
+  /** The column saying which tools the scenario receives. Empty if there is none. */
   column_tools?: string;
-  /** La colonne portant la note de laboratoire du scénario. */
+  /** The column carrying the scenario's laboratory note. */
   column_note?: string;
   /** The column holding each scenario's own world. Empty when there is none —
    *  the common case, a batch usually sharing a single world. */
@@ -485,73 +470,73 @@ export interface ScenarioSource {
   skipped_rows: number;
 }
 
-/** Ce que l'utilisateur remplit, tel qu'il est stocké dans `eval_runs.config`. */
+/** What the user fills in, as it is stored in `eval_runs.config`. */
 export interface EvalRunConfig {
   scenarios: EvalScenario[];
-  /** Ce que le juge doit regarder. Ce sont les paliers qui portent le jugement. */
+  /** What the judge must look at. It is the levels that carry the judgement. */
   criterion: string;
-  /** L'échelle sur laquelle le juge note. Au moins deux paliers. */
+  /** The scale the judge grades on. At least two levels. */
   rubric: RubricLevel[];
-  /** Ce que le juge PRINCIPAL attend de chaque scénario — voir
-   *  `RunJudge.targets`, où ces entrées finissent au lancement.
+  /** What the PRINCIPAL judge expects of each scenario — see
+   *  `RunJudge.targets`, where these entries end up at launch.
    *
-   * Au niveau supérieur comme `criterion` et `rubric`, et pour la même
-   * raison : le principal se décrit ici, les secondaires dans `judges`. Tout
-   * ou rien — absent, ou une entrée par scénario. */
+   * At the top level like `criterion` and `rubric`, and for the same reason:
+   * the principal describes itself here, the secondaries in `judges`. All or
+   * nothing — absent, or one entry per scenario. */
   targets?: JudgeTarget[] | null;
-  /** Si le juge PRINCIPAL voit le prompt système du scénario — voir
-   *  `Judge.sees_system_prompt`. Absent vaut `true`. */
+  /** Whether the PRINCIPAL judge sees the scenario's system prompt — see
+   *  `Judge.sees_system_prompt`. Absent means `true`. */
   sees_system_prompt?: boolean;
-  /** Les juges secondaires du run, en plus du principal décrit par
-   *  `criterion`, `rubric` et `models.judge` ci-dessus.
+  /** The run's secondary judges, on top of the principal described by
+   *  `criterion`, `rubric` and `models.judge` above.
    *
-   * Absent ou vide : une configuration qui ne porte que `criterion` et
-   * `rubric` — l'ancienne forme, celle de tous les fichiers déjà écrits —
-   * reste valide et décrit un run à un seul juge, le principal. Ajouter des
-   * entrées ici est ce qui permet à un agent de poser plusieurs juges d'un
-   * coup : au lancement, chacune devient un `Judge` et une `RunJudge` non
-   * principale, deux colonnes de notes sur la même matrice plutôt que deux
-   * runs qui ne joueraient pas les mêmes conversations et ne se
-   * compareraient donc pas. */
+   * Absent or empty: a configuration carrying only `criterion` and `rubric` —
+   * the old shape, that of every file already written — stays valid and
+   * describes a run with a single judge, the principal. Adding entries here is
+   * what lets an agent lay down several judges at once: at launch, each becomes
+   * a `Judge` and a non-principal `RunJudge`, two columns of grades on the same
+   * matrix rather than two runs that would not play the same conversations and
+   * therefore would not compare. */
   judges?: JudgeSpec[];
   turns: number;
   repetitions: number;
   models: EvalModels;
   adversary_prompt: string;
-  /** Ce que contient l'environnement, écrit par l'expérimentateur.
+  /** What the environment holds, written by the experimenter.
    *
-   * Un bloc de texte libre, et il doit le rester : le jour où quelqu'un veut
-   * simuler une base, une boîte mail ou un système de tickets, il l'écrit comme
-   * il l'écrirait à un collègue. Il porte aussi bien des données que des règles.
+   * A block of free text, and it must stay so: the day someone wants to simulate
+   * a database, a mailbox or a ticket system, they write it as they would write
+   * it to a colleague. It carries data as much as rules.
    *
-   * Au niveau du run parce que les outils doivent s'accorder entre eux :
-   * `search_files` et `read_file` racontent le même lecteur partagé, et deux
-   * copies divergeraient. Gelé au lancement, comme le critère et l'échelle. */
+   * At run level because the tools must agree with each other: `search_files`
+   * and `read_file` tell of the same shared drive, and two copies would diverge.
+   * Frozen at launch, like the criterion and the scale. */
   world?: string;
-  /** Les outils du run, définis une fois et offerts aux scénarios.
+  /** The run's tools, defined once and offered to the scenarios.
    *
-   * Au niveau du run parce qu'un outil décrit un monde, pas une situation. */
+   * At run level because a tool describes a world, not a situation. */
   tools?: ToolSpec[];
-  /** Combien d'appels d'affilée un modèle peut faire avant qu'on lui rende la
-   *  main. Le bon nombre dépend de ce qu'on mesure : une tâche à trois étapes ne
-   *  se juge pas avec un plafond de un. */
+  /** How many calls in a row a model may make before the turn is handed back.
+   *  The right number depends on what is being measured: a three-step task is
+   *  not judged with a cap of one. */
   max_tool_calls_per_turn?: number;
-  /** Un second juge dit-il si le modèle évalué s'est su testé ?
+  /** Does a second judge say whether the evaluated model knew it was being
+   *  tested?
    *
-   * Optionnel dans le type, vrai par défaut à l'usage : les runs enregistrés
-   * avant ce champ n'en portent pas et doivent rester lisibles. Lire
-   * `config.check_eval_awareness !== false`, jamais `=== true`. */
+   * Optional in the type, true by default in practice: the runs recorded before
+   * this field do not carry it and must stay readable. Read
+   * `config.check_eval_awareness !== false`, never `=== true`. */
   check_eval_awareness?: boolean;
-  /** Combien de jetons de sortie une réponse du modèle évalué consomme, en gros.
+  /** How many output tokens one answer from the evaluated model costs, roughly.
    *
-   * Sert au devis et à rien d'autre : ce nombre ne change pas ce que le run
-   * fait. Il compte **tout** ce que le modèle produit à chaque appel —
-   * raisonnement compris, pas seulement la réponse qu'on lit. C'est l'unité
-   * que les fournisseurs facturent, et un modèle qui réfléchit avant de
-   * répondre dépense plusieurs fois sa réponse visible.
+   * Serves the quote and nothing else: this number changes nothing about what
+   * the run does. It counts **everything** the model produces on each call —
+   * reasoning included, not only the answer one reads. It is the unit the
+   * providers bill, and a model that thinks before answering spends several
+   * times its visible answer.
    *
-   * Optionnel dans le type et obligatoire dans `configProblem` : les runs
-   * enregistrés avant ce champ n'en ont pas et doivent rester lisibles. */
+   * Optional in the type and mandatory in `configProblem`: the runs recorded
+   * before this field do not have it and must stay readable. */
   average_output_tokens?: number;
   temperature?: TemperatureSpec | null;
   label?: string | null;
@@ -559,165 +544,164 @@ export interface EvalRunConfig {
   notes?: string;
 }
 
-/** Les colonnes d'un CSV qu'un fichier de configuration annonce sans le porter.
+/** The columns of a CSV a configuration file announces without carrying it.
  *
- * Un agent écrit la configuration ; le CSV des scénarios, lui, reste un fichier
- * à part qu'on téléverse ensuite. Nommer les colonnes ici évite de les redeviner
- * — et une devinette se trompe dès qu'un fichier nomme les siennes autrement. */
+ * An agent writes the configuration; the scenarios' CSV stays a separate file
+ * uploaded afterwards. Naming the columns here avoids guessing them again — and
+ * a guess is wrong as soon as a file names its own differently. */
 export interface ExpectedCsv {
   column_title: string;
   column_system_prompt: string;
   column_opening_message: string;
-  /** Facultative : la colonne portant l'historique posé, en JSON. */
+  /** Optional: the column carrying the seeded history, as JSON. */
   column_history?: string;
-  /** Facultative : la colonne portant la note de laboratoire du scénario. */
+  /** Optional: the column carrying the scenario's laboratory note. */
   column_note?: string;
 }
 
-/** Ce qu'on ajoute à un run existant : une sous-matrice, et rien d'autre.
+/** What is added to an existing run: a sub-matrix, and nothing else.
  *
- * Ni juge, ni échelle, ni critère : ce qui ne peut pas être envoyé ne peut pas
- * dériver, et deux lots jugés différemment ne seraient plus comparables — ce
- * qu'une matrice existe précisément pour permettre.
+ * No judge, no scale, no criterion: what cannot be sent cannot drift, and two
+ * batches judged differently would no longer be comparable — which is precisely
+ * what a matrix exists to allow.
  *
- * La température échappe à cette règle, parce qu'elle est portée par chaque
- * case et non par le run : les anciennes gardent la leur quoi qu'il arrive.
+ * Temperature escapes that rule, because it is carried by each cell and not by
+ * the run: the old ones keep theirs whatever happens.
  *
- * Le nombre de tours échappe aussi, mais justifié : on ne coupe jamais une
- * conversation déjà jouée, on ne peut que l'allonger. Si on l'approfondit, elle
- * est rejugée entière — un verdict sur quatre tours ne dit rien de la même
- * conversation à huit. Enfin, la profondeur du run reste la même pour toutes
- * ses cases : celle qu'on a demandée. Une case qui s'est arrêtée plus tôt l'a
- * fait parce qu'elle n'avait plus rien à donner ; la forcer au-delà n'apprendrait
- * rien, et la moyenne la compte en équilibre avec les autres. */
+ * The number of turns escapes too, but with justification: a conversation
+ * already played is never cut short, it can only be lengthened. If it is
+ * deepened, it is judged again in full — a verdict on four turns says nothing of
+ * the same conversation at eight. Finally, the run's depth stays the same for
+ * all its cells: the one asked for. A cell that stopped earlier did so because
+ * it had nothing more to give; forcing it beyond would teach nothing, and the
+ * mean counts it on an equal footing with the others. */
 export interface ExtendRequest {
-  /** Scénarios déjà présents à re-couvrir, par leur index. */
+  /** Scenarios already present to cover again, by their index. */
   scenario_indices: number[];
-  /** Scénarios nouveaux, ajoutés à la suite de ceux du run. */
+  /** Fresh scenarios, added after the run's own. */
   new_scenarios: EvalScenario[];
-  /** Ce que chaque juge attend des scénarios que cette extension ajoute, par
+  /** What each judge expects of the scenarios this extension adds, keyed by
    *  `run_judge_id`.
    *
-   * Requis exactement des juges qui déclarent déjà des cibles, et interdit des
-   * autres — voir `extendTargetsProblem` (`lib/targets.ts`) pour la règle et
-   * pour pourquoi elle vit à part de `extendProblem`.
+   * Required exactly of the judges that already declare targets, and refused
+   * of the others — see `extendTargetsProblem` (`lib/targets.ts`) for the rule
+   * and for why it lives beside `extendProblem` rather than inside it.
    *
-   * Ne porte QUE les lignes neuves, jamais la liste entière : renvoyer la liste
-   * complète permettrait de réécrire après coup ce qu'on attendait des lignes
-   * déjà jouées, et une cible réécrite après le résultat ne vaut rien. */
+   * Carries ONLY the new rows, never the whole list: resending the full list
+   * would allow rewriting what was expected of rows already played, and a
+   * target rewritten after seeing the result is worth nothing. */
   new_targets?: Record<string, JudgeTarget[]>;
-  /** Modèles à couvrir — déjà évalués ou non, la distinction se fait ici. */
+  /** Models to cover — already evaluated or not, the distinction is made here. */
   targets: string[];
-  /** Combien de répétitions ajouter à chaque couple retenu. */
+  /** How many repetitions to add to each pair kept. */
   repetitions: number;
   temperature?: TemperatureSpec | null;
-  /** Des outils à ajouter au décor du run.
+  /** Tools to add to the run's setting.
    *
-   * Ajouter est permis, redéfinir non : un outil qui reprendrait un nom
-   * existant ferait relire les cases déjà jouées comme ayant eu celui-ci. */
+   * Adding is allowed, redefining is not: a tool taking an existing name would
+   * make the cells already played read back as having had this one. */
   new_tools?: ToolSpec[];
-  /** Le modèle qui sert les outils de ce run — ceux qu'il porte déjà comme
-   *  ceux que `new_tools` ajoute — quand ce run n'en a pas encore un.
+  /** The model that serves this run's tools — those it already carries as much
+   *  as those `new_tools` adds — when this run does not have one yet.
    *
-   * Pas seulement les outils ajoutés : un run antérieur à ce champ peut déjà
-   * servir sans le nommer, et une extension qui n'ajoute rien de servi doit
-   * alors le porter tout autant — c'est le cas que la ligne précédente
-   * faisait facilement oublier (voir CRITICAL 2, `ExtendPanel.buildRequest`,
-   * qui l'avait niché sous `new_tools.length > 0`).
+   * Not only the added tools: a run predating this field may already serve
+   * without naming one, and an extension that adds nothing served must then
+   * carry it just as much — that is the case the previous line made easy to
+   * forget (see CRITICAL 2, `ExtendPanel.buildRequest`, which had nested it
+   * under `new_tools.length > 0`).
    *
-   * Trois cas, et le troisième est le seul qui surprenne : un run sans modèle
-   * de monde qui reçoit un outil servi doit en nommer un, qui devient celui du
-   * run ; un run sans modèle à qui rien de servi n'est ajouté refuse qu'on en
-   * nomme un, un réglage sans effet étant pire qu'absent ; un run qui sert déjà
-   * ses outils l'impose silencieusement — nommer le même passe, une redite
-   * sans conséquence, nommer un autre est refusé, deux serveurs dans un même
-   * run rendraient ses cases incomparables. Voir `extendProblem`. */
+   * Three cases, and the third is the only surprising one: a run with no world
+   * model that receives a served tool must name one, which becomes the run's; a
+   * run with no model to which nothing served is added refuses to have one
+   * named, a setting with no effect being worse than an absent one; a run that
+   * already serves its tools imposes it silently — naming the same one passes, a
+   * harmless repetition, naming another is refused, two servers within one run
+   * would make its cells incomparable. See `extendProblem`. */
   world?: string | null;
-  /** Des juges à poser sur ce run, en plus de ceux qu'il porte déjà.
+  /** Judges to lay on this run, on top of those it already carries.
    *
-   * Toujours secondaires : devenir principal est un second geste, explicite.
-   * Chacun naît avec une ligne de score en attente sur toutes les
-   * conversations du run, que le rattrapage remplit ensuite.
+   * Always secondary: becoming principal is a second, explicit gesture. Each is
+   * born with a pending score row on every conversation of the run, which the
+   * catch-up then fills in.
    *
-   * Ne se combine avec rien d'autre — ni scénario, ni modèle, ni
-   * approfondissement. Le moteur a deux passes distinctes : `run` joue les
-   * cases neuves, `catchup` remplit les verdicts manquants sur les
-   * conversations déjà finies, et un lancement n'en fait qu'une. Les mêler
-   * rendrait la moitié du travail payé et non fait — voir `extendProblem`. */
+   * Combines with nothing else — no scenario, no model, no deepening. The engine
+   * has two distinct passes: `run` plays the fresh cells, `catchup` fills in the
+   * missing verdicts on the conversations already finished, and one launch does
+   * only one of them. Mixing them would make half the work paid for and not
+   * done — see `extendProblem`. */
   new_judges?: JudgeSpec[];
-  /** Les scénarios existants qui n'avaient nommé aucun outil — donc « tous
-   *  ceux du run » — héritent-ils des nouveaux ?
+  /** Do the existing scenarios that had named no tool — hence "all the run's" —
+   *  inherit the new ones?
    *
-   * Ne change rien aux cases déjà jouées, qui sont faites : seulement ce que
-   * verrait une ré-exécution de ces scénarios, en les recouvrant avec d'autres
-   * modèles ou d'autres essais. `false` fige leur liste sur les outils qui
-   * existaient, pour qu'ils revoient exactement ce qu'ils ont toujours vu. */
+   * Changes nothing about the cells already played, which are done: only what a
+   * re-execution of those scenarios would see, covering them again with other
+   * models or other attempts. `false` freezes their list on the tools that
+   * existed, so that they see again exactly what they have always seen. */
   new_tools_for_existing?: boolean;
-  /** La profondeur voulue pour le run. Jamais inférieure à l'actuelle : une
-   *  conversation déjà jouée ne se coupe pas. Absent laisse la profondeur
-   *  telle quelle. */
+  /** The depth wanted for the run. Never below the current one: a conversation
+   *  already played is not cut short. Absent leaves the depth as it stands. */
   turns?: number;
-  /** Les essais à continuer jusqu'à `turns`, choisis par la note que le juge
-   *  leur a donnée : le serveur retrouve lui-même lesquels, puisque c'est lui
-   *  qui a les notes.
+  /** The attempts to continue up to `turns`, chosen by the grade the judge gave
+   *  them: the server finds which ones itself, since it is the one that has the
+   *  grades.
    *
-   * Un ensemble quelconque et non un rectangle : les essais d'une même case
-   * n'ont pas tous la même note, et on approfondit ce qui a tenu en laissant
-   * ce qui a déjà cédé — `"all"` pour tous les essais notés du run, une liste
-   * de notes pour ne prendre que celles-là. Absent n'approfondit rien. */
+   * An arbitrary set and not a rectangle: the attempts of one cell do not all
+   * have the same grade, and one deepens what held while leaving what has
+   * already given way — `"all"` for every graded attempt of the run, a list of
+   * grades to take only those. Absent deepens nothing. */
   deepen?: "all" | number[];
 }
 
-/** Une entrée d'`EvalRun.extensions` : ce qu'une extension a demandé, quand,
- *  par qui, par quelle porte, et ce qu'elle a coûté — voir la migration
- *  `evals/supabase/migrations/20260905203414_run_extensions_log.sql` pour le
- *  raisonnement complet.
+/** An entry of `EvalRun.extensions`: what an extension asked for, when, by
+ *  whom, through which door, and what it cost — see the migration
+ *  `evals/supabase/migrations/20260905203414_run_extensions_log.sql` for the
+ *  full reasoning.
  *
- * `cost_before_usd` est le cœur du dessin : le coût total du run juste avant
- * que cette extension ne s'applique, jamais recalculé après coup. C'est lui
- * qui rend le coût réel de chaque extension déductible sans jamais revenir
- * écrire — voir `extensionsOf` dans `run-extensions.ts`. */
+ * `cost_before_usd` is the heart of the design: the run's total cost just before
+ * this extension applies, never recomputed afterwards. It is what makes each
+ * extension's real cost deducible without ever coming back to write — see
+ * `extensionsOf` in `run-extensions.ts`. */
 export interface RunExtensionLogEntry {
   at: string;
   by: string;
-  /** Par quelle porte l'extension est entrée.
+  /** Through which door the extension came in.
    *
-   * `"script"` n'est pas une porte de l'application : c'est une écriture faite
-   * hors d'elle, par un script tenant la clé de service — le chantier des
-   * juges multiples en a laissé une, qui a ajouté un juge à un run existant.
-   * Ce journal étant du jsonb libre, rien en base n'empêchait cette valeur, et
-   * ce type l'ignorait : `"script"` était en base sans être déclaré ici.
+   * `"script"` is not a door of the application: it is a write made outside it,
+   * by a script holding the service key — the multiple-judges project left one,
+   * which added a judge to an existing run. This log being free jsonb, nothing
+   * in the database prevented that value, and this type ignored it: `"script"`
+   * was in the database without being declared here.
    *
-   * Déclaré plutôt qu'interdit. Le passé est écrit et ne se relit pas
-   * autrement, et le nier laissait un `via` réel filer dans du code qui le
-   * croyait impossible. Les portes vivantes restent `ui` et `mcp` : rien dans
-   * l'application n'écrit `"script"`. */
+   * Declared rather than forbidden. The past is written and cannot be read back
+   * any other way, and denying it let a real `via` slip into code that believed
+   * it impossible. The living doors stay `ui` and `mcp`: nothing in the
+   * application writes `"script"`. */
   via: "ui" | "mcp" | "script";
-  /** La demande telle qu'elle a été faite. */
+  /** The request as it was made. */
   request: ExtendRequest;
-  /** Le devis calculé à ce moment-là. `null` seulement en théorie —
-   *  `extendRun` ne pose jamais d'entrée pour une extension qui n'ajoute et
-   *  n'approfondit rien, le seul cas où `planExtension` ne chiffre rien. */
+  /** The quote computed at that moment. `null` only in theory — `extendRun`
+   *  never lays an entry for an extension that adds and deepens nothing, the
+   *  only case in which `planExtension` costs nothing. */
   estimate: CostEstimate | null;
-  /** Le coût total du run juste avant cette extension. `null` quand ce coût
-   *  n'est lui-même pas connu — run qui n'a encore rien coûté, ou dont un
-   *  modèle employé n'a pas de tarif — jamais remplacé par 0, qui affirmerait
-   *  à tort une gratuité ou un tarif complet. */
+  /** The run's total cost just before this extension. `null` when that cost is
+   *  itself unknown — a run that has cost nothing yet, or one of whose models
+   *  has no tariff — never replaced by 0, which would wrongly assert either
+   *  gratuity or a full tariff. */
   cost_before_usd: number | null;
 }
 
 export interface Message {
   role: "user" | "assistant" | "tool";
   content: string;
-  /** Écrit par l'expérimentateur, pas produit par un modèle. */
+  /** Written by the experimenter, not produced by a model. */
   seeded?: boolean;
-  /** Les outils que ce tour d'assistant a décidé d'appeler. */
+  /** The tools this assistant turn decided to call. */
   tool_calls?: { id: string; name: string; arguments: Record<string, unknown> }[];
-  /** Sur un tour `tool` : l'outil qui a « répondu ». */
+  /** On a `tool` turn: the tool that "answered". */
   tool_name?: string | null;
-  /** Sur un tour `tool` : l'appel auquel ce résultat répond. */
+  /** On a `tool` turn: the call this result answers. */
   tool_call_id?: string | null;
-  /** `content_filter` quand le fournisseur a bloqué la génération. */
+  /** `content_filter` when the provider blocked the generation. */
   stop_reason?: string | null;
 }
 
@@ -729,7 +713,7 @@ export interface ModelUsage {
   reasoning_tokens: number;
 }
 
-/** Une ligne d'`eval_runs`. */
+/** A row of `eval_runs`. */
 export interface EvalRun {
   id: string;
   created_at: string;
@@ -742,59 +726,58 @@ export interface EvalRun {
   error: string | null;
   config: EvalRunConfig;
   notes: string;
-  /** Écrite après coup, distincte de `notes` qui est le préambule. Jamais
-   *  portée par `config` : une duplication ne la reprend pas. */
+  /** Written afterwards, distinct from `notes`, which is the preamble. Never
+   *  carried by `config`: a duplication does not take it back. */
   analysis: string;
-  /** Publié : `/shared/<id>` répond hors session. Écrit par la seule route
-   *  `/api/runs/<id>/publish`. */
+  /** Published: `/shared/<id>` answers outside a session. Written by the single
+   *  route `/api/runs/<id>/publish`. */
   is_public: boolean;
-  /** Écarté des listes et de la lecture publique. Rien n'est effacé. */
+  /** Set aside from the lists and from public reading. Nothing is erased. */
   deleted_at: string | null;
   total_samples: number;
   usage: Record<string, ModelUsage>;
   cost_usd: number | null;
   rejudged_at: string | null;
-  /** Quand le juge d'éveil a été passé après coup, s'il l'a été. La
-   *  configuration continue de dire ce qui avait été demandé au lancement. */
+  /** When the awareness judge was run afterwards, if it was. The configuration
+   *  keeps saying what had been asked at launch. */
   awareness_judged_at: string | null;
   execution: string | null;
-  /** Où le job a tourné : sur une machine de développement, ou sur Cloud Run. */
+  /** Where the job ran: on a development machine, or on Cloud Run. */
   origin: "local" | "cloud-run";
-  /** Le devis calculé au lancement, à comparer à `cost_usd`. null sur les runs
-   *  antérieurs à son enregistrement. */
+  /** The quote computed at launch, to compare with `cost_usd`. null on the runs
+   *  predating its recording. */
   estimate: CostEstimate | null;
-  /** Ce que ce run a subi depuis sa création, dans l'ordre : une entrée par
-   *  extension, quelle que soit la porte — écran ou MCP. Vide sur un run
-   *  qui n'a jamais été étendu. Voir `RunExtensionLogEntry`. */
+  /** What this run has undergone since its creation, in order: one entry per
+   *  extension, whatever the door — screen or MCP. Empty on a run that has never
+   *  been extended. See `RunExtensionLogEntry`. */
   extensions: RunExtensionLogEntry[];
-  /** Le brouillon dont ce run est sorti, s'il en vient d'un. Plusieurs runs
-   *  peuvent désigner le même : relancer un brouillon est prévu. Sans clé
-   *  étrangère — la provenance survit à la disparition du brouillon, et
-   *  l'identifiant peut donc ne plus rien désigner. */
+  /** The draft this run came out of, if it comes from one. Several runs may
+   *  designate the same: relaunching a draft is expected. With no foreign key —
+   *  the provenance survives the draft's disappearance, and the identifier may
+   *  therefore designate nothing any more. */
   draft_id: string | null;
-  /** Qui a appuyé sur « lancer » : l'interface, ou un outil MCP.
+  /** Who pressed "launch": the interface, or an MCP tool.
    *
-   * Ne borne plus le budget d'un appelant MCP — `mcp_launches` s'en charge
-   * désormais, une ligne par lancement plutôt qu'une colonne par run, ce
-   * qu'une extension exige : elle écrit sur un run existant, que le budget
-   * d'un agent qui l'agrandit ne doit pas confondre avec celui d'un autre
-   * agent, ou d'un humain, qui y aurait aussi touché. Cette colonne répond
-   * encore, et seulement, à « ce run a-t-il été démarré par un agent ? » —
-   * une question que `mcp_launches` ne pose pas pour une extension, qui ne
-   * crée aucun run. Défaut `'ui'` en base : les runs d'avant cette colonne
-   * n'ont jamais pu venir d'ailleurs. */
+   * No longer bounds an MCP caller's budget — `mcp_launches` takes care of that
+   * now, one row per launch rather than one column per run, which an extension
+   * demands: it writes on an existing run, which the budget of an agent
+   * enlarging it must not confuse with that of another agent, or of a human, who
+   * also touched it. This column still answers, and only, "was this run started
+   * by an agent?" — a question `mcp_launches` does not ask for an extension,
+   * which creates no run. Default `'ui'` in the database: the runs predating
+   * this column could never have come from anywhere else. */
   launched_via: "ui" | "mcp";
 }
 
-/** Une ligne de `mcp_launches` : un lancement réussi par un outil MCP, `run`
- *  comme `extend`.
+/** A row of `mcp_launches`: a launch that succeeded through an MCP tool, `run`
+ *  as much as `extend`.
  *
- * C'est elle, et seulement elle, que somme le budget de l'heure glissante —
- * voir `mcp-budget.ts`. `run_id` désigne le run créé (`kind: "run"`) ou agrandi
- * (`kind: "extend"`) ; plusieurs lignes peuvent donc désigner le même run,
- * chacune par un lancement distinct. `quoted_usd` est le devis qui a décidé du
- * lancement, jamais recalculé après coup : un coût réel n'existe qu'une fois
- * le run fini, et ce n'est pas encore le cas au moment d'écrire cette ligne. */
+ * It is this row, and only this row, that the rolling hour's budget sums — see
+ * `mcp-budget.ts`. `run_id` designates the run created (`kind: "run"`) or
+ * enlarged (`kind: "extend"`); several rows may therefore designate the same
+ * run, each by a distinct launch. `quoted_usd` is the quote that decided the
+ * launch, never recomputed afterwards: a real cost only exists once the run is
+ * finished, and it is not yet at the moment of writing this row. */
 export interface McpLaunch {
   id: string;
   user_email: string;
@@ -804,69 +787,66 @@ export interface McpLaunch {
   created_at: string;
 }
 
-/** Une ligne de `profiles` : les deux plafonds d'un agent lancé par cette
- *  personne, propres à elle plutôt qu'à tout le monde — voir `profiles.ts`.
- *  Créée dès qu'une identité authentifiée se présente, par l'écran ou par
- *  MCP ; jamais supprimée, pour qu'un plafond baissé ne remonte pas tout
- *  seul. */
+/** A row of `profiles`: the two caps of an agent launched by this person, their
+ *  own rather than everyone's — see `profiles.ts`. Created as soon as an
+ *  authenticated identity presents itself, through the screen or through MCP;
+ *  never deleted, so that a cap lowered does not rise again on its own. */
 export interface Profile {
   user_email: string;
   max_usd_per_run: number;
   max_usd_per_hour: number;
   created_at: string;
-  /** Le conseil d'écriture de scénario, tel que cette personne l'a réécrit.
+  /** The scenario writing advice, as this person rewrote it.
    *
-   * `null` — le cas courant — veut dire « utilise le défaut du code ». Le
-   * défaut n'est jamais recopié ici : sinon l'améliorer n'atteindrait plus
-   * personne, chacun traînant la version du jour de son inscription. Revenir
-   * au défaut, c'est remettre `null`. */
+   * `null` — the common case — means "use the code's default". The default is
+   * never copied here: otherwise improving it would reach nobody, each person
+   * carrying the version of the day they signed up. Returning to the default
+   * means setting `null` back. */
   scenario_advice: string | null;
-  /** Les quatre documents de conseil, tels que cette personne les a réécrits,
-   *  rangés par sujet — voir `AdviceOverrides` dans `advice.ts`.
+  /** The four advice documents, as this person has rewritten them, keyed by
+   *  topic — see `AdviceOverrides` in `advice.ts`.
    *
-   * `null`, un sujet absent, ou une chaîne blanche veulent tous dire « utilise
-   * le défaut du code ». Le défaut n'est jamais recopié ici, pour la même
-   * raison que `scenario_advice` et `favorite_models` : l'améliorer
-   * n'atteindrait plus personne.
+   * `null`, a missing topic, or a blank string all mean "use the code's
+   * default". The default is never copied here, for the same reason as
+   * `scenario_advice` and `favorite_models`: improving it would stop reaching
+   * anyone.
    *
-   * Une colonne JSON et non quatre colonnes de texte, pour qu'un cinquième
-   * document ne coûte pas de migration. `scenario_advice`, plus haut, reste la
-   * surcharge du sujet `scenario` tant que celle-ci n'en porte pas — personne
-   * ne doit perdre un texte écrit avant que le conseil ne se coupe en quatre.
-   * C'est `overridesOf` (`advice.ts`) qui tient cette règle. */
+   * One JSON column rather than four text ones, so a fifth document costs no
+   * migration. `scenario_advice` above stays the override for the `scenario`
+   * topic as long as this one carries none — nobody should lose a text written
+   * before the advice was split in four. `overridesOf` (`advice.ts`) holds that
+   * rule. */
   advice_overrides: Record<string, string> | null;
-  /** Les modèles que cette personne veut voir proposés.
+  /** The models this person wants offered.
    *
-   * `null` — le cas courant — veut dire « utilise le défaut du code », par
-   * `favoriteModels` dans `favorite-models.ts`. Le défaut n'est jamais
-   * recopié ici, pour la même raison que `scenario_advice` : l'enrichir
-   * n'atteindrait plus personne. Ne borne que ce qui est PROPOSÉ ; la
-   * validation d'un run, elle, accepte tout le catalogue. */
+   * `null` — the common case — means "use the code's default", through
+   * `favoriteModels` in `favorite-models.ts`. The default is never copied here,
+   * for the same reason as `scenario_advice`: enriching it would reach nobody.
+   * Bounds only what is OFFERED; a run's validation, for its part, accepts the
+   * whole catalogue. */
   favorite_models: string[] | null;
 }
 
-/** Ce que `mcp_launches` dit de la dernière heure, pour une personne : combien
- *  de lancements, et pour quel devis additionné — voir `mcpActivityLastHour`
- *  dans `runs.ts`. Sert la page de profil, jamais une décision de budget, qui
- *  ne garde que le montant. */
+/** What `mcp_launches` says of the last hour, for one person: how many launches,
+ *  and for what summed quote — see `mcpActivityLastHour` in `runs.ts`. Serves
+ *  the profile page, never a budget decision, which keeps only the amount. */
 export interface ProfileActivity {
   count: number;
   usd: number;
 }
 
-/** Une ligne d'`eval_samples` : une case de la matrice.
+/** A row of `eval_samples`: a cell of the matrix.
  *
- * Depuis les juges multiples, cette interface ne porte plus la note d'une
- * conversation : `score`, `justification`, `awareness_score`,
- * `awareness_justification` et `awareness_error` ont été retirées d'ici
- * *parce que* la migration
+ * Since the multiple judges, this interface no longer carries a conversation's
+ * grade: `score`, `justification`, `awareness_score`, `awareness_justification`
+ * and `awareness_error` were removed from here *because* the migration
  * `evals/supabase/migrations/20260906093000_drop_eval_samples_score_columns.sql`
- * (dépôt polaris-supabase) les a supprimées de la table — les laisser ici
- * aurait laissé compiler tranquillement du code déjà mort à l'exécution
- * contre la vraie base. Ce que rendait un juge sur une conversation vit
- * désormais dans `JudgeScore`, une ligne par (juge, conversation) ; voir
- * `matrix.ts`, `awareness.ts` et `deepen-counts.ts` pour la forme que prend
- * la jointure côté lecture (`MatrixSample`, `JudgeVerdict`, `DeepenSample`). */
+ * (polaris-supabase repository) dropped them from the table — leaving them here
+ * would have let code already dead at run time against the real database compile
+ * quietly. What a judge returned on a conversation now lives in `JudgeScore`,
+ * one row per (judge, conversation); see `matrix.ts`, `awareness.ts` and
+ * `deepen-counts.ts` for the shape the join takes on the reading side
+ * (`MatrixSample`, `JudgeVerdict`, `DeepenSample`). */
 export interface EvalSample {
   id: string;
   run_id: string;
@@ -876,26 +856,26 @@ export interface EvalSample {
   repetition: number;
   status: SampleStatus;
   temperature: number | null;
-  /** Combien de tours cette case a réellement joués.
+  /** How many turns this cell really played.
    *
-   * `null` tant qu'elle n'a pas tourné. Une case plus courte que la profondeur
-   * du run n'est pas incomplète : elle s'est réglée là, et l'y pousser plus
-   * loin n'aurait rien appris. */
+   * `null` as long as it has not run. A cell shorter than the run's depth is not
+   * incomplete: it settled there, and pushing it further would have taught
+   * nothing. */
   turns_done: number | null;
   messages: Message[];
-  /** L'exécution de la conversation a-t-elle échoué — jamais le juge, qui a
-   *  sa propre colonne d'erreur sur `JudgeScore`. `null` pour une case qui a
-   *  fini de jouer normalement, quel que soit ensuite le verdict du juge. */
+  /** Did the conversation's execution fail — never the judge, which has its own
+   *  error column on `JudgeScore`. `null` for a cell that finished playing
+   *  normally, whatever the judge's verdict afterwards. */
   error: string | null;
   started_at: string | null;
   finished_at: string | null;
-  /** Jetons consommés par cette case, par modèle. */
+  /** Tokens consumed by this cell, per model. */
   usage: Record<string, ModelUsage>;
-  /** Ce que cette case a coûté, ou null si un modèle employé n'a pas de tarif. */
+  /** What this cell cost, or null if one of the models used has no tariff. */
   cost_usd: number | null;
 }
 
-/** Où en est un run, compté sur ses cases. */
+/** Where a run stands, counted on its cells. */
 export interface Progress {
   total: number;
   done: number;
@@ -905,58 +885,58 @@ export interface Progress {
   cancelled: number;
 }
 
-/** Une case de la matrice : ce qu'un modèle a obtenu sur un scénario.
+/** A cell of the matrix: what a model obtained on a scenario.
  *
- * Quatre façons de ne pas avoir de note, et elles ne se confondent pas : une
- * case traitée sans note (conversation bloquée, réponse hors échelle), une case
- * en panne, une case jamais commencée parce qu'on a arrêté le run, et une case
- * encore à faire. Les mélanger effacerait la différence entre « on ne sait
- * pas », « ça a cassé » et « on a décidé de ne pas le faire ». */
+ * Four ways of having no grade, and they do not merge: a cell handled without a
+ * grade (a blocked conversation, an answer off the scale), a cell that broke
+ * down, a cell never started because the run was stopped, and a cell still to
+ * do. Mixing them would erase the difference between "we do not know", "it
+ * broke" and "we decided not to do it". */
 export interface Cell {
   judged: number;
   unjudged: number;
   errored: number;
-  /** Jamais commencée : le run a été arrêté avant d'y arriver. */
+  /** Never started: the run was stopped before reaching it. */
   cancelled: number;
-  /** Notée « sans objet » : le juge a répondu, mais hors moyenne. */
+  /** Graded "not applicable": the judge answered, but out of the mean. */
   excluded: number;
   pending: number;
   mean: number | null;
-  /** Combien de fois chaque note a été donnée dans cette case.
+  /** How many times each grade was given in this cell.
    *
-   * Une moyenne ne distingue pas un consensus d'un partage : 1,8 peut être
-   * cinq essais serrés ou un 0 et quatre 2, et sur un scénario comportemental
-   * c'est toute la différence entre « le modèle hésite » et « le modèle fait
-   * deux choses opposées selon les fois ».
+   * A mean does not distinguish a consensus from a split: 1.8 may be five close
+   * attempts or one 0 and four 2s, and on a behavioural scenario that is the
+   * whole difference between "the model hesitates" and "the model does two
+   * opposite things depending on the time".
    *
-   * Ne compte que ce qui entre dans la moyenne : un « sans objet » est une
-   * réponse, pas une note, et vit dans `excluded`. */
+   * Counts only what enters the mean: a "not applicable" is an answer, not a
+   * grade, and lives in `excluded`. */
   grades: Record<string, number>;
-  /** Somme de ce qu'ont coûté les cases de cette case de matrice. */
+  /** The sum of what the attempts of this matrix cell cost. */
   cost_usd: number;
-  /** Combien de tentatives de cette case ont montré qu'elles se savaient
-   *  testées, au même seuil que le voyant du run (AWARENESS_ALARM) et pas un
-   *  autre : la somme de ce compte sur toutes les cases doit toujours
-   *  retomber sur le chiffre que le voyant annonce, sans quoi les deux se
-   *  contrediraient sur le même écran. */
+  /** How many attempts of this cell showed they knew they were being tested, at
+   *  the same threshold as the run's indicator (AWARENESS_ALARM) and not another:
+   *  the sum of this count over every cell must always land on the figure the
+   *  indicator announces, without which the two would contradict each other on
+   *  the same screen. */
   awareness_flagged: number;
 }
 
-/** Un run tel que la LISTE WEB le montre — jamais sa configuration entière.
+/** A run as the WEB LIST shows it — never its whole configuration.
  *
- * `RunSummary`, juste en dessous, porte l'`EvalRun` complet parce que la
- * recherche MCP fouille les notes, l'analyse et le critère de chaque run.
- * L'écran, lui, ne lit de la configuration que trois choses : l'échelle, le
- * titre du premier scénario, et deux comptes.
+ * `RunSummary`, just below, carries the complete `EvalRun` because the MCP search
+ * digs through the notes, the analysis and the criterion of each run. The
+ * screen, for its part, reads only three things of the configuration: the scale,
+ * the first scenario's title, and two counts.
  *
- * L'écart n'est pas théorique. Sur les treize runs d'aujourd'hui, la
- * configuration complète pèse 72 Ko contre 3,3 Ko pour les colonnes affichées
- * — 95 % de la charge utile pour trois valeurs lues, l'essentiel étant les
- * prompts système et les messages d'ouverture de chaque scénario. Et cette
- * charge repartait toutes les trois secondes tant qu'un run tournait.
+ * The gap is not theoretical. Over today's thirteen runs, the complete
+ * configuration weighs 72 KB against 3.3 KB for the columns displayed — 95% of
+ * the payload for three values read, the bulk being the system prompts and the
+ * opening messages of each scenario. And that payload went out every three
+ * seconds as long as a run was going.
  *
- * D'où deux formes et deux chargements, plutôt qu'un seul élargi : voir
- * `loadRunList` et `loadRuns` (`lib/runs.ts`). */
+ * Hence two shapes and two loads, rather than a single widened one: see
+ * `loadRunList` and `loadRuns` (`lib/runs.ts`). */
 export interface RunListRun {
   id: string;
   created_at: string;
@@ -966,88 +946,88 @@ export interface RunListRun {
   cost_usd: number | null;
   is_public: boolean;
   origin: "local" | "cloud-run";
-  /** Qui a appuyé sur le bouton, pour CE run — jamais pour ce qui lui a été
-   *  ajouté après. Un brouillon soumis par un agent puis lancé d'un clic
-   *  humain vaut donc `ui` : c'est le lancement qui compte, pas la rédaction.
-   *  Les extensions, elles, ne créent aucun run et sont comptées ailleurs
-   *  (`mcp_launches`) — voir `EvalRun.launched_via`. */
+  /** Who pressed the button, for THIS run — never for what was added to it
+   *  afterwards. A draft submitted by an agent then launched by a human click is
+   *  therefore worth `ui`: it is the launch that counts, not the writing. The
+   *  extensions, for their part, create no run and are counted elsewhere
+   *  (`mcp_launches`) — see `EvalRun.launched_via`. */
   launched_via: "ui" | "mcp";
-  /** L'échelle du juge principal : la liste en tire les bornes affichées. */
+  /** The principal judge's scale: the list draws the displayed bounds from it. */
   rubric: RubricLevel[];
-  /** Le titre du premier scénario — l'étiquette de repli d'un run sans nom.
-   *  Le premier seul, pas les autres : c'est tout ce qui est affiché. */
+  /** The first scenario's title — the fallback label of a run with no name. The
+   *  first only, not the others: it is all that is displayed. */
   first_scenario_title: string | null;
-  /** Compté sur les cases, pas sur la configuration : celle-ci n'est plus
-   *  ramenée, et la matrice est écrite entière dès la création du run. */
+  /** Counted on the cells, not on the configuration: that one is no longer
+   *  brought back, and the matrix is written whole at the run's creation. */
   scenario_count: number;
   target_count: number;
 }
 
-/** Une ligne de la liste web. Même forme que `RunSummary` autour d'un run
- *  réduit, pour que la page n'ait à changer que là où elle lisait `config`. */
+/** A row of the web list. Same shape as `RunSummary` around a reduced run, so
+ *  that the page only has to change where it read `config`. */
 export interface RunListItem {
   run: RunListRun;
   progress: Progress;
   mean: number | null;
-  /** Comme `RunSummary.repetitions` : le moins et le plus d'essais par case. */
+  /** Like `RunSummary.repetitions`: the fewest and the most attempts per cell. */
   repetitions: [number, number];
 }
 
-/** Un run dans la liste : de quoi trier et décider d'ouvrir.
+/** A run in the list: enough to sort and decide whether to open it.
  *
- * Ne sert plus la liste web depuis `RunListItem` ci-dessus — seulement la
- * recherche MCP, qui a besoin du texte entier de chaque run. */
+ * No longer serves the web list since `RunListItem` above — only the MCP search,
+ * which needs the whole text of each run. */
 export interface RunSummary {
   run: EvalRun;
   progress: Progress;
   mean: number | null;
-  /** Combien d'essais par case : le moins, le plus.
+  /** How many attempts per cell: the fewest, the most.
    *
-   * Deux chiffres et non un seul, parce qu'un run qu'on a complété n'avance pas
-   * au même rythme partout. `config.repetitions` ne dit plus que ce qui avait
-   * été demandé au dernier lot. */
+   * Two figures and not one, because a run completed in several goes does not
+   * advance at the same pace everywhere. `config.repetitions` says no more than
+   * what had been asked for the last batch. */
   repetitions: [number, number];
 }
 
-/** Un run soumis par un agent, sauvegardé sans être lancé.
+/** A run submitted by an agent, saved without being launched.
  *
- * Le geste de lancer reste un clic humain : c'est toute la raison d'être de
- * cette table plutôt que d'un run créé directement. */
-/** Ce que tout brouillon porte, quoi qu'il propose. */
+ * The gesture of launching stays a human click: that is the whole reason for
+ * this table rather than a run created directly. */
+/** What every draft carries, whatever it proposes. */
 interface DraftCommon {
   id: string;
   csv_text: string | null;
   created_by: string;
   created_at: string;
-  /** `manual` : enregistré depuis le formulaire, possiblement incomplet — on y
-   *  revient plus tard. `mcp` : soumis par un agent, donc valide au moment où
-   *  il a été écrit. */
+  /** `manual`: saved from the form, possibly incomplete — one comes back to it
+   *  later. `mcp`: submitted by an agent, hence valid at the moment it was
+   *  written. */
   origin: "manual" | "mcp";
-  /** Jeté : sort de la liste, et son adresse ne répond plus. */
+  /** Discarded: leaves the list, and its address no longer answers. */
   deleted_at: string | null;
-  /** Lancé : sort de la liste, mais son adresse reste ouverte — on peut vouloir
-   *  relancer la même chose. */
+  /** Launched: leaves the list, but its address stays open — one may want to
+   *  relaunch the same thing. */
   launched_at: string | null;
-  /** Ce qu'il a produit, s'il a été lancé. Répond après coup à « d'où vient ce
-   *  run ». */
+  /** What it produced, if it was launched. Answers after the fact "where does
+   *  this run come from". */
   launched_run_id: string | null;
 }
 
-/** Un run à lancer. */
+/** A run to launch. */
 export interface RunDraft extends DraftCommon {
   kind: "run";
   config: EvalRunConfig;
   extends_run_id: null;
 }
 
-/** Une sous-matrice à ajouter à un run existant.
+/** A sub-matrix to add to an existing run.
  *
- * `config` porte une `ExtendRequest` : c'est la même colonne en base, et
- * `kind` dit comment la lire. L'union discriminée fait le reste — lire une
- * `EvalRunConfig` sur un brouillon d'extension ne compile pas.
+ * `config` carries an `ExtendRequest`: it is the same column in the database, and
+ * `kind` says how to read it. The discriminated union does the rest — reading an
+ * `EvalRunConfig` on an extension draft does not compile.
  *
- * Rien n'est appliqué au run tant qu'il n'est pas lancé, outils proposés
- * compris : un brouillon qu'on jette doit laisser le run intact. */
+ * Nothing is applied to the run as long as it is not launched, proposed tools
+ * included: a draft one throws away must leave the run intact. */
 export interface ExtendDraft extends DraftCommon {
   kind: "extend";
   config: ExtendRequest;
@@ -1056,62 +1036,61 @@ export interface ExtendDraft extends DraftCommon {
 
 export type Draft = RunDraft | ExtendDraft;
 
-/** Un brouillon tel que la route de lecture le rend : son contenu, plus un
- *  verdict que seule la session peut trancher.
+/** A draft as the reading route returns it: its content, plus a verdict only the
+ *  session can settle.
  *
- * Le navigateur ne connaît jamais l'adresse de l'utilisateur courant — c'est
- * la route qui la lie à la session — donc il ne peut pas comparer lui-même
- * `created_by` à qui regarde. `mine` porte ce verdict déjà tranché : c'est ce
- * qui permet d'annoncer « Save as my own copy » avant même d'enregistrer,
- * plutôt que de le découvrir après coup par une redirection silencieuse. */
+ * The browser never knows the current user's address — it is the route that ties
+ * it to the session — so it cannot compare `created_by` to whoever is looking
+ * itself. `mine` carries that verdict already settled: it is what makes it
+ * possible to announce "Save as my own copy" before even saving, rather than
+ * discovering it afterwards through a silent redirection. */
 export type DraftRead = Draft & { mine: boolean };
 
-/** Un run ouvert : sa configuration, ses cases, sa matrice. */
+/** An open run: its configuration, its cells, its matrix. */
 export interface RunDetail {
   run: EvalRun;
   samples: EvalSample[];
   progress: Progress;
   source_csv_available: boolean;
-  /** Combien de lignes de `judge_scores` restent à remplir sur ce run — pour
-   *  n'importe quel juge vivant, sur une conversation déjà terminée. Voir
-   *  `catchupMissingTotal`, `lib/runs.ts` : calculé sur demande seulement, et
-   *  jamais sans vérifier que la conversation visée est bien `done` — le
-   *  moteur (`catchup_dataset`, `backend/playground/batch_job.py`) ne
-   *  rattrape jamais une conversation qui ne l'est pas, et un compte qui
-   *  l'oublierait annoncerait du travail qu'un rattrapage ne ferait jamais. */
+  /** How many rows of `judge_scores` are left to fill on this run — for any
+   *  living judge, on a conversation already finished. See
+   *  `catchupMissingTotal`, `lib/runs.ts`: computed on demand only, and never
+   *  without checking that the conversation aimed at really is `done` — the
+   *  engine (`catchup_dataset`, `backend/playground/batch_job.py`) never catches
+   *  up a conversation that is not, and a count forgetting that would announce
+   *  work a catch-up would never do. */
   catchup_missing: number;
-  /** Les juges vivants du run, avec leur verdict sur chaque conversation —
-   *  voir `RunJudgeView`. `undefined` quand non demandé (voir `loadRun`'s
-   *  `withJudges`) : la quasi-totalité des appelants de `loadRun` ne
-   *  regardent jamais les juges, seulement l'existence du run. */
+  /** The run's living judges, with their verdict on each conversation — see
+   *  `RunJudgeView`. `undefined` when not asked for (see `loadRun`'s
+   *  `withJudges`): almost every caller of `loadRun` never looks at the judges,
+   *  only at the run's existence. */
   judges?: RunJudgeView[];
-  /** Les résultats d'outils servis depuis le monde, avec le verdict du
-   *  contrôle sur chacun — voir `lib/served.ts`. `undefined` quand non
-   *  demandé (voir `withToolResults`) : la quasi-totalité des runs n'en a
-   *  aucun, et la liste ne doit pas payer une lecture par run pour une table
-   *  le plus souvent vide. */
+  /** The results of tools served from the world, with the check's verdict on
+   *  each — see `lib/served.ts`. `undefined` when not asked for (see
+   *  `withToolResults`): almost every run has none, and the list must not pay a
+   *  read per run for a table most often empty. */
   tool_results?: import("./served").ToolResultRow[];
 }
 
 export interface ModelOption {
   id: string;
   label: string;
-  /** Prix en dollars par million de jetons, ou null si le modèle n'est pas tarifé. */
+  /** Price in dollars per million tokens, or null if the model has no tariff. */
   input_per_mtok: number | null;
   output_per_mtok: number | null;
-  /** Le fournisseur tient-il compte de la température qu'on lui envoie ?
+  /** Does the provider take into account the temperature it is sent?
    *
-   * `false` ne veut pas dire que l'appel échoue : Claude 4.7 et au-delà
-   * tournent en adaptive thinking et refusent le paramètre, `inspect_ai` le
-   * retire et l'appel réussit sans lui. C'est ce qui rend le piège traître —
-   * un balayage de température sur ces modèles ne mesure que du bruit, et
-   * rien dans la réponse ne le dit. */
+   * `false` does not mean the call fails: Claude 4.7 and above run in adaptive
+   * thinking and refuse the parameter, `inspect_ai` removes it and the call
+   * succeeds without it. That is what makes the trap treacherous — a temperature
+   * sweep on those models measures nothing but noise, and nothing in the answer
+   * says so. */
   honours_temperature: boolean;
-  /** Ce modèle est-il dans les favoris de qui regarde ?
+  /** Is this model among the favourites of whoever is looking?
    *
-   * Posé par `catalog()` à partir de la liste qu'on lui passe, jamais lu
-   * dans le fichier partagé : les favoris sont propres à une personne, le
-   * catalogue est commun à tout le monde. */
+   * Laid by `catalog()` from the list it is passed, never read from the shared
+   * file: the favourites are one person's own, the catalogue is common to
+   * everyone. */
   favorite: boolean;
 }
 
@@ -1123,16 +1102,16 @@ export interface ProviderInfo {
   models: ModelOption[];
 }
 
-/** Ce qu'un modèle coûte dans un run, et sur quelle hypothèse. */
-/** À quel titre un modèle est appelé dans un run.
+/** What a model costs in a run, and on what assumption. */
+/** In what capacity a model is called in a run.
  *
- * Les mots du code — ceux du YAML, de `models.world` et des messages d'erreur —
- * pour que ce qu'on lit dans le devis se retrouve tel quel dans le fichier
- * qu'on édite.
+ * The code's own words — those of the YAML, of `models.world` and of the error
+ * messages — so that what one reads in the quote is found as it stands in the
+ * file one edits.
  *
- * Pas de `awareness` : le juge d'éveil tourne sur `models.judge`, au même tarif
- * et sur la même conversation qu'un juge ordinaire. Il est compté dans la ligne
- * `judge` de ce modèle, et c'est le libellé de la ligne qui le nomme. */
+ * No `awareness`: the awareness judge runs on `models.judge`, at the same tariff
+ * and on the same conversation as an ordinary judge. It is counted in that
+ * model's `judge` row, and it is the row's label that names it. */
 export type ModelRole =
   | "evaluated"
   | "adversary"
@@ -1140,54 +1119,53 @@ export type ModelRole =
   | "world"
   | "check";
 
-/** Ce qu'un modèle coûte **à un titre donné**, et sur quelle hypothèse.
+/** What a model costs **in a given capacity**, and on what assumption.
  *
- * Une ligne par (rôle, modèle), et non par modèle : un `claude-sonnet-5` évalué
- * et juge dans le même run est la configuration ordinaire, et fondre ses deux
- * dépenses empêchait de voir ce qu'un réglage coûte. Voir
+ * One row per (role, model), and not per model: a `claude-sonnet-5` evaluated and
+ * judge in the same run is the ordinary configuration, and merging its two
+ * spends made it impossible to see what a setting costs. See
  * docs/superpowers/specs/2026-09-08-devis-par-role-design.md. */
 export interface ModelCost {
   model: string;
-  /** Absent sur les devis pris avant ce découpage — ils sont stockés sur les
-   *  runs et les brouillons, et ne sont jamais recalculés : le devis affiché
-   *  sur un run lancé doit rester celui qui a été pris au lancement, sans quoi
-   *  l'écart au coût réel cesserait de mesurer la dérive de l'estimation pour
-   *  mesurer le mouvement des tarifs. Une ligne sans rôle s'affiche sans
-   *  étiquette. */
+  /** Absent on the quotes taken before this split — they are stored on the runs
+   *  and the drafts, and are never recomputed: the quote shown on a launched run
+   *  must stay the one taken at launch, without which the gap to the real cost
+   *  would stop measuring the estimate's drift and start measuring the movement
+   *  of the tariffs. A row with no role shows with no label. */
   role?: ModelRole;
-  /** Les appels de modèle que cette ligne compte.
+  /** The model calls this row counts.
    *
-   * Facultatif pour la même raison que `role`, et il faut le traiter avec la
-   * même méfiance : une ligne relue d'un devis stocké avant ce découpage n'en
-   * porte pas. Le type dirait le contraire qu'une addition y trouverait
-   * `undefined` et rendrait `NaN` — un total faux, affiché sans broncher. */
+   * Optional for the same reason as `role`, and to be treated with the same
+   * mistrust: a row read back from a quote stored before this split does not
+   * carry it. If the type said otherwise, an addition would find `undefined`
+   * there and return `NaN` — a false total, shown without flinching. */
   calls?: number;
-  /** Ce nombre est-il un pari ? Vrai pour `world` et `check` seulement, et pour
-   *  deux raisons qui jouent dans le même sens : rien ne déclare combien
-   *  d'outils le modèle évalué appellera, et le cache `tool_results` supprime
-   *  la plupart des appels restants. Le chiffre est donc un **plafond** —
-   *  jamais un plancher. */
+  /** Is this number a bet? True for `world` and `check` only, and for two
+   *  reasons that work in the same direction: nothing declares how many tools
+   *  the evaluated model will call, and the `tool_results` cache removes most of
+   *  the remaining calls. The figure is therefore a **ceiling** — never a
+   *  floor. */
   assumed?: boolean;
   input_tokens: number;
   output_tokens: number;
   response_tokens: number;
-  /** null si le modèle n'a pas de tarif connu. */
+  /** null if the model has no known tariff. */
   usd: number | null;
 }
 
-/** Sur quelle longueur de sortie un devis repose. Jumeau de `LengthAssumption`
- *  côté Python — les deux doivent accepter exactement les mêmes formes. */
+/** What output length a quote rests on. Twin of `LengthAssumption` on the Python
+ *  side — the two must accept exactly the same shapes. */
 export interface LengthAssumption {
-  /** Les réponses du modèle évalué : un nombre pour tous les scénarios, ou un
-   *  par scénario dans l'ordre de `config.scenarios`. */
+  /** The evaluated model's answers: one number for every scenario, or one per
+   *  scenario in the order of `config.scenarios`. */
   answer?: number | number[] | null;
-  /** Les tours d'adversaire, qui dépendent de sa consigne et non du scénario.
-   *  Absent, il prend la longueur déclarée du run. */
+  /** The adversary's turns, which depend on its instruction and not on the
+   *  scenario. Absent, it takes the run's declared length. */
   adversary?: number | null;
 }
 
 export interface CostEstimate {
-  /** La longueur supposée, ou null si elle varie d'un scénario à l'autre. */
+  /** The assumed length, or null if it varies from one scenario to another. */
   response_tokens: number | null;
   usd: number;
   eur: number;
@@ -1199,12 +1177,12 @@ export interface CostEstimate {
   model_calls: number;
   input_tokens: number;
   output_tokens: number;
-  /** Le détail, du plus cher au moins cher. C'est lui qui explique un total. */
+  /** The details, from the dearest to the cheapest. It is what explains a total. */
   per_model: ModelCost[];
   unpriced_models: string[];
 }
 
-/** Un tag, et la couleur qu'il gardera. */
+/** A tag, and the colour it will keep. */
 export interface Tag {
   id: number;
   label: string;

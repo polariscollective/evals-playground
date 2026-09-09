@@ -3,20 +3,20 @@ import { requireUser } from "@/auth";
 import { JUDGE_SYSTEM, renderTranscript, scorePrompt } from "@/lib/judge-prompt";
 import type { RubricLevel } from "@/lib/types";
 
-/** Rend visible le prompt que le juge recevra, avant de lancer un run.
+/** Makes visible the prompt the judge will receive, before launching a run.
  *
- * Rendu depuis le même gabarit que le Python qui l'envoie réellement : c'est la
- * seule façon que l'aperçu ne finisse pas par décrire un prompt qui n'existe
- * plus. Volontairement tolérant sur une échelle incomplète — on aperçoit pendant
- * qu'on écrit, pas seulement quand tout est valide.
+ * Rendered from the same template as the Python that really sends it: the only
+ * way for the preview not to end up describing a prompt that no longer exists.
+ * Deliberately tolerant of an incomplete scale — one previews while writing, not
+ * only once everything is valid.
  *
- * Le juge reçoit aussi le system prompt du scénario joué, en tête du
- * transcript — voir `renderTranscript`. Cette route ne connaît qu'un critère
- * et une échelle, communs à tout le run : elle ne sait pas, à cet endroit du
- * formulaire, de quel scénario elle devrait montrer le system prompt, ni s'il
- * y en a un seul (le mode CSV en admet plusieurs). L'aperçu illustre donc le
- * bloc par un texte de remplacement plutôt que de l'omettre, ce qui laisserait
- * croire que le juge ne le reçoit pas. */
+ * The judge also receives the played scenario's system prompt, at the head of
+ * the transcript — see `renderTranscript`. This route knows only a criterion and
+ * a scale, common to the whole run: it does not know, at that point in the form,
+ * which scenario's system prompt it should be showing, nor whether there is a
+ * single one (CSV mode admits several). The preview therefore illustrates the
+ * block with placeholder text rather than omitting it, which would suggest the
+ * judge does not receive it. */
 export async function POST(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;

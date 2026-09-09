@@ -1,13 +1,13 @@
-// Le coût réel d'une extension ne se stocke pas, il se déduit : l'écart entre
-// son `cost_before_usd` et celui de la suivante, ou le coût actuel du run
-// pour la dernière. Ce fichier ne teste que cette déduction.
+// An extension's real cost is not stored, it is derived: the gap between its
+// `cost_before_usd` and the next one's, or the run's current cost for the last.
+// This file tests only that derivation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { extensionsOf } from "./run-extensions.ts";
 import type { EvalRun, RunExtensionLogEntry } from "./types";
 
-/** Une entrée minimale, avec juste ce que `extensionsOf` regarde. Le cast
- *  tient parce que la fonction ne lit rien d'autre sur une entrée. */
+/** A minimal entry, with just what `extensionsOf` looks at. The cast holds
+ *  because the function reads nothing else on an entry. */
 const ENTRY = (
   cost_before_usd: number | null,
   extra: Partial<RunExtensionLogEntry> = {},
@@ -22,51 +22,51 @@ const ENTRY = (
     ...extra,
   }) as unknown as RunExtensionLogEntry;
 
-/** Un run réduit aux deux champs que `extensionsOf` lit : `extensions` et
- *  `cost_usd`. Le cast tient pour la même raison que dans `ENTRY`. */
+/** A run reduced to the two fields `extensionsOf` reads: `extensions` and
+ *  `cost_usd`. The cast holds for the same reason as in `ENTRY`. */
 const RUN = (extensions: RunExtensionLogEntry[], cost_usd: number | null): EvalRun =>
   ({ extensions, cost_usd }) as unknown as EvalRun;
 
-test("aucune extension : une liste vide", () => {
+test("no extension: an empty list", () => {
   assert.deepEqual(extensionsOf(RUN([], 12)), []);
 });
 
-test("une seule, run fini : son coût réel est l'écart avec le coût du run", () => {
+test("one alone, run finished: its real cost is the gap with the run's cost", () => {
   const run = RUN([ENTRY(5)], 8);
   const [extension] = extensionsOf(run);
   assert.equal(extension.cost_before_usd, 5);
   assert.equal(extension.actual_cost_usd, 3);
 });
 
-test("plusieurs d'affilée : chacune se mesure contre celle qui la suit", () => {
+test("several in a row: each is measured against the one after it", () => {
   const run = RUN([ENTRY(0), ENTRY(2), ENTRY(5)], 9);
-  const [premiere, seconde, derniere] = extensionsOf(run);
-  assert.equal(premiere.actual_cost_usd, 2); // 2 - 0
-  assert.equal(seconde.actual_cost_usd, 3); // 5 - 2
-  assert.equal(derniere.actual_cost_usd, 4); // 9 - 5
+  const [first, second, last] = extensionsOf(run);
+  assert.equal(first.actual_cost_usd, 2); // 2 - 0
+  assert.equal(second.actual_cost_usd, 3); // 5 - 2
+  assert.equal(last.actual_cost_usd, 4); // 9 - 5
 });
 
-test("la dernière quand le run n'a pas encore de coût réel : null, jamais 0", () => {
+test("the last one when the run has no real cost yet: null, never 0", () => {
   const run = RUN([ENTRY(0), ENTRY(2)], null);
-  const [premiere, derniere] = extensionsOf(run);
-  // La première se mesure contre la suivante, connue : rien ne l'empêche.
-  assert.equal(premiere.actual_cost_usd, 2);
-  // La dernière se mesurerait contre le coût actuel du run, qui manque.
-  assert.equal(derniere.actual_cost_usd, null);
+  const [first, last] = extensionsOf(run);
+  // The first is measured against the next, which is known: nothing stops it.
+  assert.equal(first.actual_cost_usd, 2);
+  // The last would be measured against the run's current cost, which is missing.
+  assert.equal(last.actual_cost_usd, null);
 });
 
-test("cost_before_usd manquant sur une entrée : son coût réel est inconnu, pas gratuit", () => {
-  // Un run qui n'avait encore rien coûté au moment de cette extension-là — ou
-  // dont un modèle employé n'avait pas de tarif — ne doit jamais se lire
-  // comme 0 $ : ce sont deux choses différentes, et confondre les deux
-  // afficherait un chiffre faux avec la même assurance qu'un chiffre vrai.
+test("cost_before_usd missing on an entry: its real cost is unknown, not free", () => {
+  // A run that had cost nothing yet at the time of that extension — or one of
+  // whose models had no price — must never read as $0: those are two different
+  // things, and confusing them would show a false figure with the same
+  // assurance as a true one.
   const run = RUN([ENTRY(null), ENTRY(4)], 10);
-  const [premiere, derniere] = extensionsOf(run);
-  assert.equal(premiere.actual_cost_usd, null);
-  assert.equal(derniere.actual_cost_usd, 6);
+  const [first, last] = extensionsOf(run);
+  assert.equal(first.actual_cost_usd, null);
+  assert.equal(last.actual_cost_usd, 6);
 });
 
-test("chaque entrée garde ce qu'elle portait déjà, en plus du coût réel", () => {
+test("every entry keeps what it already carried, plus the real cost", () => {
   const entry = ENTRY(1, { by: "agent@polaris.example", via: "mcp" });
   const [extension] = extensionsOf(RUN([entry], 3));
   assert.equal(extension.by, "agent@polaris.example");

@@ -13,19 +13,18 @@ import { DraftNotFound, loadDraft, markDraftLaunched } from "@/lib/drafts";
 import { extendProblem, extensionDraftProblem } from "@/lib/validate";
 import type { ExtendRequest } from "@/lib/types";
 
-/** Ajoute une sous-matrice à un run existant : des scénarios, des modèles, des
- * répétitions.
+/** Adds a sub-matrix to an existing run: scenarios, models, repetitions.
  *
- * Ce que cette route n'accepte pas est aussi important que ce qu'elle accepte :
- * ni critère, ni échelle, ni juge. Un lot jugé autrement ne serait plus
- * comparable au premier, et la matrice n'aurait plus de sens comme matrice. Ce
- * qui ne peut pas être envoyé ne peut pas dériver.
+ * What this route does not accept is as important as what it does: no criterion,
+ * no scale, no judge. A batch judged differently would no longer be comparable
+ * to the first, and the matrix would no longer make sense as a matrix. What
+ * cannot be sent cannot drift.
  *
- * La température et le nombre de tours font exception : la première parce qu'elle
- * est portée par chaque case et non par le run, les anciennes gardent donc la
- * leur. Les tours peuvent s'allonger — jamais se raccourcir — et si une case
- * est approfondie, elle est rejugée entière. La profondeur du run reste
- * identique pour toutes ses cases : la comparabilité tient. */
+ * Temperature and the number of turns are the exception: the first because it is
+ * carried by each cell and not by the run, so the old ones keep theirs. The
+ * turns can lengthen — never shorten — and if a cell is deepened, it is judged
+ * again in full. The run's depth stays the same for all its cells: the
+ * comparability holds. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -36,12 +35,12 @@ export async function POST(
   const { runId } = await params;
   const body = (await request.json().catch(() => null)) as ExtendRequest | null;
 
-  // `?draft=<id>` : cette extension applique un brouillon, et l'appelant le
-  // dit. L'écran l'envoie quand le panneau a été ouvert sur une proposition ;
-  // une extension composée à la main sur la page n'a pas de brouillon et
-  // n'envoie rien. C'est un paramètre d'adresse plutôt qu'un champ du corps
-  // pour que celui-ci reste une `ExtendRequest` pure, telle qu'`extendProblem`
-  // l'attend et telle qu'elle sera recopiée dans le registre.
+  // `?draft=<id>`: this extension applies a draft, and the caller says so. The
+  // screen sends it when the panel was opened on a proposal; an extension
+  // composed by hand on the page has no draft and sends nothing. It is an address
+  // parameter rather than a body field so that the body stays a pure
+  // `ExtendRequest`, as `extendProblem` expects it and as it will be copied into
+  // the record.
   const draftId = new URL(request.url).searchParams.get("draft");
   if (draftId) {
     let draft;
@@ -53,9 +52,8 @@ export async function POST(
       }
       throw error;
     }
-    // Refusé ici et pas seulement à l'écran : l'adresse `?extend=<id>` se
-    // partage, et un signet vieux d'une semaine ne sait pas que l'extension a
-    // eu lieu.
+    // Refused here and not only on screen: the `?extend=<id>` address is shared,
+    // and a week-old bookmark does not know the extension has happened.
     const problem = extensionDraftProblem(draft, runId);
     if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   }
@@ -93,9 +91,9 @@ export async function POST(
   }
 
   if (detail.run.status === "triggered" || detail.run.status === "running") {
-    // Ajouter des cases pendant que le job tourne les lui ferait manquer : il a
-    // lu la liste des `pending` à son démarrage. Elles resteraient à faire sur
-    // un run qui se dirait terminé.
+      // Adding cells while the job is running would make it miss them: it read
+      // the list of `pending` at its start. They would stay to be done on a run
+      // calling itself finished.
     return NextResponse.json(
       { error: "This run is still going. Wait for it to finish." },
       { status: 409 },
@@ -118,19 +116,19 @@ export async function POST(
     return NextResponse.json({ error: reason }, { status: 502 });
   }
 
-  // Marqué lancé par la route, jamais par l'écran : le geste appartient à la
-  // requête qui a réussi l'extension. L'écran le faisait après coup en avalant
-  // les erreurs, si bien qu'une extension réussie et un marquage tombé
-  // laissaient en silence un brouillon lancé qui se croyait en attente — l'état
-  // exact qu'on ferme ici. Awaité sans filet, comme le fait déjà la route de
-  // lancement d'un brouillon de run : si ça tombe, l'appelant doit l'apprendre.
+  // Marked launched by the route, never by the screen: the gesture belongs to
+  // the request that succeeded in extending. The screen used to do it afterwards
+  // while swallowing the errors, so that a successful extension and a failed
+  // marking silently left a launched draft believing itself still waiting — the
+  // exact state closed here. Awaited with no net, as the route that launches a
+  // run draft already does: if it falls, the caller must learn of it.
   //
-  // Une fenêtre reste connue et volontairement ouverte : entre le refus plus
-  // haut et ce marquage, deux requêtes concurrentes portant le même `?draft=`
-  // peuvent toutes deux passer le refus avant que l'une ou l'autre ne marque.
-  // Réclamer le brouillon avant d'étendre fermerait cette fenêtre en en
-  // ouvrant une pire : un marquage « lancé » qui mentirait sur une extension
-  // ensuite tombée. Entre les deux, c'est celle-ci qui a été choisie.
+  // One window stays known and deliberately open: between the refusal above and
+  // this marking, two concurrent requests carrying the same `?draft=` can both
+  // pass the refusal before either marks. Claiming the draft before extending
+  // would close that window by opening a worse one: a "launched" marking that
+  // would lie about an extension that then fell over. Between the two, this one
+  // was chosen.
   if (draftId) await markDraftLaunched(draftId);
 
   return NextResponse.json({ ok: true, added });

@@ -1,40 +1,40 @@
-// Démarrer le job qui exécute un run.
+// Starting the job that runs a run.
 //
-// En déploiement, la demande part vers `polaris-batch-trigger`, un service
-// Cloud Run qui a l'identité GCP que Vercel n'a pas, et qui lance le Cloud Run
-// Job. En développement, sans ce service, le job est lancé en sous-process
-// local — le seul moyen de garder l'application utilisable sans GCP, et sans
-// introduire une seconde forme de stockage.
+// In deployment, the request goes to `polaris-batch-trigger`, a Cloud Run
+// service that has the GCP identity Vercel lacks, and which starts the Cloud
+// Run Job. In development, without that service, the job is started as a local
+// subprocess — the only way to keep the application usable without GCP, and
+// without introducing a second form of storage.
 import "server-only";
 import { spawn } from "node:child_process";
 
 const JOB_NAME = process.env.EVAL_JOB_NAME || "evals-playground-runner";
 
-/** L'interpréteur qui exécute le job en développement, entièrement pris dans
- * l'environnement.
+/** The interpreter that runs the job in development, taken entirely from the
+ * environment.
  *
- * Aucun chemin littéral dans le code, volontairement : Turbopack analyse le
- * premier argument de `spawn`, y voit un fichier à empaqueter, et échoue sur le
- * lien symbolique `.venv/bin/python` qui sort de sa racine. Le passer par
- * `EVAL_PYTHON` sort le chemin de son analyse — et rend explicite une commodité
- * qui n'a de sens que sur une machine de développement.
+ * No literal path in the code, deliberately: Turbopack analyses `spawn`'s first
+ * argument, sees a file to bundle there, and fails on the symbolic link
+ * `.venv/bin/python` which points outside its root. Passing it through
+ * `EVAL_PYTHON` takes the path out of that analysis — and makes explicit a
+ * convenience that only makes sense on a development machine.
  *
- * `.env.example` donne la valeur habituelle. */
+ * `.env.example` gives the usual value. */
 const LOCAL_PYTHON = "EVAL_PYTHON";
 
-/** `run` déroule les conversations puis les fait noter par tous les juges
- *  vivants du run. `catchup` remplit, pour les conversations déjà jouées, les
- *  lignes de `judge_scores` encore en attente — voir `run_batch_job`,
- *  `backend/playground/batch_job.py`, l'unique et seule autorité sur ce que
- *  le job accepte : lui faire jouer `rejudge` ou `awareness`, les deux
- *  anciens modes qu'il ne connaît plus, échouerait au démarrage du job avec
- *  une `ValueError` plutôt qu'à la compilation — c'est exactement le bug que
- *  ce type fermé referme, voir `.superpowers/sdd/task-9-report.md`. */
+/** `run` plays out the conversations then has them graded by every living
+ *  judge of the run. `catchup` fills in, for the conversations already played,
+ *  the rows of `judge_scores` still pending — see `run_batch_job`,
+ *  `backend/playground/batch_job.py`, the one and only authority on what the
+ *  job accepts: making it play `rejudge` or `awareness`, the two former modes
+ *  it no longer knows, would fail at the job's startup with a `ValueError`
+ *  rather than at compile time — which is exactly the bug this closed type
+ *  closes, see `.superpowers/sdd/task-9-report.md`. */
 export type JobMode = "run" | "catchup";
 
-/** Où le job a tourné. Enregistré sur le run : le local et le déployé écrivent
- * dans la même base, et sans marqueur un essai jetable ressemble à un vrai
- * run. */
+/** Where the job ran. Recorded on the run: the local and the deployed write
+ * into the same database, and without a marker a throwaway trial looks like a
+ * real run. */
 export type Origin = "local" | "cloud-run";
 
 export interface Started {
@@ -42,27 +42,26 @@ export interface Started {
   origin: Origin;
 }
 
-/** Le sous-process local peut-il remplacer le service Cloud Run ?
+/** Can the local subprocess stand in for the Cloud Run service?
  *
- * Verrouillé sur `NODE_ENV` en plus de l'absence d'URL, exactement comme le
- * court-circuit d'authentification : une variable oubliée sur un déploiement ne
- * doit pas transformer une instance Vercel en machine d'exécution — elle n'a de
- * toute façon aucune clé de fournisseur, et le run échouerait à chaque case. */
+ * Locked on `NODE_ENV` on top of the missing URL, exactly like the
+ * authentication short circuit: a variable forgotten on a deployment must not
+ * turn a Vercel instance into an execution machine — it has no provider key
+ * anyway, and the run would fail on every cell. */
 function canRunLocally(): boolean {
-  // `EVAL_PYTHON` est la déclaration d'intention du développeur : il veut
-  // exécuter le job ici. Elle l'emporte sur `BATCH_TRIGGER_URL`, qui reste
-  // souvent renseigné dans un `.env` sans qu'on veuille pour autant déclencher
-  // un job distant à chaque essai.
+  // `EVAL_PYTHON` is the developer's declaration of intent: they want to run
+  // the job here. It wins over `BATCH_TRIGGER_URL`, which often stays filled in
+  // in a `.env` without anyone wanting to trigger a remote job on every try.
   return (
     process.env.NODE_ENV !== "production" && Boolean(process.env[LOCAL_PYTHON])
   );
 }
 
-/** Lance le job en sous-process, depuis la racine du dépôt.
+/** Starts the job as a subprocess, from the repository root.
  *
- * Détaché et sans canaux hérités : la requête HTTP qui l'a démarré se termine
- * tout de suite, et le job continue. Un `spawn` attaché mourrait avec le
- * worker Next au premier rechargement à chaud. */
+ * Detached and with no inherited channels: the HTTP request that started it
+ * ends straight away, and the job carries on. An attached `spawn` would die
+ * with the Next worker on the first hot reload. */
 function runLocally(runId: string, mode: JobMode): string {
   const repoRoot = `${process.cwd()}/..`;
   const interpreter = process.env[LOCAL_PYTHON] as string;
@@ -81,25 +80,24 @@ function runLocally(runId: string, mode: JobMode): string {
   return `local:${child.pid}`;
 }
 
-/** Une variable telle qu'on a pu la coller, débarrassée de ce qui l'entoure.
+/** A variable as one may have pasted it, stripped of what surrounds it.
  *
- * Mesuré contre le proxy réel : une espace ou un retour à la ligne *à la fin*
- * sont sans effet — la couche HTTP rogne les blancs de bord d'un en-tête. Mais
- * une espace au début, ou des guillemets restés autour de la valeur, donnent un
- * 401 « unauthorized » impossible à distinguer d'un mauvais secret. Ces deux
- * accidents-là sont ceux qu'un copier-coller dans une interface de variables
- * d'environnement produit vraiment. */
+ * Measured against the real proxy: a space or a newline *at the end* have no
+ * effect — the HTTP layer trims a header's edge whitespace. But a space at the
+ * start, or quotes left around the value, give a 401 "unauthorized"
+ * indistinguishable from a wrong secret. Those two accidents are the ones a
+ * copy-paste into an environment-variable interface really produces. */
 function pasted(value: string | undefined): string | undefined {
   const clean = value?.trim().replace(/^["']|["']$/g, "");
   return clean || undefined;
 }
 
-/** Démarre le job, et renvoie de quoi le retrouver.
+/** Starts the job, and returns what is needed to find it again.
  *
  * Throws:
- *   L'erreur du proxy, telle quelle. Un déclenchement qui échoue doit se voir :
- *   le run reste alors `pending` avec son message, plutôt que d'attendre
- *   indéfiniment un job qui n'a jamais démarré.
+ *   The proxy's error, as it stands. A trigger that fails must be visible: the
+ *   run then stays `pending` with its message, rather than waiting forever for
+ *   a job that never started.
  */
 export async function startJob(
   runId: string,
@@ -135,9 +133,9 @@ export async function startJob(
       cache: "no-store",
     });
   } catch (error) {
-    // Un proxy injoignable — DNS, démarrage à froid trop long — fait échouer
-    // `fetch`. Sans cette garde, l'appelant recevrait la page d'erreur HTML de
-    // Next là où il attend du JSON, et l'erreur serait illisible.
+    // An unreachable proxy — DNS, a cold start too long — makes `fetch` fail.
+    // Without this guard, the caller would receive Next's HTML error page where
+    // it expects JSON, and the error would be unreadable.
     throw new Error(`batch trigger unreachable: ${(error as Error).message}`);
   }
 

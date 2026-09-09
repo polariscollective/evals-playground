@@ -10,17 +10,18 @@ import { ensureRunsLoaded } from "@/lib/runs-store";
 import { ensureTagsLoaded } from "@/lib/tags-store";
 import { ensureProfileLoaded } from "@/lib/profile-store";
 import { ensureConnectionsLoaded } from "@/lib/connections-store";
+import { PolarisStar } from "@/components/PolarisStar";
 
-/** La barre de l'application privée, absente de `/shared`.
+/** The private application's bar, absent from `/shared`.
  *
- * « La publication ouvre un run, pas l'application » — un inconnu qui arrive
- * sur un run publié ne doit pas voir un menu vers des pages qui exigent une
- * session, ni sous quelle adresse quelqu'un d'autre est connecté.
+ * "Publishing opens a run, not the application" — a stranger arriving on a
+ * published run must not see a menu towards pages that demand a session, nor
+ * under what address somebody else is signed in.
  *
- * Un composant client plutôt qu'un groupe de routes : le second aurait
- * déplacé `layout.tsx` et tout ce qui en dépend pour un menu de quatre liens.
- * Le préfixe se lit ici, une fois, et le proxy reste la seule autre source de
- * vérité sur ce qui est public — voir `lib/public-paths.ts`. */
+ * A client component rather than a route group: the second would have moved
+ * `layout.tsx` and everything depending on it for a menu of four links. The
+ * prefix is read here, once, and the proxy stays the only other source of truth
+ * about what is public — see `lib/public-paths.ts`. */
 
 const LINKS = [
   { href: "/", label: "Evaluate" },
@@ -29,50 +30,58 @@ const LINKS = [
   { href: "/settings/connections", label: "Connections" },
 ];
 
-/** À quel onglet appartient la page ouverte.
+/** Which tab the open page belongs to.
  *
- * `/eval/<id>` est la page d'un run : elle n'a pas d'entrée à elle, mais on y
- * arrive depuis « Runs » et on y revient. L'onglet reste allumé plutôt que de
- * laisser la barre sans repère. */
+ * `/eval/<id>` is a run's page: it has no entry of its own, but one arrives there
+ * from "Runs" and goes back to it. The tab stays lit rather than leaving the bar
+ * with no marker. */
 function isCurrent(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   if (href === "/runs") return pathname.startsWith("/runs") || pathname.startsWith("/eval");
   return pathname.startsWith(href);
 }
 
+/** Where the bar does not belong.
+ *
+ * `/signin` joins `/shared`: four links to pages that need the very session
+ * you are trying to obtain are worse than no bar at all.
+ *
+ * Not `isOpen` from `public-paths.ts`, which answers a different question —
+ * `/prompt` and `/validate` are open paths that do want the bar. */
+const HIDDEN_ON = ["/shared", "/signin"];
+
 export function AppNav() {
   const pathname = usePathname();
-  const hidden = pathname.startsWith("/shared");
+  const hidden = HIDDEN_ON.some((prefix) => pathname.startsWith(prefix));
   const [email, setEmail] = useState<string | null>(null);
 
-  /** Ce que les autres pages afficheront, chargé pendant qu'on lit celle-ci.
+  /** What the other pages will show, loaded while one reads this one.
    *
-   * Ici et non sur la page d'accueil : elle était le seul endroit à le faire,
-   * si bien qu'arriver directement sur « Scenarios » — par un lien, un
-   * signet, un rechargement — laissait tous les autres onglets froids. La
-   * barre, elle, est rendue par `layout.tsx` sur chaque page.
+   * Here and not on the home page: it was the only place doing it, so that
+   * arriving straight on "Scenarios" — through a link, a bookmark, a reload —
+   * left all the other tabs cold. The bar, for its part, is rendered by
+   * `layout.tsx` on every page.
    *
-   * Chaque `ensure*` ne demande rien si la ressource a déjà servi : passer de
-   * page en page ne relance donc pas quatre requêtes à chaque fois.
+   * Each `ensure*` asks for nothing if the resource has already served: moving
+   * from page to page therefore does not restart four requests every time.
    *
-   * `isOpen` et non `hidden` : ce dernier ne connaît que `/shared`, alors que
-   * la question posée ici est plus large — « ce chemin se lit-il sans
-   * session ? ». Précharger sur une page publique enverrait quatre requêtes
-   * privées au nom d'un inconnu, qui les verrait toutes échouer. La réponse
-   * vit dans `public-paths.ts`, avec le proxy qui l'applique ; la dupliquer
-   * ici la laisserait dériver. */
-  const publique = isOpen(pathname);
+   * `isOpen` and not `hidden`: the latter knows only `/shared`, whereas the
+   * question asked here is wider — "does this path read without a session?".
+   * Preloading on a public page would send four private requests in a stranger's
+   * name, who would see them all fail. The answer lives in `public-paths.ts`,
+   * with the proxy that enforces it; duplicating it here would let it drift. */
+  const isPublic = isOpen(pathname);
   useEffect(() => {
-    if (publique) return;
+    if (isPublic) return;
     ensureRunsLoaded();
     ensureTagsLoaded();
     ensureProfileLoaded();
     ensureConnectionsLoaded();
-  }, [publique]);
+  }, [isPublic]);
 
   useEffect(() => {
-    // Le crochet doit être appelé même sur `/shared`, où la barre ne s'affiche
-    // pas — d'où la condition ici plutôt qu'un retour anticipé au-dessus.
+    // The hook must be called even on `/shared`, where the bar does not show —
+    // hence the condition here rather than an early return above.
     if (hidden) return;
     getMe()
       .then(({ email }) => setEmail(email))
@@ -82,30 +91,18 @@ export function AppNav() {
   if (hidden) return null;
 
   return (
-    // `bg-background` n'est pas décoratif : une barre collante sans fond opaque
-    // laisse défiler le formulaire par-dessous. Et `z-40` la met au-dessus du
-    // contenu sans passer devant les modales, qui sont en `z-50`.
+    // `bg-background` is not decorative: a sticky bar with no opaque ground lets
+    // the form scroll underneath. And `z-40` puts it above the content without
+    // passing in front of the modals, which are at `z-50`.
     <nav className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b bg-background px-8 py-3 text-sm">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        {/* L'étoile et le nom du collectif, repris de l'en-tête de
-            polariscollective.org — même tracé, même olive, même serif. Ce n'est
-            pas un lien : l'application n'a pas de page d'accueil qui soit
-            ailleurs que « Evaluate », et un logo qui mène au premier onglet
-            donne deux chemins vers la même chose. */}
+        {/* The star and the collective's name, taken from the header of
+            polariscollective.org — same outline, same olive, same serif. It is not
+            a link: the application has no home page other than "Evaluate", and a
+            logo leading to the first tab would give two paths to the same
+            thing. */}
         <span className="flex items-center gap-2 font-serif text-base text-teal-700">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            aria-hidden="true"
-            className="shrink-0"
-          >
-            <path
-              d="M7 0.5 L7.6 6.4 L13.5 7 L7.6 7.6 L7 13.5 L6.4 7.6 L0.5 7 L6.4 6.4 Z"
-              fill="currentColor"
-            />
-          </svg>
+          <PolarisStar />
           Polaris Collective
         </span>
         <span aria-hidden="true" className="h-4 w-px bg-zinc-300" />
@@ -124,8 +121,8 @@ export function AppNav() {
           </Link>
         ))}
       </div>
-      {/* Tant que l'adresse n'est pas connue, rien : un bouton de déconnexion
-          sans savoir qui est connecté ne dit rien de vrai. */}
+      {/* As long as the address is not known, nothing: a sign-out button with no
+          idea who is signed in says nothing true. */}
       {email && (
         <div className="flex items-center gap-3">
           <span className="text-zinc-500">Logged in as</span>

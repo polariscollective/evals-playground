@@ -1,4 +1,4 @@
-"""Le journal d'un run, monté dans Storage — et jamais au prix du run."""
+"""A run's logs, uploaded to Storage — and never at the run's expense."""
 
 from pathlib import Path
 
@@ -8,10 +8,10 @@ from playground.log_store import Storage, upload_logs
 
 
 class FakeClient:
-    """Retient ce qui est posté, et rend les codes qu'on lui a donnés.
+    """Keeps what is posted, and returns the codes it was given.
 
-    `codes` se consomme dans l'ordre, ce qui permet de faire échouer un fichier
-    au milieu d'un lot sans toucher aux autres.
+    `codes` is consumed in order, which makes it possible to fail one file in
+    the middle of a batch without touching the others.
     """
 
     def __init__(self, *codes: int):
@@ -21,79 +21,79 @@ class FakeClient:
     def post(self, path, content=None, headers=None):
         self.posts.append({"path": path, "content": content, "headers": headers})
         code = self.codes.pop(0) if len(self.codes) > 1 else self.codes[0]
-        return httpx.Response(code, text="" if code < 400 else "bucket fâché")
+        return httpx.Response(code, text="" if code < 400 else "angry bucket")
 
 
 def _storage(*codes: int) -> Storage:
-    return Storage(url="https://fake", key="cle", client=FakeClient(*codes))
+    return Storage(url="https://fake", key="key", client=FakeClient(*codes))
 
 
-def _logs(tmp_path: Path, run_id: str, *noms: str) -> Path:
+def _logs(tmp_path: Path, run_id: str, *names: str) -> Path:
     directory = tmp_path / run_id
     directory.mkdir(parents=True)
-    for nom in noms:
-        (directory / nom).write_bytes(f"contenu de {nom}".encode())
+    for name in names:
+        (directory / name).write_bytes(f"contents of {name}".encode())
     return tmp_path
 
 
-def test_chaque_eval_est_monte_sous_l_identifiant_du_run(tmp_path: Path):
+def test_each_eval_is_uploaded_under_the_run_identifier(tmp_path: Path):
     logs = _logs(tmp_path, "r1", "a.eval", "b.eval")
     storage = _storage()
 
-    montés = upload_logs("r1", logs, storage)
+    uploaded = upload_logs("r1", logs, storage)
 
-    assert montés == ["a.eval", "b.eval"]
+    assert uploaded == ["a.eval", "b.eval"]
     assert [p["path"] for p in storage.client.posts] == [
         "/storage/v1/object/inspect-logs/r1/a.eval",
         "/storage/v1/object/inspect-logs/r1/b.eval",
     ]
 
 
-def test_l_objet_part_en_octets_et_en_upsert(tmp_path: Path):
-    """`x-upsert` protège d'une tâche Cloud Run rejouée avec le même run."""
+def test_the_object_goes_out_as_bytes_and_as_an_upsert(tmp_path: Path):
+    """`x-upsert` guards against a Cloud Run task replayed with the same run."""
     logs = _logs(tmp_path, "r1", "a.eval")
     storage = _storage()
 
     upload_logs("r1", logs, storage)
 
     post = storage.client.posts[0]
-    assert post["content"] == b"contenu de a.eval"
+    assert post["content"] == b"contents of a.eval"
     assert post["headers"]["x-upsert"] == "true"
     assert post["headers"]["Content-Type"] == "application/octet-stream"
 
 
-def test_un_refus_du_bucket_ne_leve_pas(tmp_path: Path):
-    """La règle du module : un run noté est un run réussi, journal ou pas."""
+def test_a_refusal_from_the_bucket_does_not_raise(tmp_path: Path):
+    """The module's rule: a graded run is a successful run, log or no log."""
     logs = _logs(tmp_path, "r1", "a.eval")
 
     assert upload_logs("r1", logs, _storage(500)) == []
 
 
-def test_un_fichier_refuse_n_empeche_pas_les_suivants(tmp_path: Path):
+def test_one_refused_file_does_not_stop_the_others(tmp_path: Path):
     logs = _logs(tmp_path, "r1", "a.eval", "b.eval")
 
     assert upload_logs("r1", logs, _storage(500, 200)) == ["b.eval"]
 
 
-def test_un_dossier_absent_ne_monte_rien(tmp_path: Path):
-    """Un job mort avant qu'inspect n'écrive quoi que ce soit."""
+def test_a_missing_directory_uploads_nothing(tmp_path: Path):
+    """A job that died before inspect wrote anything at all."""
     storage = _storage()
 
     assert upload_logs("r1", tmp_path, storage) == []
     assert storage.client.posts == []
 
 
-def test_seuls_les_eval_montent(tmp_path: Path):
-    """Inspect laisse d'autres fichiers dans son dossier ; ils ne nous
-    regardent pas."""
+def test_only_the_evals_go_up(tmp_path: Path):
+    """Inspect leaves other files in its directory; they are none of our
+    business."""
     logs = _logs(tmp_path, "r1", "a.eval", "notes.txt")
 
     assert upload_logs("r1", logs, _storage()) == ["a.eval"]
 
 
-def test_le_manifeste_monte_apres_les_journaux(tmp_path: Path, monkeypatch):
-    """Le manifeste nomme des fichiers ; il ne doit jamais en nommer un qui
-    n'est pas encore monté. D'où le dernier rang, et ce test."""
+def test_the_manifest_goes_up_after_the_logs(tmp_path: Path, monkeypatch):
+    """The manifest names files; it must never name one that is not uploaded
+    yet. Hence its last place, and this test."""
     logs = _logs(tmp_path, "r1", "a.eval", "b.eval")
     monkeypatch.setattr(
         "playground.log_store.write_log_listing",
@@ -101,26 +101,26 @@ def test_le_manifeste_monte_apres_les_journaux(tmp_path: Path, monkeypatch):
     )
     storage = _storage()
 
-    montés = upload_logs("r1", logs, storage)
+    uploaded = upload_logs("r1", logs, storage)
 
-    assert montés == ["a.eval", "b.eval", "listing.json"]
+    assert uploaded == ["a.eval", "b.eval", "listing.json"]
 
 
-def test_un_manifeste_impossible_n_empeche_pas_les_journaux(
+def test_an_impossible_manifest_does_not_stop_the_logs(
     tmp_path: Path, monkeypatch
 ):
-    """Un `.eval` en sécurité vaut mieux qu'un `.eval` perdu."""
+    """An `.eval` kept safe beats an `.eval` lost."""
     logs = _logs(tmp_path, "r1", "a.eval")
 
-    def refuser(directory):
-        raise RuntimeError("journal illisible")
+    def refuse(directory):
+        raise RuntimeError("unreadable log")
 
-    monkeypatch.setattr("playground.log_store.write_log_listing", refuser)
+    monkeypatch.setattr("playground.log_store.write_log_listing", refuse)
 
     assert upload_logs("r1", logs, _storage()) == ["a.eval"]
 
 
-def test_sans_variables_d_environnement_on_renonce_sans_lever(
+def test_without_environment_variables_we_give_up_without_raising(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.delenv("SUPABASE_URL", raising=False)

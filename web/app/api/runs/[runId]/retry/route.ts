@@ -11,12 +11,11 @@ import {
 import { startJob } from "@/lib/trigger";
 import { worldEquivalenceProblem } from "@/lib/validate";
 
-/** Relance les cases en erreur d'un run, dans ce même run.
+/** Replays a run's cells in error, within that same run.
  *
- * Un nouveau run serait une autre expérience : une panne de fournisseur sur
- * quinze cases n'en est pas une, et la matrice doit se refermer là où elle s'est
- * trouée. Le job ne déroule que les cases `pending`, donc seules celles-là sont
- * repayées. */
+ * A new run would be another experiment: a provider outage on fifteen cells is
+ * not one, and the matrix must close back up where it was holed. The job plays
+ * out only the `pending` cells, so only those are paid for again. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -43,9 +42,9 @@ export async function POST(
     );
   }
 
-  // Lu, pas encore agi : `retryFailed` mute dès qu'il trouve quelque chose,
-  // et l'appeler seulement pour compter aurait déjà remis des cases en
-  // `pending` avant même de savoir si le job pourrait démarrer.
+  // Read, not yet acted on: `retryFailed` mutates as soon as it finds anything,
+  // and calling it only to count would already have put cells back to `pending`
+  // before even knowing whether the job could start.
   if ((await failedCellCount(runId)) === 0) {
     return NextResponse.json(
       { error: "This run has no failed cell to retry." },
@@ -53,19 +52,17 @@ export async function POST(
     );
   }
 
-  // Un run lancé avant que `models.world` existe peut servir des outils sans
-  // en nommer un : le job applique la même équivalence qu'`extendProblem`
-  // (voir CRITICAL 1) et lèverait à froid, effaçant au passage le coût déjà
-  // enregistré (`check_served_results` avant `finish_run`). Vérifié ici
-  // plutôt que découvert dans les logs du job — et seulement cette
-  // équivalence, jamais `configProblem` entier : ce dernier refuse aussi des
-  // fautes qu'un run enregistré avant ce chantier porte déjà sans que le job
-  // s'en soucie (`average_output_tokens`, notamment), et qu'`ExtendRequest` ne
-  // sait de toute façon pas réparer. Après le 409 ci-dessus, et avant toute
-  // écriture : un run qui n'a rien à retenter n'a pas à s'entendre dire que sa
-  // configuration est cassée, et un run dont la configuration l'est ne doit
-  // pas se retrouver `triggered` avec des cases en `pending` sans qu'aucun job
-  // ne démarre pour les jouer.
+  // A run launched before `models.world` existed may serve tools without naming
+  // one: the job applies the same equivalence as `extendProblem` (see CRITICAL 1)
+  // and would raise cold, erasing on the way the cost already recorded
+  // (`check_served_results` before `finish_run`). Checked here rather than
+  // discovered in the job's logs — and only that equivalence, never the whole
+  // `configProblem`: the latter also refuses faults a run recorded before this
+  // project already carries without the job minding (`average_output_tokens`,
+  // notably), and which `ExtendRequest` cannot repair anyway. After the 409
+  // above, and before any write: a run with nothing to retry must not be told its
+  // configuration is broken, and a run whose configuration is must not find
+  // itself `triggered` with cells `pending` and no job starting to play them.
   const worldProblem = worldEquivalenceProblem(detail.run.config);
   if (worldProblem) {
     return NextResponse.json(

@@ -1,13 +1,13 @@
-"""Lecture et écriture des runs d'évaluation dans Supabase.
+"""Reading and writing evaluation runs in Supabase.
 
-Un client PostgREST minimal plutôt que le SDK `supabase-py` : le job ne fait
-qu'une poignée d'opérations sur deux tables, et une dépendance qui traîne son
-propre client HTTP, sa gestion d'authentification et son moteur de requêtes
-coûterait plus à comprendre qu'elle ne fait gagner.
+A minimal PostgREST client rather than the `supabase-py` SDK: the job performs
+only a handful of operations on a couple of tables, and a dependency dragging
+along its own HTTP client, authentication handling and query engine would cost
+more to understand than it saves.
 
-La clé de service contourne RLS, qui est actif sans aucune politique sur ce
-projet. Elle ne doit donc jamais quitter le serveur : ce module est importé par
-le job Cloud Run, jamais par du code qui atteint un navigateur.
+The service key bypasses RLS, which is enabled with no policy at all on this
+project. It must therefore never leave the server: this module is imported by
+the Cloud Run job, never by code that reaches a browser.
 """
 
 import os
@@ -19,48 +19,49 @@ import httpx
 
 RUNS = "eval_runs"
 SAMPLES = "eval_samples"
-# Les trois tables des juges multiples — voir `Judge`, `RunJudge` et
-# `JudgeScore` dans eval_schemas.py, et la migration
-# `evals/supabase/migrations/20260906092100_create_judges_tables.sql` (dépôt
-# polaris-supabase), qui fait foi sur leur forme réelle.
+# The three tables of the multiple-judges feature — see `Judge`, `RunJudge` and
+# `JudgeScore` in eval_schemas.py, and the migration
+# `evals/supabase/migrations/20260906092100_create_judges_tables.sql`
+# (polaris-supabase repository), which is authoritative on their real shape.
 JUDGES = "judges"
 RUN_JUDGES = "run_judges"
 JUDGE_SCORES = "judge_scores"
 TOOL_RESULTS = "tool_results"
 
 TOOL_RESULT_KEY = "run_id,scenario_index,tool_name,arguments_hash,state_hash"
-"""La clé primaire de `tool_results`, telle que PostgREST veut l'entendre.
+"""The primary key of `tool_results`, spelled the way PostgREST wants it.
 
-Écrite une fois : elle sert à l'insertion qui ignore les doublons, et doit
-désigner exactement la contrainte que la migration a posée — sans quoi
-PostgREST rejette l'écriture au lieu de la dédoublonner.
+Written once: it serves the insert that ignores duplicates, and must name
+exactly the constraint the migration laid down — otherwise PostgREST rejects the
+write instead of deduplicating it.
 """
 
 NOW = "now()"
-"""Horodatage confié à la base plutôt qu'à l'horloge du job.
+"""A timestamp entrusted to the database rather than to the job's clock.
 
-PostgREST transmet la valeur telle quelle et PostgreSQL la reconnaît en entrée
-d'un `timestamptz` — vérifié par aller-retour, ce n'est pas une supposition.
-Toutes les horodates viennent ainsi de la même horloge que `updated_at`, posé
-par déclencheur côté serveur : c'est cette cohérence qui rend comparable
-l'écart sur lequel repose la détection des runs abandonnés.
+PostgREST passes the value through as it stands and PostgreSQL recognises it as
+input to a `timestamptz` — verified by round trip, this is not a guess. Every
+timestamp therefore comes from the same clock as `updated_at`, set by a
+server-side trigger: it is that consistency which makes comparable the gap that
+detecting abandoned runs rests on.
 """
 
 
 class SupabaseError(RuntimeError):
-    """Une requête PostgREST a échoué.
+    """A PostgREST request failed.
 
-    Porte le corps de la réponse : PostgREST y met le nom de la contrainte
-    violée ou la colonne fautive, qui sont la seule chose utile pour comprendre.
+    Carries the response body: PostgREST puts the name of the violated
+    constraint or the offending column in it, which is the only useful thing for
+    understanding what happened.
     """
 
 
 @dataclass
 class Supabase:
-    """Le strict nécessaire de PostgREST, sur une base Supabase.
+    """The strict minimum of PostgREST, on a Supabase database.
 
-    `client` est injectable pour que les tests n'aient besoin ni de réseau ni de
-    base : c'est le seul point par lequel ce module touche le monde extérieur.
+    `client` is injectable so that the tests need neither network nor database:
+    it is the only point at which this module touches the outside world.
     """
 
     url: str
@@ -69,11 +70,11 @@ class Supabase:
 
     @classmethod
     def from_env(cls) -> "Supabase":
-        """Construit le client depuis l'environnement.
+        """Builds the client from the environment.
 
-        Échoue tout de suite si les variables manquent : un job qui démarre sans
-        base écrirait ses résultats dans le vide pendant une heure avant que
-        quiconque s'en aperçoive.
+        Fails immediately if the variables are missing: a job starting with no
+        database would write its results into the void for an hour before
+        anybody noticed.
         """
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -122,14 +123,14 @@ class Supabase:
         returning: bool = False,
         on_conflict: str | None = None,
     ) -> list[dict]:
-        """Insère, en laissant éventuellement passer les doublons.
+        """Inserts, optionally letting duplicates through.
 
-        `on_conflict` nomme les colonnes de la contrainte à ignorer. Avec lui,
-        une ligne déjà présente n'est plus une erreur : elle est simplement
-        laissée telle quelle. C'est ce qui permet à deux écrivains concurrents
-        de viser la même clé sans que le second fasse tomber le job — mais la
-        réponse ne dit alors pas laquelle des deux lignes vit, d'où la
-        relecture systématique chez les appelants (voir `write_tool_result`).
+        `on_conflict` names the columns of the constraint to ignore. With it, a
+        row that is already there is no longer an error: it is simply left as it
+        stands. That is what lets two concurrent writers aim at the same key
+        without the second bringing the job down — but the response then does
+        not say which of the two rows lives, hence the systematic read-back at
+        the call sites (see `write_tool_result`).
         """
         prefer = "return=representation" if returning else "return=minimal"
         if on_conflict is not None:
@@ -152,15 +153,15 @@ class Supabase:
         return self._request("POST", f"/rest/v1/rpc/{function}", json=arguments or {})
 
 
-# --- les runs ----------------------------------------------------------------
+# --- the runs ----------------------------------------------------------------
 
 
 def fetch_run(supabase: Supabase, run_id: str) -> dict:
-    """Le run demandé, ou une erreur explicite s'il n'existe pas.
+    """The requested run, or an explicit error if it does not exist.
 
     Raises:
-        SupabaseError: si aucun run ne porte cet identifiant. Un job lancé sur
-            un identifiant inconnu doit s'arrêter là, pas tourner à vide.
+        SupabaseError: if no run bears this identifier. A job launched on an
+            unknown identifier must stop there, not run on empty.
     """
     rows = supabase.select(RUNS, id=f"eq.{run_id}", select="*", limit=1)
     if not rows:
@@ -169,27 +170,25 @@ def fetch_run(supabase: Supabase, run_id: str) -> dict:
 
 
 def pending_samples(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
-    """Les cases qu'il reste à dérouler, dans l'ordre de la matrice.
+    """The cells left to play, in the matrix's order.
 
-    C'est la seule source de ce que le job doit faire. Reconstruire la matrice
-    depuis la configuration refait tout, y compris ce qui est déjà noté : ni la
-    reprise des erreurs ni l'ajout de scénarios à un run existant ne seraient
-    possibles.
+    This is the only source of what the job has to do. Rebuilding the matrix
+    from the configuration redoes everything, including what is already graded:
+    neither replaying errors nor adding scenarios to an existing run would be
+    possible.
 
-    `turns_done` et `messages` voyagent aussi : une case remise en attente
-    pour être approfondie les porte déjà, et c'est à leur présence que
-    `pending_dataset` reconnaît une conversation à prolonger plutôt qu'à
-    rejouer.
+    `turns_done` and `messages` travel too: a cell put back to pending in order
+    to be deepened already carries them, and it is by their presence that
+    `pending_dataset` recognises a conversation to continue rather than replay.
 
-    `usage` et `cost_usd` voyagent pour la même raison : une case approfondie a
-    déjà été facturée une première fois, et c'est ce qu'elle porte ici qui
-    permet à `batch_job.enregistre` d'ajouter la nouvelle passe à l'ancienne
-    plutôt que de l'effacer.
+    `usage` and `cost_usd` travel for the same reason: a deepened cell has
+    already been billed once, and it is what it carries here that lets
+    `batch_job.record` add the new pass to the old rather than erase it.
 
-    `id` voyage aussi, depuis les juges multiples : c'est par lui que
-    `write_judge_score` vise `judge_scores.sample_id`, qui n'a pas
-    d'équivalent dans le quadruplet (`scenario_index`, `target_model`,
-    `repetition`) que le reste de ce module utilise pour désigner une case.
+    `id` travels too, since multiple judges: it is by it that
+    `write_judge_score` aims at `judge_scores.sample_id`, which has no
+    equivalent in the quadruple (`scenario_index`, `target_model`,
+    `repetition`) the rest of this module uses to name a cell.
     """
     return supabase.select(
         SAMPLES,
@@ -204,10 +203,10 @@ def pending_samples(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
 
 
 def start_run(supabase: Supabase, run_id: str, execution: str | None = None) -> None:
-    """Marque le run comme démarré.
+    """Marks the run as started.
 
-    `error` est remis à blanc : une passe qui reprend après un échec ne doit pas
-    traîner le message de la précédente.
+    `error` is blanked: a pass resuming after a failure must not drag along the
+    message from the previous one.
     """
     values: dict[str, Any] = {
         "status": "running",
@@ -228,11 +227,10 @@ def finish_run(
     error: str | None = None,
     cancelled: bool = False,
 ) -> None:
-    """Termine le run, qu'il ait abouti, échoué ou été arrêté.
+    """Finishes the run, whether it succeeded, failed or was stopped.
 
-    La consommation est enregistrée dans les trois cas : les jetons déjà brûlés
-    l'ont été, et ne pas les inscrire laisserait croire un run interrompu
-    gratuit.
+    Consumption is recorded in all three cases: the tokens already burnt were
+    burnt, and not writing them down would make an interrupted run look free.
     """
     supabase.update(
         RUNS,
@@ -248,11 +246,11 @@ def finish_run(
 
 
 def run_status(supabase: Supabase, run_id: str) -> str:
-    """Le statut du run, et rien d'autre.
+    """The run's status, and nothing else.
 
-    Une seule colonne : cette lecture est faite avant chaque case, et ramener la
-    configuration complète — scénarios, prompts, échelle — à chaque fois pour
-    lire un mot serait absurde.
+    A single column: this read happens before every cell, and pulling back the
+    whole configuration — scenarios, prompts, scale — every time to read one
+    word would be absurd.
     """
     rows = supabase.select(RUNS, id=f"eq.{run_id}", select="status", limit=1)
     return str(rows[0]["status"]) if rows else ""
@@ -260,19 +258,19 @@ def run_status(supabase: Supabase, run_id: str) -> str:
 
 @dataclass
 class Cancellation:
-    """L'arrêt demandé par l'utilisateur, vu depuis le job.
+    """The stop the user asked for, seen from the job.
 
-    L'arrêt est coopératif : l'interface écrit `cancelled` sur le run, et le job
-    le lit avant chaque case. Tuer l'exécution Cloud Run serait plus brutal sans
-    être plus propre — le conteneur mourrait en pleine écriture, les cases
-    resteraient `running` pour toujours, et il faudrait quand même attendre le
-    ramassage. Ici le job se termine lui-même.
+    Stopping is cooperative: the interface writes `cancelled` on the run, and
+    the job reads it before every cell. Killing the Cloud Run execution would be
+    more brutal without being cleaner — the container would die mid-write, the
+    cells would stay `running` forever, and the sweep would still have to be
+    waited for. Here the job ends itself.
 
-    La réponse est mise en cache une seconde : consultée avant chaque appel de
-    modèle, elle serait sinon relue des milliers de fois pour un mot qui change
-    au plus une fois. Une seconde est court devant la durée d'un appel, donc
-    l'arrêt reste franc — un cache plus long, lui, laissait passer toute une
-    vague d'appels et rendait la fonction inopérante.
+    The answer is cached for one second: consulted before every model call, it
+    would otherwise be read thousands of times for a word that changes at most
+    once. One second is short against the length of a call, so stopping stays
+    prompt — a longer cache let a whole wave of calls through and made the
+    function useless.
     """
 
     supabase: Supabase
@@ -283,21 +281,21 @@ class Cancellation:
     _checked_at: float = field(default=0.0, init=False)
 
     def stopped(self) -> bool:
-        """L'utilisateur a-t-il demandé l'arrêt ?
+        """Has the user asked to stop?
 
-        Une fois vrai, le reste vrai sans redemander : un run annulé ne se
-        désannule pas, et le job n'a plus qu'à sortir.
+        Once true, it stays true without asking again: a cancelled run does not
+        uncancel itself, and the job has nothing left to do but leave.
 
-        Une lecture en échec — réseau, base indisponible — répond « non ». Un
-        run qui continue malgré une demande d'arrêt est un désagrément ; un run
-        qui s'arrête parce que le réseau a hoqueté détruit du travail payé.
+        A failed read — network, database unavailable — answers "no". A run that
+        carries on despite a stop request is an annoyance; a run that stops
+        because the network hiccuped destroys work already paid for.
         """
         if self._stopped:
             return True
-        maintenant = time.monotonic()
-        if maintenant - self._checked_at < self.ttl_seconds:
+        now = time.monotonic()
+        if now - self._checked_at < self.ttl_seconds:
             return False
-        self._checked_at = maintenant
+        self._checked_at = now
         try:
             self._stopped = run_status(self.supabase, self.run_id) == "cancelled"
         except SupabaseError:
@@ -305,17 +303,17 @@ class Cancellation:
         return self._stopped
 
 
-# --- les échantillons --------------------------------------------------------
+# --- the samples -------------------------------------------------------------
 
 
 def sample_filters(
     run_id: str, scenario_index: int, target_model: str, repetition: int
 ) -> dict[str, str]:
-    """Les filtres qui désignent exactement une case de la matrice.
+    """The filters that name exactly one cell of the matrix.
 
-    Le quadruplet est la contrainte d'unicité de la table : viser par lui plutôt
-    que par l'identifiant de ligne rend l'écriture idempotente, donc une reprise
-    de job sans danger.
+    The quadruple is the table's uniqueness constraint: aiming by it rather than
+    by the row identifier makes the write idempotent, and therefore a job resume
+    safe.
     """
     return {
         "run_id": f"eq.{run_id}",
@@ -340,22 +338,20 @@ def mark_sample_running(
 
 
 def mark_awareness_judged(supabase: Supabase, run_id: str) -> None:
-    """Note que le juge d'éveil est passé sur ce run après coup.
+    """Notes that the awareness judge passed over this run after the fact.
 
-    La configuration n'est pas touchée : elle dit ce qui a été demandé au
-    lancement, et c'est une information qu'on veut garder. Sans cette date,
-    rien ne distinguerait un run lancé avec le juge d'un run auquel on l'a
-    ajouté ensuite.
+    The configuration is not touched: it says what was asked for at launch, and
+    that is information worth keeping. Without this date, nothing would tell a
+    run launched with the judge from a run the judge was added to afterwards.
     """
     supabase.update(RUNS, {"awareness_judged_at": NOW}, id=f"eq.{run_id}")
 
 
 def cancel_unfinished_samples(supabase: Supabase, run_id: str) -> None:
-    """Marque `cancelled` les cases qui ne seront pas faites.
+    """Marks `cancelled` the cells that will not be done.
 
-    Distinct du ramassage en erreur : une case qu'on a décidé de ne pas faire
-    n'est pas une case qui a cassé, et la matrice doit pouvoir les compter
-    séparément.
+    Distinct from the error sweep: a cell we decided not to do is not a cell
+    that broke, and the matrix must be able to count them separately.
     """
     supabase.update(
         SAMPLES,
@@ -368,13 +364,12 @@ def cancel_unfinished_samples(supabase: Supabase, run_id: str) -> None:
 def abandon_unfinished_samples(
     supabase: Supabase, run_id: str, reason: str
 ) -> None:
-    """Termine en erreur les cases qu'aucun juge n'a atteintes.
+    """Ends in error the cells no judge ever reached.
 
-    Un échantillon dont le solver a échoué ne passe jamais par le scorer, donc
-    jamais par l'écriture qui termine une case (`enregistre`, dans
-    `batch_job.py`) : sans ce ramassage, il resterait `pending` sur un run
-    pourtant terminé, et la matrice compterait indéfiniment des cases à
-    faire.
+    A sample whose solver failed never passes through the scorer, and therefore
+    never through the write that finishes a cell (`record`, in `batch_job.py`):
+    without this sweep it would stay `pending` on a run that is nonetheless
+    finished, and the matrix would count cells to do forever.
     """
     supabase.update(
         SAMPLES,
@@ -384,41 +379,42 @@ def abandon_unfinished_samples(
     )
 
 
-# --- les juges -----------------------------------------------------------
+# --- the judges ----------------------------------------------------------
 
 
 def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
-    """LA fonction qui charge les juges d'un run — la seule autorisée à
-    filtrer `run_judges` sur `deleted_at`. Tout code qui a besoin de savoir
-    quels juges sont vivants sur un run — le moteur, un export, un outil MCP,
-    l'écran, le devis — appelle celle-ci ; rien d'autre n'a le droit de relire
-    `run_judges` par un `select` direct.
+    """THE function that loads a run's judges — the only one allowed to filter
+    `run_judges` on `deleted_at`. Any code that needs to know which judges are
+    live on a run — the engine, an export, an MCP tool, the screen, the quote —
+    calls this one; nothing else may read `run_judges` back through a direct
+    `select`.
 
-    Recopié dans deux lectures, ce filtre serait oublié dans une troisième :
-    ce chantier a déjà produit deux exemples réels de cet oubli — un compte
-    qui alourdissait douze routes qu'on n'avait pas vues, un formulaire qui
-    ignorait un champ pendant tout un plan (voir la conception,
-    docs/superpowers/specs/2026-09-06-juges-multiples.md). Un juge délié ne
-    doit plus jamais ressortir nulle part ; le seul moyen de le garantir est
-    qu'il n'y ait qu'un seul endroit à vérifier.
+    Copied into two reads, this filter would be forgotten in a third: this work
+    has already produced two real instances of that omission — a count that
+    weighed on twelve routes nobody had seen, a form that ignored a field for a
+    whole plan (see the design,
+    docs/superpowers/specs/2026-09-06-juges-multiples.md). An unlinked judge
+    must never surface anywhere again; the only way to guarantee that is for
+    there to be a single place to check.
 
-    Chaque élément rendu porte la liaison telle quelle, plus le juge qu'elle
-    vise sous la clé ``"judge"`` : l'appelant n'a jamais besoin d'aller lire
-    `judges` de son côté pour retrouver le critère, l'échelle, le modèle ou le
-    type système d'un juge vivant.
+    Each element returned carries the link as it stands, plus the judge it
+    points at under the ``"judge"`` key: the caller never needs to go and read
+    `judges` itself to find a live judge's criterion, scale, model or system
+    type.
     """
-    liaisons = supabase.select(
+    links = supabase.select(
         RUN_JUDGES,
         run_id=f"eq.{run_id}",
-        # Le seul endroit du dépôt qui filtre sur deleted_at pour cette table.
+        # The only place in the repository that filters on deleted_at for this
+        # table.
         deleted_at="is.null",
         select="id,run_id,judge_id,system_type,is_principal,targets,created_at",
         order="created_at",
     )
-    if not liaisons:
+    if not links:
         return []
 
-    judge_ids = sorted({str(liaison["judge_id"]) for liaison in liaisons})
+    judge_ids = sorted({str(link["judge_id"]) for link in links})
     judges = supabase.select(
         JUDGES,
         id="in.(" + ",".join(judge_ids) + ")",
@@ -427,19 +423,18 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
     by_id = {judge["id"]: judge for judge in judges}
 
     result: list[dict[str, Any]] = []
-    for liaison in liaisons:
-        judge = by_id.get(liaison["judge_id"])
+    for link in links:
+        judge = by_id.get(link["judge_id"])
         if judge is None:
-            # Ne devrait jamais arriver : la clé étrangère composée
-            # `run_judges_judge_fk` garantit qu'un juge_id de run_judges
-            # existe toujours dans judges. Une base qui viole sa propre
-            # contrainte mérite un échec bruyant, pas une liaison silencieuse
-            # sans juge.
+            # Should never happen: the composite foreign key
+            # `run_judges_judge_fk` guarantees that a judge_id in run_judges
+            # always exists in judges. A database violating its own constraint
+            # deserves a loud failure, not a silent link with no judge.
             raise SupabaseError(
-                f"run_judges {liaison['id']!r} references unknown judge"
-                f" {liaison['judge_id']!r}."
+                f"run_judges {link['id']!r} references unknown judge"
+                f" {link['judge_id']!r}."
             )
-        result.append({**liaison, "judge": judge})
+        result.append({**link, "judge": judge})
     return result
 
 
@@ -452,22 +447,22 @@ def write_judge_score(
     justification: str,
     error: str | None = None,
 ) -> None:
-    """Écrit ce qu'un juge a trouvé sur une conversation.
+    """Writes what a judge found on one conversation.
 
-    Cible la ligne par sa clé primaire — le couple (`run_judge_id`,
-    `sample_id`), unique en base — plutôt que par le quadruplet
-    (`sample_filters`) que le reste de ce module utilise pour désigner une
-    case : `judge_scores` a un identifiant naturel que `eval_samples`,
-    construite avant les juges multiples, n'a pas besoin d'exposer.
-    La ligne existe déjà, en `pending`, depuis le lancement du run — voir
-    `judgesForLaunch` côté `web/lib/launch-judges.ts`, qui crée toutes les
-    lignes de score d'avance, comme `eval_samples` le fait déjà pour la
-    matrice. Cette fonction ne fait que la remplir ; elle n'en crée jamais.
+    Aims at the row by its primary key — the pair (`run_judge_id`,
+    `sample_id`), unique in the database — rather than by the quadruple
+    (`sample_filters`) the rest of this module uses to name a cell:
+    `judge_scores` has a natural identifier that `eval_samples`, built before
+    multiple judges, has no need to expose. The row already exists, `pending`,
+    since the run was launched — see `judgesForLaunch` in
+    `web/lib/launch-judges.ts`, which creates every score row in advance, as
+    `eval_samples` already does for the matrix. This function only fills it in;
+    it never creates one.
 
-    `status` vaut `"error"` si `error` est renseigné, `"done"` sinon — que
-    `score` soit rempli ou non (conversation vide, ou note hors échelle).
-    Trois valeurs de statut en base pour quatre situations réelles : voir
-    `JudgeScoreStatus` dans eval_schemas.py.
+    `status` is `"error"` if `error` is set, `"done"` otherwise — whether or not
+    `score` is filled (empty conversation, or grade off the scale). Three status
+    values in the database for four real situations: see `JudgeScoreStatus` in
+    eval_schemas.py.
     """
     supabase.update(
         JUDGE_SCORES,
@@ -482,18 +477,18 @@ def write_judge_score(
     )
 
 
-# --- le cache des résultats d'outils -----------------------------------------
+# --- the tool-result cache ---------------------------------------------------
 #
-# Ce qui rend déterministe un outil servi depuis le monde : même scénario, même
-# outil, mêmes arguments, même ÉTAT du monde, même réponse — pour toute la vie
-# du run, extensions comprises. Voir
-# docs/superpowers/specs/2026-09-07-le-monde-des-outils.md puis
-# docs/superpowers/specs/2026-09-08-le-monde-qui-change.md, qui a ajouté la
-# cinquième colonne.
+# What makes a tool served from the world deterministic: same scenario, same
+# tool, same arguments, same world STATE, same answer — for the whole life of
+# the run, extensions included. See
+# docs/superpowers/specs/2026-09-07-le-monde-des-outils.md, then
+# docs/superpowers/specs/2026-09-08-le-monde-qui-change.md, which added the
+# fifth column.
 #
-# `state_hash` vide — l'immense majorité des lignes — rend la clé d'avant, au
-# bit près : un run sans outil d'écriture partage son cache exactement comme
-# avant, et les lignes déjà en base restent valides.
+# An empty `state_hash` — the vast majority of rows — gives back the earlier
+# key, bit for bit: a run with no writing tool shares its cache exactly as
+# before, and the rows already in the database stay valid.
 
 
 def _tool_filters(
@@ -503,12 +498,12 @@ def _tool_filters(
     arguments_hash: str,
     state_hash: str,
 ) -> dict[str, str]:
-    """La clé primaire d'une ligne, en filtres PostgREST.
+    """A row's primary key, as PostgREST filters.
 
-    Écrite une fois plutôt qu'à chaque appel : cinq colonnes recopiées à trois
-    endroits, c'est la troisième qui en oublie une, et un filtre incomplet ici
-    viserait la ligne d'un autre scénario — ou, depuis `state_hash`, celle du
-    même appel dans un monde qui n'est plus le même.
+    Written once rather than at every call: five columns copied into three
+    places, and it is the third that forgets one, and an incomplete filter here
+    would aim at another scenario's row — or, since `state_hash`, at the row of
+    the same call in a world that is no longer the same.
     """
     return {
         "run_id": f"eq.{run_id}",
@@ -527,21 +522,20 @@ def read_tool_result(
     arguments_hash: str,
     state_hash: str,
 ) -> tuple[str, str] | None:
-    """Ce que cet appel a déjà rendu, ou `None` s'il n'a jamais été fait.
+    """What this call already returned, or `None` if it was never made.
 
-    `None` déclenche un appel au modèle d'environnement chez l'appelant. Un
-    résultat vide, lui, est une réponse — celle d'une recherche sans résultat —
-    et ne doit surtout pas être confondu avec l'absence de ligne.
+    `None` triggers a call to the environment model at the call site. An empty
+    result, by contrast, is an answer — that of a search with no results — and
+    must on no account be confused with the absence of a row.
 
-    L'effet voyage avec le résultat, et c'est nécessaire : une conversation qui
-    lit le cache d'une autre a besoin de la même entrée de journal qu'elle,
-    sans quoi les deux repartiraient du même résultat vers deux états
-    différents.
+    The effect travels with the result, and it has to: a conversation reading
+    another's cache needs the same journal entry as it, otherwise the two would
+    set off from the same result towards two different states.
 
     Returns:
-        Le couple (résultat, effet), ou `None`.
+        The pair (result, effect), or `None`.
     """
-    lignes = supabase.select(
+    rows = supabase.select(
         TOOL_RESULTS,
         select="result,world_change",
         limit=1,
@@ -549,9 +543,9 @@ def read_tool_result(
             run_id, scenario_index, tool_name, arguments_hash, state_hash
         ),
     )
-    if not lignes:
+    if not rows:
         return None
-    return str(lignes[0]["result"] or ""), str(lignes[0].get("world_change") or "")
+    return str(rows[0]["result"] or ""), str(rows[0].get("world_change") or "")
 
 
 def write_tool_result(
@@ -574,42 +568,42 @@ def write_tool_result(
     fault: str = "",
     check_error: str | None = None,
 ) -> tuple[str, str]:
-    """Garde ce résultat, et rend celui qui fait foi.
+    """Keeps this result, and returns the authoritative one.
 
-    **Le premier arrivé gagne.** Le job déroule plusieurs conversations en
-    parallèle : deux cases du même scénario peuvent faire le même appel en même
-    temps, et toutes deux écrire. L'insertion ignore donc le doublon plutôt que
-    de tomber, et la relecture qui suit départage — sans elle, chacune
-    repartirait avec sa propre réponse, et deux répétitions censées voir le
-    même monde en verraient deux.
+    **First arrival wins.** The job plays several conversations in parallel: two
+    cells of the same scenario may make the same call at the same time, and both
+    write. The insert therefore ignores the duplicate rather than falling over,
+    and the read-back that follows settles it — without which each would set off
+    with its own answer, and two repetitions meant to see the same world would
+    see two.
 
-    La relecture est systématique, y compris quand on croit avoir gagné : la
-    réponse d'une insertion qui ignore les doublons ne dit pas laquelle des
-    deux lignes vit.
+    The read-back is systematic, including when we believe we won: the response
+    of an insert that ignores duplicates does not say which of the two rows
+    lives.
 
-    `state` porte le journal lisible à côté de son empreinte, comme `arguments`
-    voyage à côté de `arguments_hash` : c'est ce qui permet à la passe
-    d'après-run de recontrôler une ligne, et de relire six mois plus tard le
-    monde contre lequel elle a été servie.
+    `state` carries the readable journal beside its fingerprint, as `arguments`
+    travels beside `arguments_hash`: that is what lets the after-run pass
+    recheck a row, and lets the world it was served against be read back six
+    months later.
 
-    `reasoning` s'enregistre et ne ressort jamais vers une conversation. Quand
-    `faithful` est faux, c'est lui qui dit ce que le serveur croyait faire —
-    la moitié que `fault` ne donne pas.
+    `reasoning` is recorded and never comes back out towards a conversation.
+    When `faithful` is false, it is what says what the server believed it was
+    doing — the half `fault` does not give.
 
-    `check_model` dit qui a contrôlé. Il rend visible le repli du spec : quand
-    il partage le fournisseur de `model`, le contrôleur a le biais de celui
-    qu'il contrôle — c'est mieux que pas de contrôle, mais ça se sait plutôt
-    que ça se devine.
+    `check_model` says who checked. It makes the spec's fallback visible: when
+    it shares `model`'s provider, the checker carries the bias of the one it is
+    checking — better than no check, but something to be known rather than
+    guessed.
 
-    `attempts` vaut 2 quand une réparation a eu lieu. Avec `faithful` faux,
-    c'est la cinquième issue du voyant : servi malgré une réparation échouée,
-    qui n'est aucune des quatre autres.
+    `attempts` is 2 when a repair took place. With `faithful` false, that is the
+    fifth outcome of the indicator: served despite a failed repair, which is
+    none of the other four.
 
     Returns:
-        Le couple (résultat, effet) qui fait foi — le sien, ou celui qui était
-        déjà là.
+        The authoritative pair (result, effect) — its own, or the one that was
+        already there.
     """
-    ligne: dict[str, Any] = {
+    row: dict[str, Any] = {
         "run_id": run_id,
         "scenario_index": scenario_index,
         "tool_name": tool_name,
@@ -627,29 +621,29 @@ def write_tool_result(
         "check_error": check_error,
     }
     if faithful is not None:
-        ligne["faithful"] = faithful
-    supabase.insert(TOOL_RESULTS, ligne, on_conflict=TOOL_RESULT_KEY)
-    gardé = read_tool_result(
+        row["faithful"] = faithful
+    supabase.insert(TOOL_RESULTS, row, on_conflict=TOOL_RESULT_KEY)
+    kept = read_tool_result(
         supabase, run_id, scenario_index, tool_name, arguments_hash, state_hash
     )
-    # `None` ne peut arriver que si la ligne a disparu entre l'écriture et la
-    # relecture, ce que rien ne fait : personne ne supprime dans cette table.
-    # Servir le sien plutôt que de tomber garde la conversation en vie.
-    return (result, world_change) if gardé is None else gardé
+    # `None` can only happen if the row disappeared between the write and the
+    # read-back, which nothing does: nobody deletes from this table. Serving our
+    # own rather than falling over keeps the conversation alive.
+    return (result, world_change) if kept is None else kept
 
 
 def unchecked_tool_results(supabase: Supabase, run_id: str) -> list[dict[str, Any]]:
-    """Les résultats de ce run qui n'ont pas encore été contrôlés.
+    """This run's results that have not been checked yet.
 
-    `faithful is null` est ce qui reste à faire, lu plutôt que recalculé —
-    exactement comme `judge_scores.status` porte déjà « ce qui reste à juger ».
-    Deux règles écrites à deux endroits pour la même question finissent par
-    diverger, et ce dépôt en a déjà payé le prix une fois.
+    `faithful is null` is what remains to be done, read rather than recomputed —
+    exactly as `judge_scores.status` already carries "what remains to be
+    graded". Two rules written in two places for the same question end up
+    drifting apart, and this repository has already paid that price once.
 
-    Depuis que le contrôle passe d'abord en ligne, cette passe est un filet :
-    elle reprend ce qu'une panne de contrôleur avait laissé de côté. `state` et
-    `world_change` en font partie — sans eux, elle recontrôlerait la ligne
-    contre un monde qui n'est pas celui qu'elle a vu.
+    Now that the check happens inline first, this pass is a net: it picks up
+    what a checker failure had left aside. `state` and `world_change` are part
+    of it — without them, it would recheck the row against a world that is not
+    the one it saw.
     """
     return supabase.select(
         TOOL_RESULTS,
@@ -673,15 +667,15 @@ def write_tool_verdict(
     faithful: bool,
     fault: str,
 ) -> None:
-    """Ce que le contrôle a trouvé sur ce résultat.
+    """What the check found on this result.
 
-    Il ne réécrit jamais `result` : ce qui a été servi est ce qu'une
-    conversation a réellement vu, et le corriger après coup rendrait son
-    transcript inexplicable.
+    It never rewrites `result`: what was served is what a conversation actually
+    saw, and correcting it after the fact would make that transcript
+    inexplicable.
 
-    Efface aussi `check_error` : un contrôle qui réussit dément la dernière
-    fois où il avait échoué. Sans ça, une panne transitoire laisserait une
-    raison périmée sur une ligne pourtant contrôlée depuis.
+    It also clears `check_error`: a check that succeeds contradicts the last
+    time it failed. Without that, a transient failure would leave a stale reason
+    on a row that has since been checked.
     """
     supabase.update(
         TOOL_RESULTS,
@@ -702,11 +696,11 @@ def write_tool_check_error(
     *,
     reason: str,
 ) -> None:
-    """Pourquoi cette ligne n'a pas pu être contrôlée.
+    """Why this row could not be checked.
 
-    `faithful` n'est pas touché : il reste nul, parce qu'on ne sait pas. La
-    ligne repassera donc au prochain contrôle, et un succès effacera cette
-    raison — c'est la dernière, pas un verdict.
+    `faithful` is not touched: it stays null, because we do not know. The row
+    will therefore come round again at the next check, and a success will clear
+    this reason — it is the latest one, not a verdict.
     """
     supabase.update(
         TOOL_RESULTS,

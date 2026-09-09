@@ -1,12 +1,11 @@
 "use client";
 
-// Un menu qui s'ouvre sous son bouton.
+// A menu that opens under its button.
 //
-// Les actions d'un run — dupliquer, compléter, relancer, exporter — sont
-// nombreuses et rarement urgentes. Alignées, elles poussaient le titre du run
-// hors de sa ligne et se repliaient sur deux rangs dès qu'un run avait des
-// erreurs. Repliées derrière trois points, elles ne coûtent plus rien tant
-// qu'on ne les cherche pas.
+// A run's actions — duplicate, complete, relaunch, export — are many and rarely
+// urgent. Laid out in a row, they pushed the run's title off its line and folded
+// onto two rows as soon as a run had errors. Folded behind three dots, they cost
+// nothing as long as one is not looking for them.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const ITEM =
@@ -18,16 +17,16 @@ export function Menu({
   children,
 }: {
   label?: string;
-  /** Reçoit de quoi se refermer : un menu qui reste ouvert après le clic
-   *  masque le résultat de l'action qu'on vient de déclencher. */
+  /** Receives what it needs to close itself: a menu that stays open after the
+   *  click hides the result of the action just triggered. */
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
-  // Échap ferme, comme partout ailleurs. Le clic ailleurs est intercepté par le
-  // voile ci-dessous plutôt que par un écouteur sur `document`, qui survivrait
-  // au démontage du composant s'il était mal retiré.
+  // Escape closes, as everywhere else. A click elsewhere is caught by the
+  // backdrop below rather than by a listener on `document`, which would survive
+  // the component's unmount if it were badly removed.
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -64,7 +63,7 @@ export function Menu({
   );
 }
 
-/** Une entrée de menu : un bouton, ou un lien quand elle mène à un fichier. */
+/** A menu entry: a button, or a link when it leads to a file. */
 export function MenuItem({
   onClick,
   href,
@@ -75,11 +74,11 @@ export function MenuItem({
 }: {
   onClick?: () => void;
   href?: string;
-  /** La ligne grise en dessous : ce que l'entrée fait vraiment. */
+  /** The grey line underneath: what the entry really does. */
   hint?: string;
   disabled?: boolean;
-  /** Ouvrir ailleurs, pour ce qui n'est pas une page de cette application et
-   *  dont on ne veut pas qu'il fasse perdre l'écran en cours. */
+  /** Open elsewhere, for what is not a page of this application and which one
+   *  does not want to cost the screen in use. */
   newTab?: boolean;
   children: ReactNode;
 }) {

@@ -2,29 +2,28 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun } from "@/lib/runs";
 
-/** Un run et ses cases, plus ses juges vivants et leurs verdicts.
+/** A run and its cells, plus its living judges and their verdicts.
  *
- * `?transcripts=1` ramène les conversations ET les verdicts complets de TOUS
- * les juges vivants — les deux pèsent pour la même raison et se demandent
- * toujours ensemble : voir `attachJudges` dans `lib/runs.ts`. Sans ce
- * paramètre, seuls les verdicts du juge PRINCIPAL et de l'éventuelle liaison
- * d'éveil sont ramenés — ce que la matrice et son voyant affichent sans
- * qu'on déplie rien ; le rafraîchissement d'un run en cours s'en contente.
+ * `?transcripts=1` brings back the conversations AND the complete verdicts of
+ * EVERY living judge — the two weigh for the same reason and are always asked
+ * for together: see `attachJudges` in `lib/runs.ts`. Without that parameter,
+ * only the PRINCIPAL judge's verdicts and those of the awareness link if there
+ * is one are brought back — what the matrix and its indicator show without
+ * anything being unfolded; the refresh of a running run makes do with that.
  *
- * `?full_judges=1` ramène, lui aussi, les verdicts complets de tous les juges
- * vivants, mais sans les conversations : c'est ce que demande l'écran dès
- * qu'on regarde un juge secondaire (voir `app/eval/[runId]/page.tsx`), pour
- * ne pas payer le poids des transcripts au seul motif de changer de juge
- * affiché — voir `withFullJudgeScores` sur `loadRun` (`lib/runs.ts`).
+ * `?full_judges=1` also brings back the complete verdicts of every living judge,
+ * but without the conversations: it is what the screen asks for as soon as one
+ * looks at a secondary judge (see `app/eval/[runId]/page.tsx`), so as not to pay
+ * the transcripts' weight for the sole reason of changing the judge shown — see
+ * `withFullJudgeScores` on `loadRun` (`lib/runs.ts`).
  *
- * `withJudges: true` : c'est elle qui fait exister `detail.judges` — voir
- * `components/RunRead.tsx`, écrit contre ce contrat avant que cette route ne
- * le pose réellement.
+ * `withJudges: true`: it is what makes `detail.judges` exist — see
+ * `components/RunRead.tsx`, written against this contract before this route
+ * really laid it down.
  *
- * `withCatchupMissingFlag: true` : c'est cette route qui alimente le bouton
- * de rattrapage de la page — voir `catchupMissingTotal` dans `lib/runs.ts`
- * pour pourquoi ce compte n'est demandé qu'ici et sur la route qui lance la
- * passe. */
+ * `withCatchupMissingFlag: true`: it is this route that feeds the page's
+ * catch-up button — see `catchupMissingTotal` in `lib/runs.ts` for why that
+ * count is asked for only here and on the route that starts the pass. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -43,9 +42,9 @@ export async function GET(
         withJudges: true,
         withCatchupMissingFlag: true,
         withFullJudgeScores,
-        // Le voyant des résultats servis, et son croisement avec l'éveil. Une
-        // lecture de plus par ouverture de run, sur une table le plus souvent
-        // vide — c'est la page du run, pas la liste, qui la paie.
+        // The indicator of the served results, and its crossing with awareness.
+        // One more read per run opening, on a table most often empty — it is the
+        // run's page, not the list, that pays for it.
         withToolResults: true,
       }),
     );

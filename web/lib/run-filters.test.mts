@@ -1,5 +1,5 @@
-// Le filtre des deux listes : de quel côté tombe une ligne, ce que la barre
-// propose, et ce qui reste affiché.
+// The filter of both lists: which side a row falls on, what the bar offers, and
+// what stays displayed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -37,9 +37,9 @@ const draft = (over: Partial<FilterableDraft> = {}): FilterableDraft => ({
   ...over,
 });
 
-// --- de quel côté tombe une ligne -------------------------------------------
+// --- which side a row falls on --------------------------------------------
 
-test("un run ordinaire tombe du côté banal de chaque dimension", () => {
+test("an ordinary run falls on the plain side of every dimension", () => {
   assert.deepEqual(runSides(run()), {
     machine: "b",
     visibility: "b",
@@ -47,42 +47,42 @@ test("un run ordinaire tombe du côté banal de chaque dimension", () => {
   });
 });
 
-test("chaque propriété notable bascule sa dimension", () => {
+test("each notable property tips its dimension", () => {
   assert.equal(runSides(run({ origin: "local" })).machine, "a");
   assert.equal(runSides(run({ is_public: true })).visibility, "a");
   assert.equal(runSides(run({ launched_via: "mcp" })).author, "a");
 });
 
-test("un brouillon n'a ni machine ni publication", () => {
+test("a draft has neither machine nor publication", () => {
   const sides = draftSides(draft());
   assert.equal(sides.machine, undefined);
   assert.equal(sides.visibility, undefined);
   assert.deepEqual(sides, { author: "b", kind: "b", launch: "b" });
 });
 
-test("les trois dimensions d'un brouillon basculent", () => {
+test("the three dimensions of a draft tip over", () => {
   assert.equal(draftSides(draft({ origin: "mcp" })).author, "a");
   assert.equal(draftSides(draft({ kind: "extend" })).kind, "a");
   assert.equal(draftSides(draft({ launched_at: "2026-09-07" })).launch, "a");
 });
 
-test("chaque côté a son mot", () => {
+test("each side has its word", () => {
   assert.equal(sideLabel("machine", "a"), "local");
   assert.equal(sideLabel("machine", "b"), "live");
   assert.equal(sideLabel("author", "a"), "mcp");
   assert.equal(sideLabel("author", "b"), "manual");
 });
 
-// --- le tour d'un bouton ----------------------------------------------------
+// --- a button's cycle -----------------------------------------------------
 
-test("un bouton tourne : les deux, le côté notable, l'autre, les deux", () => {
-  // `a` en premier : on clique « MCP » pour VOIR les runs d'agent.
+test("a button cycles: both, the notable side, the other, both", () => {
+  // `a` first: one clicks "MCP" to SEE the agent runs.
   assert.equal(nextChoice("both"), "a");
   assert.equal(nextChoice("a"), "b");
   assert.equal(nextChoice("b"), "both");
 });
 
-test("le tour complet ramène à l'état ouvert, sans rien laisser derrière", () => {
+test("the full cycle comes back to the open state, leaving nothing behind", () => {
   let state = OPEN;
   state = cycleDimension(state, "author");
   assert.equal(choiceOf(state, "author"), "a");
@@ -90,38 +90,38 @@ test("le tour complet ramène à l'état ouvert, sans rien laisser derrière", (
   assert.equal(choiceOf(state, "author"), "b");
   state = cycleDimension(state, "author");
   assert.equal(choiceOf(state, "author"), "both");
-  // « both » ne s'écrit pas : l'absence le dit, et c'est ce qui fait qu'une
-  // dimension ajoutée demain naîtra ouverte.
+  // "both" is not written: the absence says it, and that is what makes a
+  // dimension added tomorrow born open.
   assert.deepEqual(state.dims, {});
 });
 
-test("réduire une dimension n'en touche aucune autre", () => {
+test("narrowing one dimension touches no other", () => {
   const state = cycleDimension(cycleDimension(OPEN, "author"), "machine");
   assert.equal(choiceOf(state, "author"), "a");
   assert.equal(choiceOf(state, "machine"), "a");
 });
 
-// --- ce qui passe -----------------------------------------------------------
+// --- what passes ----------------------------------------------------------
 
-test("rien de réduit, rien d'éteint : tout passe", () => {
+test("nothing narrowed, nothing turned off: everything passes", () => {
   assert.equal(passes(runSides(run()), ["done", "budget"], OPEN), true);
 });
 
-test("réduire au côté notable ne garde que lui", () => {
+test("narrowing to the notable side keeps it alone", () => {
   const state = cycleDimension(OPEN, "author");
   assert.equal(passes(runSides(run({ launched_via: "mcp" })), [], state), true);
   assert.equal(passes(runSides(run({ launched_via: "ui" })), [], state), false);
 });
 
-test("réduire à l'autre côté fait exactement l'inverse", () => {
-  // C'est ce que l'ancien modèle binaire ne savait pas faire : « je ne veux
-  // QUE les runs d'agent » n'avait aucun bouton.
+test("narrowing to the other side does exactly the reverse", () => {
+  // It is what the old binary model could not do: "I want ONLY the agent runs"
+  // had no button.
   const state = cycleDimension(cycleDimension(OPEN, "author"), "author");
   assert.equal(passes(runSides(run({ launched_via: "mcp" })), [], state), false);
   assert.equal(passes(runSides(run({ launched_via: "ui" })), [], state), true);
 });
 
-test("deux dimensions réduites se cumulent", () => {
+test("two narrowed dimensions add up", () => {
   let state = cycleDimension(OPEN, "author");
   state = cycleDimension(state, "machine");
   assert.equal(
@@ -138,64 +138,64 @@ test("deux dimensions réduites se cumulent", () => {
   );
 });
 
-test("une dimension que la ligne ne connaît pas ne l'écarte pas", () => {
-  // Un brouillon n'a pas de machine : le filtre des runs ne doit pas l'effacer.
+test("a dimension the row does not know does not set it aside", () => {
+  // A draft has no machine: the runs filter must not erase it.
   const state = cycleDimension(OPEN, "machine");
   assert.equal(passes(draftSides(draft()), [], state), true);
 });
 
-test("un tag éteint écarte les lignes qui le portent, et elles seules", () => {
+test("a tag turned off sets aside the rows carrying it, and them alone", () => {
   const state = toggleOff(OPEN, "budget");
   assert.equal(passes({}, ["budget", "test"], state), false);
   assert.equal(passes({}, ["test"], state), true);
-  // Une ligne sans tag ne porte rien qu'on ait éteint.
+  // A row with no tag carries nothing anyone has turned off.
   assert.equal(passes({}, [], state), true);
 });
 
-test("éteindre puis rallumer ne laisse aucune trace", () => {
+test("turning off then back on leaves no trace", () => {
   const state = toggleOff(toggleOff(OPEN, "budget"), "budget");
   assert.deepEqual(state.off, []);
 });
 
-// --- ce que la barre propose ------------------------------------------------
+// --- what the bar offers --------------------------------------------------
 
-test("la barre ne propose une dimension que si son côté notable existe", () => {
+test("the bar offers a dimension only if its notable side exists", () => {
   const rows = [
     { sides: runSides(run({ origin: "local" })), labels: ["done"] },
     { sides: runSides(run()), labels: ["done", "budget"] },
   ];
   const bar = offered("runs", rows);
-  // « machine » : un run est local. « visibility » et « author » : personne
-  // n'est publié ni lancé par un agent, donc pas de bouton.
+  // "machine": one run is local. "visibility" and "author": nobody is published
+  // or launched by an agent, so no button.
   assert.deepEqual(bar.dims, ["machine"]);
   assert.deepEqual(bar.statuses, ["done"]);
   assert.deepEqual(bar.tags, ["budget"]);
 });
 
-test("chaque liste ne voit que les dimensions qui la concernent", () => {
+test("each list sees only the dimensions that concern it", () => {
   const drafts = [
     { sides: draftSides(draft({ origin: "mcp", kind: "extend" })), labels: [] },
     { sides: draftSides(draft({ launched_at: "2026-09-07" })), labels: [] },
   ];
-  // Ni machine ni publication : elles n'ont pas de sens sur un brouillon.
+  // Neither machine nor publication: they make no sense on a draft.
   assert.deepEqual(offered("drafts", drafts).dims, ["author", "kind", "launch"]);
-  // Et inversement : « kind » et « launch » n'ont rien à faire sur les runs.
+  // And conversely: "kind" and "launch" have no business on the runs.
   const runs = [{ sides: runSides(run({ launched_via: "mcp" })), labels: [] }];
   assert.deepEqual(offered("runs", runs).dims, ["author"]);
 });
 
-test("les statuts gardent leur ordre, les tags sont triés et dédupliqués", () => {
+test("the statuses keep their order, the tags are sorted and deduplicated", () => {
   const bar = offered("runs", [
-    { sides: {}, labels: ["error", "zèbre"] },
-    { sides: {}, labels: ["done", "alpha", "zèbre"] },
+    { sides: {}, labels: ["error", "zebra"] },
+    { sides: {}, labels: ["done", "alpha", "zebra"] },
   ]);
   assert.deepEqual(bar.statuses, ["done", "error"]);
-  assert.deepEqual(bar.tags, ["alpha", "zèbre"]);
+  assert.deepEqual(bar.tags, ["alpha", "zebra"]);
 });
 
-// --- réserve et couleurs ----------------------------------------------------
+// --- reservation and colours ----------------------------------------------
 
-test("les deux côtés de chaque dimension sont réservés, et les statuts aussi", () => {
+test("both sides of every dimension are reserved, and so are the statuses", () => {
   const reserved = [
     "local", "live", "public", "private", "mcp", "MCP", "manual",
     "extend", "creation", "launched", "waiting", "done", "ERROR", " Running ",
@@ -208,64 +208,64 @@ test("les deux côtés de chaque dimension sont réservés, et les statuts aussi
   }
 });
 
-test("chaque mot affichable a ses classes", () => {
-  // La barre et le badge de la ligne lisent cette même table : c'est ce qui
-  // les empêche de diverger.
-  const mots = [
+test("every displayable word has its classes", () => {
+  // The bar and the row's badge read this same table: it is what stops them
+  // diverging.
+  const words = [
     ...STATUS_TAGS,
     ...Object.values(DIMENSIONS).flatMap((d) => [d.a, d.b]),
   ];
-  for (const mot of mots) {
-    assert.ok(PSEUDO_TAG_CLASSES[mot]?.length > 0, mot);
+  for (const word of words) {
+    assert.ok(PSEUDO_TAG_CLASSES[word]?.length > 0, word);
   }
-  assert.equal(Object.keys(PSEUDO_TAG_CLASSES).length, mots.length);
+  assert.equal(Object.keys(PSEUDO_TAG_CLASSES).length, words.length);
 });
 
-// --- « suis-je déjà là ? », qui décide si un lien s'éteint -------------------
+// --- "am I already there?", which decides whether a link goes dark ---------
 
-test("deux filtres identiques se reconnaissent, quel que soit l'ordre", () => {
-  // Comparés champ par champ, pas par sérialisation : l'ordre des clés d'un
-  // objet et celui d'un tableau ne sont pas garantis, et deux filtres égaux
-  // écrits dans un ordre différent se seraient dits différents — le lien
-  // serait resté actif en promettant un geste sans effet.
+test("two identical filters recognise each other, whatever the order", () => {
+  // Compared field by field, not by serialisation: the order of an object's keys
+  // and that of an array are not guaranteed, and two equal filters written in a
+  // different order would have called themselves different — the link would have
+  // stayed active while promising a gesture with no effect.
   const a = { dims: { author: "a" as const }, off: ["x", "y"] };
   const b = { dims: { author: "a" as const }, off: ["y", "x"] };
   assert.equal(sameFilter(a, b), true);
 });
 
-test("une dimension réduite, ou un tag de plus, suffit à les distinguer", () => {
+test("one narrowed dimension, or one more tag, is enough to tell them apart", () => {
   assert.equal(sameFilter(OPEN, { dims: { author: "a" }, off: [] }), false);
   assert.equal(sameFilter(OPEN, { dims: {}, off: ["budget"] }), false);
   assert.equal(sameFilter(OPEN, { dims: {}, off: [] }), true);
 });
 
-// --- la recherche ------------------------------------------------------------
+// --- the search ------------------------------------------------------------
 
-test("une recherche vide laisse tout passer", () => {
-  assert.equal(matchesQuery(["n'importe quoi"], ""), true);
+test("an empty search lets everything through", () => {
+  assert.equal(matchesQuery(["anything at all"], ""), true);
   assert.equal(matchesQuery([null], "   "), true);
 });
 
-test("elle ignore la casse", () => {
+test("it ignores case", () => {
   assert.equal(matchesQuery(["Task 17 live check"], "TASK"), true);
   assert.equal(matchesQuery(["Task 17 live check"], "live"), true);
 });
 
-test("elle ignore les accents, dans les deux sens", () => {
-  // Personne ne devrait avoir à composer un accent pour retrouver son run.
+test("it ignores accents, in both directions", () => {
+  // Nobody should have to compose an accent to find their run again.
   assert.equal(matchesQuery(["régression"], "regression"), true);
   assert.equal(matchesQuery(["regression"], "régression"), true);
 });
 
-test("elle cherche dans l'identifiant, pas seulement dans le nom", () => {
-  // C'est ce qu'un agent rend et ce qu'on colle depuis un journal.
+test("it searches in the identifier, not only in the name", () => {
+  // It is what an agent returns and what one pastes from a log.
   assert.equal(
-    matchesQuery(["un titre", "b7d288d8-eef2-4bdb-b432-9a611b1b11d0"], "b7d288d8"),
+    matchesQuery(["a title", "b7d288d8-eef2-4bdb-b432-9a611b1b11d0"], "b7d288d8"),
     true,
   );
 });
 
-test("un nom absent ne fait pas tomber la recherche", () => {
+test("an absent name does not bring the search down", () => {
   assert.equal(matchesQuery([null, "abc"], "abc"), true);
   assert.equal(matchesQuery([null, "abc"], "zzz"), false);
 });

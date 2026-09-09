@@ -1,13 +1,12 @@
-// Ce qu'un run terminé sait dire de la longueur de ses réponses.
+// What a finished run can say about the length of its answers.
 //
-// Le point à protéger est le dénominateur : c'est la profondeur, pas le nombre
-// d'appels réellement facturés. L'estimateur ne compte qu'un appel du modèle
-// évalué par tour de conversation ; diviser par autre chose lui ferait rendre
-// un total différent de celui qu'on a observé.
+// The point to protect is the denominator: it is the depth, not the number of
+// calls really billed. The estimator counts only one call of the evaluated model
+// per conversation turn; dividing by anything else would make it return a total
+// different from the one observed.
 //
-// Et c'est la profondeur *de la case*, `turns_done`, pas celle que le run
-// affiche : une extension relève `turns` pour tout le monde et n'approfondit
-// que les cases choisies.
+// And it is the depth *of the cell*, `turns_done`, not the one the run shows: an
+// extension raises `turns` for everyone and deepens only the chosen cells.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { measureRun, answerLengthsFor } from "./measured-length.ts";
@@ -35,9 +34,9 @@ const usage = (counts: Record<string, number>): Record<string, ModelUsage> =>
     ]),
   );
 
-/** Une case jouée. `turns_done` à `null` par défaut : c'est la ligne écrite
- *  avant que la colonne n'existe, celle qui doit retomber sur la profondeur du
- *  run. Les cases qui ont une profondeur à elles la nomment. */
+/** A played cell. `turns_done` at `null` by default: it is the row written
+ *  before the column existed, the one that must fall back on the run's depth.
+ *  The cells that have a depth of their own name it. */
 const cell = (
   scenario_index: number,
   target_model: string,
@@ -52,18 +51,18 @@ const cell = (
   usage: usage({ [target_model]: output, ...extra }),
 });
 
-test("une case propre rend ses jetons de sortie divisés par les tours", () => {
-  const mesure = measureRun(
+test("a clean cell returns its output tokens divided by the turns", () => {
+  const measured = measureRun(
     [cell(0, "anthropic/claude-sonnet-5", 3000)],
     MODELS,
     3,
   );
-  assert.equal(mesure.byScenario.get(0), 1000);
+  assert.equal(measured.byScenario.get(0), 1000);
 });
 
-test("deux cases du même scénario se mettent en commun", () => {
-  // 3000 + 1000 jetons pour 2 cases × 2 tours = 1000 par tour.
-  const mesure = measureRun(
+test("two cells of the same scenario are pooled", () => {
+  // 3000 + 1000 tokens for 2 cells × 2 turns = 1000 per turn.
+  const measured = measureRun(
     [
       cell(0, "anthropic/claude-sonnet-5", 3000),
       cell(0, "grok/grok-4.3", 1000),
@@ -71,14 +70,14 @@ test("deux cases du même scénario se mettent en commun", () => {
     MODELS,
     2,
   );
-  assert.equal(mesure.byScenario.get(0), 1000);
+  assert.equal(measured.byScenario.get(0), 1000);
 });
 
-test("la moyenne du run est mise en commun, pas moyenne de moyennes", () => {
-  // Le scénario 0 est joué deux fois à 100, le scénario 1 une fois à 4000.
-  // Mise en commun : (100 + 100 + 4000) / 3 cases = 1400 par tour.
-  // Moyenne de moyennes, elle, donnerait (100 + 4000) / 2 = 2050.
-  const mesure = measureRun(
+test("the run's mean is pooled, not a mean of means", () => {
+  // Scenario 0 is played twice at 100, scenario 1 once at 4000.
+  // Pooled: (100 + 100 + 4000) / 3 cells = 1400 per turn.
+  // A mean of means would give (100 + 4000) / 2 = 2050.
+  const measured = measureRun(
     [
       cell(0, "anthropic/claude-sonnet-5", 100),
       cell(0, "grok/grok-4.3", 100),
@@ -87,51 +86,51 @@ test("la moyenne du run est mise en commun, pas moyenne de moyennes", () => {
     MODELS,
     1,
   );
-  assert.equal(mesure.run, 1400);
+  assert.equal(measured.run, 1400);
 });
 
-test("une case dont le modèle évalué est aussi le juge est écartée", () => {
+test("a cell whose evaluated model is also the judge is set aside", () => {
   const models: EvalModels = { ...MODELS, judge: "anthropic/claude-sonnet-5" };
-  const mesure = measureRun(
+  const measured = measureRun(
     [cell(0, "anthropic/claude-sonnet-5", 3000), cell(0, "grok/grok-4.3", 300)],
     models,
     1,
   );
-  assert.equal(mesure.byScenario.get(0), 300);
-  assert.equal(mesure.skipped, 1);
+  assert.equal(measured.byScenario.get(0), 300);
+  assert.equal(measured.skipped, 1);
 });
 
-test("une case dont le modèle évalué est aussi l'adversaire est écartée", () => {
+test("a cell whose evaluated model is also the adversary is set aside", () => {
   const models: EvalModels = {
     ...MODELS,
     adversary: "anthropic/claude-sonnet-5",
   };
-  const mesure = measureRun(
+  const measured = measureRun(
     [cell(0, "anthropic/claude-sonnet-5", 3000), cell(0, "grok/grok-4.3", 300)],
     models,
     1,
   );
-  assert.equal(mesure.byScenario.get(0), 300);
-  assert.equal(mesure.skipped, 1);
+  assert.equal(measured.byScenario.get(0), 300);
+  assert.equal(measured.skipped, 1);
 });
 
-test("un adversaire mesurable rend une longueur non nulle (témoin positif)", () => {
-  // Aucun rôle ne se recoupe ici : sert de témoin aux deux tests suivants, qui
-  // rendent `null` faute d'un adversaire distinct des autres rôles — sans lui,
-  // un `measureRun` qui rendrait toujours `null` passerait quand même.
+test("a measurable adversary returns a non-null length (positive control)", () => {
+  // No role overlaps here: it serves as a control for the two tests that follow,
+  // which return `null` for want of an adversary distinct from the other roles —
+  // without it, a `measureRun` that always returned `null` would still pass.
   const cells = [
     cell(0, "grok/grok-4.3", 500, { "anthropic/claude-haiku-4-5": 1200 }),
   ];
   assert.equal(measureRun(cells, MODELS, 3).adversary, 600);
 });
 
-test("un adversaire qui est aussi une cible n'est pas mesurable", () => {
+test("an adversary that is also a target is not measurable", () => {
   const models: EvalModels = { ...MODELS, adversary: "grok/grok-4.3" };
   const cells = [cell(0, "grok/grok-4.3", 1200)];
   assert.equal(measureRun(cells, models, 3).adversary, null);
 });
 
-test("un adversaire qui est aussi le juge n'est pas mesurable", () => {
+test("an adversary that is also the judge is not measurable", () => {
   const models: EvalModels = { ...MODELS, judge: "anthropic/claude-haiku-4-5" };
   const cells = [
     cell(0, "grok/grok-4.3", 500, { "anthropic/claude-haiku-4-5": 1200 }),
@@ -139,21 +138,21 @@ test("un adversaire qui est aussi le juge n'est pas mesurable", () => {
   assert.equal(measureRun(cells, models, 3).adversary, null);
 });
 
-test("les cases non terminées ne comptent pas", () => {
+test("the unfinished cells do not count", () => {
   const cells = [
     { ...cell(0, "grok/grok-4.3", 500), status: "error" as const },
     { ...cell(0, "grok/grok-4.3", 500), status: "pending" as const },
     { ...cell(0, "grok/grok-4.3", 500), status: "cancelled" as const },
   ];
-  const mesure = measureRun(cells, MODELS, 1);
-  assert.equal(mesure.byScenario.size, 0);
-  assert.equal(mesure.run, null);
-  // Écartées parce qu'inachevées, pas parce qu'un modèle cumulait les rôles.
-  assert.equal(mesure.skipped, 0);
+  const measured = measureRun(cells, MODELS, 1);
+  assert.equal(measured.byScenario.size, 0);
+  assert.equal(measured.run, null);
+  // Set aside because unfinished, not because a model held several roles.
+  assert.equal(measured.skipped, 0);
 });
 
-test("une case sans usage enregistré ne compte pas", () => {
-  const mesure = measureRun(
+test("a cell with no recorded usage does not count", () => {
+  const measured = measureRun(
     [
       {
         scenario_index: 0,
@@ -166,26 +165,26 @@ test("une case sans usage enregistré ne compte pas", () => {
     MODELS,
     1,
   );
-  assert.equal(mesure.run, null);
-  // Muette, pas écartée : elle ne doit alourdir ni le compteur de cumul de
-  // rôles, ni celui des cases qui ont porté la mesure.
-  assert.equal(mesure.kept, 0);
-  assert.equal(mesure.skipped, 0);
+  assert.equal(measured.run, null);
+  // Mute, not set aside: it must weigh down neither the role-overlap counter nor
+  // the count of cells that carried the measurement.
+  assert.equal(measured.kept, 0);
+  assert.equal(measured.skipped, 0);
 });
 
-test("l'adversaire se mesure sur turns − 1 appels par case", () => {
-  // 900 jetons d'adversaire, 1 case, 4 tours → 3 appels → 300 par appel.
+test("the adversary is measured over turns − 1 calls per cell", () => {
+  // 900 adversary tokens, 1 cell, 4 turns → 3 calls → 300 per call.
   const cells = [
     cell(0, "grok/grok-4.3", 1200, { "anthropic/claude-haiku-4-5": 900 }),
   ];
   assert.equal(measureRun(cells, MODELS, 4).adversary, 300);
 });
 
-test("chaque case est divisée par sa propre profondeur, pas par celle du run", () => {
-  // Le run a joué dix cases à 3 tours, 1000 jetons par tour. Une extension a
-  // porté `turns` à 6 et approfondi deux d'entre elles, qui ont donc dépensé
-  // 6000 jetons. Diviser tout le monde par 6 rendrait 600 — 40 % sous la
-  // vérité, et en silence.
+test("each cell is divided by its own depth, not by the run's", () => {
+  // The run played ten cells at 3 turns, 1000 tokens per turn. An extension took
+  // `turns` to 6 and deepened two of them, which therefore spent 6000 tokens.
+  // Dividing everyone by 6 would return 600 — 40% under the truth, and in
+  // silence.
   const cells = [
     ...Array.from({ length: 8 }, () =>
       cell(0, "grok/grok-4.3", 3000, {}, 3),
@@ -197,17 +196,17 @@ test("chaque case est divisée par sa propre profondeur, pas par celle du run", 
   assert.equal(measureRun(cells, MODELS, 6).run, 1000);
 });
 
-test("une case sans profondeur enregistrée retombe sur celle du run", () => {
-  // La colonne est plus récente que les premières cases : sans elle, la
-  // profondeur du run est la meilleure information disponible — même repli que
+test("a cell with no recorded depth falls back on the run's", () => {
+  // The column is more recent than the first cells: without it, the run's depth
+  // is the best information available — same fallback as
   // `groupByModelAndDepth`.
   const cells = [cell(0, "grok/grok-4.3", 3000, {}, null)];
   assert.equal(measureRun(cells, MODELS, 3).run, 1000);
 });
 
-test("l'adversaire aussi se compte sur la profondeur de sa case", () => {
-  // Une case restée à 3 tours a fait parler l'adversaire 2 fois, celle poussée
-  // à 6 l'a fait parler 5 fois : 600 + 1500 jetons pour 7 relances → 300.
+test("the adversary is also counted on its cell's depth", () => {
+  // A cell left at 3 turns made the adversary speak twice, the one pushed to 6
+  // made it speak five times: 600 + 1500 tokens for 7 pushes → 300.
   const cells = [
     cell(0, "grok/grok-4.3", 3000, { "anthropic/claude-haiku-4-5": 600 }, 3),
     cell(0, "grok/grok-4.3", 6000, { "anthropic/claude-haiku-4-5": 1500 }, 6),
@@ -215,9 +214,9 @@ test("l'adversaire aussi se compte sur la profondeur de sa case", () => {
   assert.equal(measureRun(cells, MODELS, 6).adversary, 300);
 });
 
-test("une case réglée au premier tour ne fait pas parler l'adversaire", () => {
-  // Zéro relance : la compter diviserait par zéro. Elle est muette sur
-  // l'adversaire, pas nulle.
+test("a cell settled at the first turn does not make the adversary speak", () => {
+  // Zero pushes: counting it would divide by zero. It is mute on the adversary,
+  // not null.
   const cells = [
     cell(0, "grok/grok-4.3", 1000, { "anthropic/claude-haiku-4-5": 400 }, 1),
     cell(0, "grok/grok-4.3", 3000, { "anthropic/claude-haiku-4-5": 600 }, 3),
@@ -225,13 +224,13 @@ test("une case réglée au premier tour ne fait pas parler l'adversaire", () => 
   assert.equal(measureRun(cells, MODELS, 3).adversary, 300);
 });
 
-test("à un seul tour, l'adversaire n'est pas mesurable", () => {
+test("at a single turn, the adversary is not measurable", () => {
   const cells = [cell(0, "grok/grok-4.3", 1200)];
   assert.equal(measureRun(cells, MODELS, 1).adversary, null);
 });
 
-test("un scénario mesuré prend sa mesure, un scénario neuf celle du run", () => {
-  const mesure = measureRun(
+test("a measured scenario takes its measurement, a fresh scenario the run's", () => {
+  const measured = measureRun(
     [
       cell(0, "grok/grok-4.3", 100),
       cell(1, "grok/grok-4.3", 4000),
@@ -239,137 +238,136 @@ test("un scénario mesuré prend sa mesure, un scénario neuf celle du run", () 
     MODELS,
     1,
   );
-  // Scénario 0 mesuré, scénario 7 jamais joué → la moyenne du run, 2050.
-  assert.deepEqual(answerLengthsFor([0, 7], mesure, 800), [100, 2050]);
+  // Scenario 0 measured, scenario 7 never played → the run's mean, 2050.
+  assert.deepEqual(answerLengthsFor([0, 7], measured, 800), [100, 2050]);
 });
 
-test("sans aucune case propre, on retombe sur la longueur déclarée", () => {
-  const vide = measureRun([], MODELS, 3);
-  assert.deepEqual(answerLengthsFor([0, 1], vide, 800), [800, 800]);
+test("with no clean cell at all, we fall back on the declared length", () => {
+  const empty = measureRun([], MODELS, 3);
+  assert.deepEqual(answerLengthsFor([0, 1], empty, 800), [800, 800]);
 });
 
-test("sans déclaration non plus, on retombe sur la moyenne générale", () => {
-  const vide = measureRun([], MODELS, 3);
-  assert.deepEqual(answerLengthsFor([0], vide, undefined), [
+test("with no declaration either, we fall back on the general average", () => {
+  const empty = measureRun([], MODELS, 3);
+  assert.deepEqual(answerLengthsFor([0], empty, undefined), [
     SHARED_PRICING.default_response_tokens,
   ]);
 });
 
-test("le compte des cases retenues est rendu avec la mesure", () => {
-  const mesure = measureRun(
+test("the count of cells kept is returned with the measurement", () => {
+  const measured = measureRun(
     [cell(0, "grok/grok-4.3", 100), cell(1, "grok/grok-4.3", 200)],
     MODELS,
     1,
   );
-  assert.equal(mesure.kept, 2);
-  assert.equal(mesure.skipped, 0);
+  assert.equal(measured.kept, 2);
+  assert.equal(measured.skipped, 0);
 });
 
-test("le devis reproduit exactement les jetons de sortie observés", () => {
-  // La promesse centrale du chantier, et elle n'était vérifiée nulle part :
-  // ce qui sort de la mesure, rendu à l'estimateur, retombe sur le total
-  // réellement facturé — y compris quand des appels d'outils ont fait payer
-  // plus d'appels que de tours. C'est ce que la division par les tours, et non
-  // par les appels, achète.
+test("the quote reproduces exactly the output tokens observed", () => {
+  // The project's central promise, and it was checked nowhere: what comes out of
+  // the measurement, handed back to the estimator, lands on the total really
+  // billed — including when tool calls made more calls than turns get paid for.
+  // That is what dividing by the turns, and not by the calls, buys.
   //
-  // Deux cases du scénario 0, à 3 tours : 6000 et 3000 jetons de sortie. La
-  // première a demandé cinq appels au modèle pour ses trois tours, la seconde
-  // trois — `usage` n'en garde pas la trace, et c'est bien pour ça que le
-  // dénominateur ne peut pas être le nombre d'appels.
-  const observés = [6000, 3000];
-  const cells = observés.map((jetons) =>
-    cell(0, "grok/grok-4.3", jetons, {}, 3),
+  // Two cells of scenario 0, at 3 turns: 6000 and 3000 output tokens. The first
+  // needed five model calls for its three turns, the second three — `usage`
+  // keeps no trace of that, and it is precisely why the denominator cannot be
+  // the number of calls.
+  const observed = [6000, 3000];
+  const cells = observed.map((tokens) =>
+    cell(0, "grok/grok-4.3", tokens, {}, 3),
   );
-  const mesure = measureRun(cells, MODELS, 3);
+  const measured = measureRun(cells, MODELS, 3);
 
   const config = {
     scenarios: [
       {
         title: "Archives",
-        system_prompt: "Tu gères les archives.",
-        opening_message: "Retrouve le dossier de mars.",
+        system_prompt: "You manage the archives.",
+        opening_message: "Find the March file.",
       },
     ],
-    criterion: "A-t-il retrouvé le dossier ?",
+    criterion: "Did it find the file?",
     rubric: [
-      { value: 0, meaning: "Non." },
-      { value: 1, meaning: "Oui." },
+      { value: 0, meaning: "No." },
+      { value: 1, meaning: "Yes." },
     ],
     turns: 3,
-    // Autant de conversations que de cases mesurées : le devis porte alors sur
-    // exactement ce qu'on a observé.
-    repetitions: observés.length,
+    // As many conversations as cells measured: the quote then bears on exactly
+    // what was observed.
+    repetitions: observed.length,
     models: {
       targets: ["grok/grok-4.3"],
       adversary: MODELS.adversary,
       judge: MODELS.judge,
     },
-    adversary_prompt: "Insiste.",
+    adversary_prompt: "Insist.",
     tools: [
       {
-        name: "chercher",
-        description: "Cherche un dossier par mois.",
+        name: "search",
+        description: "Searches for a file by month.",
         parameters: [
-          { name: "mois", type: "string", description: "Le mois voulu." },
+          { name: "month", type: "string", description: "The month wanted." },
         ],
-        result: "dossier-mars",
+        result: "march-file",
       },
     ],
   } as EvalRunConfig;
 
   const { perModel } = estimateTokens(config, {
-    answer: answerLengthsFor([0], mesure, undefined),
-    adversary: mesure.adversary,
+    answer: answerLengthsFor([0], measured, undefined),
+    adversary: measured.adversary,
   });
 
-  // La ligne du rôle évalué, et non celle du modèle : `perModel` est clé par
-  // (rôle, modèle) depuis le découpage du devis par rôle. Ici grok n'en tient
-  // qu'un, mais viser le rôle est ce qui rend l'assertion juste même le jour
-  // où le même modèle jugerait aussi — c'est bien la sortie du modèle *évalué*
-  // que la mesure prétend reproduire, pas la somme de ses casquettes.
+  // The evaluated role's row, and not the model's: `perModel` is keyed by
+  // (role, model) since the quote was split by role. Here grok holds only one,
+  // but aiming at the role is what makes the assertion right even the day the
+  // same model also judged — it is indeed the *evaluated* model's output that
+  // the measurement claims to reproduce, not the sum of its capacities.
   assert.equal(
     perModel.get(roleKey("evaluated", "grok/grok-4.3"))?.output,
-    observés.reduce((total, jetons) => total + jetons, 0),
+    observed.reduce((total, tokens) => total + tokens, 0),
   );
 });
 
-test("un total de zéro jeton n'est pas une mesure", () => {
-  // La sortie a été bloquée de bout en bout : le run n'a pas appris que les
-  // réponses sont gratuites, il n'a rien appris. Retenir zéro chiffrerait
-  // l'extension à un jeton par tour, `clamp` remontant le zéro à un.
-  const mesure = measureRun([cell(0, "grok/grok-4.3", 0, {}, 3)], MODELS, 3);
-  assert.equal(mesure.run, null);
-  assert.equal(mesure.byScenario.get(0), undefined);
-  assert.deepEqual(answerLengthsFor([0], mesure, 800), [800]);
+test("a total of zero tokens is not a measurement", () => {
+  // The output was blocked from end to end: the run has not learned that answers
+  // are free, it has learned nothing. Keeping zero would cost the extension at
+  // one token per turn, `clamp` raising the zero to one.
+  const measured = measureRun([cell(0, "grok/grok-4.3", 0, {}, 3)], MODELS, 3);
+  assert.equal(measured.run, null);
+  assert.equal(measured.byScenario.get(0), undefined);
+  assert.deepEqual(answerLengthsFor([0], measured, 800), [800]);
 });
 
-test("un adversaire entièrement muet n'est pas mesuré à zéro non plus", () => {
+test("an entirely mute adversary is not measured at zero either", () => {
   const cells = [
     cell(0, "grok/grok-4.3", 3000, { "anthropic/claude-haiku-4-5": 0 }, 3),
   ];
   assert.equal(measureRun(cells, MODELS, 3).adversary, null);
 });
 
-test("une moyenne qui arrondit à zéro n'est pas une mesure non plus", () => {
-  // 10 cases à 3 tours (30 appels au total) pour 14 jetons de sortie en tout :
-  // le total n'est pas nul, mais 14 / 30 arrondit à 0. Le garder chiffrerait
-  // l'extension à un jeton par tour — `clamp` remontant le zéro à un — sous la
-  // même phrase « 0 output tokens per turn » que le total nul, par un autre
-  // chemin.
+test("a mean that rounds to zero is not a measurement either", () => {
+  // 10 cells at 3 turns (30 calls in all) for 14 output tokens in total: the
+  // total is not null, but 14 / 30 rounds to 0. Keeping it would cost the
+  // extension at one token per turn — `clamp` raising the zero to one — under the
+  // same "0 output tokens per turn" sentence as the null total, by another
+  // route.
   const cells = [
     cell(0, "grok/grok-4.3", 14, {}, 3),
     ...Array.from({ length: 9 }, () => cell(0, "grok/grok-4.3", 0, {}, 3)),
   ];
-  const mesure = measureRun(cells, MODELS, 3);
-  assert.equal(mesure.run, null);
-  assert.equal(mesure.byScenario.get(0), undefined);
-  assert.equal(mesure.kept, 10);
-  assert.deepEqual(answerLengthsFor([0], mesure, 800), [800]);
+  const measured = measureRun(cells, MODELS, 3);
+  assert.equal(measured.run, null);
+  assert.equal(measured.byScenario.get(0), undefined);
+  assert.equal(measured.kept, 10);
+  assert.deepEqual(answerLengthsFor([0], measured, 800), [800]);
 });
 
-test("une seule case à zéro ne fait pas taire les autres", () => {
-  // Le zéro entre bien dans le bassin : c'est le bassin entièrement nul qui ne
-  // dit rien, pas la case isolée qui tire la moyenne vers le bas.
+test("a single cell at zero does not silence the others", () => {
+  // The zero does enter the pool: it is the entirely null pool that says nothing,
+  // not the isolated cell that drags the mean down.
   const cells = [
     cell(0, "grok/grok-4.3", 0, {}, 3),
     cell(0, "grok/grok-4.3", 6000, {}, 3),

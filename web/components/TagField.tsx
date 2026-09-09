@@ -1,19 +1,17 @@
 "use client";
 
-// Les tags d'une entité — un run ou un brouillon — et de quoi en ajouter ou
-// en retirer.
+// An entity's tags — a run or a draft — and what it takes to add or remove one.
 //
-// Entièrement contrôlé : les tags courants et le catalogue lui sont passés,
-// tout comme la fonction qui persiste un changement. La page qui pose ce
-// champ est seule à savoir de quelle entité il s'agit et comment
-// l'enregistrer — c'est ce qui permet à une liste de quarante lignes de
-// tenir sur une seule lecture du catalogue plutôt que sur quarante.
+// Entirely controlled: the current tags and the catalogue are passed to it, as is
+// the function that persists a change. The page laying this field down is alone
+// in knowing which entity it is about and how to save it — that is what lets a
+// forty-row list hold on a single reading of the catalogue rather than on forty.
 //
-// Aucun état local n'imite les tags ou le catalogue : après un ajout, un
-// retrait ou une création, `onSave` persiste puis `onSaved` fait relire la
-// page — un retrait a pu vider un tag de son dernier lien, et la base l'aura
-// alors supprimé. Ce champ ne doit pas continuer à le proposer, ici ou sur
-// une autre ligne, et la seule façon d'en être sûr est de relire.
+// No local state imitates the tags or the catalogue: after an addition, a removal
+// or a creation, `onSave` persists then `onSaved` makes the page reread — a
+// removal may have emptied a tag of its last link, and the database will then
+// have deleted it. This field must not go on offering it, here or on another row,
+// and the only way to be sure of that is to reread.
 import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { createTag } from "@/lib/api";
@@ -27,21 +25,21 @@ export function TagField({
   onSaved,
   compact = false,
 }: {
-  /** Les tags de cette entité, tels que la page les connaît. */
+  /** This entity's tags, as the page knows them. */
   tags: Tag[];
-  /** Le catalogue entier — la même liste, passée à chaque instance d'une page. */
+  /** The whole catalogue — the same list, passed to every instance on a page. */
   catalog: Tag[];
-  /** Persiste la liste telle quelle : ce qu'elle contenait avant est
-   *  remplacé, pas complété. C'est tout ce qui distingue un run d'un
-   *  brouillon — `setRunTags` d'un côté, son équivalent brouillon de l'autre. */
+  /** Persists the list as it stands: what it held before is replaced, not added
+   *  to. That is all that tells a run from a draft — `setRunTags` on one side, its
+   *  draft equivalent on the other. */
   onSave: (tagIds: number[]) => Promise<unknown>;
-  /** Après une écriture réussie : la page relit le catalogue et les
-   *  affectations, pour que ce champ — et tout autre à l'écran — reflète ce
-   *  que la base sait, y compris un tag disparu. */
+  /** After a successful write: the page rereads the catalogue and the
+   *  assignments, so that this field — and every other on the screen — reflects
+   *  what the database knows, a vanished tag included. */
   onSaved: () => Promise<void>;
-  /** Resserré, avec le champ d'ajout replié derrière un bouton : pour une
-   *  ligne de liste, où l'on ne veut pas d'un formulaire ouvert sur chaque
-   *  rangée. La page d'un run garde le champ toujours visible. */
+  /** Tightened, with the add field folded behind a button: for a list row, where
+   *  one does not want a form open on every rank. A run's page keeps the field
+   *  always visible. */
   compact?: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -63,10 +61,10 @@ export function TagField({
     [catalog, appliedIds, needle],
   );
 
-  // La création est sûre même sans savoir si le libellé existe déjà : la
-  // route le rend tel quel, sans le dupliquer, si la casse près il existe.
-  // On ne la propose pas quand il existe déjà tel quel, pour ne pas offrir
-  // deux façons de faire la même chose.
+  // Creation is safe even without knowing whether the label already exists: the
+  // route returns it as it stands, without duplicating it, if it exists up to
+  // case. We do not offer it when it already exists exactly as typed, so as not to
+  // offer two ways of doing the same thing.
   const exactMatch = catalog.some((tag) => tag.label.toLowerCase() === needle);
   const offerCreate = trimmed !== "" && !exactMatch;
 
@@ -80,9 +78,9 @@ export function TagField({
     }
   };
 
-  /** Persiste `nextIds`, puis relit le catalogue et les affectations. Rien
-   *  n'est changé à l'écran avant que la base ne le confirme — un échec ne
-   *  laisse donc jamais une pastille affichée, ou disparue, à tort. */
+  /** Persists `nextIds`, then rereads the catalogue and the assignments. Nothing
+   *  is changed on the screen before the database confirms it — a failure
+   *  therefore never leaves a pill shown, or gone, wrongly. */
   const apply = async (nextIds: number[]) => {
     setBusy(true);
     setError(null);
@@ -124,9 +122,9 @@ export function TagField({
     setQuery("");
     setOpen(false);
     inputRef.current?.focus();
-    // Sûr même si le libellé existait déjà sous un autre id que celui
-    // attendu : la route rend l'existant, et on ajoute *ce* tag-là. S'il est
-    // déjà posé ici, le catalogue a tout de même pu changer — on relit.
+    // Safe even if the label already existed under an id other than the expected
+    // one: the route returns the existing tag, and we add *that* tag. If it is
+    // already laid here, the catalogue may still have changed — we reread.
     if (appliedIds.has(tag.id)) {
       setBusy(false);
       await onSaved();
@@ -196,9 +194,9 @@ export function TagField({
           />
           {open && (suggestions.length > 0 || offerCreate) && (
             <>
-              {/* Un voile plutôt qu'un écouteur sur `document` : il se retire
-                  avec le reste du rendu, sans qu'il faille penser à le
-                  détacher — même geste que le menu des actions du run. */}
+              {/* A backdrop rather than a listener on `document`: it goes away with
+                  the rest of the rendering, with no need to think of detaching it —
+                  the same gesture as the run's actions menu. */}
               <div className="fixed inset-0 z-10" onClick={closeInput} />
               <div className="absolute left-0 z-20 mt-1 max-h-56 w-48 overflow-auto rounded border border-zinc-300 bg-white p-1 shadow-lg">
                 {suggestions.map((tag) => (
@@ -234,8 +232,8 @@ export function TagField({
           type="button"
           onClick={() => {
             setAdding(true);
-            // Le focus n'est possible qu'une fois l'input monté — au tour
-            // suivant, pas dans ce même rendu.
+            // Focus is only possible once the input is mounted — on the next
+            // turn, not in this very render.
             requestAnimationFrame(() => inputRef.current?.focus());
           }}
           title="Add a tag"

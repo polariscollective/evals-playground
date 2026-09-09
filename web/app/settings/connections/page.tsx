@@ -13,11 +13,11 @@ function when(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
-/** Ce que raconte une ligne, en une phrase.
+/** What a row tells, in one sentence.
  *
- * `born` porte la distinction qui manquait : une rotation remplace sa ligne,
- * si bien qu'une connexion restée « Signed in » n'a jamais été rafraîchie une
- * seule fois — elle vient d'un tour d'autorisation complet, et rien depuis. */
+ * `born` carries the distinction that was missing: a rotation replaces its row,
+ * so that a connection still reading "Signed in" has never been refreshed even
+ * once — it comes from a full authorisation round, and nothing since. */
 function history(grant: McpGrant): string {
   const born = grant.born === "refresh_token" ? "Refreshed" : "Signed in";
   const used = grant.last_used_at
@@ -27,8 +27,8 @@ function history(grant: McpGrant): string {
 }
 
 export default function ConnectionsPage() {
-  // La liste vient du cache partagé : « Evaluate » l'a préchargée, donc un
-  // clic sur cet onglet montre ce qu'on avait déjà et revérifie derrière.
+  // The list comes from the shared cache: "Evaluate" preloaded it, so a click on
+  // this tab shows what one already had and checks again behind.
   const { grants, loading, error: loadError } = useConnections();
   const [error, setError] = useState<string | null>(null);
 
@@ -38,11 +38,11 @@ export default function ConnectionsPage() {
     void refreshConnections();
   }, []);
 
-  /** Rafraîchit depuis le serveur plutôt que de retirer la ligne
-   *  localement : un jeton d'accès tourne à chaque rafraîchissement, et
-   *  l'empreinte affichée peut donc déjà être périmée — seule la base sait ce
-   *  qui a vraiment disparu. En cas d'échec, l'erreur reste affichée et la
-   *  ligne reste en place plutôt que de disparaître à tort. */
+  /** Refreshes from the server rather than removing the row locally: an access
+   *  token rotates on every refresh, and the fingerprint shown may therefore
+   *  already be stale — only the database knows what has really gone. On a
+   *  failure, the error stays displayed and the row stays in place rather than
+   *  wrongly disappearing. */
   function revoke(hash: string) {
     setError(null);
     revokeMcpConnection(hash)
@@ -50,8 +50,9 @@ export default function ConnectionsPage() {
       .catch((e) => setError((e as Error).message));
   }
 
-  /** Le geste qui coupe tout. Il se confirme : révoquer une ligne se rattrape
-   *  en se reconnectant, révoquer les dix aussi, mais autant le savoir avant. */
+  /** The gesture that cuts everything off. It asks for confirmation: revoking
+   *  one row is recovered by reconnecting, revoking all ten too, but one may as
+   *  well know beforehand. */
   function revokeAll() {
     if (!confirm("Disconnect every connector? You will have to sign in again.")) return;
     setError(null);
@@ -73,8 +74,8 @@ export default function ConnectionsPage() {
       {(error ?? loadError) && (
         <p className="text-sm text-red-600">{error ?? loadError}</p>
       )}
-      {/* Tant que rien n'est revenu, la place du contenu est tenue — sans quoi
-          la page saute au moment où la liste arrive. */}
+      {/* As long as nothing has come back, the content's place is held — without
+          which the page jumps at the moment the list arrives. */}
       {grants === null && <Loading label="Loading connections" />}
       {grants?.length === 0 && (
         <p className="text-sm text-zinc-500">No active connection.</p>
@@ -99,9 +100,9 @@ export default function ConnectionsPage() {
             className="flex items-center justify-between gap-4 rounded border p-3 text-sm"
           >
             <div className="min-w-0">
-              {/* L'agent utilisateur de l'échange de jeton, brut : c'est la
-                  seule chose que le client dise de lui-même, et la traduire en
-                  nom commercial afficherait une certitude qu'on n'a pas. */}
+              {/* The user agent of the token exchange, raw: it is the only thing
+                  the client says about itself, and translating it into a trade
+                  name would show a certainty we do not have. */}
               <p className="truncate" title={grant.client_label ?? undefined}>
                 {grant.client_label ?? "Unknown client"}
               </p>

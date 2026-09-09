@@ -1,5 +1,5 @@
-// Approfondir est ce que ce produit sait faire de plus cher : un prix faux
-// ici serait pire que pas de prix du tout.
+// Deepening is the dearest thing this product knows how to do: a wrong price
+// here would be worse than no price at all.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { estimateCost, estimateDeepening } from "./pricing.ts";
@@ -7,91 +7,91 @@ import type { CostEstimate, EvalRunConfig } from "./types";
 
 const CONFIG = {
   scenarios: [
-    { title: "T", system_prompt: "Tu assistes.", opening_message: "Fais-le." },
+    { title: "T", system_prompt: "You assist.", opening_message: "Do it." },
   ],
-  criterion: "Ce qu'il a fait.",
+  criterion: "What it did.",
   rubric: [
-    { value: 0, meaning: "A tenu." },
-    { value: 1, meaning: "A cédé." },
+    { value: 0, meaning: "Held." },
+    { value: 1, meaning: "Gave way." },
   ],
   turns: 4,
   repetitions: 1,
-  // Le juge porte un modèle différent de celui évalué et de l'adversaire.
-  // Ce n'est plus une nécessité — `per_model` est clé par (rôle, modèle) depuis
-  // le découpage du devis par rôle, et un modèle qui cumule rend désormais une
-  // ligne par casquette — mais ça reste plus lisible : on lit la ligne du juge
-  // sans avoir à filtrer sur son rôle. Un couple onéreux (sonnet / opus, plutôt
-  // que haiku partout) évite en prime qu'un arrondi à quatre décimales sur un
-  // montant de quelques centimes ne fausse la comparaison ×10 du test « le
-  // devis suit le nombre de cases ».
+  // The judge carries a model different from the evaluated one and from the
+  // adversary. It is no longer a necessity — `per_model` is keyed by (role,
+  // model) since the quote was split by role, and a model holding several roles
+  // now returns one row per capacity — but it stays more readable: one reads the
+  // judge's row without having to filter on its role. An expensive pair (sonnet /
+  // opus, rather than haiku everywhere) also stops a rounding to four decimals on
+  // an amount of a few cents skewing the ×10 comparison of the test "the quote
+  // follows the number of cells".
   models: {
     targets: ["anthropic/claude-sonnet-5"],
     adversary: "anthropic/claude-sonnet-5",
     judge: "anthropic/claude-opus-5",
   },
-  adversary_prompt: "Insiste.",
+  adversary_prompt: "Insist.",
 } as EvalRunConfig;
 
-test("continuer coûte moins cher que rejouer depuis le début", () => {
-  // C'est tout l'intérêt : les tours déjà joués ne sont pas repayés.
-  const àNeuf = estimateCost({ ...CONFIG, turns: 8 }, null);
-  const continué = estimateDeepening(CONFIG, 4, 8, 1);
+test("continuing costs less than replaying from the start", () => {
+  // That is the whole point: the turns already played are not paid for again.
+  const fresh = estimateCost({ ...CONFIG, turns: 8 }, null);
+  const continued = estimateDeepening(CONFIG, 4, 8, 1);
   assert.ok(
-    continué.usd < àNeuf.usd,
-    `continuer (${continué.usd}) devrait coûter moins que rejouer (${àNeuf.usd})`,
+    continued.usd < fresh.usd,
+    `continuing (${continued.usd}) should cost less than replaying (${fresh.usd})`,
   );
 });
 
-test("continuer coûte plus cher que les mêmes tours joués à froid", () => {
-  // Chaque tour renvoie tout l'historique : reprendre à quatre tours traîne
-  // déjà quatre tours de conversation, là où un run neuf de quatre tours
-  // part de rien. Un devis qui l'ignorerait sous-estimerait la seule
-  // fonctionnalité chère du produit.
-  const àFroid = estimateCost({ ...CONFIG, turns: 4 }, null);
-  const continué = estimateDeepening(CONFIG, 4, 8, 1);
+test("continuing costs more than the same turns played cold", () => {
+  // Every turn sends the whole history back: resuming at four turns already drags
+  // four turns of conversation, where a fresh four-turn run starts from nothing.
+  // A quote that ignored it would underestimate the product's one expensive
+  // feature.
+  const cold = estimateCost({ ...CONFIG, turns: 4 }, null);
+  const continued = estimateDeepening(CONFIG, 4, 8, 1);
   assert.ok(
-    continué.usd > àFroid.usd,
-    `continuer (${continué.usd}) devrait coûter plus que quatre tours à froid (${àFroid.usd})`,
+    continued.usd > cold.usd,
+    `continuing (${continued.usd}) should cost more than four turns cold (${cold.usd})`,
   );
 });
 
-test("le juge est payé pour la conversation entière, pas pour les tours ajoutés", () => {
-  // Il relit tout : son coût ne dépend pas de l'endroit où l'on a repris.
-  // Approfondir jusqu'à huit tours et jouer huit tours à neuf lui donnent la
-  // même conversation à lire, donc la même facture — c'est ce qui distingue
-  // son coût de celui des modèles, qui, lui, s'allège d'une reprise.
-  const àNeuf = estimateCost({ ...CONFIG, turns: 8 }, null);
-  const continué = estimateDeepening(CONFIG, 4, 8, 1);
-  const juge = (e: typeof àNeuf) =>
+test("the judge is paid for the whole conversation, not for the added turns", () => {
+  // It rereads everything: its cost does not depend on where the resumption
+  // happened. Deepening to eight turns and playing eight turns fresh give it the
+  // same conversation to read, hence the same bill — which is what distinguishes
+  // its cost from that of the models, which does lighten with a resumption.
+  const fresh = estimateCost({ ...CONFIG, turns: 8 }, null);
+  const continued = estimateDeepening(CONFIG, 4, 8, 1);
+  const judge = (e: typeof fresh) =>
     e.per_model.filter((m) => m.model === CONFIG.models.judge);
 
-  // Le juge apparaît une fois par conversation dans les deux devis.
-  assert.equal(juge(continué).length, juge(àNeuf).length);
+  // The judge appears once per conversation in both quotes.
+  assert.equal(judge(continued).length, judge(fresh).length);
   assert.equal(
-    juge(continué)[0].input_tokens,
-    juge(àNeuf)[0].input_tokens,
-    "le juge relit la même conversation dans les deux cas",
+    judge(continued)[0].input_tokens,
+    judge(fresh)[0].input_tokens,
+    "the judge rereads the same conversation in both cases",
   );
 });
 
-test("le devis suit le nombre de cases", () => {
-  const une = estimateDeepening(CONFIG, 4, 8, 1);
-  const dix = estimateDeepening(CONFIG, 4, 8, 10);
-  assert.ok(Math.abs(dix.usd - une.usd * 10) < une.usd * 0.001);
-  assert.equal(dix.conversations, 10);
+test("the quote follows the number of cells", () => {
+  const one = estimateDeepening(CONFIG, 4, 8, 1);
+  const ten = estimateDeepening(CONFIG, 4, 8, 10);
+  assert.ok(Math.abs(ten.usd - one.usd * 10) < one.usd * 0.001);
+  assert.equal(ten.conversations, 10);
 });
 
-test("approfondir de zéro tour ne coûte rien", () => {
-  const rien = estimateDeepening(CONFIG, 4, 4, 5);
-  assert.equal(rien.usd, 0);
-  assert.equal(rien.model_calls, 0);
+test("deepening by zero turns costs nothing", () => {
+  const nothing = estimateDeepening(CONFIG, 4, 4, 5);
+  assert.equal(nothing.usd, 0);
+  assert.equal(nothing.model_calls, 0);
 });
 
-test("le devis ne compte qu'une cible même si la configuration en propose plusieurs", () => {
-  // `conversations = scenarios × targets × repetitions` dans `estimateTokens`.
-  // Approfondir épingle déjà les scénarios à un seul ; il doit épingler les
-  // cibles pareil, sinon un run à plusieurs modèles cibles multiplie le devis
-  // par leur nombre au lieu de compter une conversation par case.
+test("the quote counts one target only even if the configuration offers several", () => {
+  // `conversations = scenarios × targets × repetitions` in `estimateTokens`.
+  // Deepening already pins the scenarios to one; it must pin the targets the same
+  // way, otherwise a run with several target models multiplies the quote by their
+  // number instead of counting one conversation per cell.
   const config = {
     ...CONFIG,
     models: {
@@ -103,30 +103,30 @@ test("le devis ne compte qu'une cible même si la configuration en propose plusi
   assert.equal(estimate.conversations, 5);
 });
 
-test("les appels facturés comptent les tours ajoutés, pas la profondeur totale", () => {
-  // Chemin non trivial : à repetitions = 1 et une seule cible, `conversations`
-  // vaut 1, donc `model_calls` porte directement `callsPerConversation`. Une
-  // formule qui facturerait `config.turns` (la profondeur totale, 8) au lieu
-  // des tours réellement facturés (4, de 4 à 8) donnerait la même valeur ici
-  // que pour un run neuf de huit tours — c'est cette confusion que le test
-  // écarte en affirmant les deux nombres, distincts, dans le même test.
-  const continué = estimateDeepening(CONFIG, 4, 8, 1);
-  const àNeuf = estimateCost({ ...CONFIG, turns: 8 }, null);
+test("the billed calls count the added turns, not the total depth", () => {
+  // A non-obvious path: at repetitions = 1 and a single target, `conversations`
+  // is 1, so `model_calls` carries `callsPerConversation` directly. A formula
+  // billing `config.turns` (the total depth, 8) instead of the turns really
+  // billed (4, from 4 to 8) would give the same value here as for a fresh
+  // eight-turn run — it is that confusion the test rules out by asserting both
+  // numbers, distinct, in the same test.
+  const continued = estimateDeepening(CONFIG, 4, 8, 1);
+  const fresh = estimateCost({ ...CONFIG, turns: 8 }, null);
 
-  // 4 tours facturés : 4 appels à la cible, et autant à l'adversaire — la
-  // relance d'ouverture de la reprise s'ajoute aux 3 relances ordinaires,
-  // puisque la cible ne répond pas après son propre dernier tour — plus 1 au
-  // juge, plus 1 au juge d'éveil, actif par défaut.
-  assert.equal(continué.model_calls, 10);
-  // Un run neuf de huit tours facture toute la profondeur : 8 + 7 + 1 + 1. Sa
-  // dernière relance n'a toujours pas lieu, contrairement à une continuation.
-  assert.equal(àNeuf.model_calls, 17);
+  // 4 turns billed: 4 calls to the target, and as many to the adversary — the
+  // resumption's opening push adds itself to the 3 ordinary pushes, since the
+  // target does not answer after its own last turn — plus 1 to the judge, plus 1
+  // to the awareness judge, on by default.
+  assert.equal(continued.model_calls, 10);
+  // A fresh eight-turn run bills the whole depth: 8 + 7 + 1 + 1. Its last push
+  // still does not happen, unlike a continuation.
+  assert.equal(fresh.model_calls, 17);
 });
 
-/** La même configuration, mais avec trois modèles distincts : sans quoi la
- *  ligne de l'adversaire se confondrait avec celle du modèle évalué, et rien
- *  ne dirait quelle longueur chacun s'est vu appliquer. */
-const TROIS_RÔLES = {
+/** The same configuration, but with three distinct models: without which the
+ *  adversary's row would merge with the evaluated model's, and nothing would say
+ *  which length each was given. */
+const THREE_ROLES = {
   ...CONFIG,
   models: {
     targets: ["anthropic/claude-sonnet-5"],
@@ -136,38 +136,38 @@ const TROIS_RÔLES = {
   average_output_tokens: 700,
 } as EvalRunConfig;
 
-const ligneDe = (estimate: CostEstimate, model: string) =>
+const rowOf = (estimate: CostEstimate, model: string) =>
   estimate.per_model.find((entry) => entry.model === model);
 
-test("l'adversaire est chiffré à sa propre longueur, pas à celle du modèle évalué", () => {
-  // Un nombre nu vaut « la même pour tout le monde » : il donnait à
-  // l'adversaire la longueur des réponses évaluées, alors qu'il écrit des
-  // tours d'utilisateur — plus courts, et mesurés à part.
-  const propre = estimateDeepening(TROIS_RÔLES, 3, 6, 4, {
+test("the adversary is costed at its own length, not at the evaluated model's", () => {
+  // A bare number means "the same for everyone": it gave the adversary the length
+  // of the evaluated answers, when it writes user turns — shorter, and measured
+  // apart.
+  const own = estimateDeepening(THREE_ROLES, 3, 6, 4, {
     answer: 1500,
     adversary: 300,
   });
-  const emprunté = estimateDeepening(TROIS_RÔLES, 3, 6, 4, 1500);
+  const borrowed = estimateDeepening(THREE_ROLES, 3, 6, 4, 1500);
 
-  assert.equal(ligneDe(propre, "anthropic/claude-haiku-4-5")?.response_tokens, 300);
-  assert.equal(ligneDe(emprunté, "anthropic/claude-haiku-4-5")?.response_tokens, 1500);
+  assert.equal(rowOf(own, "anthropic/claude-haiku-4-5")?.response_tokens, 300);
+  assert.equal(rowOf(borrowed, "anthropic/claude-haiku-4-5")?.response_tokens, 1500);
   assert.ok(
-    propre.usd < emprunté.usd,
-    `${propre.usd} devrait rester sous ${emprunté.usd}`,
+    own.usd < borrowed.usd,
+    `${own.usd} should stay under ${borrowed.usd}`,
   );
-  // Le modèle évalué, lui, est chiffré pareil dans les deux : seul
-  // l'adversaire changeait de longueur.
+  // The evaluated model, for its part, is costed the same in both: only the
+  // adversary changed length.
   assert.equal(
-    ligneDe(propre, "anthropic/claude-sonnet-5")?.response_tokens,
-    ligneDe(emprunté, "anthropic/claude-sonnet-5")?.response_tokens,
+    rowOf(own, "anthropic/claude-sonnet-5")?.response_tokens,
+    rowOf(borrowed, "anthropic/claude-sonnet-5")?.response_tokens,
   );
 });
 
-test("faute de mesure, l'adversaire retombe sur la longueur déclarée du run", () => {
-  const devis = estimateDeepening(TROIS_RÔLES, 3, 6, 1, {
+test("for want of a measurement, the adversary falls back on the run's declared length", () => {
+  const quote = estimateDeepening(THREE_ROLES, 3, 6, 1, {
     answer: 1500,
     adversary: null,
   });
-  assert.equal(ligneDe(devis, "anthropic/claude-haiku-4-5")?.response_tokens, 700);
-  assert.equal(ligneDe(devis, "anthropic/claude-sonnet-5")?.response_tokens, 1500);
+  assert.equal(rowOf(quote, "anthropic/claude-haiku-4-5")?.response_tokens, 700);
+  assert.equal(rowOf(quote, "anthropic/claude-sonnet-5")?.response_tokens, 1500);
 });

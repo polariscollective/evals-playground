@@ -1,21 +1,19 @@
-"""Les tarifs des modèles, et le coût réel d'un run.
+"""Model prices, and the real cost of a run.
 
-Le *devis* — ce que le run coûtera, estimé avant de le lancer — n'est plus ici :
-il vit dans `web/lib/pricing.ts`, et nulle part ailleurs. Il a été écrit en
-Python d'abord (`88f90ef`), puis porté en TypeScript quand l'application est
-passée sur Next.js (`ef60372`) ; la copie Python est restée sur place sans
-jamais être rappelée par le moteur, et chaque changement du devis reposait la
-question de la porter. Elle est partie plutôt que d'y répondre une fois de plus
-— voir `docs/superpowers/specs/2026-09-08-devis-par-role-design.md`.
+The *quote* — what the run will cost, estimated before launching it — no longer
+lives here: it lives in `web/lib/pricing.ts`, and nowhere else. It was written
+in Python first (`88f90ef`), then ported to TypeScript when the application
+moved to Next.js (`ef60372`); the Python copy stayed put without ever being
+called again by the engine, and every change to the quote raised the question of
+porting it once more. It left rather than answer that question again — see
+`docs/superpowers/specs/2026-09-08-devis-par-role-design.md`.
 
-Ce qui reste tourne vraiment dans le job : la table des tarifs, que `catalog.py`
-lit aussi, et `actual_cost`, qui chiffre les jetons réellement consommés une
-fois le run joué. Aucune hypothèse ici, donc : que des compteurs rapportés par
-les fournisseurs.
+What remains genuinely runs in the job: the price table, and `actual_cost`,
+which prices the tokens actually consumed once the run has played. No
+assumptions here, then: only counters reported by the providers.
 
-Les tarifs sont ceux relevés le 19 août 2026 sur les documentations des quatre
-fournisseurs. Ils changent : `shared/pricing.json` est le seul endroit à mettre
-à jour.
+The prices are those read on 19 August 2026 from the four providers'
+documentation. They change: `shared/pricing.json` is the only place to update.
 """
 
 from dataclasses import dataclass
@@ -24,25 +22,25 @@ from playground.eval_schemas import ModelUsage
 from playground.shared_data import load
 
 _SHARED = load("pricing")
-"""Tarifs, calibrations et catalogue, partagés avec TypeScript.
+"""Prices, calibrations and catalogue, shared with TypeScript.
 
-Les valeurs ci-dessous en sont extraites plutôt qu'écrites ici : c'est le seul
-moyen que le devis affiché par l'interface et le coût calculé par le job ne
-puissent pas diverger. Les changer se fait dans `shared/pricing.json`.
+The values below are pulled from it rather than written here: it is the only way
+the quote the interface shows and the cost the job computes cannot drift apart.
+Changing them is done in `shared/pricing.json`.
 """
 
 
 @dataclass(frozen=True)
 class ModelPrice:
-    """Tarif d'un modèle, en dollars par million de jetons."""
+    """A model's price, in dollars per million tokens."""
 
     input_per_mtok: float
     output_per_mtok: float
 
 
 PRICES: dict[str, ModelPrice] = {
-    name: ModelPrice(tarif["input_per_mtok"], tarif["output_per_mtok"])
-    for name, tarif in _SHARED["prices"].items()
+    name: ModelPrice(price["input_per_mtok"], price["output_per_mtok"])
+    for name, price in _SHARED["prices"].items()
 }
 
 
@@ -50,46 +48,43 @@ PRICES: dict[str, ModelPrice] = {
 
 CACHE_READ_MULTIPLIER = _SHARED["cache_read_multiplier"]
 CACHE_WRITE_MULTIPLIER = _SHARED["cache_write_multiplier"]
-"""Tarifs relatifs des jetons d'entrée mis en cache.
+"""Relative prices of cached input tokens.
 
-Les quatre fournisseurs facturent une lecture de cache à 10 % du tarif
-d'entrée — vérifié aussi pour Google, qui n'a rejoint le catalogue qu'après
-que cette note ait été écrite pour les trois autres. Anthropic facture
-l'écriture 25 % de plus que l'entrée normale ; OpenAI, xAI et Google ne
-facturent pas l'écriture, et rapportent donc zéro sur ce compteur — la
-formule reste juste pour eux.
+All four providers bill a cache read at 10 % of the input price — checked for
+Google too, which only joined the catalogue after this note was written for the
+other three. Anthropic bills a write at 25 % more than ordinary input; OpenAI,
+xAI and Google do not bill writes at all, and so report zero on that counter —
+the formula stays correct for them.
 
-Une nuance propre à Google, et seulement aux modèles que `PRICES` porte à leur
-tarif *promotionnel* plutôt qu'à son tarif d'entrée *standard*, sur lequel
-portent les 10 % : `gemini-3.8-flash`, `gemini-3.7-flash` et
-`gemini-3.6-flash` sont ici à 0.75 $/Mtok, promotion courant jusqu'au 31
-décembre 2026, plutôt que leur tarif standard de 1.50 $/Mtok. Pendant la
-fenêtre promotionnelle, une lecture de cache sur ces trois-là coûte donc en
-réalité environ 20 % du tarif que porte cette table, et `actual_cost` sous-
-compte ce poste-là pour eux jusqu'à l'échéance de la promotion.
-`gemini-3.5-flash`, au même tarif standard de 1.50 $/Mtok, n'a pas cette
-nuance : les 10 % y sont exacts. L'écart reste minime et borné, et n'est pas
-corrigé ici : rien à changer dans le coefficient lui-même, 10 % reste juste
-pour les trois autres fournisseurs et redeviendra juste pour ces trois
-modèles-là une fois leur promotion terminée.
+One nuance specific to Google, and only to the models `PRICES` carries at their
+*promotional* price rather than at the *standard* input price the 10 % applies
+to: `gemini-3.8-flash`, `gemini-3.7-flash` and `gemini-3.6-flash` sit here at
+$0.75/Mtok, a promotion running until 31 December 2026, rather than at their
+standard $1.50/Mtok. During the promotional window, a cache read on those three
+therefore costs around 20 % of the price this table carries, and `actual_cost`
+undercounts that line for them until the promotion expires. `gemini-3.5-flash`,
+at the same standard $1.50/Mtok, does not have the nuance: the 10 % is exact
+there. The gap stays small and bounded, and is not corrected here: there is
+nothing to change in the coefficient itself, 10 % remains correct for the other
+three providers and will become correct again for those three models once their
+promotion ends.
 
-Sans ces coefficients, le coût réel serait faux dans les deux sens : inspect
-compte les jetons de cache séparément de `input_tokens`, si bien que les
-ignorer sous-estime, et les facturer plein tarif surestime.
+Without these coefficients the real cost would be wrong in both directions:
+inspect counts cache tokens separately from `input_tokens`, so ignoring them
+undercounts and billing them at full price overcounts.
 """
 
 
 def actual_cost(usage: dict[str, ModelUsage]) -> tuple[float, list[str]]:
-    """Coût réel en dollars, calculé sur les jetons effectivement consommés.
+    """Real cost in dollars, computed on the tokens actually consumed.
 
-    Aucune hypothèse ici, contrairement au devis (`web/lib/pricing.ts`) : les
-    compteurs viennent du log d'inspect, qui les tient des réponses des
-    fournisseurs.
+    No assumptions here, unlike the quote (`web/lib/pricing.ts`): the counters
+    come from inspect's log, which holds them from the providers' own responses.
 
     Returns:
-        Le coût, et la liste des modèles sans tarif connu. Un modèle inconnu
-        n'est pas facturé à zéro en silence : l'appelant doit décider quoi
-        afficher, un total partiel étant trompeur.
+        The cost, and the list of models with no known price. An unknown model
+        is not silently billed at zero: the caller has to decide what to show, a
+        partial total being misleading.
     """
     total = 0.0
     unpriced: list[str] = []

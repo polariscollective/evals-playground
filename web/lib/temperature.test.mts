@@ -1,41 +1,41 @@
-// Les mêmes cas que `tests/test_eval_task.py` côté Python : les deux
-// implémentations doivent rendre exactement la même liste, sans quoi une case
-// ajoutée à un run n'aurait pas la température qu'on croit lui donner.
+// The same cases as `tests/test_eval_task.py` on the Python side: the two
+// implementations must return exactly the same list, without which a cell added
+// to a run would not have the temperature it is believed to be given.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { temperaturesFor } from "./temperature.ts";
 
-test("sans consigne, aucune température n'est envoyée", () => {
+test("with no instruction, no temperature is sent", () => {
   assert.deepEqual(temperaturesFor(null, 3), [null, null, null]);
 });
 
-test("sans borne haute, toutes les répétitions prennent la borne basse", () => {
+test("with no upper bound, every repetition takes the lower bound", () => {
   assert.deepEqual(temperaturesFor({ min: 0.8 }, 3), [0.8, 0.8, 0.8]);
 });
 
-test("avec deux bornes, les répétitions s'étalent linéairement", () => {
+test("with two bounds, the repetitions spread linearly", () => {
   assert.deepEqual(
     temperaturesFor({ min: 0, max: 1 }, 5),
     [0, 0.25, 0.5, 0.75, 1],
   );
 });
 
-test("une répétition unique prend la borne basse", () => {
+test("a single repetition takes the lower bound", () => {
   assert.deepEqual(temperaturesFor({ min: 0.3, max: 0.9 }, 1), [0.3]);
 });
 
-test("les deux bornes sont comprises", () => {
+test("both bounds are included", () => {
   assert.deepEqual(temperaturesFor({ min: 0.2, max: 0.9 }, 2), [0.2, 0.9]);
 });
 
-test("les valeurs intermédiaires ne trainent pas de bruit flottant", () => {
-  // 0.1 + 0.2 vaut 0.30000000000000004 : lisible nulle part, et pourtant écrit
-  // en base puis dans les exports.
+test("the intermediate values drag no float noise", () => {
+  // 0.1 + 0.2 is 0.30000000000000004: readable nowhere, and yet written to the
+  // database and then into the exports.
   assert.deepEqual(temperaturesFor({ min: 0.1, max: 0.5 }, 3), [0.1, 0.3, 0.5]);
 });
 
-test("la borne haute est rendue telle quelle, sans dérive flottante", () => {
-  // 0.2 + 0.7 vaut 0.8999999999999999 par accumulation.
-  const [, dernier] = temperaturesFor({ min: 0.2, max: 0.9 }, 2);
-  assert.equal(dernier, 0.9);
+test("the upper bound is returned as it stands, with no float drift", () => {
+  // 0.2 + 0.7 comes to 0.8999999999999999 by accumulation.
+  const [, last] = temperaturesFor({ min: 0.2, max: 0.9 }, 2);
+  assert.equal(last, 0.9);
 });

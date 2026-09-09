@@ -1,22 +1,21 @@
 "use client";
 
-// Ce qu'il faut savoir pour écrire un scénario qu'un modèle ne reconnaîtra pas
-// comme un test.
+// What one needs to know to write a scenario a model will not recognise as a
+// test.
 //
-// L'onglet n'est pas une bibliothèque de scénarios — ceux-ci vivent toujours
-// dans le run qui les utilise. C'est l'endroit où vit le savoir sur la façon
-// d'en écrire un, et c'est la même page qui sert à le lire, à le copier chez
-// un agent, et à le réécrire.
+// The tab is not a library of scenarios — those still live in the run that uses
+// them. It is the place where the knowledge of how to write one lives, and it is
+// the same page that serves to read it, to copy it into an agent, and to rewrite
+// it.
 //
-// Le texte affiché est celui que l'outil MCP servira : une page qui montrerait
-// autre chose que ce qui part serait un mensonge silencieux, le même qu'évite
-// déjà l'aperçu du prompt du juge.
+// The text shown is the one the MCP tool will serve: a page showing something
+// other than what leaves would be a silent lie, the same one the judge prompt's
+// preview already avoids.
 //
-// En lecture, ce texte est rendu comme le markdown qu'il est — c'est un
-// document qu'on lit, pas une charge utile qu'on inspecte. La promesse
-// ci-dessus tient quand même : « Copy » copie la source, « Edit » la montre,
-// et rien entre les deux ne réécrit un caractère. Seule la mise en forme
-// change, jamais ce qui part.
+// On reading, that text is rendered as the markdown it is — it is a document one
+// reads, not a payload one inspects. The promise above holds all the same:
+// "Copy" copies the source, "Edit" shows it, and nothing between the two
+// rewrites a character. Only the layout changes, never what leaves.
 import { useEffect, useState } from "react";
 import { CopyButton, CopyIcon } from "@/components/CopyButton";
 import { Loading, Refreshing } from "@/components/Loading";
@@ -40,9 +39,9 @@ const LABEL: Record<AdviceTopic, string> = {
 };
 
 export default function ScenariosPage() {
-  // Le profil vient du cache partagé : « Evaluate » l'a préchargé, et la page
-  // « Profile » lit la même ressource. On affiche donc ce qu'on avait déjà, et
-  // la revérification se fait derrière.
+  // The profile comes from the shared cache: "Evaluate" preloaded it, and the
+  // "Profile" page reads the same resource. So we show what we already had, and
+  // the re-check happens behind.
   const { data: profileData, loading, error: loadError } = useProfile();
   // Quel document on regarde. Un état et non une adresse : la page est un
   // client, le profil est déjà en cache, et changer d'onglet ne doit rien
@@ -53,37 +52,37 @@ export default function ScenariosPage() {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // À chaque arrivée : on revérifie. Si le cache porte déjà le profil, la page
-  // est déjà écrite au premier rendu et cette requête ne fait attendre
-  // personne — c'est tout l'objet du cache.
+  // On every arrival: we check again. If the cache already carries the profile,
+  // the page is already written on the first render and this request keeps nobody
+  // waiting — which is the whole point of the cache.
   useEffect(() => {
     void refreshProfile();
   }, []);
 
-  // Dérivé du cache à chaque rendu, jamais recopié dans un état local. Une
-  // copie aurait demandé un effet pour la tenir à jour, donc un rendu de plus
-  // à chaque réponse — et deux sources de vérité à garder d'accord.
+  // Derived from the cache on every render, never copied into a local state. A
+  // copy would have demanded an effect to keep it up to date, hence one more
+  // render per response — and two sources of truth to hold in agreement.
   //
-  // `loaded` compte : tant que le profil n'est pas revenu, un
-  // `scenario_advice` nul ne veut rien dire, et la page ne doit surtout pas se
-  // croire sans surcharge avant d'avoir lu ce que le profil porte vraiment.
+  // `loaded` matters: as long as the profile has not come back, a null
+  // `scenario_advice` means nothing, and the page must above all not believe
+  // itself without an override before having read what the profile really
+  // carries.
   const loaded = profileData !== null;
   const overrides = profileData ? overridesOf(profileData.profile) : {};
   const saved = overrides[topic] ?? null;
   const shown = adviceFor(topic, overrides);
   const custom = saved !== null && saved.trim() !== "";
 
-  /** Ce que « Save » doit envoyer : `null` — le geste « remets le défaut » —
-   *  dès que la saisie est vide, ou détourée égale au défaut. Les deux cas
-   *  veulent dire la même chose ; les distinguer laisserait une copie
-   *  s'écrire à la place du `null` qui laisse le défaut s'améliorer sous ce
-   *  profil sans que personne ne l'ait voulu.
+  /** What "Save" must send: `null` — the "restore the default" gesture — as soon
+   *  as the entry is empty, or trimmed equal to the default. Both cases mean the
+   *  same thing; telling them apart would let a copy be written in place of the
+   *  `null` that lets the default improve under this profile without anyone
+   *  having wanted it.
    *
-   *  La comparaison détoure les deux côtés — un copier-coller qui ajoute un
-   *  espace ou un saut de ligne final ne doit pas fabriquer une surcharge —
-   *  mais ne touche pas aux blancs internes : quelqu'un qui a vraiment édité
-   *  le texte garde sa version telle quelle, même si elle ne diffère que par
-   *  une indentation. */
+   *  The comparison trims both sides — a copy-paste adding a space or a trailing
+   *  newline must not manufacture an override — but does not touch the internal
+   *  whitespace: somebody who really edited the text keeps their version as it
+   *  stands, even if it differs only by an indentation. */
   function normalizedDraft(): string | null {
     if (draft.trim() === "" || draft.trim() === DEFAULT_ADVICE[topic].trim()) {
       return null;
@@ -91,9 +90,9 @@ export default function ScenariosPage() {
     return draft;
   }
 
-  // `value` porte soit la surcharge à écrire, soit `null` pour remettre le
-  // défaut — jamais accompagné d'un plafond : la route refuse désormais en
-  // 422 une requête qui porterait les deux à la fois.
+  // `value` carries either the override to write, or `null` to restore the
+  // default — never accompanied by a cap: the route now refuses with a 422 a
+  // request that would carry both at once.
   function write(value: string | null) {
     setBusy(true);
     setSaveError(null);
@@ -101,8 +100,8 @@ export default function ScenariosPage() {
       .then(({ profile }) => {
         setDraft(adviceFor(topic, overridesOf(profile)));
         setEditing(false);
-        // Le cache porte l'ancien profil : sans ça, « Profile » afficherait
-        // encore la version d'avant au prochain clic.
+          // The cache carries the old profile: without this, "Profile" would
+          // still show the previous version at the next click.
         if (profileData) putProfile({ ...profileData, profile });
       })
       .catch((e) => setSaveError((e as Error).message))
@@ -145,8 +144,8 @@ export default function ScenariosPage() {
 
       {loadError && <p className="text-sm text-red-700">{loadError}</p>}
 
-      {/* Tient la place du document tant qu'il n'est pas là, au même bord que
-          lui — sans quoi la page saute au moment où il arrive. */}
+        {/* Holds the document's place while it is not there, at the same edge as
+            it — without which the page jumps at the moment it arrives. */}
       {!loaded && loadError === null && <Loading label="Loading scenario advice" />}
 
       {loaded && (
@@ -160,9 +159,8 @@ export default function ScenariosPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <CopyButton
-              // Pendant l'édition, ce qu'on copie doit être ce qu'on regarde
-              // dans la zone de saisie — le brouillon, pas la version encore
-              // enregistrée en dessous.
+                // While editing, what one copies must be what one is looking at in
+                // the input — the draft, not the version still saved below.
               value={editing ? draft : shown}
               title={`Copy: ${LABEL[topic]}`}
               className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
@@ -231,10 +229,9 @@ export default function ScenariosPage() {
 
           {saveError && <p className="text-sm text-red-700">{saveError}</p>}
 
-          {/* Les deux modes prennent toute la largeur de la page, comme tout
-              ce qui est au-dessus d'eux. Un plafond ici les désalignait du
-              titre et du paragraphe d'introduction, ce qui se voyait plus que
-              la ligne longue qu'il évitait. */}
+          {/* Both modes take the page's full width, like everything above them.
+              A cap here misaligned them from the heading and the introductory
+              paragraph, which showed more than the long line it avoided. */}
           {editing ? (
             <div className="space-y-2">
               <textarea
@@ -267,13 +264,13 @@ export default function ScenariosPage() {
           ) : (
             <div
               className="notes-prose w-full rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
-              // Sûr : `renderMarkdown` échappe tout le HTML d'entrée avant de
-              // produire les seules balises qu'il fabrique lui-même.
-              // `reflow` : ce document est stocké coupé à 78 colonnes, et ces
-              // coupures sont une commodité d'écriture, pas une intention. Sans
-              // ça le texte gardait ses retours au milieu d'un cadre large, et
-              // une puce coupée voyait sa suite repartir en paragraphe à la
-              // marge. Les notes de run, elles, gardent leurs retours durs.
+              // Safe: `renderMarkdown` escapes all the input HTML before producing
+              // the only tags it builds itself.
+              // `reflow`: this document is stored wrapped at 78 columns, and those
+              // breaks are a writing convenience, not an intention. Without it the
+              // text kept its breaks in the middle of a wide frame, and a wrapped
+              // bullet had its continuation start again as a paragraph at the
+              // margin. The run notes, for their part, keep their hard breaks.
               dangerouslySetInnerHTML={{
                 __html: renderMarkdown(shown, { reflow: true }),
               }}

@@ -68,8 +68,8 @@ function formatDate(iso: string): string {
 
 
 
-/** Une corbeille, discrète jusqu'au survol : le geste est rare et réversible,
- *  il n'a pas à peser dans la page. */
+/** A bin, discreet until hover: the gesture is rare and reversible, it has no
+ *  business weighing on the page. */
 function TrashIcon() {
   return (
     <svg
@@ -85,75 +85,74 @@ function TrashIcon() {
   );
 }
 
-/** Les brouillons en attente — ce qu'un agent a proposé, pas encore lancé.
+/** The waiting drafts — what an agent has proposed, not launched yet.
  *
- * Ouvrir mène au formulaire d'évaluation prérempli, pas à un écran de
- * lecture : ce qu'on veut faire d'un brouillon est le relire, le corriger et
- * le lancer. Un brouillon lancé disparaît d'ici — sans quoi on ne saurait plus
- * lequel reste à faire.
+ * Opening one leads to the evaluation form prefilled, not to a reading screen:
+ * what one wants to do with a draft is reread it, correct it and launch it. A
+ * launched draft disappears from here — without which one would no longer know
+ * which is left to do.
  *
- * De qui que ce soit : un brouillon est une proposition faite à l'équipe. */
-/** Le bouton qui rouvre la liste aux brouillons déjà lancés. Sorti du titre
- *  pour que celui-ci continue de compter ce qui attend, et non ce qui est
- *  affiché. */
+ * Whoever it belongs to: a draft is a proposal made to the team. */
+/** The button that reopens the list to the drafts already launched. Taken out of
+ *  the heading so that it goes on counting what is waiting, and not what is
+ *  displayed. */
 
 
 export default function RunsPage() {
-  // La liste vient du magasin partagé, plus d'un état local : c'est ce qui
-  // fait qu'un retour sur cet onglet retrouve les lignes déjà lues au lieu de
-  // repartir d'un écran vide. Voir `lib/runs-store.ts`.
+  // The list comes from the shared store, no longer from a local state: that is
+  // what makes a return to this tab find the rows already read instead of
+  // starting again from an empty screen. See `lib/runs-store.ts`.
   const { runs, loading, error: runsError } = useRuns();
   const [error, setError] = useState<string | null>(null);
-  // Les brouillons ne se chargent qu'à la demande : la plupart du temps il n'y
-  // en a aucun, et une requête de plus à chaque ouverture de la liste des runs
-  // se paierait pour rien.
+  // The drafts are only loaded on demand: most of the time there is none, and one
+  // more request on every opening of the runs list would be paid for nothing.
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
-  // Quelle liste on regarde. La bascule au-dessus des filtres remplace
-  // l'ancien bouton « Show drafts » : ce ne sont pas deux sections dont l'une
-  // s'ouvre, mais deux listes dont on regarde l'une ou l'autre. Il
-  // remplace le tableau, et chaque mode a sa barre de filtres et sa
-  // préférence enregistrée — voir `filter-storage.ts`.
+  // Which list one is looking at. The toggle above the filters replaces the old
+  // "Show drafts" button: they are not two sections one of which opens, but two
+  // lists one looks at one or the other of. It replaces the table, and each mode
+  // has its filter bar and its saved preference — see `filter-storage.ts`.
   const mode: FilterMode = showDrafts ? "drafts" : "runs";
   const filterState = useFilterState(mode);
   const [me, setMe] = useState<string | null>(null);
-  // Les tags viennent du magasin partagé, comme la liste : ils sont
-  // minuscules mais coûtaient deux allers-retours à chaque visite, et les
-  // pastilles arrivaient une demi-seconde après leurs lignes.
+  // The tags come from the shared store, like the list: they are tiny but cost
+  // two round trips on every visit, and the pills arrived half a second after
+  // their rows.
   const { catalog: tagCatalog, assignments: tagAssignments } = useTags();
-  // Les miens par défaut : la base est partagée, et la liste de tout le monde
-  // enterre la sienne au bout de quelques semaines. Ce qu'on cherche en
-  // ouvrant cette page est presque toujours un run qu'on a lancé soi-même.
+  // Mine by default: the database is shared, and everybody's list buries one's
+  // own within a few weeks. What one is looking for on opening this page is
+  // almost always a run one launched oneself.
   const [mineOnly, setMineOnly] = useState(true);
-  // Ce qui attend d'être confirmé : un run, un brouillon, ou rien.
+  // What is waiting to be confirmed: a run, a draft, or nothing.
   const [confirming, setConfirming] = useState<
     { kind: "run"; id: string; label: string } | { kind: "draft"; draft: Draft } | null
   >(null);
   const [deleting, setDeleting] = useState(false);
-  /** Ce qu'on cherche. Dans l'état et non dans `localStorage` : un filtre est
-   *  une préférence, une recherche est un geste. Partagée par les deux listes
-   *  — taper un mot puis basculer cherche le même mot de l'autre côté. */
+  /** What one is looking for. In the state and not in `localStorage`: a filter is
+   *  a preference, a search is a gesture. Shared by both lists — typing a word
+   *  then switching searches for the same word on the other side. */
   const [query, setQuery] = useState("");
-  /** Le run qu'on s'apprête à publier, ou `null`. Séparé de `confirming` :
-   *  publier et jeter n'ont ni le même dialogue ni le même ton. */
+  /** The run one is about to publish, or `null`. Separate from `confirming`:
+   *  publishing and discarding have neither the same dialogue nor the same
+   *  tone. */
   const [confirmingPublish, setConfirmingPublish] = useState<
     { id: string; label: string; next: boolean } | null
   >(null);
-  /** L'identifiant du run dont la publication est en vol, pour n'éteindre que
-   *  son bouton — pas les treize autres. */
+  /** The identifier of the run whose publication is in flight, so as to turn off
+   *  its button only — not the other thirteen. */
   const [publishing, setPublishing] = useState<string | null>(null);
 
-  // À chaque arrivée sur l'onglet : on revérifie, indicateur allumé. Les
-  // lignes déjà en cache restent affichées pendant ce temps — c'est tout
-  // l'intérêt, on ne repart pas d'un écran vide pour retrouver la même chose.
+  // On every arrival at the tab: we check again, indicator lit. The rows already
+  // in cache stay displayed meanwhile — that is the whole point, one does not
+  // start again from an empty screen to find the same thing.
   useEffect(() => {
     const timer = setTimeout(() => void refreshRuns(), 0);
     return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    // Sans elle, « les miens » ne veut rien dire : on retombe sur tout, ce qui
-    // est le comportement d'avant plutôt qu'une liste vide.
+      // Without it, "mine" means nothing: we fall back on everything, which is
+      // the behaviour from before rather than an empty list.
     getMe()
       .then(({ email }) => setMe(email))
       .catch(() => setMe(null));
@@ -185,9 +184,9 @@ export default function RunsPage() {
     }
   };
 
-  /** Publier ou dépublier, puis relire la liste. Silencieux : le bouton dit
-   *  déjà qu'il travaille, et un second voyant en haut de page ne dirait rien
-   *  de plus. */
+  /** Publish or unpublish, then read the list again. Silent: the button already
+   *  says it is working, and a second indicator at the top of the page would say
+   *  nothing more. */
   const setPublished = async (runId: string, next: boolean) => {
     setPublishing(runId);
     try {
@@ -201,24 +200,23 @@ export default function RunsPage() {
     }
   };
 
-  /* Les brouillons se chargent toujours entiers, lancés compris, et c'est le
-     filtre qui les écarte. L'ancien bouton « Show launched » refaisait la
-     requête ; devenu un bouton de la barre, il ne peut plus : un libellé ne
-     s'y affiche que si une ligne le porte, et aucune ne le porterait tant que
-     la requête les exclut. Le bouton n'apparaîtrait jamais.
+  /* The drafts are always loaded whole, launched ones included, and it is the
+     filter that sets them aside. The old "Show launched" button redid the
+     request; having become a button of the bar, it can no longer: a label only
+     shows there if a row carries it, and none would carry it as long as the
+     request excluded them. The button would never appear.
 
-     Ils se comptent en dizaines : tout ramener coûte moins qu'une requête de
-     plus à chaque bascule. Le chargement lui-même est dans l'effet juste
-     au-dessus. */
+     They are counted in dozens: bringing everything back costs less than one
+     more request on every toggle. The load itself is in the effect just
+     above. */
 
-  // Le chargement suit l'état, il ne dépend pas du geste qui l'a changé.
-  // Accroché au seul gestionnaire du bouton, il ne partait pas si la page
-  // s'ouvrait déjà sur les brouillons — et la liste restait sur « Loading… »
-  // pour toujours.
+  // The load follows the state, it does not depend on the gesture that changed
+  // it. Hooked to the button's handler alone, it did not start if the page opened
+  // on the drafts already — and the list stayed on "Loading…" forever.
   useEffect(() => {
     if (!showDrafts || drafts !== null) return;
-    // `alive` : la réponse peut arriver après qu'on a quitté la page, et
-    // écrire dans un composant démonté ne sert personne.
+      // `alive`: the response can arrive after one has left the page, and writing
+      // into an unmounted component serves nobody.
     let alive = true;
     getDrafts(true)
       .then((loaded) => {
@@ -232,13 +230,13 @@ export default function RunsPage() {
     };
   }, [showDrafts, drafts]);
 
-  // Tant qu'un run tourne, la liste se rafraîchit : c'est le seul endroit d'où
-  // l'on peut suivre plusieurs runs à la fois.
+  // As long as a run is going, the list refreshes: it is the only place from
+  // which one can follow several runs at once.
   useEffect(() => {
     if (!runs?.some((r) => r.run.status === "running" || r.run.status === "triggered"))
       return;
-    // Silencieux : un run qui tourne fait battre cette requête toutes les
-    // trois secondes, et elle ne doit rien faire clignoter.
+    // Silent: a running run makes this request beat every three seconds, and it
+    // must make nothing flicker.
     const timer = setInterval(() => void refreshRuns({ silent: true }), 3000);
     return () => clearInterval(timer);
   }, [runs]);
@@ -257,21 +255,21 @@ export default function RunsPage() {
     );
   }
 
-  // Le filtre ne s'applique que si l'on sait qui regarde : sans identité, tout
-  // masquer donnerait une page vide sans expliquer pourquoi.
-  const mien = mineOnly && me !== null;
-  // `?? []` : en mode brouillons, la liste des runs peut n'être pas encore
-  // arrivée — la garde ci-dessus ne l'attend plus dans ce cas.
-  const chargés = runs ?? [];
-  const runsDuPerimetre = mien
-    ? chargés.filter((entry) => entry.run.user_email === me)
-    : chargés;
-  const draftsDuPerimetre =
-    drafts === null ? [] : mien ? drafts.filter((d) => d.created_by === me) : drafts;
+  // The filter only applies if one knows who is looking: with no identity,
+  // hiding everything would give an empty page with no explanation.
+  const mine = mineOnly && me !== null;
+  // `?? []`: in drafts mode, the runs list may not have arrived yet — the guard
+  // above no longer waits for it in that case.
+  const loaded = runs ?? [];
+  const runsInScope = mine
+    ? loaded.filter((entry) => entry.run.user_email === me)
+    : loaded;
+  const draftsInScope =
+    drafts === null ? [] : mine ? drafts.filter((d) => d.created_by === me) : drafts;
 
-  // Ce que chaque ligne est, et ce qu'elle porte : deux choses distinctes, et
-  // deux façons de filtrer. Voir `run-filters.ts`.
-  const runRows = runsDuPerimetre.map((entry) => ({
+  // What each row is, and what it carries: two distinct things, and two ways of
+  // filtering. See `run-filters.ts`.
+  const runRows = runsInScope.map((entry) => ({
     entry,
     sides: runSides(entry.run),
     labels: [
@@ -279,18 +277,18 @@ export default function RunsPage() {
       ...(tagAssignments.runs[entry.run.id] ?? []).map((tag) => tag.label),
     ],
   }));
-  const draftRows = draftsDuPerimetre.map((draft) => ({
+  const draftRows = draftsInScope.map((draft) => ({
     draft,
     sides: draftSides(draft),
     labels: (tagAssignments.drafts[draft.id] ?? []).map((tag) => tag.label),
   }));
 
-  // La barre ne propose que ce que porte la liste EN COURS, et se calcule
-  // avant filtrage — sinon réduire une dimension ferait disparaître son
-  // propre bouton et il n'y aurait plus moyen de la rouvrir.
+  // The bar offers only what the CURRENT list carries, and is computed before
+  // filtering — otherwise narrowing a dimension would make its own button
+  // disappear and there would be no way left to reopen it.
   const bar = offered(mode, mode === "drafts" ? draftRows : runRows);
 
-  const runsVus = runRows
+  const runsSeen = runRows
     .filter(
       (row) =>
         passes(row.sides, row.labels, filterState) &&
@@ -300,17 +298,17 @@ export default function RunsPage() {
         ),
     )
     .map((row) => row.entry);
-  const draftsVus = draftRows
+  const draftsSeen = draftRows
     .filter(
       (row) =>
         passes(row.sides, row.labels, filterState) &&
         matchesQuery(draftHaystacks(row.draft), query),
     )
     .map((row) => row.draft);
-  const masques =
+  const hiddenCount =
     mode === "drafts"
-      ? draftRows.length - draftsVus.length
-      : runRows.length - runsVus.length;
+      ? draftRows.length - draftsSeen.length
+      : runRows.length - runsSeen.length;
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
@@ -321,9 +319,9 @@ export default function RunsPage() {
             {showDrafts
               ? "Everything waiting to be launched, newest first. Open one to review it."
               : "Every evaluation run, most recent first. Open one to see its matrix."}
-            {/* Ne s'allume que par-dessus une liste déjà affichée : quand il
-                n'y a encore rien à lire, c'est « Loading… » qui parle, et deux
-                messages diraient la même chose. */}
+            {/* Only lights up over a list already displayed: when there is still
+                nothing to read, it is "Loading…" that speaks, and two messages
+                would say the same thing. */}
             {loading && runs !== null && <Refreshing />}
           </p>
         </div>
@@ -338,7 +336,7 @@ export default function RunsPage() {
                 : `Yours: ${me}`
             }
             className={`rounded border px-3 py-1.5 text-sm disabled:opacity-40 ${
-              mien
+                mine
                 ? "border-zinc-900 bg-zinc-900 text-white"
                 : "border-zinc-300 hover:bg-zinc-50"
             }`}
@@ -363,12 +361,12 @@ export default function RunsPage() {
         defaults={defaultState(mode)}
         query={query}
         onQuery={setQuery}
-        hidden={masques}
+          hidden={hiddenCount}
       />
 
       {showDrafts ? (
         <DraftTable
-          drafts={drafts === null ? null : draftsVus}
+            drafts={drafts === null ? null : draftsSeen}
           draftTags={tagAssignments.drafts}
           catalog={tagCatalog}
           onTagsSaved={refreshTags}
@@ -377,44 +375,45 @@ export default function RunsPage() {
           onDefault={() => defaultFilters(mode)}
         />
       ) : (
-        /* `table-fixed` et non le calcul automatique : sans lui, chaque
-            colonne se dimensionne sur son contenu, et filtrer la liste — ou
-            simplement un run au titre plus long — redistribue toute la
-            largeur. Les colonnes sautaient d'un état à l'autre.
+          /* `table-fixed` and not the automatic computation: without it, each
+              column sizes itself on its content, and filtering the list — or
+              simply a run with a longer title — redistributes the whole width.
+              The columns jumped from one state to the next.
 
-            Les largeurs sont donc posées une fois, au plus juste : « Run »
-            n'en a pas et absorbe ce qui reste, et c'est bien elle qui doit
-            s'étirer puisqu'elle porte le titre, l'identifiant et les tags.
-            Trop serrer les autres et l'identifiant passe à la ligne.
+              The widths are therefore laid once, as tightly as possible: "Run"
+              has none and absorbs what is left, and it is indeed the one that
+              must stretch since it carries the title, the identifier and the
+              tags. Squeeze the others too much and the identifier wraps.
 
-            Elles sont identiques à celles du tableau des brouillons, colonne
-            par colonne : sans ça, basculer d'une liste à l'autre décalait tout
-            de quelques pixels, et l'œil le voyait sans savoir quoi. */
-        /* La liste défile dans son propre cadre plutôt que dans la page, et
-           son en-tête y colle : sur quarante runs, on perdait le nom des
-           colonnes au bout de trois lignes.
+              They are identical to those of the drafts table, column by column:
+              without that, switching from one list to the other shifted
+              everything by a few pixels, and the eye saw it without knowing
+              what. */
+          /* The list scrolls inside its own frame rather than in the page, and
+             its header sticks to it: over forty runs, one lost the column names
+             after three rows.
 
-           `max-h-[70vh]` et non une hauteur fixe — la barre de filtres au
-           dessus change de hauteur selon le nombre de tags, et un cadre figé
-           déborderait de l'écran sur les petits.
+             `max-h-[70vh]` and not a fixed height — the filter bar above changes
+             height with the number of tags, and a frozen frame would overflow
+             the screen on the small ones.
 
-           Sans bordure : le filet sous l'en-tête et ceux entre les lignes
-           disent déjà où la liste commence et finit. */
+             With no border: the rule under the header and those between the rows
+             already say where the list begins and ends. */
         <div className="max-h-[70vh] overflow-y-auto">
         <table className="w-full table-fixed text-sm">
           <thead className="sticky top-0 z-10 bg-background">
-            {/* Toutes les colonnes alignées à gauche, chiffres compris. Le coût
-                et la note étaient à droite — l'usage pour des nombres — mais
-                seules deux colonnes sur sept l'étaient, et l'œil qui descend la
-                table butait dessus. Une table cohérente vaut mieux ici qu'une
-                convention typographique appliquée deux fois. */}
+            {/* Every column aligned left, figures included. The cost and the grade
+                were on the right — the usage for numbers — but only two columns
+                out of seven were, and the eye going down the table stumbled on
+                them. A consistent table is worth more here than a typographic
+                convention applied twice. */}
             <tr className="border-b border-zinc-300 text-left text-xs uppercase tracking-wide text-zinc-500">
               <th className="py-3 pr-8 font-medium">Run</th>
               <th className="w-40 py-3 pr-8 font-medium">Launched</th>
               <th className="relative w-24 py-3 pr-8 font-medium">
                 Shape{" "}
                 <InfoDot label="What Shape means">
-                  scénarios × modèles × répétitions
+                  scenarios × models × repetitions
                 </InfoDot>
               </th>
               <th className="w-32 py-3 pr-8 font-medium">Status</th>
@@ -424,14 +423,13 @@ export default function RunsPage() {
             </tr>
           </thead>
           <tbody>
-            {/* Le squelette reste, même vide : les colonnes disaient la
-                largeur de la table, et les remplacer par un message la faisait
-                se rétracter — puis se rouvrir dès qu'un filtre était défait.
+            {/* The skeleton stays, even empty: the columns said the table's width,
+                and replacing them by a message made it shrink — then reopen as
+                soon as a filter was undone.
 
-                Et « pas encore chargé » n'est pas « vide » : proposer de
-                défaire les filtres pendant que la requête est en vol
-                accuserait le filtre d'un écran que personne n'a encore
-                rempli. */}
+                And "not loaded yet" is not "empty": offering to undo the filters
+                while the request is in flight would accuse the filter of a screen
+                nobody has filled in yet. */}
             {runs === null && (
               <tr>
                 <td colSpan={7} className="py-6 text-sm text-zinc-500">
@@ -439,7 +437,7 @@ export default function RunsPage() {
                 </td>
               </tr>
             )}
-            {runs !== null && runsVus.length === 0 && (
+            {runs !== null && runsSeen.length === 0 && (
               <tr>
                 <td colSpan={7}>
                   <EmptyTable
@@ -449,7 +447,7 @@ export default function RunsPage() {
                 </td>
               </tr>
             )}
-            {runsVus.map(({ run, progress, mean, repetitions }) => {
+            {runsSeen.map(({ run, progress, mean, repetitions }) => {
               const { max } = rubricBounds(run.rubric);
               const running =
                 run.status === "running" || run.status === "triggered";
@@ -459,8 +457,8 @@ export default function RunsPage() {
                   key={run.id}
                   className="border-b border-zinc-200 align-top hover:bg-zinc-50"
                 >
-                  {/* La colonne du titre prend la place restante : c'est par lui
-                      qu'on retrouve un run, pas par sa forme ni son statut. */}
+                  {/* The title column takes the space left: it is by the title that
+                      one finds a run again, not by its shape or its status. */}
                   <td className="w-full py-3 pr-8">
                     <RunTitle
                       runId={run.id}
@@ -477,9 +475,9 @@ export default function RunsPage() {
                     </RunTitle>
                     <div className="flex items-center gap-2 text-xs text-zinc-500">
                       <CopyId value={run.id} />
-                      {/* Le local et le déployé écrivent dans la même base :
-                          sans ce badge, un essai jetable ressemble à un vrai
-                          run. Seul le local est marqué — c'est l'exception. */}
+                    {/* The local and the deployed write into the same database:
+                        without this badge, a throwaway trial looks like a real run.
+                        Only the local is marked — it is the exception. */}
                     </div>
                     <TagField
                       compact
@@ -488,33 +486,31 @@ export default function RunsPage() {
                       onSave={(ids) => setRunTags(run.id, ids)}
                       onSaved={refreshTags}
                     />
-                    {/* Qui l'a lancé. Tout le monde voit tous les runs : sans
-                        l'auteur, une liste chargée ne dit plus à qui s'adresser
-                        quand un run surprend.
+                  {/* Who launched it. Everybody sees every run: without the
+                      author, a loaded list no longer says whom to ask when a run
+                      surprises.
 
-                        Et par quoi : « (MCP) » dit qu'un agent a appuyé sur le
-                        bouton, pas un humain. Seul le lancement de CE run est
-                        compté — un brouillon écrit par un agent puis lancé d'un
-                        clic reste un lancement humain, et ce qu'on ajoute à un
-                        run après coup ne crée aucun run. Rien pour « ui » : le
-                        cas ordinaire n'a pas à porter une étiquette. */}
-                    {/* « local » et « MCP » vivent sur la ligne de l'adresse :
-                        tous trois disent qui a lancé ce run et d'où, quand la
-                        rangée du dessus dit ce qu'il EST. « public » reste
-                        là-haut — c'est un bouton qui copie le lien, pas une
-                        étiquette. Les classes viennent de `run-filters.ts`,
-                        partagées avec les boutons de la barre de filtres. */}
+                      And by what: "(MCP)" says an agent pressed the button, not a
+                      human. Only THIS run's launch is counted — a draft written by
+                      an agent then launched by a click stays a human launch, and
+                      what is added to a run afterwards creates no run. Nothing for
+                      "ui": the ordinary case has no business carrying a label. */}
+                  {/* "local" and "MCP" live on the address line: all three say who
+                      launched this run and from where, while the row above says
+                      what it IS. "public" stays up there — it is a button that
+                      copies the link, not a label. The classes come from
+                      `run-filters.ts`, shared with the filter bar's buttons. */}
                     <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                       {run.user_email && <span>{run.user_email}</span>}
-                      {/* « local » seulement : « live » est le cas ordinaire,
-                          et l'étiqueter reviendrait à marquer tout le monde.
-                          « MCP » et « manual », en revanche, se valent — savoir
-                          qu'un humain a lancé est une information, pas une
-                          absence d'information. */}
+                    {/* "local" only: "live" is the ordinary case, and labelling it
+                        would amount to marking everybody. "MCP" and "manual", on
+                        the other hand, are worth as much as each other — knowing a
+                        human launched it is information, not an absence of
+                        information. */}
                       {run.origin === "local" && (
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${PSEUDO_TAG_CLASSES.local}`}
-                          title="A tourné sur une machine de développement, pas sur le job déployé"
+                          title="Ran on a development machine, not on the deployed job"
                         >
                           <DimensionIcon dimension="machine" />
                           local
@@ -528,8 +524,8 @@ export default function RunsPage() {
                         }`}
                         title={
                           run.launched_via === "mcp"
-                            ? "Lancé par un agent via MCP"
-                            : "Lancé à la main depuis cette application"
+                            ? "Launched by an agent through MCP"
+                            : "Launched by hand from this application"
                         }
                       >
                         <DimensionIcon dimension="author" />
@@ -543,17 +539,17 @@ export default function RunsPage() {
                   <td className="whitespace-nowrap py-3 pr-8 text-zinc-700">
                     {run.scenario_count} ×{" "}
                     {run.target_count} ×{" "}
-                    {/* Compté sur les cases : un run complété n'a plus le même
-                        nombre d'essais partout, et `config.repetitions` ne dirait
-                        que ce qu'on a demandé au dernier lot. */}
+                    {/* Counted on the cells: a completed run no longer has the same
+                        number of attempts everywhere, and `config.repetitions`
+                        would say only what was asked for the last batch. */}
                     {low === high ? low : `${low}–${high}`}
                   </td>
                   <td className="whitespace-nowrap py-3 pr-8">
                     <span
-                      /* Tous les badges à la largeur du plus long,
-                         « cancelled », et le mot centré dedans : sinon la
-                         colonne fait cinq largeurs différentes et le regard
-                         ne peut plus la descendre d'un trait. */
+                      /* Every badge at the width of the longest, "cancelled", and
+                         the word centred inside it: otherwise the column has five
+                         different widths and the eye can no longer go down it in
+                         one stroke. */
                       className={`inline-block w-20 rounded px-2 py-0.5 text-center text-xs ${STATUS_STYLE[run.status] ?? ""}`}
                     >
                       {STATUS_LABELS[run.status] ?? run.status}
@@ -569,8 +565,8 @@ export default function RunsPage() {
                       ? "—"
                       : `$${run.cost_usd.toFixed(run.cost_usd < 1 ? 3 : 2)}`}
                   </td>
-                  {/* La moyenne porte son échelle : chaque run a la sienne, et
-                      un chiffre nu se comparerait à tort d'une ligne à l'autre. */}
+                  {/* The mean carries its scale: each run has its own, and a bare
+                      figure would wrongly compare from one row to the next. */}
                   <td className="whitespace-nowrap py-3 pr-8">
                     {mean === null ? (
                       <span className="text-zinc-400">—</span>
@@ -584,22 +580,21 @@ export default function RunsPage() {
                       </>
                     )}
                   </td>
-                  {/* Rien n'est effacé : le run sort des listes et de la
-                      lecture publique, sa ligne reste en base. */}
-                  {/* `align-middle` contre l'`align-top` de la ligne : une
-                      ligne fait quatre niveaux — titre, identifiant, tags,
-                      adresse — et deux icônes accrochées en haut de cette
-                      hauteur-là ne se rattachent visuellement à rien. Au
-                      milieu, elles appartiennent à la ligne entière. */}
+                  {/* Nothing is erased: the run leaves the lists and public
+                      reading, its row stays in the database. */}
+                  {/* `align-middle` against the row's `align-top`: a row has four
+                      levels — title, identifier, tags, address — and two icons
+                      hooked at the top of that height attach visually to nothing.
+                      In the middle, they belong to the whole row. */}
                   <td className="py-3 align-middle">
-                    {/* Un flex, et non deux boutons en ligne : la colonne est
-                        étroite et ils s'empilaient l'un sous l'autre. */}
+                    {/* A flex, and not two inline buttons: the column is narrow and
+                        they stacked one under the other. */}
                     <div className="flex items-center justify-end gap-1">
-                    {/* Les deux sens se confirment. Publier expose scénarios,
-                        conversations et justifications à quiconque a le lien.
-                        Dépublier a une conséquence tout aussi réelle en face :
-                        un lien déjà partagé cesse de répondre, sans prévenir
-                        celui qui l'a. */}
+                    {/* Both directions ask for confirmation. Publishing exposes
+                        scenarios, conversations and justifications to whoever has
+                        the link. Unpublishing has a consequence just as real facing
+                        it: a link already shared stops answering, with no warning
+                        to whoever holds it. */}
                     <button
                       type="button"
                       onClick={() =>
@@ -700,8 +695,8 @@ export default function RunsPage() {
             ? "leaves the waiting list, and its link stops answering."
             : "leaves the lists, and its public link — if it had one — stops answering."}
         </p>
-        {/* Le dire explicitement : sans ça, une corbeille se lit comme un
-            effacement, et on hésite à s'en servir. */}
+        {/* Saying it explicitly: without this, a bin reads as an erasure, and one
+            hesitates to use it. */}
         <p className="text-sm text-zinc-500">
           Nothing is erased. The row stays in the database, so this can be
           undone by hand if it was a mistake.

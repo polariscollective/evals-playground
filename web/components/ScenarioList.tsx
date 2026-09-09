@@ -1,26 +1,26 @@
 "use client";
 
-// Les scénarios qu'on vient d'importer, tels qu'ils sont.
+// The scenarios one has just imported, as they stand.
 //
-// Sans cette liste, on lance un run de quarante lignes après avoir vu trois
-// mots de son contenu — un décompte et les trois premiers titres. Or un import
-// se trompe silencieusement : une colonne décalée produit quarante scénarios
-// parfaitement valides et complètement faux, et aucune validation ne peut le
-// voir. Un œil le peut, en une seconde, si on lui montre les lignes.
+// Without this list, one launches a forty-row run having seen three words of its
+// content — a count and the first three titles. Yet an import goes wrong
+// silently: a shifted column produces forty perfectly valid and completely wrong
+// scenarios, and no validation can see it. An eye can, in a second, if it is
+// shown the rows.
 //
-// En lecture seule, et il ne connaît que ses scénarios : ni le CSV dont ils
-// sortent, ni les colonnes choisies, ni de quoi écrire. Cette ignorance est le
-// dessin — elle interdit qu'il modifie quoi que ce soit aujourd'hui, et le
-// laisse réutilisable tel quel le jour où l'édition arrivera.
+// Read-only, and it knows nothing but its scenarios: neither the CSV they come
+// from, nor the columns chosen, nor anything to write with. That ignorance is
+// the design — it forbids it changing anything at all today, and leaves it
+// reusable as it stands the day editing arrives.
 import { useState } from "react";
 import { scenarioBadges } from "@/lib/scenario-summary";
 import type { EvalScenario } from "@/lib/types";
 
-/** Un texte et son étiquette, coupé tant que l'entrée est repliée.
+/** A text and its label, cut short while the entry is folded.
  *
- * `SYS` et `MSG` portent tout le poids de la vérification : alignés sur
- * quarante lignes, un décalage de colonne saute aux yeux — un message
- * d'ouverture qui commence par « You are an assistant » ne se rate pas. */
+ * `SYS` and `MSG` carry the whole weight of the check: aligned over forty rows, a
+ * column shift leaps to the eye — an opening message starting with "You are an
+ * assistant" is not missed. */
 function Field({
   label,
   text,
@@ -30,9 +30,9 @@ function Field({
   text: string;
   open: boolean;
 }) {
-  // Des `span` et non des `div` : ce bloc vit à l'intérieur d'un `<button>`,
-  // dont le contenu ne peut être que du contenu de phrase. Les classes `flex`
-  // leur donnent la mise en page d'un bloc sans en être un.
+  // `span`s and not `div`s: this block lives inside a `<button>`, whose content
+  // can only be phrasing content. The `flex` classes give them a block's layout
+  // without being one.
   return (
     <span className="flex gap-2">
       <span className="mt-px shrink-0 font-mono text-[10px] tracking-wider text-zinc-400">
@@ -119,8 +119,8 @@ function Scenario({
               ))}
             </div>
           )}
-          {/* Nommés, et non comptés : la pastille dit déjà combien, et devant
-              une case surprenante c'est « lequel » qu'on veut savoir. */}
+          {/* Named, and not counted: the pill already says how many, and in front
+              of a surprising cell it is "which one" that one wants to know. */}
           {scenario.tools != null && scenario.tools.length > 0 && (
             <div>
               <span className="font-medium text-zinc-500">Tools offered</span>
@@ -144,9 +144,8 @@ export function ScenarioList({ scenarios }: { scenarios: EvalScenario[] }) {
         {scenarios.length} scenario{scenarios.length > 1 ? "s" : ""} ready —
         click one to see it whole.
       </p>
-      {/* Plafonnée et défilante : la liste sert à comprendre le run qu'on
-          compose, et ne doit pas repousser le bouton de lancement hors de
-          l'écran. */}
+      {/* Capped and scrolling: the list serves to understand the run one is
+          composing, and must not push the launch button off the screen. */}
       <ul className="max-h-96 overflow-y-auto rounded border border-zinc-300 bg-zinc-50">
         {scenarios.map((scenario, index) => (
           <Scenario key={index} scenario={scenario} position={index + 1} />

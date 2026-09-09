@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
-/* La palette vient de polariscollective.org : fond crème, encre brun-noir,
-   olive pour l'accent. On ne l'applique pas en réécrivant huit mille lignes de
-   classes, mais en redéfinissant les échelles que Tailwind fabrique déjà.
-   `bg-zinc-50` compile vers `var(--color-zinc-50)` — changer la variable
-   repeint les quatre cent cinquante usages sans toucher à un composant.
+/* The palette comes from polariscollective.org: cream ground, brown-black ink,
+   olive for the accent. It is applied not by rewriting eight thousand lines of
+   classes, but by redefining the scales Tailwind already builds. `bg-zinc-50`
+   compiles to `var(--color-zinc-50)` — changing the variable repaints the four
+   hundred and fifty uses without touching a single component.
 
-   Trois échelles reprises, chacune pour ce qu'elle sert déjà dans l'app :
+   Three scales taken over, each for what it already serves in the app:
 
-     zinc   le gris de tout — texte, bordures, fonds, panneaux sombres
-     teal   l'accent : liens, confirmations, action principale  → olive
-     amber  l'avertissement                                     → or
+     zinc   the grey of everything — text, borders, grounds, dark panels
+     teal   the accent: links, confirmations, the main action  → olive
+     amber  the warning                                        → gold
 
-   `red` reste tel quel. C'est le signal d'erreur ; le réchauffer l'affaiblit. */
+   `red` stays as it is. It is the error signal; warming it weakens it. */
 
 @theme {
-  /* Gris chauds, calés sur les deux valeurs du site : `zinc-500` est son
-     `--muted-foreground`, `zinc-900` son `--foreground`. Le reste interpole. */
+  /* Warm greys, calibrated on the site's two values: `zinc-500` is its
+     `--muted-foreground`, `zinc-900` its `--foreground`. The rest interpolates. */
   --color-zinc-50: #faf7f0;
   --color-zinc-100: #f0e9d9;
   --color-zinc-200: #e4dac4;
@@ -29,7 +29,7 @@
   --color-zinc-900: #211f1b;
   --color-zinc-950: #15130f;
 
-  /* Olive. `teal-700` est l'accent exact du site, #5f6b3a. */
+  /* Olive. `teal-700` is the site's exact accent, #5f6b3a. */
   --color-teal-50: #eef1e3;
   --color-teal-100: #e1e6cb;
   --color-teal-200: #d0d8b0;
@@ -42,9 +42,9 @@
   --color-teal-900: #3d4526;
   --color-teal-950: #232814;
 
-  /* Or, tiré du favicon du site (#b8863b). `amber-700` est descendu à #8a6528
-     plutôt que sa valeur naturelle : il porte du texte en `text-sm`, et il lui
-     fallait 4.5:1 sur le crème. */
+  /* Gold, drawn from the site's favicon (#b8863b). `amber-700` was taken down to
+     #8a6528 rather than its natural value: it carries text at `text-sm`, and it
+     needed 4.5:1 on the cream. */
   --color-amber-50: #faf3e3;
   --color-amber-100: #f5e8c6;
   --color-amber-200: #ecd69d;
@@ -71,11 +71,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Pas de bloc `prefers-color-scheme: dark`. Il y en avait un ; il basculait le
-   fond en #0a0a0a alors qu'aucun composant de l'application n'a jamais porté
-   de variante `dark:` — le texte restait en gris clair sur presque noir. La
-   palette ci-dessus est un choix, pas un défaut : elle vaut dans les deux
-   réglages système. */
+/* No `prefers-color-scheme: dark` block. There was one; it flipped the ground to
+   #0a0a0a while no component of the application has ever carried a `dark:`
+   variant — the text stayed light grey on almost black. The palette above is a
+   choice, not a default: it holds under both system settings. */
 
 body {
   background: var(--background);
@@ -83,10 +82,10 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-/* Tailwind v4 a retiré le `cursor: pointer` que les navigateurs mettaient sur
-   les contrôles. Sans cette règle, rien dans l'application ne signale au survol
-   qu'un élément est cliquable — et la moitié de ce qui est cliquable ici sont
-   des boutons, pas des liens. */
+/* Tailwind v4 removed the `cursor: pointer` browsers used to put on the
+   controls. Without this rule, nothing in the application signals on hover that
+   an element is clickable — and half of what is clickable here are buttons, not
+   links. */
 button:not(:disabled),
 summary,
 label,
@@ -104,32 +103,32 @@ select:disabled {
   cursor: not-allowed;
 }
 
-/* Un libellé qui n'entoure qu'une zone de saisie ne se clique pas : il y donne
-   le focus. Le curseur doit dire ce qui se passera, pas ce qui est cliquable. */
+/* A label that wraps nothing but an input is not clicked: it focuses it. The
+   cursor must say what will happen, not what is clickable. */
 label:has(input[type="text"]),
 label:has(input[type="number"]),
 label:has(textarea) {
   cursor: auto;
 }
 
-/* Les zones de saisie s'arrondissent un peu plus que les 4px du `rounded` que
-   l'application met partout. Une règle plutôt que cent quatre-vingt-douze
-   éditions : elle n'est dans aucune couche, et les styles hors couche passent
-   devant les utilitaires quelle que soit leur spécificité. Les cases à cocher
-   et les boutons radio en sont exclus — ils ont leur forme. */
+/* The inputs round off a little more than the 4px of the `rounded` the
+   application puts everywhere. One rule rather than a hundred and ninety-two
+   edits: it is in no layer, and styles outside a layer come before the utilities
+   whatever their specificity. The checkboxes and radio buttons are excluded —
+   they have their own shape. */
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
   border-radius: 0.5rem;
 }
 
-/* Sur un fond crème, un champ doit se détacher du papier : il est plus clair
-   que lui, pas plus foncé.
+/* On a cream ground, a field must stand out from the paper: it is lighter than
+   it, not darker.
 
-   Dans `base`, contrairement à la règle d'arrondi juste au-dessus : ici on veut
-   précisément l'inverse. Tout `bg-*` posé sur un champ doit gagner — le
-   `bg-zinc-900` du panneau de l'adversaire, les `bg-white` explicites — et une
-   couche `base` passe derrière les utilitaires. */
+   In `base`, unlike the rounding rule just above: here we want precisely the
+   reverse. Any `bg-*` laid on a field must win — the adversary panel's
+   `bg-zinc-900`, the explicit `bg-white`s — and a `base` layer comes behind the
+   utilities. */
 @layer base {
   input:not([type="checkbox"]):not([type="radio"]),
   select,
@@ -138,10 +137,10 @@ textarea {
   }
 }
 
-/* L'intertitre du site : petites capitales olive, très espacées. Pas de filet
-   au-dessus — le site n'en met que dans son hero, ses intertitres de section
-   sont du texte nu. Et un pseudo-élément en bloc ici décalerait les titres qui
-   partagent une ligne flex avec un badge. */
+/* The site's eyebrow: small olive capitals, widely spaced. No rule above it —
+   the site puts one only in its hero, its section eyebrows are bare text. And a
+   block pseudo-element here would shift the headings that share a flex line with
+   a badge. */
 .eyebrow {
   font-family: var(--font-sans), system-ui, sans-serif;
   font-size: 12px;
@@ -151,14 +150,14 @@ textarea {
   color: var(--color-teal-700);
 }
 
-/* Plusieurs de ces titres traînent une glose derrière eux — « Tools — what the
-   evaluated model can decide to call ». C'est une phrase : elle ne se met pas
-   en capitales et ne s'espace pas.
+/* Several of these headings drag a gloss behind them — "Tools — what the
+   evaluated model can decide to call". It is a sentence: it is not put in
+   capitals and not letter-spaced.
 
-   Dans `base`, pour que les `text-sm text-zinc-500` déjà posés sur ces spans
-   continuent de décider ; la règle ne fournit qu'un repli. Une déclaration,
-   même en couche `base`, l'emporte de toute façon sur l'héritage — c'est ce
-   qui casse les capitales héritées du parent. */
+   In `base`, so that the `text-sm text-zinc-500` already laid on those spans go
+   on deciding; the rule provides only a fallback. A declaration, even in the
+   `base` layer, wins over inheritance anyway — which is what breaks the capitals
+   inherited from the parent. */
 @layer base {
   .eyebrow :where(span, small, em) {
     text-transform: none;
@@ -169,8 +168,8 @@ textarea {
   }
 }
 
-/* Sur le panneau sombre de l'adversaire, l'olive #5f6b3a n'a pas de quoi se
-   détacher. L'intertitre y passe au vert clair. */
+/* On the adversary's dark panel, the olive #5f6b3a has nothing to stand out
+   against. The eyebrow turns light green there. */
 .eyebrow-on-dark {
   color: var(--color-teal-300);
 }
@@ -179,26 +178,25 @@ textarea {
   color: var(--color-zinc-300);
 }
 
-/* Le titre d'un run dans la liste. Pas de soulignement : sur une colonne de
-   titres, le trait fait plus de bruit qu'il ne signale, et le survol suffit à
-   dire que c'est cliquable.
+/* The title of a run in the list. No underline: over a column of titles, the
+   line makes more noise than it signals, and the hover is enough to say it is
+   clickable.
 
-   La capitale est posée par `::first-letter` plutôt que par `capitalize`, qui
-   met une majuscule à CHAQUE mot — « Essai Du Viewer », et
-   « Cop-M210-Emergency-Legitimacy-V1 ». Ce sont des phrases, pas des titres
-   d'œuvres : seule la première lettre se lève, et le texte enregistré n'est
-   pas touché.
+   The capital is laid by `::first-letter` rather than by `capitalize`, which puts
+   a capital on EVERY word — "Viewer Trial", and
+   "Cop-M210-Emergency-Legitimacy-V1". These are sentences, not work titles: only
+   the first letter rises, and the recorded text is untouched.
 
-   Le `inline-block` porté par le lien n'est pas décoratif : `::first-letter`
-   ne s'applique qu'aux boîtes de type bloc, et un lien est inline par défaut.
-   Sans lui, la règle ci-dessous est ignorée en silence — aucune erreur, aucun
-   avertissement, juste un titre en minuscule. */
+   The `inline-block` carried by the link is not decorative: `::first-letter`
+   applies only to block-type boxes, and a link is inline by default. Without it,
+   the rule below is ignored in silence — no error, no warning, just a title in
+   lower case. */
 .run-title::first-letter {
   text-transform: uppercase;
 }
 
-/* Notes de run rendues depuis le markdown. Volontairement sobre : ces notes
-   vivent au milieu d'un tableau de bord, pas dans un article. */
+/* Run notes rendered from markdown. Deliberately plain: these notes live in the
+   middle of a dashboard, not in an article. */
 .notes-prose h2,
 .notes-prose h3,
 .notes-prose h4,

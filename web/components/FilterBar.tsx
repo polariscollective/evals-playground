@@ -1,16 +1,16 @@
 "use client";
 
-// La barre de filtres, et la bascule entre les deux listes.
+// The filter bar, and the toggle between the two lists.
 //
-// Deux gestes très différents s'y côtoient, d'où deux formes de bouton.
+// Two very different gestures live side by side there, hence two button shapes.
 //
-// Une DIMENSION tourne : un clic passe de « les deux » au côté notable, puis à
-// l'autre, puis revient. Son icône ne change jamais — c'est elle qui dit de
-// quelle question il s'agit — et seul le mot change. Ouverte, elle est pâle et
-// dit « both » : rien n'est filtré, et le bouton ne se donne pas l'air d'agir.
+// A DIMENSION cycles: one click moves from "both" to the notable side, then to
+// the other, then back. Its icon never changes — it is what says which question
+// is at stake — and only the word changes. Open, it is pale and says "both":
+// nothing is filtered, and the button does not pretend to act.
 //
-// Un TAG ou un STATUT s'allume et s'éteint. Éteint, il est barré : on lui a
-// retiré quelque chose, ce qui ne se lit pas comme un choix entre deux.
+// A TAG or a STATUS turns on and off. Off, it is struck through: something has
+// been taken away from it, which does not read as a choice between two.
 import { DimensionIcon } from "@/components/DimensionIcon";
 import { colorClasses } from "@/lib/tag-colors";
 import {
@@ -27,7 +27,8 @@ import {
 import type { Tag } from "@/lib/types";
 
 const PILL = "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs";
-/** Un contour en pointillé, sans fond : l'état où le bouton ne filtre rien. */
+/** A dashed outline, with no ground: the state in which the button filters
+ *  nothing. */
 const OPEN_PILL = `${PILL} border border-dashed border-zinc-300 text-zinc-500 hover:text-zinc-800`;
 
 function DimensionButton({
@@ -90,26 +91,26 @@ export function FilterBar({
   state: FilterState;
   onCycle: (key: DimensionKey) => void;
   onToggle: (label: string) => void;
-  /** Tout montrer. */
+  /** Show everything. */
   onClear: () => void;
-  /** Revenir aux réglages de départ. */
+  /** Go back to the starting settings. */
   onDefault: () => void;
-  /** Les réglages de départ de cette liste, pour savoir si on y est déjà. */
+  /** This list's starting settings, so as to know whether one is already there. */
   defaults: FilterState;
-  /** La recherche en cours. Volontairement hors de l'état enregistré : un
-   *  filtre est une préférence, une recherche est un geste — la retrouver
-   *  telle quelle au retour serait déroutant. Elle vaut pour les deux listes,
-   *  et suit donc la bascule. */
+  /** The search under way. Deliberately outside the saved state: a filter is a
+   *  preference, a search is a gesture — finding it as it stands on return would
+   *  be disconcerting. It holds for both lists, and therefore follows the
+   *  toggle. */
   query: string;
   onQuery: (next: string) => void;
-  /** Combien de lignes le filtre écarte, pour le dire plutôt que de laisser
-   *  croire que la base est vide. */
+  /** How many rows the filter sets aside, to say so rather than letting one
+   *  believe the database is empty. */
   hidden: number;
 }) {
   const off = new Set(state.off);
-  // Un lien qui ne changerait rien s'éteint plutôt que de promettre un geste
-  // sans effet : « clear » quand rien n'est filtré, « default » quand on est
-  // déjà au réglage de départ.
+  // A link that would change nothing goes dark rather than promising a gesture
+  // with no effect: "clear" when nothing is filtered, "default" when one is
+  // already at the starting setting.
   const cleared = sameFilter(state, OPEN);
   const atDefault = sameFilter(state, defaults);
   const LINK = "text-xs underline";
@@ -118,9 +119,9 @@ export function FilterBar({
 
   return (
     <div className="space-y-2">
-      {/* La bascule remplace l'ancien bouton « Show drafts » : ce ne sont pas
-          deux sections dont l'une s'ouvre, mais deux listes dont on regarde
-          l'une ou l'autre. Un interrupteur le dit mieux qu'un bouton. */}
+      {/* The toggle replaces the old "Show drafts" button: they are not two
+          sections one of which opens, but two lists one looks at one or the other
+          of. A switch says it better than a button. */}
       <div className="flex items-center gap-3">
       <div className="inline-flex rounded-full border border-zinc-300 p-0.5 text-xs">
         {(["runs", "drafts"] as const).map((value) => (
@@ -139,14 +140,14 @@ export function FilterBar({
           </button>
         ))}
       </div>
-      {/* Deux gestes, parce qu'ils ne donnent pas le même écran : « clear »
-          ouvre tout, « default » revient à ce que la page choisit de masquer
-          au premier abord — les runs d'agent, les brouillons déjà lancés. Les
-          confondre ferait passer un choix pour une absence de choix.
+      {/* Two gestures, because they do not give the same screen: "clear" opens
+          everything, "default" goes back to what the page chooses to hide at first
+          sight — the agent runs, the drafts already launched. Confusing them would
+          make a choice pass for an absence of choice.
 
-          Toujours présents, même quand rien ne s'en écarte : leur place fait
-          partie de la barre, et des liens qui apparaissent et disparaissent
-          feraient bouger la bascule à côté d'eux. */}
+          Always present, even when nothing departs from them: their place is part
+          of the bar, and links that appeared and disappeared would move the toggle
+          beside them. */}
       <button
         type="button"
         onClick={onClear}
@@ -188,8 +189,8 @@ export function FilterBar({
             />
           ))}
 
-          {/* Un filet entre les dimensions et les ensembles : les deux ne se
-              cliquent pas de la même façon, et rien ne le dirait sinon. */}
+          {/* A rule between the dimensions and the sets: the two are not clicked
+              the same way, and nothing else would say so. */}
           {dims.length > 0 && (statuses.length > 0 || tags.length > 0) && (
             <span aria-hidden="true" className="h-4 w-px bg-zinc-300" />
           )}
@@ -238,10 +239,9 @@ export function FilterBar({
         </div>
       )}
 
-      {/* Sous les filtres, et non à côté : ce n'est pas un filtre de plus mais
-          une façon de viser une ligne dont on connaît déjà le nom ou
-          l'identifiant. Elle s'applique à la liste qu'on regarde, quelle
-          qu'elle soit. */}
+      {/* Below the filters, and not beside them: it is not one more filter but a
+          way of aiming at a row whose name or identifier one already knows. It
+          applies to the list one is looking at, whichever it is. */}
       <div className="flex items-center gap-2">
         <input
           type="search"

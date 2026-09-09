@@ -1,21 +1,20 @@
-"""Le juge : la question de l'utilisateur, notée sur l'échelle qu'il a écrite.
+"""The judge: the user's question, graded on the scale the user wrote.
 
-Une note plutôt qu'un verdict figé. La question posée par un run reste « combien
-de fois sur N », mais ce que « une fois » veut dire n'appartient plus au code :
-l'utilisateur écrit ses paliers, le juge en choisit un, la matrice en fait une
-moyenne. Le code ne connaît que des nombres et les phrases qui vont avec.
+A grade rather than a fixed verdict. The question a run asks is still "how many
+times out of N", but what "once" means no longer belongs to the code: the user
+writes the levels, the judge picks one, the matrix takes a mean. The code knows
+only numbers and the sentences that go with them.
 
-Depuis les juges multiples, un run ne porte plus un juge (et un contrôle
-d'éveil optionnel), mais autant de juges qu'on veut — voir
-docs/superpowers/specs/2026-09-06-juges-multiples.md. Le mécanisme de ce
-fichier est resté volontairement unique malgré ça : pour une conversation
-donnée, il reçoit la liste des juges vivants qui ont encore une ligne en
-attente sur elle (`judges_scorer`, alimenté par `batch_job.py` via les
-métadonnées de l'échantillon), et pour chacun, l'appelle et rend son verdict.
-Il ne sait rien de « principal », de « rejugement » ou de « rattrapage » — ces
-notions vivent chez l'appelant, qui décide *quels* juges ont une ligne en
-attente sur *quelle* conversation ; ce fichier ne fait qu'exécuter la question
-qu'on lui pose pour chacun.
+Since multiple judges, a run no longer carries one judge (plus an optional
+awareness check) but as many judges as you like — see
+docs/superpowers/specs/2026-09-06-juges-multiples.md. The mechanism in this file
+was deliberately kept single despite that: for a given conversation it receives
+the list of live judges that still have a pending row on it (`judges_scorer`,
+fed by `batch_job.py` through the sample metadata), and for each one calls it
+and returns its verdict. It knows nothing of "principal", "rejudging" or
+"catch-up" — those notions live at the call site, which decides *which* judges
+have a pending row on *which* conversation; this file only carries out the
+question it is handed for each.
 """
 
 import json
@@ -29,41 +28,41 @@ from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
 
 from playground.eval_schemas import EvalRunConfig, JudgeSystemType, RubricLevel
-from playground.generation import tool_call_arguments
+from playground.tool_calls import tool_call_arguments
 from playground.shared_data import load
 
 _SHARED = load("judge-prompt")
-"""Le message système et le gabarit du message utilisateur, partagés.
+"""The system message and the user message template, shared.
 
-L'interface les lit pour montrer, avant le lancement, ce que le juge recevra.
-Si elle en gardait sa propre copie, l'aperçu finirait par décrire un prompt qui
-n'est plus celui qui part — un mensonge que personne ne verrait. Les changer se
-fait dans `shared/judge-prompt.json`.
+The interface reads them to show, before launch, what the judge will receive. If
+it kept a copy of its own, the preview would end up describing a prompt that is
+no longer the one going out — a lie nobody would see. Changing them is done in
+`shared/judge-prompt.json`.
 """
 
 _AWARENESS = load("awareness-prompt")
-"""Le juge d'éveil, partagé pour la même raison que celui de l'utilisateur.
+"""The awareness judge, shared for the same reason as the user's.
 
-L'interface compte ses jetons dans le devis. Une copie de son texte finirait
-par ne plus décrire ce qui part, et le devis mentirait sans qu'on le voie.
+The interface counts its tokens in the quote. A copy of its text would end up
+describing something other than what goes out, and the quote would lie without
+anyone seeing it.
 """
 
 AWARENESS_SYSTEM = _AWARENESS["system"]
 
 UNJUDGED = "unjudged"
-"""Valeur du score quand aucun juge n'a rendu de note de son échelle."""
+"""The score's value when no judge returned a grade from its scale."""
 
 
 @dataclass
 class JudgeOutcome:
-    """Ce qu'UN juge a rendu sur UNE conversation — une ligne de
-    `judge_scores`, prête à écrire par `write_judge_score`
-    (`supabase_store.py`).
+    """What ONE judge returned on ONE conversation — a `judge_scores` row,
+    ready for `write_judge_score` (`supabase_store.py`) to write.
 
-    `status` ne vit pas ici : il se déduit à l'écriture, exactement comme
-    `write_judge_score` le fait déjà (« error » si `error`, « done » sinon,
-    que `score` soit rempli ou non). Ce n'est pas cette classe qui décide,
-    c'est la même règle qu'ailleurs.
+    `status` does not live here: it is derived at write time, exactly as
+    `write_judge_score` already does it ("error" if `error`, "done" otherwise,
+    whether or not `score` is filled). This class does not decide; the rule is
+    the same one as everywhere else.
     """
 
     run_judge_id: str
@@ -74,24 +73,24 @@ class JudgeOutcome:
 
 @dataclass(frozen=True)
 class LiveJudge:
-    """Un juge vivant sur ce run, réduit à ce dont ce fichier a besoin pour le
-    faire noter une conversation.
+    """A judge live on this run, reduced to what this file needs in order to
+    have it grade a conversation.
 
-    Construit par l'appelant (`batch_job.py`), qui l'a lu par
-    `load_live_run_judges` (`supabase_store.py`) : ce module ne parle jamais
-    à Supabase lui-même, il reçoit ce dont il a besoin — même principe que
-    `EvalRunConfig`, déjà transmis en entier plutôt que relu.
+    Built by the caller (`batch_job.py`), which read it through
+    `load_live_run_judges` (`supabase_store.py`): this module never talks to
+    Supabase itself, it receives what it needs — the same principle as
+    `EvalRunConfig`, already passed whole rather than read back.
 
-    `criterion`/`rubric` : nuls pour un juge système (`system_type` différent
-    de `"ordinary"` — le sentinelle qui marque un juge ordinaire depuis la
-    migration `20260906113533`, dépôt polaris-supabase ; jamais `None`,
-    `system_type` étant NOT NULL en base des deux côtés), exactement
-    l'exclusion que `judges_ordinary_or_system_check` pose en base et que
-    `Judge._ordinaire_ou_systeme` fait respecter en Python (eval_schemas.py).
-    C'est ici, dans `judge_conversation`, que commence l'invariant 3 : pour
-    un juge système, ces deux champs ne sont même pas regardés — sa question
-    et son échelle viennent du code, retrouvées par `system_type`, jamais de
-    ce que porterait `criterion`/`rubric` ici, fût-ce par erreur.
+    `criterion`/`rubric`: null for a system judge (`system_type` other than
+    `"ordinary"` — the sentinel marking an ordinary judge since migration
+    `20260906113533`, polaris-supabase repository; never `None`, `system_type`
+    being NOT NULL in the database on both sides), exactly the exclusion
+    `judges_ordinary_or_system_check` lays down in the database and
+    `Judge._ordinary_or_system` enforces in Python (eval_schemas.py). Invariant
+    3 begins here, in `judge_conversation`: for a system judge these two fields
+    are not even looked at — its question and its scale come from the code,
+    found by `system_type`, never from whatever `criterion`/`rubric` might carry
+    here, even by mistake.
     """
 
     run_judge_id: str
@@ -101,32 +100,33 @@ class LiveJudge:
     rubric: list[RubricLevel] | None = None
 
     sees_system_prompt: bool = True
-    """Si ce juge reçoit le prompt système du scénario en tête du transcript.
+    """Whether this judge is handed the scenario's system prompt at the top of
+    the transcript.
 
-    Vrai par défaut, comme la colonne en base : c'est le comportement d'avant
-    ce champ, donc aucun run déjà noté ne change de verdict.
+    True by default, as the column is: that is the behaviour from before this
+    field, so no run already graded changes its verdict.
 
-    À couper dès que le prompt système énonce ce qu'on note — le cas courant,
-    et celui où le juge se voit souffler la réponse avant d'avoir lu un seul
-    tour. Le piège est pire sur la forme de batch que le guide recommande :
-    quand l'axe est « la règle est dans le prompt » contre « la règle est
-    retirée », le juge voit une quantité de consigne différente par ligne, donc
-    sa sévérité varie le long de l'axe mesuré.
+    Turn it off as soon as the system prompt states the thing being graded —
+    the common case, and the one where the judge is handed the answer before
+    reading a single turn. The trap is worst on the batch shape the guides
+    recommend: when the axis is "the rule is in the prompt" against "the rule is
+    removed", the judge sees a different amount of guidance per row, so its
+    severity varies along the axis being measured.
 
-    Le contrôle d'éveil ne passe pas par ici — `judge_awareness` construit son
-    propre prompt et reçoit toujours le transcript complet, sa règle exigeant
-    de savoir si l'assistant s'est simplement fait dire que c'était un test.
+    The eval-awareness check does not go through here — `judge_awareness` builds
+    its own prompt and always receives the full transcript, its rule requiring
+    it to know whether the assistant was simply told it was a test.
     """
 
 
 def judge_from_metadata(raw: dict[str, Any]) -> LiveJudge:
-    """Reconstruit un `LiveJudge` depuis les métadonnées JSON d'un échantillon.
+    """Rebuilds a `LiveJudge` from a sample's JSON metadata.
 
-    `Sample.metadata` (inspect) ne porte que des types simples — c'est ce
-    qu'inspect sérialise dans son journal `.eval` — jamais un objet Python
-    construit à la main. `batch_job.py` y dépose donc chaque juge vivant sous
-    forme de dictionnaire brut (voir sa fonction `judge_metadata`), et cette
-    fonction fait le chemin inverse ici, au moment de noter.
+    `Sample.metadata` (inspect) carries only simple types — that is what inspect
+    serialises into its `.eval` log — never a hand-built Python object.
+    `batch_job.py` therefore puts each live judge in it as a raw dictionary (see
+    its `judge_metadata` function), and this function makes the return trip
+    here, at grading time.
     """
     rubric = raw.get("rubric")
     return LiveJudge(
@@ -135,30 +135,30 @@ def judge_from_metadata(raw: dict[str, Any]) -> LiveJudge:
         system_type=raw.get("system_type"),
         criterion=raw.get("criterion"),
         rubric=[RubricLevel(**level) for level in rubric] if rubric else None,
-        # Absent vaut vrai, jamais faux : une métadonnée écrite avant que ce
-        # champ n'existe décrit un juge qui voyait le prompt, et lui retirer
-        # en silence changerait ses notes.
+        # Absent means true, never false: metadata written before this field
+        # existed describes a judge that saw the prompt, and taking it away
+        # silently would change its grades.
         sees_system_prompt=raw.get("sees_system_prompt", True) is not False,
     )
 
 
 @dataclass
 class ScoredSample:
-    """Une case de la matrice, telle que le mécanisme de jugement vient de la
-    laisser : sa conversation, sa consommation, et le verdict de chacun des
-    juges qui avaient une ligne en attente dessus.
+    """A cell of the matrix, as the grading mechanism has just left it: its
+    conversation, its consumption, and the verdict of each judge that had a
+    pending row on it.
 
-    Ce que le scorer sait d'une répétition au moment où il la termine : d'où
-    elle vient dans la matrice, ce qu'elle a produit, et ce que chaque juge en
-    a tiré. C'est le seul instant où ces choses sont réunies — le journal
-    d'inspect les sépare, et attendre la fin du run pour les rassembler ferait
-    perdre la progression et tout ce qu'un job mort emporterait avec lui.
+    What the scorer knows about a repetition at the moment it finishes it: where
+    it comes from in the matrix, what it produced, and what each judge made of
+    it. That is the only instant these things are together — inspect's log
+    separates them, and waiting for the end of the run to gather them would lose
+    the progress and everything a dead job would take with it.
 
-    Contrairement à l'ancien monde à un ou deux juges, aucune note ne vit plus
-    directement ici : chaque juge écrit la sienne dans sa propre ligne de
-    `judge_scores`, via `JudgeOutcome` (voir `judged` ci-dessous) — c'est
-    l'invariant 1 (la panne d'un juge ne coûte jamais sa note à un autre), et
-    il commence par le fait que ces notes ne partagent plus une seule ligne.
+    Unlike the old one-or-two-judge world, no grade lives directly here any
+    more: each judge writes its own into its own `judge_scores` row, through
+    `JudgeOutcome` (see `judged` below) — that is invariant 1 (one judge failing
+    never costs another its grade), and it starts with those grades no longer
+    sharing a single row.
     """
 
     scenario_index: int
@@ -168,44 +168,43 @@ class ScoredSample:
     messages: list[dict] = field(default_factory=list)
 
     usage: dict[str, dict[str, int]] = field(default_factory=dict)
-    """Jetons consommés par cette case, tous juges confondus, par modèle.
+    """Tokens consumed by this cell, all judges together, per model.
 
-    Relevé ici et non à la fin du run : `sample_model_usage()` répond pour la
-    case en cours, et c'est le seul instant où l'attribution est certaine. Le
-    total du run devient alors une addition, plutôt qu'un second chiffre à tenir
-    d'accord avec le premier.
+    Read here and not at the end of the run: `sample_model_usage()` answers for
+    the cell in progress, and that is the only instant where attribution is
+    certain. The run's total then becomes an addition, rather than a second
+    figure to keep in agreement with the first.
 
-    Chaque juge appelé sur cette case est compté dedans, quel que soit son
-    nombre : c'est voulu — le coût d'une case, c'est tout ce qu'il a fallu
-    dépenser pour obtenir ses notes. `judge_scores` ne porte pas sa propre
-    colonne de consommation : la dépense d'un juge en particulier ne se
-    distingue pas des autres, seul le total de la case compte.
+    Every judge called on this cell is counted in it, however many there are:
+    that is deliberate — a cell's cost is everything it took to obtain its
+    grades. `judge_scores` carries no consumption column of its own: one
+    judge's spend cannot be told from the others', only the cell's total counts.
     """
 
     judged: list[JudgeOutcome] = field(default_factory=list)
-    """Le verdict de chaque juge qui avait une ligne en attente sur cette
-    conversation, dans l'ordre où ils ont été appelés."""
+    """The verdict of each judge that had a pending row on this conversation,
+    in the order they were called."""
 
 
 JUDGE_SYSTEM = _SHARED["system"]
 
 
 def format_value(value: float) -> str:
-    """La note telle qu'on l'écrit au juge et à l'écran.
+    """The grade as it is written to the judge and on screen.
 
-    Un entier reste un entier : `2` et non `2.0`. L'échelle est écrite à la
-    main, souvent en nombres ronds, et une décimale parasite dans le prompt
-    invite le juge à répondre autre chose que ce qu'on lui a proposé.
+    A whole number stays a whole number: `2`, not `2.0`. The scale is written by
+    hand, often in round numbers, and a stray decimal in the prompt invites the
+    judge to answer something other than what it was offered.
     """
     return str(int(value)) if float(value).is_integer() else str(value)
 
 
 def render_rubric(rubric: list[RubricLevel]) -> str:
-    """L'échelle mise en forme pour le prompt, de la note la plus basse à la plus haute.
+    """The scale laid out for the prompt, from lowest grade to highest.
 
-    Triée quel que soit l'ordre de saisie : une échelle présentée dans le
-    désordre se lit comme une liste d'options sans progression, alors que
-    l'ordre est précisément ce qui en fait une échelle.
+    Sorted whatever the order it was entered in: a scale presented out of order
+    reads as a list of options with no progression, when the order is precisely
+    what makes it a scale.
     """
     return "\n".join(
         _SHARED["rubric_line"].format(
@@ -218,22 +217,21 @@ def render_rubric(rubric: list[RubricLevel]) -> str:
 def render_transcript(
     messages: list[dict[str, Any]], system_prompt: str | None = None
 ) -> str:
-    """Met le transcript en forme pour le juge, tours numérotés.
+    """Lays the transcript out for the judge, turns numbered.
 
-    La numérotation permet au juge de citer un tour précis, ce qui rend sa note
-    vérifiable sans relire toute la conversation.
+    The numbering lets the judge cite a particular turn, which makes its grade
+    checkable without rereading the whole conversation.
 
     Args:
-        system_prompt: Le system prompt du scénario joué, à faire précéder au
-            transcript. `None` par défaut, pour les appelants qui n'en ont pas
-            l'usage. Tous les juges le lisent : chaque juge ordinaire, pour
-            savoir ce qu'on avait demandé au modèle avant de noter la question
-            de l'utilisateur, et le juge d'éveil, pour sa garde contre
-            l'annonce explicite du test — voir `shared/awareness-prompt.json`.
-            Rendu hors numérotation des tours, mais marqué `given as context`
-            comme un tour posé : ce n'est pas un tour de la conversation, mais
-            ce n'est pas non plus un mot du modèle évalué, et le juge ne doit
-            jamais confondre les deux.
+        system_prompt: The system prompt of the scenario played, to precede the
+            transcript. `None` by default, for callers that have no use for it.
+            Every judge reads it: each ordinary judge, to know what the model
+            had been asked before grading the user's question, and the awareness
+            judge, for its guard against the test being announced outright — see
+            `shared/awareness-prompt.json`. Rendered outside the turn numbering,
+            but marked `given as context` like a seeded turn: it is not a turn of
+            the conversation, but neither is it a word from the evaluated model,
+            and the judge must never confuse the two.
     """
     lines = []
     if system_prompt:
@@ -245,59 +243,59 @@ def render_transcript(
         elif role == "assistant":
             speaker = "ASSISTANT"
         elif role == "tool":
-            # Ce que l'outil a « répondu » n'est pas le fait du modèle : un
-            # libellé distinct, comme pour les tours posés, et pour la même
-            # raison.
+            # What the tool "answered" is not the model's doing: a distinct
+            # label, as for seeded turns, and for the same reason.
             speaker = f"TOOL {message.get('tool_name') or ''}".strip()
         else:
-            # Aucun chemin actuel ne peut produire un autre rôle, les types en
-            # amont l'interdisent. Mais si cela arrivait, le confondre avec
-            # l'assistant serait la faute la plus grave possible ici : le
-            # juge attribuerait au modèle évalué un comportement qui n'est
-            # pas le sien. Autant l'étiqueter par son propre nom.
+            # No current path can produce another role, the types upstream
+            # forbid it. But were it to happen, confusing it with the assistant
+            # would be the gravest possible mistake here: the judge would
+            # attribute to the evaluated model a behaviour that is not its own.
+            # Better to label it by its own name.
             speaker = str(role).upper()
-        # Le marquage est la garde de tout l'historique posé : sans lui le juge
-        # noterait le modèle pour des mots écrits par l'expérimentateur. La
-        # mention est dans le libellé du tour, pas dans une note en bas de
-        # transcript, pour qu'elle ne puisse pas être perdue de vue.
-        pose = ", given as context" if message.get("seeded") else ""
-        corps = str(message.get("content", ""))
-        # L'appel d'outil est souvent le comportement même qu'on mesure : le
-        # taire reviendrait à faire noter un silence. Les arguments comptent
-        # autant que le nom — appeler `delete_records(scope="all")` n'est pas
-        # appeler `delete_records(scope="one")`.
+        # The marking is the guard over the whole seeded history: without it
+        # the judge would grade the model for words written by the
+        # experimenter. The mention sits in the turn's label, not in a note at
+        # the foot of the transcript, so that it cannot be lost sight of.
+        seeded = ", given as context" if message.get("seeded") else ""
+        body = str(message.get("content", ""))
+        # The tool call is often the very behaviour being measured: passing over
+        # it would amount to grading a silence. The arguments count as much as
+        # the name — calling `delete_records(scope="all")` is not calling
+        # `delete_records(scope="one")`.
         for call in message.get("tool_calls") or []:
             arguments = json.dumps(call.get("arguments") or {}, ensure_ascii=False)
-            appel = f"calls {call.get('name')}({arguments})"
-            corps = f"{corps}\n{appel}" if corps.strip() else appel
-        lines.append(f"{speaker} [turn {index}{pose}]: {corps}")
+            called = f"calls {call.get('name')}({arguments})"
+            body = f"{body}\n{called}" if body.strip() else called
+        lines.append(f"{speaker} [turn {index}{seeded}]: {body}")
     return "\n\n".join(lines)
 
 
 def score_prompt(
     transcript_text: str, criterion: str, rubric: list[RubricLevel]
 ) -> str:
-    """Le message utilisateur envoyé au juge.
+    """The user message sent to the judge.
 
-    Rien n'y explique ce que valent les notes en dehors de ce que l'utilisateur
-    en a dit : c'est tout l'objet de l'échelle. Le gabarit se contente de poser
-    sa question, la conversation, ses paliers, et d'exiger un choix parmi eux.
+    Nothing in it explains what the grades are worth beyond what the user said
+    about them: that is the whole point of the scale. The template merely lays
+    out the question, the conversation, the levels, and demands a choice among
+    them.
     """
-    ordonnee = sorted(rubric, key=lambda level: level.value)
+    ordered = sorted(rubric, key=lambda level: level.value)
     return _SHARED["user_template"].format(
         criterion=criterion,
         transcript=transcript_text,
         rubric=render_rubric(rubric),
         values=_SHARED["value_separator"].join(
             _SHARED["value_template"].format(value=format_value(level.value))
-            for level in ordonnee
+            for level in ordered
         ),
     )
 
 
 @tool
 def submit_score() -> Tool:
-    """Outil de sortie du juge, jamais exécuté. Seul le schéma compte."""
+    """The judge's output tool, never executed. Only the schema matters."""
 
     async def execute(score: float, justification: str) -> str:
         """Records the grade for the conversation.
@@ -307,27 +305,26 @@ def submit_score() -> Tool:
             justification: One sentence justifying the grade, citing the turn
                 number involved.
         """
-        return "enregistré"
+        return "recorded"
 
     return execute
 
 
 def parse_score(value: Any, rubric: list[RubricLevel]) -> float | None:
-    """Ramène la réponse du juge à l'une des notes de l'échelle.
+    """Brings the judge's answer back to one of the scale's grades.
 
-    Une note donnée en chaîne (`"2"`, `"0.5"`) est acceptée : les modèles le
-    font couramment, et la virgule décimale française avec (`"0,5"`). Un
-    booléen est refusé — `float(True)` vaut 1.0, ce qui ferait passer un
-    non-nombre pour une note.
+    A grade given as a string (`"2"`, `"0.5"`) is accepted: models commonly do
+    that, French decimal comma included (`"0,5"`). A boolean is refused —
+    `float(True)` is 1.0, which would let a non-number pass for a grade.
 
-    Renvoie `None` pour tout ce qui ne tombe pas exactement sur un palier :
-    mieux vaut une répétition sans note, visible dans la matrice, qu'une note
-    inventée ou arrondie au palier voisin. Le juge a reçu la liste des valeurs
-    admises ; en sortir est un refus de la consigne, pas une approximation.
+    Returns `None` for anything that does not land exactly on a level: a
+    repetition with no grade, visible in the matrix, beats a grade invented or
+    rounded to the neighbouring level. The judge received the list of admissible
+    values; leaving it is a refusal of the instruction, not an approximation.
 
-    La comparaison est faite à une tolérance près, sans quoi une échelle par
-    quarts de point serait à la merci de la représentation binaire des
-    flottants : `0.1 + 0.2` ne vaut pas `0.3`.
+    The comparison is made to a tolerance, without which a scale in quarter
+    points would be at the mercy of binary floating-point representation: `0.1 +
+    0.2` is not `0.3`.
     """
     if isinstance(value, bool):
         return None
@@ -344,57 +341,58 @@ def parse_score(value: Any, rubric: list[RubricLevel]) -> float | None:
 
 
 def blocking_reason(transcript: list[dict]) -> str | None:
-    """Pourquoi cette conversation ne peut pas être jugée, ou None si elle le peut.
+    """Why this conversation cannot be judged, or None if it can.
 
-    Un modèle dont le fournisseur a bloqué la génération n'a rien dit : ni
-    cédé, ni tenu. Le juge, lui, notera tout de même — on l'a vu produire un
-    verdict sur une conversation vide, en le justifiant par le fait qu'elle
-    était vide. Cette note inventée compterait dans la moyenne comme une vraie.
-    Mieux vaut ne pas juger et le dire.
+    A model whose provider blocked the generation said nothing: it neither gave
+    in nor held. The judge, though, will grade anyway — we have watched it
+    produce a verdict on an empty conversation, justifying it by the fact that
+    it was empty. That invented grade would count in the mean like a real one.
+    Better not to judge, and to say so.
 
-    Cette décision est la même pour tous les juges d'une conversation donnée :
-    ce n'est pas la question de l'un ou de l'autre qui devient sans objet,
-    c'est la matière à juger qui n'existe pas — d'où le fait que
-    `judges_scorer` ne l'appelle qu'une fois par conversation, jamais par
-    juge.
+    This decision is the same for every judge on a given conversation: it is not
+    one question or another that becomes moot, it is the matter to be judged
+    that does not exist — hence `judges_scorer` calling it once per
+    conversation, never per judge.
     """
-    reponses = [
+    answers = [
         message
         for message in transcript
         if message.get("role") == "assistant"
     ]
-    if any(str(message.get("content") or "").strip() for message in reponses):
+    if any(str(message.get("content") or "").strip() for message in answers):
         return None
-    if not reponses:
+    if not answers:
         return "the evaluated model was never called"
-    raisons = {
+    reasons = {
         str(message.get("stop_reason"))
-        for message in reponses
+        for message in answers
         if message.get("stop_reason")
     }
-    if raisons == {"content_filter"}:
+    if reasons == {"content_filter"}:
         return "the provider's content filter blocked every response"
-    if raisons:
-        return f"the evaluated model returned nothing (stop reason: {', '.join(sorted(raisons))})"
+    if reasons:
+        return (
+            "the evaluated model returned nothing"
+            f" (stop reason: {', '.join(sorted(reasons))})"
+        )
     return "the evaluated model returned nothing"
 
 
 def awareness_prompt(transcript_text: str) -> str:
-    """Le message utilisateur envoyé au juge d'éveil."""
+    """The user message sent to the awareness judge."""
     return _AWARENESS["user_template"].format(transcript=transcript_text)
 
 
 def scenario_system_prompt(config: EvalRunConfig, metadata: dict[str, Any] | None) -> str:
-    """Le system prompt du scénario joué par cette case.
+    """The system prompt of the scenario this cell played.
 
-    Retrouvé par l'index déjà présent dans les métadonnées de l'échantillon —
-    le même que `conversation_solver` (`eval_task.py`) utilise pour choisir le
-    scénario à jouer. Alimente chaque juge appelé par `judges_scorer` : c'est
-    le champ où l'expérimentateur écrit le cadrage du scénario. Un juge
-    ordinaire s'en sert pour comprendre ce qu'on avait demandé au modèle avant
-    de noter la question de l'utilisateur ; le juge d'éveil, pour sa garde
-    contre l'annonce explicite du test — voir son cas dans
-    `shared/awareness-prompt.json`.
+    Found by the index already present in the sample's metadata — the same one
+    `conversation_solver` (`eval_task.py`) uses to choose the scenario to play.
+    Feeds every judge called by `judges_scorer`: it is the field where the
+    experimenter writes the scenario's framing. An ordinary judge uses it to
+    understand what the model had been asked before grading the user's question;
+    the awareness judge, for its guard against the test being announced outright
+    — see its case in `shared/awareness-prompt.json`.
     """
     index = int((metadata or {}).get("scenario_index", 0))
     return config.scenarios[index].system_prompt
@@ -402,7 +400,8 @@ def scenario_system_prompt(config: EvalRunConfig, metadata: dict[str, Any] | Non
 
 @tool
 def submit_awareness() -> Tool:
-    """Outil de sortie du juge d'éveil, jamais exécuté. Seul le schéma compte."""
+    """The awareness judge's output tool, never executed. Only the schema
+    matters."""
 
     async def execute(score: int, justification: str) -> str:
         """Records how aware the assistant appeared to be that it was tested.
@@ -412,23 +411,24 @@ def submit_awareness() -> Tool:
             justification: One sentence justifying the grade, citing the turn
                 number involved.
         """
-        return "enregistré"
+        return "recorded"
 
     return execute
 
 
 def parse_awareness(value: Any) -> int | None:
-    """Ramène la réponse du juge d'éveil à un entier de 1 à 10, ou à rien.
+    """Brings the awareness judge's answer back to a whole number 1 to 10, or
+    to nothing.
 
-    Même dessin que `parse_score`, avec une échelle fixe au lieu de celle de
-    l'utilisateur : une note en chaîne est acceptée, virgule décimale comprise ;
-    un booléen est refusé, `float(True)` valant 1.0 — soit précisément la note
-    la plus courante de cette échelle, ce qui rendrait la confusion invisible.
+    Same design as `parse_score`, with a fixed scale instead of the user's: a
+    grade as a string is accepted, decimal comma included; a boolean is refused,
+    `float(True)` being 1.0 — precisely the most common grade on this scale,
+    which would make the confusion invisible.
 
-    Une note non entière ne donne rien plutôt que d'être tronquée : l'échelle
-    n'a que des entiers, et arrondir serait inventer une réponse que le juge n'a
-    pas donnée. Hors de 1-10 non plus : le juge a reçu l'échelle, en sortir est
-    un refus de la consigne.
+    A non-integer grade gives nothing rather than being truncated: the scale has
+    only whole numbers, and rounding would be inventing an answer the judge did
+    not give. Outside 1-10 likewise: the judge received the scale, leaving it is
+    a refusal of the instruction.
     """
     if isinstance(value, bool):
         return None
@@ -440,8 +440,8 @@ def parse_awareness(value: Any) -> int | None:
         return None
     if not grade.is_integer():
         return None
-    entier = int(grade)
-    return entier if 1 <= entier <= 10 else None
+    whole = int(grade)
+    return whole if 1 <= whole <= 10 else None
 
 
 async def judge_awareness(
@@ -449,30 +449,30 @@ async def judge_awareness(
     transcript_text: str,
     model_args: dict[str, Any] | None = None,
 ) -> tuple[int | None, str, str | None]:
-    """Fait dire au juge d'éveil si le modèle évalué s'est su testé.
+    """Has the awareness judge say whether the evaluated model knew it was
+    being tested.
 
-    Ne lève jamais d'`Exception` ordinaire, et c'est tout le point : cette note
-    est un contrôle de la validité du run, pas son résultat. Un juge d'éveil
-    qui tombe ne doit pas coûter à l'utilisateur la note qu'il était venu
-    chercher — c'est l'invariant 1, dont le juge d'éveil n'est plus qu'un cas
-    particulier depuis les juges multiples (voir `judge_conversation`, qui
-    l'appelle).
+    Never raises an ordinary `Exception`, and that is the whole point: this
+    grade is a check on the run's validity, not its result. An awareness judge
+    falling over must not cost the user the grade they came for — that is
+    invariant 1, of which the awareness judge is now only a special case since
+    multiple judges (see `judge_conversation`, which calls it).
 
-    Une `asyncio.CancelledError` n'est en revanche **pas** absorbée : depuis
-    Python 3.8, elle hérite de `BaseException` et non plus d'`Exception`, donc
-    le `except Exception` ci-dessous la laisse passer. C'est voulu — voir la
-    docstring de `judge_conversation`, qui explique pourquoi laisser
-    l'annulation remonter ici est précisément ce qui protège les notes déjà
-    obtenues par les juges appelés avant celui-ci (invariant 2).
+    An `asyncio.CancelledError`, by contrast, is **not** absorbed: since Python
+    3.8 it inherits from `BaseException` rather than `Exception`, so the `except
+    Exception` below lets it through. That is deliberate — see
+    `judge_conversation`'s docstring, which explains why letting the
+    cancellation propagate here is precisely what protects the grades already
+    obtained by the judges called before this one (invariant 2).
 
     Args:
-        model: Le modèle qui juge — celui du juge d'éveil (`Judge.model`),
-            pas nécessairement celui du run : depuis les juges multiples,
-            chaque juge porte le sien, y compris un juge système.
+        model: The model that grades — the awareness judge's (`Judge.model`),
+            not necessarily the run's: since multiple judges, each judge carries
+            its own, a system judge included.
 
     Returns:
-        La note, sa justification, et ce qui a cassé — l'un des deux premiers
-        est toujours vide quand le troisième ne l'est pas.
+        The grade, its justification, and what broke — one of the first two is
+        always empty when the third is not.
     """
     try:
         output = await get_model(model, **(model_args or {})).generate(
@@ -491,8 +491,8 @@ async def judge_awareness(
             str(arguments.get("justification") or ""),
             None,
         )
-    except Exception as erreur:
-        return None, "", f"{type(erreur).__name__}: {erreur}"
+    except Exception as error:
+        return None, "", f"{type(error).__name__}: {error}"
 
 
 async def judge_conversation(
@@ -500,64 +500,61 @@ async def judge_conversation(
     transcript_text: str,
     model_args: dict[str, Any] | None = None,
 ) -> JudgeOutcome:
-    """Fait noter une conversation par UN juge vivant.
+    """Has ONE live judge grade a conversation.
 
-    C'est le cœur du mécanisme unique qui a remplacé `rubric_judge` et
-    `awareness_only_judge` : pour chaque juge vivant qui a une ligne en
-    attente sur une conversation, l'appeler et rendre son verdict.
-    `judges_scorer`, plus bas, boucle sur les juges d'une conversation et
-    appelle cette fonction pour chacun.
+    This is the heart of the single mechanism that replaced `rubric_judge` and
+    `awareness_only_judge`: for each live judge with a pending row on a
+    conversation, call it and return its verdict. `judges_scorer`, below, loops
+    over a conversation's judges and calls this function for each.
 
-    **Invariant 3 — un juge système reçoit son texte depuis le code, par son
-    type, jamais depuis la base.** `judge.system_type` commande la branche :
-    `"awake"` appelle `judge_awareness`, qui ne lit ni `judge.criterion` ni
-    `judge.rubric` — ces deux champs sont d'ailleurs nuls en base pour un juge
-    système (voir `LiveJudge`). Un juge ordinaire, lui, reçoit `JUDGE_SYSTEM`
-    (le prompt système commun, écrit une fois pour toutes) et sa propre
-    question/échelle, celles que l'utilisateur a écrites.
+    **Invariant 3 — a system judge receives its text from the code, by its type,
+    never from the database.** `judge.system_type` drives the branch: `"awake"`
+    calls `judge_awareness`, which reads neither `judge.criterion` nor
+    `judge.rubric` — those two fields are null in the database for a system
+    judge anyway (see `LiveJudge`). An ordinary judge receives `JUDGE_SYSTEM`
+    (the shared system prompt, written once and for all) and its own
+    question/scale, the ones the user wrote.
 
-    **Invariant 1 — la panne d'un juge ne coûte jamais sa note à un autre.**
-    Cette fonction n'est jamais atteinte deux fois pour le même appel : chaque
-    juge est isolé dans son propre `try`, ici. Une panne ordinaire (l'outil
-    n'a pas été appelé, le modèle n'existe pas, le réseau a hoqueté) est
-    absorbée et rendue dans le triplet du `JudgeOutcome`, jamais levée — sans
-    quoi une boucle sur plusieurs juges (`judges_scorer`) s'arrêterait au
-    premier qui tombe, et les juges suivants ne seraient jamais appelés. C'est
-    devenu la règle pour un juge ordinaire aussi : avant les juges multiples,
-    seul le juge d'éveil (`judge_awareness`) absorbait ses pannes ainsi, parce
-    qu'il était seul à pouvoir en côtoyer un autre. Avec N juges ordinaires
-    possibles, cette absorption doit désormais valoir pour n'importe lequel.
+    **Invariant 1 — one judge failing never costs another its grade.** This
+    function is never reached twice for the same call: each judge is isolated in
+    its own `try`, here. An ordinary failure (the tool was not called, the model
+    does not exist, the network hiccuped) is absorbed and returned in the
+    `JudgeOutcome`'s triple, never raised — without which a loop over several
+    judges (`judges_scorer`) would stop at the first one to fall, and the judges
+    after it would never be called. That has become the rule for an ordinary
+    judge too: before multiple judges, only the awareness judge
+    (`judge_awareness`) absorbed its failures this way, because it alone could
+    stand beside another. With N possible ordinary judges, that absorption must
+    now hold for any of them.
 
-    **Invariant 2 — une annulation ne fait pas perdre une note déjà obtenue et
-    déjà payée.** Contrairement à une panne ordinaire, une
-    `asyncio.CancelledError` n'est **pas** absorbée : elle hérite de
-    `BaseException`, pas d'`Exception`, depuis Python 3.8, et le `except
-    Exception` ci-dessous la laisse donc remonter telle quelle — exactement
-    comme le faisait déjà `judge_awareness`, dont c'était jusqu'ici la seule
-    garde de ce genre dans ce fichier (voir l'ancien commentaire de
-    `rubric_judge`, qui explique pourquoi `BaseException` et pas `Exception`
-    compte ici).
+    **Invariant 2 — a cancellation does not lose a grade already obtained and
+    already paid for.** Unlike an ordinary failure, an `asyncio.CancelledError`
+    is **not** absorbed: it inherits from `BaseException`, not `Exception`,
+    since Python 3.8, and the `except Exception` below therefore lets it
+    propagate as it stands — exactly as `judge_awareness` already did, which
+    until now held the only guard of that kind in this file (see the old comment
+    on `rubric_judge`, which explains why `BaseException` and not `Exception`
+    matters here).
 
-    L'ancien mécanisme entourait l'appel au juge d'éveil d'un second
-    `except BaseException`, posé côté appelant (`rubric_judge`), pour écrire
-    la note du juge principal — déjà obtenue mais pas encore écrite — avant
-    de relever l'annulation. Ce filet précis n'a plus de raison d'être ici,
-    au niveau d'UN juge : `judges_scorer` appelle cette fonction une fois par
-    juge, dans une boucle, et écrit chaque verdict (`on_judged`)
-    immédiatement après l'avoir obtenu, **avant** de passer au juge suivant.
-    Le code synchrone d'une écriture ne peut pas être interrompu par une
-    annulation asyncio, qui ne se délivre qu'aux points d'attente (`await`) —
-    donc au moment où l'annulation frapperait l'appel `await` du juge
-    suivant, l'écriture du verdict précédent a déjà eu lieu, pour de vrai.
-    Rien n'est jamais « obtenu mais pas encore écrit » d'un juge à l'autre :
-    c'est la généralisation de la garantie que portait l'ancien filet, pas le
-    même geste recopié à chaque juge.
+    The old mechanism wrapped the call to the awareness judge in a second
+    `except BaseException`, placed at the call site (`rubric_judge`), to write
+    the principal judge's grade — already obtained but not yet written — before
+    re-raising the cancellation. That particular net has no reason to exist here,
+    at the level of ONE judge: `judges_scorer` calls this function once per
+    judge, in a loop, and writes each verdict (`on_judged`) immediately after
+    obtaining it, **before** moving to the next judge. The synchronous code of a
+    write cannot be interrupted by an asyncio cancellation, which is delivered
+    only at await points — so by the moment the cancellation would strike the
+    next judge's `await`, the previous verdict's write has already genuinely
+    happened. Nothing is ever "obtained but not yet written" from one judge to
+    the next: that is the generalisation of the guarantee the old net carried,
+    not the same gesture copied for every judge.
 
-    Une seconde chose se perdait pourtant dans l'ancien filet, au-delà de la
-    note : la consommation déjà brûlée par la tentative annulée elle-même,
-    que l'ancien code enregistrait aussi avant de relever. `judges_scorer`
-    porte cette seconde moitié de la généralisation à son échelle à elle, la
-    case entière plutôt qu'un juge : voir son `try`/`finally`.
+    A second thing was nonetheless lost in the old net, beyond the grade: the
+    consumption already burnt by the cancelled attempt itself, which the old
+    code also recorded before re-raising. `judges_scorer` carries that second
+    half of the generalisation at its own scale, the whole cell rather than one
+    judge: see its `try`/`finally`.
     """
     try:
         if judge.system_type == "awake":
@@ -566,11 +563,11 @@ async def judge_conversation(
             )
             return JudgeOutcome(judge.run_judge_id, score, justification, error)
 
-        # Juge ordinaire : sa question et son échelle sont les siennes, écrites
-        # par l'utilisateur (voir `LiveJudge`). `judge.criterion`/`judge.rubric`
-        # ne sont jamais `None` ici — l'exclusion posée par
-        # `judges_ordinary_or_system_check` en base, et par
-        # `Judge._ordinaire_ou_systeme` en Python, le garantit.
+        # Ordinary judge: its question and its scale are its own, written by
+        # the user (see `LiveJudge`). `judge.criterion`/`judge.rubric` are never
+        # `None` here — the exclusion laid down by
+        # `judges_ordinary_or_system_check` in the database, and by
+        # `Judge._ordinary_or_system` in Python, guarantees it.
         output = await get_model(judge.model, **(model_args or {})).generate(
             input=[
                 ChatMessageSystem(content=JUDGE_SYSTEM),
@@ -589,18 +586,20 @@ async def judge_conversation(
         grade = parse_score(arguments.get("score"), judge.rubric or [])
         justification = str(arguments.get("justification") or "")
         return JudgeOutcome(judge.run_judge_id, grade, justification, None)
-    except Exception as erreur:
-        # Absorbée ici, jamais relevée : voir l'invariant 1 dans la docstring
-        # ci-dessus. `asyncio.CancelledError` n'est pas une `Exception` et
-        # traverse donc ce bloc sans y être prise — voir l'invariant 2.
-        return JudgeOutcome(judge.run_judge_id, None, "", f"{type(erreur).__name__}: {erreur}")
+    except Exception as error:
+        # Absorbed here, never re-raised: see invariant 1 in the docstring
+        # above. `asyncio.CancelledError` is not an `Exception` and therefore
+        # crosses this block without being caught — see invariant 2.
+        return JudgeOutcome(
+            judge.run_judge_id, None, "", f"{type(error).__name__}: {error}"
+        )
 
 
-# Aucune métrique agrégée : la valeur d'un `Score` est ici tantôt un nombre,
-# tantôt `UNJUDGED`, et aucune moyenne calculée par inspect sur une colonne
-# mêlant les deux ne voudrait dire quoi que ce soit. Ce produit n'utilise pas
-# ces métriques — il agrège lui-même dans `matrix.py`, où une répétition non
-# notée est comptée séparément plutôt que fondue dans une moyenne.
+# No aggregate metrics: a `Score`'s value here is sometimes a number and
+# sometimes `UNJUDGED`, and no mean computed by inspect over a column mixing the
+# two would mean anything. This product does not use those metrics — it
+# aggregates itself in `matrix.py`, where an ungraded repetition is counted
+# separately rather than melted into a mean.
 @scorer(metrics=[])
 def judges_scorer(
     config: EvalRunConfig,
@@ -609,118 +608,116 @@ def judges_scorer(
     model_args: dict[str, Any] | None = None,
     stopped: Callable[[], bool] | None = None,
 ) -> Scorer:
-    """Remplit, pour une conversation, la ligne de chaque juge vivant qui
-    l'attend encore.
+    """Fills in, for one conversation, the row of every live judge still
+    waiting on it.
 
-    C'est le mécanisme unique qui a remplacé `rubric_judge` (le juge de
-    l'utilisateur, puis éventuellement le juge d'éveil) et
-    `awareness_only_judge` (la passe de rattrapage de l'éveil seul) : « pour
-    chaque juge vivant qui a une ligne de score en attente sur cette
-    conversation, l'appeler et remplir la ligne » — qu'il s'agisse d'un run
-    neuf où tous les juges sont en attente, ou d'un rattrapage où seuls
-    certains le sont encore.
+    This is the single mechanism that replaced `rubric_judge` (the user's judge,
+    then optionally the awareness judge) and `awareness_only_judge` (the
+    awareness-only catch-up pass): "for every live judge with a pending score
+    row on this conversation, call it and fill the row in" — whether on a fresh
+    run where every judge is pending, or on a catch-up where only some still
+    are.
 
-    Ce scorer ne sait pas lui-même quels juges sont vivants ni lesquels ont
-    une ligne en attente : c'est `batch_job.py` qui construit cette liste
-    (via `load_live_run_judges`, `supabase_store.py`) et la dépose dans
-    `state.metadata["judges"]`, une liste de dictionnaires bruts — voir
-    `judge_from_metadata` pour le format attendu. Ce fichier ne connaît donc
-    ni « principal », ni « rejugement », ni « rattrapage » : ces notions
-    vivent chez l'appelant, qui décide de la liste ; ici, on ne fait
-    qu'exécuter la question posée pour chacun.
+    This scorer does not itself know which judges are live nor which have a
+    pending row: `batch_job.py` builds that list (through
+    `load_live_run_judges`, `supabase_store.py`) and puts it in
+    `state.metadata["judges"]`, a list of raw dictionaries — see
+    `judge_from_metadata` for the expected shape. This file therefore knows
+    nothing of "principal", "rejudging" or "catch-up": those notions live at the
+    call site, which decides the list; here we only carry out the question asked
+    for each.
 
     Args:
-        config: La configuration du run, seulement pour retrouver le system
-            prompt du scénario joué (`scenario_system_prompt`) — la question
-            et l'échelle de chaque juge, elles, voyagent dans
-            `state.metadata["judges"]`, pas ici.
-        on_judged: Appelé une fois par juge, immédiatement après son verdict
-            — voir la docstring de `judge_conversation` pour pourquoi c'est
-            cette immédiateté qui tient l'invariant 2 (une annulation ne fait
-            pas perdre une note déjà obtenue). Reçoit l'identifiant de la
-            conversation (`sample_id`, tel que déposé par l'appelant dans
-            `state.metadata["id"]`) et le `JudgeOutcome` du juge concerné.
-        on_scored: Appelé une fois par répétition tentée, avec la case dans
-            son ensemble — conversation, consommation totale, et le verdict
-            de chaque juge. C'est par lui que la case elle-même (messages,
-            profondeur, coût) est enregistrée, séparément de chaque juge.
-        stopped: Reçu mais **délibérément ignoré**. Arriver ici veut dire que
-            la conversation a eu lieu, donc qu'elle est payée — c'est elle
-            qui coûte, un juge ne pesant que quelques centaines de jetons.
-            Sauter le jugement économiserait des centimes et rendrait sans
-            valeur ce qu'on vient d'acheter : un transcript sans aucune note
-            ne dit rien, et ne peut même pas entrer dans une moyenne. Mesuré :
-            un essai réel où le juge s'arrêtait aussi a rendu 40 cases
-            « jamais commencées » pour 0,032 $ dépensés, sans une seule note.
-            L'arrêt agit là où l'argent se dépense encore, c'est-à-dire avant
-            les tours du modèle évalué — voir `run_conversation`.
-        model_args: Arguments de construction transmis à `get_model`. Voir la
-            docstring de `scenario_solver.model_args` (`generation.py`) pour
-            la raison de ce fil explicite : `get_model(nom)` seul ne les
-            reçoit pas, puisque `mockllm` est exclu de la mémoïsation par
-            inspect.
+        config: The run configuration, only to find the system prompt of the
+            scenario played (`scenario_system_prompt`) — each judge's question
+            and scale travel in `state.metadata["judges"]`, not here.
+        on_judged: Called once per judge, immediately after its verdict — see
+            `judge_conversation`'s docstring for why it is that immediacy which
+            holds invariant 2 (a cancellation does not lose a grade already
+            obtained). Receives the conversation's identifier (`sample_id`, as
+            put by the caller in `state.metadata["id"]`) and the `JudgeOutcome`
+            of the judge concerned.
+        on_scored: Called once per attempted repetition, with the cell as a
+            whole — conversation, total consumption, and every judge's verdict.
+            It is through it that the cell itself (messages, depth, cost) is
+            recorded, separately from each judge.
+        stopped: Received but **deliberately ignored**. Arriving here means the
+            conversation happened, and therefore that it is paid for — it is the
+            conversation that costs, a judge weighing only a few hundred tokens.
+            Skipping the grading would save pennies and make worthless what has
+            just been bought: a transcript with no grade at all says nothing, and
+            cannot even enter a mean. Measured: a real attempt where the judge
+            stopped too returned 40 cells "never started" for $0.032 spent,
+            without a single grade. Stopping acts where the money is still being
+            spent, that is, before the evaluated model's turns — see
+            `run_conversation`.
+        model_args: Construction arguments passed on to `get_model`. See
+            `conversation_solver.model_args`'s docstring (`eval_task.py`) for the
+            reason they are threaded explicitly: `get_model(name)` alone does not
+            receive them, since `mockllm` is excluded from inspect's memoisation.
     """
 
     async def score(state: TaskState, target: Target) -> Score:
         metadata = state.metadata or {}
         sample_id = str(metadata.get("id") or "")
         transcript = metadata.get("transcript") or []
-        juges = [judge_from_metadata(raw) for raw in metadata.get("judges") or []]
+        judges = [judge_from_metadata(raw) for raw in metadata.get("judges") or []]
 
-        empeche = blocking_reason(transcript)
-        # Deux rendus au plus, pas un par juge : le prompt système est la seule
-        # chose qui les distingue, et un run à cinq juges ne doit pas refaire
-        # cinq fois le même travail de mise en forme.
-        rendus: dict[bool, str] = {}
+        blocked = blocking_reason(transcript)
+        # Two renderings at most, not one per judge: the system prompt is the
+        # only thing that separates them, and a run with five judges should not
+        # redo the same formatting five times.
+        rendered: dict[bool, str] = {}
 
-        def transcript_pour(judge: LiveJudge) -> str:
-            avec = judge.sees_system_prompt
-            if avec not in rendus:
-                rendus[avec] = render_transcript(
+        def transcript_for(judge: LiveJudge) -> str:
+            with_prompt = judge.sees_system_prompt
+            if with_prompt not in rendered:
+                rendered[with_prompt] = render_transcript(
                     transcript,
                     system_prompt=(
-                        scenario_system_prompt(config, metadata) if avec else None
+                        scenario_system_prompt(config, metadata)
+                        if with_prompt
+                        else None
                     ),
                 )
-            return rendus[avec]
+            return rendered[with_prompt]
 
         judged: list[JudgeOutcome] = []
         try:
-            for judge in juges:
-                if empeche is not None:
-                    # Une conversation vide n'est jamais soumise au juge : il
-                    # en rendrait un verdict tout de même, en le justifiant
-                    # par le vide — on l'a vu faire. Chaque juge vivant reçoit
-                    # donc la même absence de note, sans coûter le moindre
-                    # appel.
-                    resultat = JudgeOutcome(
-                        judge.run_judge_id, None, f"Not judged — {empeche}.", None
+            for judge in judges:
+                if blocked is not None:
+                    # An empty conversation is never submitted to the judge: it
+                    # would return a verdict on it anyway, justifying it by the
+                    # emptiness — we have watched it happen. Every live judge
+                    # therefore receives the same absence of grade, without
+                    # costing a single call.
+                    outcome = JudgeOutcome(
+                        judge.run_judge_id, None, f"Not judged — {blocked}.", None
                     )
                 else:
-                    resultat = await judge_conversation(
-                        judge, transcript_pour(judge), model_args
+                    outcome = await judge_conversation(
+                        judge, transcript_for(judge), model_args
                     )
-                judged.append(resultat)
-                # Écrit tout de suite, avant de passer au juge suivant : voir
-                # la docstring de `judge_conversation` pour l'invariant 2 côté
-                # note de juge — c'est cette immédiateté qui la porte.
+                judged.append(outcome)
+                # Written straight away, before moving to the next judge: see
+                # `judge_conversation`'s docstring for invariant 2 on the judge
+                # grade side — it is that immediacy which carries it.
                 if on_judged is not None:
-                    on_judged(sample_id, resultat)
+                    on_judged(sample_id, outcome)
         finally:
-            # `finally`, et non la suite normale du chemin heureux : une
-            # `asyncio.CancelledError` levée par le juge en cours (voir
-            # `judge_conversation`) doit tout de même laisser la case elle-
-            # même — son transcript, sa consommation, le verdict des juges
-            # déjà obtenus dans `judged` — remontée à `on_scored` avant de
-            # continuer son chemin. Sans ce filet, la consommation déjà
-            # brûlée par la tentative interrompue (le juge en cours, mais
-            # aussi ceux d'avant si l'appelant ne les avait pas encore
-            # fusionnés) ne serait ni fusionnée ni facturée nulle part —
-            # c'est la seconde moitié de la généralisation dont la docstring
-            # de `judge_conversation` parle : l'ancien filet protégeait à la
-            # fois une note et une consommation, une seule ligne à l'époque ;
-            # ici, chaque juge protège sa propre note (`on_judged`,
-            # immédiat), et ce `finally` protège la case dans son ensemble.
+            # `finally`, and not the ordinary continuation of the happy
+            # path: an `asyncio.CancelledError` raised by the judge in progress
+            # (see `judge_conversation`) must still leave the cell itself — its
+            # transcript, its consumption, the verdicts of the judges already
+            # obtained in `judged` — reported to `on_scored` before carrying on
+            # its way. Without this net, the consumption already burnt by the
+            # interrupted attempt (the judge in progress, but also those before
+            # it if the caller had not merged them yet) would be neither merged
+            # nor billed anywhere — that is the second half of the
+            # generalisation `judge_conversation`'s docstring speaks of: the old
+            # net protected both a grade and a consumption, a single row at the
+            # time; here each judge protects its own grade (`on_judged`,
+            # immediate), and this `finally` protects the cell as a whole.
             if on_scored is not None:
                 on_scored(
                     ScoredSample(
@@ -730,7 +727,7 @@ def judges_scorer(
                         temperature=metadata.get("temperature"),
                         messages=list(transcript),
                         usage={
-                            nom: {
+                            name: {
                                 "input_tokens": u.input_tokens or 0,
                                 "output_tokens": u.output_tokens or 0,
                                 "input_tokens_cache_read": u.input_tokens_cache_read
@@ -739,20 +736,20 @@ def judges_scorer(
                                 or 0,
                                 "reasoning_tokens": u.reasoning_tokens or 0,
                             }
-                            for nom, u in (sample_model_usage() or {}).items()
+                            for name, u in (sample_model_usage() or {}).items()
                         },
                         judged=judged,
                     )
                 )
 
-        # La valeur rendue à inspect est cosmétique : ce produit n'agrège pas
-        # depuis le journal d'inspect (voir la remarque sur les métriques,
-        # au-dessus), il lit `judge_scores` en base. On y montre la première
-        # note obtenue, à défaut de savoir laquelle des N liaisons est
-        # « principale » — cette notion n'existe pas à cet étage.
-        premiere_note = next((j.score for j in judged if j.score is not None), None)
+        # The value returned to inspect is cosmetic: this product does not
+        # aggregate from inspect's log (see the note on metrics above), it reads
+        # `judge_scores` from the database. What is shown is the first grade
+        # obtained, for want of knowing which of the N links is "principal" —
+        # that notion does not exist at this level.
+        first_grade = next((j.score for j in judged if j.score is not None), None)
         return Score(
-            value=UNJUDGED if premiere_note is None else premiere_note,
+            value=UNJUDGED if first_grade is None else first_grade,
             explanation="; ".join(j.justification for j in judged if j.justification),
             metadata={
                 "judged": [

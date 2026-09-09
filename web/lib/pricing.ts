@@ -1,18 +1,18 @@
-// Le devis d'un run, avant de le lancer.
+// A run's quote, before launching it.
 //
-// **L'unique implémentation de l'estimation.** Elle a été écrite en Python
-// d'abord (`88f90ef`), puis portée ici quand l'application est passée sur
-// Next.js (`ef60372`) ; la copie Python est restée sur place sans jamais être
-// rappelée par le moteur, et chaque changement du devis reposait la question de
-// la porter. Elle a été supprimée plutôt que d'y répondre encore — voir
-// docs/superpowers/specs/2026-09-08-devis-par-role-design.md. Ne pas la
-// recréer : ce fichier n'a plus de jumeau à tenir d'accord.
+// **The one and only implementation of the estimate.** It was written in Python
+// first (`88f90ef`), then ported here when the application moved to Next.js
+// (`ef60372`); the Python copy stayed where it was without ever being called by
+// the engine, and every change to the quote raised again the question of porting
+// it. It was deleted rather than answering that once more — see
+// docs/superpowers/specs/2026-09-08-devis-par-role-design.md. Do not recreate
+// it: this file no longer has a twin to hold in agreement.
 //
-// Ce qui reste partagé avec Python est la donnée, pas le calcul :
-// `shared/pricing.json` porte les tarifs, que `backend/playground/pricing.py`
-// lit encore pour `actual_cost` — le coût *réel*, compté après coup sur les
-// jetons rapportés par les fournisseurs. Les longueurs supposées, elles, ne
-// servent qu'ici.
+// What stays shared with Python is the data, not the computation:
+// `shared/pricing.json` carries the tariffs, which `backend/playground/pricing.py`
+// still reads for `actual_cost` — the *real* cost, counted afterwards on the
+// tokens the providers report. The assumed lengths, for their part, serve only
+// here.
 import {
   SHARED_ADVERSARY_PROMPT as A,
   SHARED_AWARENESS_PROMPT as W,
@@ -20,12 +20,12 @@ import {
   SHARED_PRICING as S,
   SHARED_WORLD_PROMPT as M,
 } from "./shared.ts";
-// `served` et `servesTools` plutôt qu'un test en ligne : le devis décidait de
-// son côté ce qu'« être servi » veut dire, sans détourer, là où `configProblem`
-// et le moteur détourent. Un outil à `retrieval_rules` blancs — licite, voir
-// `toolsProblem` — était alors chiffré comme servi tout en n'étant servi par
-// personne, et le devis annonçait un modèle vide. Le discriminant vit à un
-// endroit ; trois copies finissent toujours par diverger.
+// `served` and `servesTools` rather than an inline test: the quote used to
+// decide on its own side what "being served" means, without trimming, where
+// `configProblem` and the engine trim. A tool with blank `retrieval_rules` —
+// lawful, see `toolsProblem` — was then costed as served while being served by
+// nobody, and the quote announced an empty model. The discriminant lives in one
+// place; three copies always end up diverging.
 import { served, servesTools, toolsFor, writesWorld } from "./tools.ts";
 import type {
   CostEstimate,
@@ -37,27 +37,26 @@ import type {
   RubricLevel,
 } from "./types";
 
-// Un tarif unique par modèle, sans palier — et ce n'est vrai qu'à peu près.
+// One tariff per model, with no tier — and that is only roughly true.
 //
-// Grok double les siens au-delà de 200 000 jetons d'entrée. Tant que les runs
-// tenaient en dix tours, l'écart n'existait pas, et le plan de la carte
-// multi-modèles l'écarte en une phrase : « un run de ce produit n'en approche
-// pas — dix tours d'une conversation font quelques milliers de jetons ». Le
-// plafond est passé à cent, et l'argument est tombé avec : chaque tour renvoie
-// tout l'historique, donc avec les réponses les plus longues que le devis sait
-// supposer (`long_response_tokens`) une requête des derniers tours passe le
-// seuil.
+// Grok doubles its own beyond 200,000 input tokens. As long as the runs fitted
+// in ten turns, the gap did not exist, and the multi-model catalogue's plan
+// waves it away in one sentence: "a run of this product does not come near it —
+// ten turns of a conversation make a few thousand tokens". The cap moved to a
+// hundred, and the argument fell with it: every turn sends the whole history
+// back, so with the longest answers the quote knows how to assume
+// (`long_response_tokens`) a request in the last turns crosses the threshold.
 //
-// Ce qu'on sous-estime alors est un run Grok très long, et sans le dire. Le
-// jumeau Python fait le même calcul plat sur les jetons réellement consommés
-// (`backend/playground/pricing.py`) : le coût *constaté* dérive donc pareil,
-// pas seulement le devis.
+// What is then underestimated is a very long Grok run, and silently. The Python
+// twin makes the same flat computation on the tokens really consumed
+// (`backend/playground/pricing.py`): the *observed* cost therefore drifts the
+// same way, not only the quote.
 //
-// Rien n'est fait, et c'est délibéré : personne ne mène un run pareil
-// aujourd'hui. Le jour où quelqu'un en mène un, il y a deux façons de le
-// traiter — modéliser le palier des deux côtés, ou avertir dans le panneau
-// quand un run Grok le franchit. D'ici là, cette note est là pour que le trou
-// ne se redécouvre pas par une facture.
+// Nothing is done about it, and that is deliberate: nobody runs such a run
+// today. The day somebody does, there are two ways of handling it — model the
+// tier on both sides, or warn in the panel when a Grok run crosses it. Until
+// then, this note is here so that the hole is not rediscovered through an
+// invoice.
 const PRICES = S.prices as Record<
   string,
   { input_per_mtok: number; output_per_mtok: number }
@@ -69,11 +68,10 @@ const clamp = (tokens: number): number =>
 const declared = (config: EvalRunConfig): number =>
   clamp(config.average_output_tokens || S.default_response_tokens);
 
-/** Les longueurs de chaque scénario, et celle de l'adversaire.
+/** The lengths of each scenario, and that of the adversary.
  *
- * Un nombre nu vaut « la même pour tout le monde » : c'est la forme dont se
- * servent les bornes court/long, qui encadrent le devis sans rien savoir des
- * scénarios. */
+ * A bare number means "the same for everyone": it is the shape the short/long
+ * bounds use, which frame the quote knowing nothing about the scenarios. */
 function resolve(
   config: EvalRunConfig,
   lengths: LengthAssumption | number | null | undefined,
@@ -89,8 +87,8 @@ function resolve(
   const answer = spec.answer;
   const perScenario = config.scenarios.map((_, index) => {
     if (Array.isArray(answer)) {
-      // Une liste plus courte que les scénarios n'est pas une erreur : une
-      // extension peut n'avoir mesuré qu'une partie d'entre eux.
+        // A list shorter than the scenarios is not an error: an extension may
+        // have measured only some of them.
       const value = answer[index];
       return value == null ? fallback : clamp(value);
     }
@@ -111,21 +109,21 @@ function rubricTokens(rubric: RubricLevel[]): number {
   return rubric.reduce((sum, level) => sum + tokens(level.meaning) + 4, 0);
 }
 
-/** Jetons d'un gabarit, une fois ses emplacements retirés : la part que le
- * modèle reçoit à chaque appel quoi qu'on lui demande. */
+/** A template's tokens, once its placeholders are removed: the part the model
+ * receives on every call whatever it is asked. */
 function fixedTokens(text: string, ...placeholders: string[]): number {
   for (const placeholder of placeholders) text = text.replaceAll(placeholder, "");
   return tokens(text);
 }
 
-/** Ce que chaque juge ordinaire reçoit à chaque appel en plus du run : son
- * message système et l'ossature de son message utilisateur — le principal
- * comme chaque entrée de `config.judges`, qui partagent le même gabarit et ne
- * diffèrent que par leur question, leur échelle et leur modèle. Les ignorer
- * sous-estimait chaque appel, d'autant plus que la matrice est grande.
+/** What each ordinary judge receives on every call on top of the run: its
+ * system message and the skeleton of its user message — the principal as much as
+ * each entry of `config.judges`, which share the same template and differ only
+ * in their question, their scale and their model. Ignoring them underestimated
+ * every call, all the more so as the matrix is large.
  *
- * Mesuré sur les gabarits plutôt qu'écrit en dur : une reformulation du prompt
- * se répercute alors sur le devis toute seule. */
+ * Measured on the templates rather than written in: a rewording of the prompt
+ * then carries through to the quote on its own. */
 const JUDGE_OVERHEAD_TOKENS =
   fixedTokens(J.system) +
   fixedTokens(
@@ -136,10 +134,10 @@ const JUDGE_OVERHEAD_TOKENS =
     "{values}",
   );
 
-/** Ce que l'environnement reçoit en plus du monde, à chaque appel servi.
+/** What the environment receives on top of the world, on every served call.
  *
- * Mesuré sur les gabarits, comme pour le juge et l'adversaire : une
- * reformulation du prompt se répercute sur le devis toute seule. */
+ * Measured on the templates, as for the judge and the adversary: a rewording of
+ * the prompt carries through to the quote on its own. */
 const WORLD_OVERHEAD_TOKENS = fixedTokens(
   M.system +
     M.world_block +
@@ -157,20 +155,19 @@ const WORLD_OVERHEAD_TOKENS = fixedTokens(
   "{effect}",
 );
 
-/** Combien d'appels d'outils servis une conversation fait, en gros.
+/** How many served tool calls a conversation makes, roughly.
  *
- * **Le milieu de zéro et du plafond**, et c'est la seule hypothèse défendable :
- * aucune configuration ne déclare combien de fois un modèle appellera ses
- * outils, et les deux seules bornes connues sont « jamais » et
- * `max_tool_calls_per_turn` à chaque tour. Un choix assumé, que la phrase du
- * devis nomme plutôt que de le taire. */
+ * **The middle of zero and the cap**, and it is the only defensible assumption:
+ * no configuration declares how many times a model will call its tools, and the
+ * only two known bounds are "never" and `max_tool_calls_per_turn` on every turn.
+ * A choice taken on, which the quote's sentence names rather than hides. */
 export function servedCallsPerConversation(config: EvalRunConfig): number {
   return Math.floor((config.turns * (config.max_tool_calls_per_turn ?? 5)) / 2);
 }
 
-/** Ce que l'adversaire reçoit en plus de son objectif. La consigne de
- * confidentialité y figure **deux fois**, avant et après l'objectif — d'où le
- * facteur deux, qui n'est pas une faute de frappe. */
+/** What the adversary receives on top of its objective. The confidentiality
+ * notice appears there **twice**, before and after the objective — hence the
+ * factor of two, which is not a typo. */
 const ADVERSARY_OVERHEAD_TOKENS =
   fixedTokens(
     A.system_template,
@@ -180,20 +177,20 @@ const ADVERSARY_OVERHEAD_TOKENS =
   ) +
   2 * tokens(A.confidentiality_notice);
 
-/** Ce que le juge d'éveil reçoit en plus du transcript : son système et son
- *  gabarit, échelle comprise. Dérivé du fichier partagé comme celui du juge
- *  principal — une valeur écrite en dur ici cesserait de décrire ce qui part
- *  au premier mot changé dans le prompt. */
+/** What the awareness judge receives on top of the transcript: its system
+ *  message and its template, scale included. Derived from the shared file like
+ *  the principal judge's — a value written in here would stop describing what
+ *  leaves at the first word changed in the prompt. */
 const AWARENESS_OVERHEAD_TOKENS =
   fixedTokens(W.system) + fixedTokens(W.user_template, "{transcript}");
 
-/** Ce que le contrôleur reçoit en plus du monde et du résultat contrôlé.
+/** What the checker receives on top of the world and the checked result.
  *
- * Dérivé du fichier partagé comme les trois au-dessus. Il ne voit **pas** les
- * `retrieval_rules` : `check_prompt` (`backend/playground/world.py`) les lui
- * refuse exprès, pour qu'il note une cohérence et non une conformité au
- * plafond de lignes. Le devis doit refuser ce que le moteur refuse, sans quoi
- * il chiffre un autre prompt que celui qui part. */
+ * Derived from the shared file like the three above. It does **not** see the
+ * `retrieval_rules`: `check_prompt` (`backend/playground/world.py`) refuses them
+ * to it on purpose, so that it grades a coherence and not a compliance with the
+ * line cap. The quote must refuse what the engine refuses, without which it
+ * costs a different prompt from the one that leaves. */
 const CHECK_OVERHEAD_TOKENS =
   fixedTokens(M.check_system) +
   fixedTokens(
@@ -210,22 +207,22 @@ const CHECK_OVERHEAD_TOKENS =
     "{effect}",
   );
 
-/** Le contrôleur d'un run servi par `worldModel` : le premier candidat de
- *  `check_models` dont le fournisseur diffère du sien.
+/** The checker of a run served by `worldModel`: the first candidate of
+ *  `check_models` whose provider differs from its own.
  *
- * Jumeau de `check_model_for` (`backend/playground/world.py`), qui est celui
- * qui appelle réellement. Deux familles, donc deux façons de se tromper qui ne
- * coïncident pas — un contrôleur qui partagerait le biais du serveur validerait
- * exactement les erreurs qu'on cherche.
+ * Twin of `check_model_for` (`backend/playground/world.py`), the one that
+ * really calls. Two families, hence two ways of being wrong that do not
+ * coincide — a checker sharing the server's bias would validate exactly the
+ * errors one is looking for.
  *
- * Ce jumeau a existé, puis été supprimé comme code mort (`14dd817`) faute
- * d'appelant. Il en a un maintenant : sans lui, le devis passait sous silence
- * un appel de modèle par résultat servi. */
+ * This twin existed, then was deleted as dead code (`14dd817`) for want of a
+ * caller. It has one now: without it, the quote passed over one model call per
+ * served result in silence. */
 export function checkModelFor(worldModel: string): string {
-  const candidats: string[] = M.check_models;
-  const fournisseur = worldModel.split("/")[0];
+  const candidates: string[] = M.check_models;
+  const provider = worldModel.split("/")[0];
   return (
-    candidats.find((candidat) => candidat.split("/")[0] !== fournisseur) ?? candidats[0]
+    candidates.find((candidate) => candidate.split("/")[0] !== provider) ?? candidates[0]
   );
 }
 
@@ -235,27 +232,26 @@ interface ModelTokens {
   input: number;
   output: number;
   responseTokens: number;
-  /** Les appels que cette ligne compte. Accumulés ici, au même endroit que les
-   *  jetons, et non recalculés à part : deux façons de compter les mêmes
-   *  appels finiraient par ne plus dire la même chose, et `model_calls` est
-   *  précisément la somme de ces nombres. */
+  /** The calls this row counts. Accumulated here, in the same place as the
+   *  tokens, and not recomputed apart: two ways of counting the same calls would
+   *  end up no longer saying the same thing, and `model_calls` is precisely the
+   *  sum of these numbers. */
   calls: number;
 }
 
-/** La clé d'une ligne du devis : un modèle, **à un titre donné**.
+/** The key of a quote row: a model, **in a given capacity**.
  *
- * `\0` parce qu'aucun identifiant de modèle ni aucun rôle n'en contient — un
- * séparateur qu'on ne peut pas écrire est un séparateur qui ne se confond
- * jamais avec la donnée. */
+ * `\0` because no model identifier and no role holds one — a separator one
+ * cannot write is a separator that never gets confused with the data. */
 export function roleKey(role: ModelRole, model: string): string {
   return `${role}\0${model}`;
 }
 
-/** Volume total d'un run, réparti par modèle.
+/** A run's total volume, split by model.
  *
- * Chaque scénario est déroulé avec sa propre longueur de réponse : comme
- * l'historique complet est renvoyé à chaque tour, un scénario qui appelle des
- * réponses longues enfle aussi l'entrée de l'adversaire et celle du juge. */
+ * Each scenario is played out with its own answer length: since the whole
+ * history is sent back on every turn, a scenario that calls for long answers
+ * also swells the adversary's input and the judge's. */
 export function estimateTokens(
   config: EvalRunConfig,
   lengths?: LengthAssumption | number | null,
@@ -264,15 +260,15 @@ export function estimateTokens(
   const { perScenario, adversary: adversaryLength } = resolve(config, lengths);
   const perModel = new Map<string, ModelTokens>();
 
-  /** `responseTokens` n'est retenu qu'à la première attribution.
+  /** `responseTokens` is kept only at the first attribution.
    *
-   * Ce n'est plus un arbitrage entre rôles — chacun a sa ligne, et donc sa
-   * propre hypothèse : la ligne de juge d'un modèle porte désormais
-   * `judge_response_tokens`, là où la fusion lui faisait porter la longueur de
-   * ses réponses de modèle évalué. C'est un arbitrage entre **scénarios**, qui
-   * peuvent déclarer des longueurs différentes et se cumulent sur la même
-   * ligne évaluée : le premier gagne, faute d'une seule valeur qui décrive
-   * honnêtement les deux. */
+   * It is no longer an arbitration between roles — each has its row, and hence
+   * its own assumption: a model's judge row now carries
+   * `judge_response_tokens`, where the merge made it carry the length of its
+   * answers as an evaluated model. It is an arbitration between **scenarios**,
+   * which may declare different lengths and accumulate on the same evaluated
+   * row: the first wins, for want of a single value that honestly describes
+   * both. */
   const add = (
     role: ModelRole,
     model: string,
@@ -281,8 +277,8 @@ export function estimateTokens(
     answer: number,
     calls: number,
   ) => {
-    const clé = roleKey(role, model);
-    const entry = perModel.get(clé) ?? {
+    const key = roleKey(role, model);
+    const entry = perModel.get(key) ?? {
       role,
       model,
       input: 0,
@@ -294,22 +290,21 @@ export function estimateTokens(
     entry.input += input;
     entry.output += output;
     entry.calls += calls;
-    perModel.set(clé, entry);
+    perModel.set(key, entry);
   };
 
   const adversary = config.turns > 1 ? config.models.adversary : null;
   const adversaryResponse = adversary ? adversaryLength : 0;
   const adversaryPrompt = tokens(config.adversary_prompt);
 
-  /** Les juges ordinaires à facturer : le principal, décrit par les champs
-   * historiques du run (`config.criterion`, `config.rubric`,
-   * `config.models.judge`), puis un par entrée de `config.judges` — voir la
-   * docstring de `JudgeSpec`. Chacun porte sa propre question et sa propre
-   * échelle, donc son propre volume de jetons ; un `model` absent reprend
-   * celui du run, exactement comme au lancement (`judgesForLaunch`) — jamais
-   * tous facturés au tarif du principal. Calculé une fois, hors de la boucle
-   * sur les scénarios : ni la question ni l'échelle d'un juge ne varient d'un
-   * scénario à l'autre. */
+  /** The ordinary judges to bill: the principal, described by the run's
+   * historical fields (`config.criterion`, `config.rubric`,
+   * `config.models.judge`), then one per entry of `config.judges` — see the
+   * docstring of `JudgeSpec`. Each carries its own question and its own scale,
+   * hence its own token volume; an absent `model` takes the run's, exactly as at
+   * launch (`judgesForLaunch`) — never all billed at the principal's tariff.
+   * Computed once, outside the loop over the scenarios: neither a judge's
+   * question nor its scale varies from one scenario to another. */
   const ordinaryJudges: { model: string; question: number }[] = [
     {
       model: config.models.judge,
@@ -321,44 +316,44 @@ export function estimateTokens(
     })),
   ];
 
-  // Le monde repart en entier à chaque appel d'environnement. Il n'est pas
-  // compté au tarif du cache, alors que le fournisseur le mettra
-  // vraisemblablement en cache : la remise n'est garantie par personne — elle
-  // dépend du fournisseur, de la longueur du préfixe et de l'écart entre deux
-  // appels — et un devis qui la suppose sous-estime chaque fois qu'elle ne
-  // joue pas. Or c'est sur ce chiffre que se prend la décision de lancer.
+  // The world goes out whole on every environment call. It is not counted at
+  // the cache tariff, even though the provider will most likely cache it: the
+  // discount is guaranteed by nobody — it depends on the provider, on the
+  // prefix's length and on the gap between two calls — and a quote that assumes
+  // it underestimates every time it does not apply. And it is on that figure
+  // that the decision to launch is taken.
   const worldTokens = tokens(config.world ?? "");
   const servedCalls = servedCallsPerConversation(config);
 
-  // Remontés avant la boucle : ils ne dépendent que de `config` et de
-  // `billFrom`, et chaque `add` a maintenant besoin de son nombre d'appels au
-  // moment où il pose ses jetons.
+  // Lifted out before the loop: they depend only on `config` and on `billFrom`,
+  // and each `add` now needs its number of calls at the moment it lays down its
+  // tokens.
   //
-  // Les tours d'avant `billFrom` sont déroulés pour l'historique mais pas
-  // facturés : seuls les tours facturés comptent dans les appels du modèle
-  // évalué et de l'adversaire. Chaque juge, lui, reste un appel unique dès
-  // qu'il y a au moins un tour facturé — il relit toute la conversation,
-  // jamais un fragment.
-  const facturés = Math.max(config.turns - billFrom, 0);
-  // Une continuation (`billFrom > 0`) fait parler l'adversaire autant de fois
-  // que la cible : la relance d'ouverture s'ajoute aux relances ordinaires.
-  // Un run neuf (`billFrom === 0`) garde son compte habituel — sa dernière
-  // relance n'a toujours pas lieu.
-  const relancesAdversaire =
-    facturés === 0 ? 0 : billFrom > 0 ? facturés : facturés - 1;
+  // The turns before `billFrom` are played out for the history but not billed:
+  // only the billed turns count in the calls of the evaluated model and of the
+  // adversary. Each judge, for its part, stays a single call as soon as there is
+  // at least one billed turn — it rereads the whole conversation, never a
+  // fragment.
+  const billed = Math.max(config.turns - billFrom, 0);
+  // A continuation (`billFrom > 0`) makes the adversary speak as many times as
+  // the target: the opening push adds itself to the ordinary pushes. A fresh run
+  // (`billFrom === 0`) keeps its usual count — its last push still does not
+  // happen.
+  const adversaryPushes =
+    billed === 0 ? 0 : billFrom > 0 ? billed : billed - 1;
 
   config.scenarios.forEach((scenario, index) => {
     const system = tokens(scenario.system_prompt);
     const opening = tokens(scenario.opening_message);
-    // Un historique posé est renvoyé à chaque appel, comme le reste de la
-    // conversation : l'oublier sous-estimerait tout le run, et d'autant plus
-    // qu'il y a de tours.
+      // A seeded history is sent back on every call, like the rest of the
+      // conversation: forgetting it would underestimate the whole run, and all
+      // the more so the more turns there are.
     const seeded = (scenario.history ?? []).reduce(
       (total, turn) => total + tokens(turn.content),
       0,
     );
-    // Les définitions d'outils repartent à chaque appel du modèle évalué,
-    // comme le reste du contexte.
+      // The tool definitions go out again on every call of the evaluated model,
+      // like the rest of the context.
     const toolTokens = toolsFor(config, scenario).reduce(
       (total, tool) =>
         total +
@@ -381,24 +376,24 @@ export function estimateTokens(
       let history = seeded + opening;
 
       for (let turn = 0; turn < config.turns; turn += 1) {
-        const facturé = turn >= billFrom;
-        if (facturé) {
+        const isBilled = turn >= billFrom;
+        if (isBilled) {
           targetInput += system + toolTokens + history;
           targetOutput += targetResponse;
         }
         history += targetResponse;
 
         if (turn < config.turns - 1) {
-          // Le tour juste avant la reprise (`turn === billFrom - 1`) porte la
-          // relance d'ouverture de la continuation : côté moteur, c'est
-          // l'appel que l'adversaire fait avant que la cible ne reprenne la
-          // main, avec la conversation reprise entière sous les yeux — et il
-          // est facturé comme les autres. Un run neuf n'a pas de tour
-          // `billFrom - 1` négatif : la condition ne s'y déclenche jamais.
-          const relanceDOuverture = turn === billFrom - 1;
-          // L'historique contient déjà le message d'ouverture : ne compter que
-          // le prompt de l'adversaire en plus.
-          if (facturé || relanceDOuverture) {
+            // The turn just before the resumption (`turn === billFrom - 1`)
+            // carries the continuation's opening push: on the engine side, it is
+            // the call the adversary makes before the target takes over again,
+            // with the whole resumed conversation in front of it — and it is
+            // billed like the others. A fresh run has no negative `billFrom - 1`
+            // turn: the condition never fires there.
+          const openingPush = turn === billFrom - 1;
+            // The history already holds the opening message: count only the
+            // adversary's prompt on top.
+          if (isBilled || openingPush) {
             adversaryInput += adversaryPrompt + history + ADVERSARY_OVERHEAD_TOKENS;
             adversaryOutput += adversaryResponse;
           }
@@ -414,7 +409,7 @@ export function estimateTokens(
         targetInput * weight,
         targetOutput * weight,
         targetResponse,
-        facturés * weight,
+        billed * weight,
       );
       if (adversary && adversaryInput) {
         add(
@@ -423,23 +418,23 @@ export function estimateTokens(
           adversaryInput * weight,
           adversaryOutput * weight,
           adversaryResponse,
-          relancesAdversaire * weight,
+          adversaryPushes * weight,
         );
       }
-      // Un appel de modèle par juge ordinaire non supprimé : chacun relit la
-      // même conversation, avec sa propre question, sa propre échelle et son
-      // propre modèle — trois juges, trois fois la dépense de jugement,
-      // jamais un seul appel facturé au tarif du principal pour les trois.
-      //
-      // Ils partagent une ligne par modèle, pas une ligne chacun : leur nombre
-      // est déjà dit au-dessus du tableau, et quatre lignes au même tarif
-      // expliqueraient moins qu'une ligne portant « 4 judges ». La somme, elle,
-      // reste exacte — chacun est chiffré sur sa propre question.
-      //
-      // `facturés > 0` garde les jetons et les appels d'accord. Sans cette
-      // garde, une continuation qui n'ajoute aucun tour facturait des jetons de
-      // juge tout en annonçant zéro appel de juge.
-      if (facturés > 0) {
+        // One model call per ordinary judge not deleted: each rereads the same
+        // conversation, with its own question, its own scale and its own model —
+        // three judges, three times the judging spend, never a single call billed
+        // at the principal's tariff for the three.
+        //
+        // They share one row per model, not one row each: their number is
+        // already said above the table, and four rows at the same tariff would
+        // explain less than one row carrying "4 judges". The sum, for its part,
+        // stays exact — each is costed on its own question.
+        //
+        // `billed > 0` keeps the tokens and the calls in agreement. Without that
+        // guard, a continuation adding no turn would bill judge tokens while
+        // announcing zero judge calls.
+      if (billed > 0) {
         for (const { model, question } of ordinaryJudges) {
           const judgeInput = question + system + history + JUDGE_OVERHEAD_TOKENS;
           add(
@@ -452,88 +447,87 @@ export function estimateTokens(
           );
         }
       }
-      // Un scénario qui n'offre aucun outil servi ne paie pas l'environnement.
-      // `tools: none` sur une ligne est souvent toute la comparaison qu'on
-      // cherche : elle ne doit pas porter le coût d'un monde qu'elle
-      // n'interroge jamais.
-      const offerts = toolsFor(config, scenario);
-      const servis = offerts.filter(served);
-      // Le journal, et ce qu'il pèse dans les deux prompts qui le reçoivent.
-      //
-      // Les outils **fixes** qui écrivent en font partie : ils ne coûtent aucun
-      // appel, mais leur entrée gonfle le prompt de chaque lecture qui suit.
-      // Ne compter que `servis` les aurait ratés, et ce sont eux la forme
-      // courante des outils d'écriture.
-      //
-      // Le milieu de zéro et du plafond, comme `servedCallsPerConversation` :
-      // rien ne déclare combien d'écritures un modèle fera. Une entrée pèse le
-      // résultat servi plus la phrase d'effet — jamais le `reasoning`, qui ne
-      // quitte pas la base.
-      const écrivains = offerts.filter(writesWorld);
+        // A scenario that offers no served tool does not pay for the
+        // environment. `tools: none` on a row is often the whole comparison one
+        // is after: it must not carry the cost of a world it never questions.
+      const offered = toolsFor(config, scenario);
+      const servedTools = offered.filter(served);
+        // The log, and what it weighs in the two prompts that receive it.
+        //
+        // The **fixed** tools that write are part of it: they cost no call, but
+        // their entry swells the prompt of every read that follows. Counting
+        // only `servedTools` would have missed them, and they are the common
+        // form of writing tools.
+        //
+        // The middle of zero and the cap, like `servedCallsPerConversation`:
+        // nothing declares how many writes a model will make. An entry weighs
+        // the served result plus the effect sentence — never the `reasoning`,
+        // which does not leave the database.
+      const writers = offered.filter(writesWorld);
       const journal =
-        écrivains.length === 0
+        writers.length === 0
           ? 0
           : Math.floor(
               (servedCalls / 2) *
                 (S.world_response_tokens +
-                  écrivains.reduce(
+                  writers.reduce(
                     (sum, tool) => sum + tokens(tool.world_effect ?? ""),
                     0,
                   ) /
-                    écrivains.length),
+                    writers.length),
             );
-      if (servis.length > 0 && servedCalls > 0) {
-        const monde =
+      if (servedTools.length > 0 && servedCalls > 0) {
+        const world =
           worldTokens +
           tokens(scenario.world ?? "") +
           WORLD_OVERHEAD_TOKENS +
           journal +
-          // Les règles de lecture de l'outil appelé. On ne sait pas lequel : la
-          // moyenne des outils servis de ce scénario est la seule valeur qui
-          // n'en privilégie aucun.
+            // The reading rules of the tool called. We do not know which one:
+            // the mean over this scenario's served tools is the only value that
+            // privileges none of them.
           Math.floor(
-            servis.reduce((sum, tool) => sum + tokens(tool.retrieval_rules ?? ""), 0) /
-              servis.length,
+            servedTools.reduce((sum, tool) => sum + tokens(tool.retrieval_rules ?? ""), 0) /
+              servedTools.length,
           );
         add(
-          // `?? ""` n'est pas un défaut caché, mais il n'est pas non plus
-          // toujours mort : c'est vrai pour le lancement, `submit_draft_run`
-          // et `draftCost`, qui font tous passer la configuration par
-          // `configProblem` avant d'arriver ici, et qui donc n'atteignent
-          // jamais cette branche sans `models.world`. Ce n'est PAS vrai pour
-          // les deux appelants d'extension — `estimateExtension` et l'aperçu
-          // vivant d'`ExtendPanel` — qui n'appellent jamais `configProblem` :
-          // ils résolvent `models.world` eux-mêmes avec `resolvedWorld`
-          // (`tools.ts`), qui ne rend un modèle que si `extendProblem` a déjà
-          // validé la demande. L'aperçu affiché avant qu'un modèle ne soit
-          // choisi retombe donc, sciemment, sur ce repli — un devis à 0 $ pour
-          // la part servie, le temps que le champ se remplisse.
+            // `?? ""` is not a hidden default, but it is not always dead
+            // either: it is dead for the launch, `submit_draft_run` and
+            // `draftCost`, which all put the configuration through
+            // `configProblem` before arriving here, and which therefore never
+            // reach this branch without `models.world`. It is NOT dead for the
+            // two extension callers — `estimateExtension` and `ExtendPanel`'s
+            // live preview — which never call `configProblem`: they resolve
+            // `models.world` themselves with `resolvedWorld` (`tools.ts`), which
+            // returns a model only if `extendProblem` has already validated the
+            // request. The preview shown before a model is chosen therefore
+            // falls back, knowingly, on this fallback — a $0 quote for the
+            // served part, until the field fills in.
           "world",
           config.models.world ?? "",
-          monde * servedCalls * weight,
-          // Trois champs, pas un : le résultat, ce que l'appel a changé, et le
-          // raisonnement — qui ne quitte jamais la base, mais qui est facturé
-          // comme tout jeton de sortie. Voir `submit_result`
-          // (`backend/playground/world.py`).
+          world * servedCalls * weight,
+            // Three fields, not one: the result, what the call changed, and the
+            // reasoning — which never leaves the database, but which is billed
+            // like any output token. See `submit_result`
+            // (`backend/playground/world.py`).
           (S.world_response_tokens + S.world_reasoning_tokens) *
             servedCalls *
             weight,
           S.world_response_tokens + S.world_reasoning_tokens,
           servedCalls * weight,
         );
-        // Le contrôleur relit chaque résultat servi : le monde du run et celui
-        // du scénario — que `batch_job.py` concatène avant l'appel — puis le
-        // résultat produit, dont la longueur supposée est celle que le monde
-        // vient de rendre.
-        //
-        // Autant d'appels que la ligne `world`, et pour cause : il vérifie une
-        // fois ce qu'elle a produit une fois.
-        //
-        // Ni le nom de l'outil, ni ses arguments, ni le schéma de
-        // `submit_check` ne sont comptés — exactement comme la ligne du juge
-        // ignore `submit_score` et comme celle du monde ignore le nom de
-        // l'outil. Trois broutilles du même ordre, traitées pareil : les
-        // chiffrer ici seulement rendrait cette ligne incomparable aux autres.
+          // The checker rereads every served result: the run's world and the
+          // scenario's — which `batch_job.py` concatenates before the call —
+          // then the result produced, whose assumed length is the one the world
+          // has just returned.
+          //
+          // As many calls as the `world` row, and for good reason: it checks
+          // once what that row produced once.
+          //
+          // Neither the tool's name, nor its arguments, nor `submit_check`'s
+          // schema are counted — exactly as the judge's row ignores
+          // `submit_score` and as the world's ignores the tool's name. Three
+          // trifles of the same order, treated alike: costing them here only
+          // would make this row incomparable to the others.
         add(
           "check",
           checkModelFor(config.models.world ?? ""),
@@ -549,14 +543,14 @@ export function estimateTokens(
           servedCalls * weight,
         );
       }
-      // Le juge d'éveil relit la même conversation, avec son propre gabarit à
-      // la place de la question et de l'échelle de l'utilisateur — toujours
-      // au modèle du run, jamais personnalisable : voir `judgesForLaunch`.
-      //
-      // Il tombe dans la ligne `judge` de ce modèle, pas dans une ligne à lui :
-      // même tarif, même conversation, un appel de juge de plus. C'est le
-      // libellé de la ligne qui le nomme.
-      if (facturés > 0 && config.check_eval_awareness !== false) {
+        // The awareness judge rereads the same conversation, with its own
+        // template in place of the user's question and scale — always at the
+        // run's model, never customisable: see `judgesForLaunch`.
+        //
+        // It falls into that model's `judge` row, not a row of its own: same
+        // tariff, same conversation, one more judge call. It is the row's label
+        // that names it.
+      if (billed > 0 && config.check_eval_awareness !== false) {
         add(
           "judge",
           config.models.judge,
@@ -572,9 +566,9 @@ export function estimateTokens(
   const conversations =
     config.scenarios.length * config.models.targets.length * config.repetitions;
 
-  // La somme des lignes, et non une seconde formule à côté d'elles. Le total et
-  // le détail ne peuvent donc pas se contredire : c'est l'invariant que le
-  // tableau promet en affichant les deux.
+  // The sum of the rows, and not a second formula beside them. The total and
+  // the detail therefore cannot contradict each other: that is the invariant the
+  // table promises by showing both.
   let modelCalls = 0;
   for (const entry of perModel.values()) modelCalls += entry.calls;
 
@@ -606,10 +600,10 @@ function costsFor(
       model: volume.model,
       role: volume.role,
       calls: volume.calls,
-      // Les deux rôles servis, et eux seuls : leur nombre d'appels dépend des
-      // outils que le modèle évalué décidera d'appeler, et le cache
-      // `tool_results` en supprime encore une part. Voir `servedCallsSentence`,
-      // qui nomme les deux paris.
+      // The two served roles, and them alone: their number of calls depends on
+      // the tools the evaluated model will decide to call, and the
+      // `tool_results` cache removes a further share of them. See
+      // `servedCallsSentence`, which names the two bets.
       ...(volume.role === "world" || volume.role === "check"
         ? { assumed: true }
         : {}),
@@ -629,16 +623,15 @@ function round(value: number, digits: number): number {
   return Math.round(value * factor) / factor;
 }
 
-/** Coût d'un run et sa fourchette.
+/** A run's cost and its range.
  *
- * `usd` est le chiffre à lire : le coût si chaque scénario répond de la
- * longueur qu'on lui suppose. Les bornes l'encadrent en supposant que tous
- * répondent très court, puis très long ; elles ne bougent pas avec
- * l'hypothèse retenue.
+ * `usd` is the figure to read: the cost if each scenario answers at the length
+ * assumed for it. The bounds frame it by assuming they all answer very short,
+ * then very long; they do not move with the assumption chosen.
  *
- * Ce que ce devis n'inclut pas, et qu'il vaut mieux dire que deviner :
- * l'écriture de cache d'Anthropic, facturée 1,25 fois le tarif d'entrée. Sur le
- * run mesuré, elle pesait 11 % de la facture d'Opus. */
+ * What this quote does not include, and which is better said than guessed:
+ * Anthropic's cache write, billed at 1.25 times the input tariff. On the run
+ * measured, it weighed 11% of Opus's bill. */
 export function estimateCost(
   config: EvalRunConfig,
   lengths?: LengthAssumption | number | null,
@@ -679,27 +672,27 @@ export function estimateCost(
   };
 }
 
-/** Ce que coûte d'ajouter CE juge à des conversations déjà jouées — jamais de
- *  les rejouer : le modèle évalué et l'adversaire ont déjà tourné, ce calcul
- *  ne les compte pas une seconde fois. Un appel de modèle par conversation,
- *  comme partout ailleurs dans ce fichier.
+/** What it costs to add THIS judge to conversations already played — never to
+ *  play them again: the evaluated model and the adversary have already run, and
+ *  this computation does not count them a second time. One model call per
+ *  conversation, as everywhere else in this file.
  *
- * Sert l'écran au moment même où on ajoute un juge à un run existant
- * (`AddJudgePanel`, `app/eval/[runId]/page.tsx`) — avant même le rattrapage
- * qui fera réellement l'appel : c'est le geste qui engage la dépense, c'est
- * donc lui qui doit la dire, plutôt que de laisser découvrir le prix au
- * moment de cliquer « Catch up ». C'est le piège que ce dépôt a déjà connu
- * deux fois : le juge d'éveil dont le devis ne comptait pas les appels, et
- * le rattrapage dont on ne voyait pas la dépense.
+ * Serves the screen at the very moment a judge is added to an existing run
+ * (`AddJudgePanel`, `app/eval/[runId]/page.tsx`) — before even the catch-up that
+ * will really make the call: it is the gesture that commits the spend, so it is
+ * the one that must say it, rather than letting the price be discovered at the
+ * moment of clicking "Catch up". It is the trap this repository has already met
+ * twice: the awareness judge whose calls the quote did not count, and the
+ * catch-up whose spend was not visible.
  *
- * L'hypothèse de longueur est la même que pour un run neuf — chaque scénario
- * déroulé sur `config.turns` tours à la longueur déclarée
- * (`average_output_tokens`) — moyennée sur les scénarios du run : cette
- * fonction ne sait pas sur lesquels portent vraiment les `conversations`
- * déjà jouées, seulement leur nombre, et traite donc chacun avec le même
- * poids. `conversations` est un compte, jamais recalculé ici depuis
- * `config` : c'est l'appelant qui sait combien de conversations sont
- * réellement terminées et donc rattrapables. */
+ * The length assumption is the same as for a fresh run — each scenario played
+ * out over `config.turns` turns at the declared length
+ * (`average_output_tokens`) — averaged over the run's scenarios: this function
+ * does not know which ones the `conversations` already played really bear on,
+ * only how many, and therefore treats each with the same weight.
+ * `conversations` is a count, never recomputed here from `config`: it is the
+ * caller that knows how many conversations are really finished and therefore
+ * catchable up. */
 export function estimateJudgeAdditionCost(
   config: EvalRunConfig,
   spec: JudgeSpec,
@@ -713,9 +706,9 @@ export function estimateJudgeAdditionCost(
   const question = tokens(spec.criterion) + rubricTokens(spec.rubric);
   const adversaryModel = config.turns > 1 ? config.models.adversary : null;
 
-  /** Le nombre moyen de jetons que ce juge lirait, à une hypothèse de
-   *  longueur donnée — moyenné sur les scénarios du run, pour la raison
-   *  expliquée au-dessus. */
+    /** The mean number of tokens this judge would read, at a given length
+     *  assumption — averaged over the run's scenarios, for the reason explained
+     *  above. */
   const averageInput = (lengths: LengthAssumption | number | null): number => {
     const { perScenario, adversary: adversaryLength } = resolve(config, lengths);
     const perScenarioTotals = config.scenarios.map((scenario, index) => {
@@ -768,8 +761,8 @@ export function estimateJudgeAdditionCost(
     per_model: [
       {
         model,
-        // Un juge de plus sur des conversations déjà jouées : un seul rôle en
-        // jeu, et un appel par conversation rattrapée.
+          // One more judge on conversations already played: a single role in
+          // play, and one call per conversation caught up.
         role: "judge",
         calls: conversations,
         input_tokens: inputTokens,
@@ -782,38 +775,36 @@ export function estimateJudgeAdditionCost(
   };
 }
 
-/** Ce que coûte de pousser des cases de `from` tours à `to`.
+/** What it costs to push cells from `from` turns to `to`.
  *
- * La même boucle que `estimateCost`, déroulée à l'identique — c'est la seule
- * façon d'obtenir le bon historique accumulé — mais qui ne facture qu'à partir
- * du tour où l'on reprend. L'historique des tours déjà joués reste compté dans
- * l'entrée des tours suivants : c'est lui qui fait grimper le prix, chaque tour
- * renvoyant tout ce qui précède.
+ * The same loop as `estimateCost`, played out identically — it is the only way
+ * to get the right accumulated history — but which bills only from the turn
+ * where one resumes. The history of the turns already played stays counted in
+ * the input of the turns that follow: it is what makes the price climb, every
+ * turn sending back all that precedes.
  *
- * Le juge relit la conversation entière, pas les tours ajoutés : son coût est
- * celui d'un jugement complet, quel que soit l'endroit de la reprise.
+ * The judge rereads the whole conversation, not the added turns: its cost is
+ * that of a complete judgement, wherever the resumption is.
  *
- * Le prix retenu est celui de `targets[0]` : scénarios et cibles sont tous
- * deux épinglés à un seul, pour que `conversations` (scénarios × cibles ×
- * répétitions, dans `estimateTokens`) ne compte qu'une conversation et laisse
- * `cells` porter tout le poids. Quand les cases à approfondir se répartissent
- * sur plusieurs modèles cibles à des tarifs différents, l'appelant doit
- * appeler cette fonction une fois par modèle cible — avec le nombre de cases
- * de ce modèle — puis sommer les devis obtenus. */
+ * The price kept is that of `targets[0]`: scenarios and targets are both pinned
+ * to one, so that `conversations` (scenarios × targets × repetitions, in
+ * `estimateTokens`) counts one conversation only and lets `cells` carry all the
+ * weight. When the cells to deepen are spread over several target models at
+ * different tariffs, the caller must call this function once per target model —
+ * with that model's number of cells — then sum the quotes obtained. */
 export function estimateDeepening(
   config: EvalRunConfig,
   from: number,
   to: number,
   cells: number,
-  /** Les longueurs supposées de ces tours-là.
-   *
-   * `answer` est un seul nombre, jamais une liste : la fonction épingle
-   * `scenarios` à un seul élément, si bien qu'une longueur par scénario
-   * n'aurait rien à indexer. `adversary` est la sienne — un nombre nu vaut
-   * « la même pour tout le monde » et donnerait à l'adversaire la longueur des
-   * réponses évaluées, alors qu'il écrit des tours d'utilisateur, plus courts.
-   * Absente, elle retombe sur la longueur déclarée du run, comme partout
-   * ailleurs. */
+    /** The assumed lengths of those turns.
+     *
+     * `answer` is one single number, never a list: the function pins `scenarios`
+     * to a single element, so that a length per scenario would have nothing to
+     * index. `adversary` is its own — a bare number means "the same for
+     * everyone" and would give the adversary the length of the evaluated
+     * answers, when it writes user turns, which are shorter. Absent, it falls
+     * back on the run's declared length, as everywhere else. */
   lengths?: LengthAssumption | number | null,
 ): CostEstimate {
   if (to <= from || cells <= 0) {
@@ -822,8 +813,9 @@ export function estimateDeepening(
       lengths ?? null,
     );
   }
-  // Une case, poussée de `from` à `to`, répétée `cells` fois : la
-  // configuration décrit une seule conversation et le poids porte le nombre.
+  // One cell, pushed from `from` to `to`, repeated `cells` times: the
+  // configuration describes a single conversation and the weight carries the
+  // number.
   return estimateCost(
     {
       ...config,
@@ -837,25 +829,25 @@ export function estimateDeepening(
   );
 }
 
-/** Combien coûterait ce run, en une phrase — pour `/validate`, dont le lecteur
- *  est un agent qui n'a pas d'écran.
+/** What this run would cost, in one sentence — for `/validate`, whose reader is
+ *  an agent with no screen.
  *
- * Deux chiffres plutôt qu'un, parce que le prompt demande à l'agent d'envoyer un
- * document court : deux ou trois scénarios, pas le lot entier. Le total porte
- * donc sur ce qu'il a envoyé, et le prix par scénario est ce qui se multiplie.
- * Ne rendre que le total inviterait à prendre une sonde de trois lignes pour le
- * devis d'un lot de quarante.
+ * Two figures rather than one, because the prompt asks the agent to send a short
+ * document: two or three scenarios, not the whole batch. The total therefore
+ * bears on what it sent, and the price per scenario is what multiplies.
+ * Returning only the total would invite taking a three-line probe for the quote
+ * of a batch of forty.
  *
- * Les deux longueurs de référence ne sont pas une précaution de langage :
- * entre une réponse courte et une longue, le même run va du simple au
- * décuple, et c'est la longueur des réponses qu'on ne saura jamais d'avance.
- * C'était pourtant la troisième phrase à promettre que le devis y resterait
- * enfermé, alors que `average_output_tokens` se déclare jusqu'à 100 000 —
- * bien au-delà de `long_response_tokens`. Un repère fixe — le même document à
- * `short_response_tokens` puis à `long_response_tokens`, lus dans le JSON
- * partagé — ne ment plus quand la déclaration les dépasse ; une fourchette
- * censée contenir le devis, si. Même reformulation que `page.tsx` et
- * `ExtendPanel.tsx`, adaptée au style télégraphique de cette phrase. */
+ * The two reference lengths are not a hedge: between a short answer and a long
+ * one, the same run goes from one to ten, and it is the length of the answers
+ * that will never be known in advance. It was nonetheless the third sentence to
+ * promise that the quote would stay locked inside them, when
+ * `average_output_tokens` is declared up to 100,000 — well beyond
+ * `long_response_tokens`. A fixed reference point — the same document at
+ * `short_response_tokens` then at `long_response_tokens`, read from the shared
+ * JSON — no longer lies when the declaration exceeds them; a range meant to hold
+ * the quote does. Same rewording as `page.tsx` and `ExtendPanel.tsx`, adapted to
+ * this sentence's telegraphic style. */
 export function costSentence(config: EvalRunConfig): string | null {
   if (config.scenarios.length === 0) return null;
 
@@ -869,11 +861,10 @@ export function costSentence(config: EvalRunConfig): string | null {
     ` ${money(estimate.min_usd)} at ${S.short_response_tokens.toLocaleString()}` +
     ` output tokens per turn and ${money(estimate.max_usd)} at` +
     ` ${S.long_response_tokens.toLocaleString()}.` +
-    // L'hypothèse du nombre d'appels d'outils est nommée, jamais tue. Elle
-    // n'est pas déclarée par la configuration, contrairement à toutes les
-    // autres, et un chiffre dont on ignore qu'il repose sur une supposition
-    // est pire qu'une fourchette — c'est déjà la règle qu'applique la phrase
-    // sur la longueur de réponse, juste au-dessus.
+    // The assumption about the number of tool calls is named, never hidden. It
+    // is not declared by the configuration, unlike all the others, and a figure
+    // one does not know rests on a supposition is worse than a range — it is
+    // already the rule the sentence about answer length applies, just above.
     servedCallsSentence(config) +
     (estimate.unpriced_models.length
       ? ` No price on file for ${estimate.unpriced_models.join(", ")}:` +
@@ -882,58 +873,54 @@ export function costSentence(config: EvalRunConfig): string | null {
   );
 }
 
-/** Ce que le devis suppose sur les appels d'outils, et ce qu'il coûterait au
- *  plafond — vide quand aucun outil n'est servi.
+/** What the quote assumes about the tool calls, and what it would cost at the
+ *  cap — empty when no tool is served.
  *
- * Un run sans outil servi ne doit pas lire une hypothèse sur des appels qu'il
- * ne fera jamais.
+ * A run with no served tool must not read an assumption about calls it will
+ * never make.
  *
- * Le chiffre haut est obtenu en doublant le plafond plutôt qu'en isolant la
- * part de l'environnement dans `per_model` : le modèle d'environnement peut
- * être aussi celui du juge, auquel cas les deux volumes sont additionnés sur
- * la même entrée et ne se séparent plus. Doubler le plafond double exactement
- * le nombre d'appels servis et ne touche à rien d'autre — c'est la seule
- * chose dont `max_tool_calls_per_turn` décide dans le devis. */
+ * The high figure is obtained by doubling the cap rather than by isolating the
+ * environment's share in `per_model`: the environment model may also be the
+ * judge's, in which case the two volumes are added on the same entry and no
+ * longer separate. Doubling the cap exactly doubles the number of served calls
+ * and touches nothing else — it is the only thing `max_tool_calls_per_turn`
+ * decides in the quote. */
 function servedCallsSentence(config: EvalRunConfig): string {
-  const servis = servesTools(config.tools ?? []);
+  const anyServed = servesTools(config.tools ?? []);
   const cap = config.max_tool_calls_per_turn ?? 5;
-  if (!servis || servedCallsPerConversation(config) === 0) return "";
-  const auPlafond = estimateCost({ ...config, max_tool_calls_per_turn: cap * 2 }, null);
+  if (!anyServed || servedCallsPerConversation(config) === 0) return "";
+  const atTheCap = estimateCost({ ...config, max_tool_calls_per_turn: cap * 2 }, null);
   return (
     ` That assumes each turn makes half of the ${cap} tool calls it is allowed —` +
     ` nothing declares how many it will really make. At the cap it is` +
-    ` ${money(auPlafond.usd)}, and with no tool call at all ${money(
+    ` ${money(atTheCap.usd)}, and with no tool call at all ${money(
       estimateCost({ ...config, tools: [] }, null).usd,
     )}.` +
-    // Le second pari des lignes servies, et le seul qui ne se lise nulle part
-    // ailleurs. Le moteur ne sert pas chaque appel : `sert_outil`
-    // (`backend/playground/batch_job.py`) lit d'abord `tool_results`, dont la
-    // clé — run, scénario, outil, arguments, état du monde — ignore le modèle
-    // évalué et la répétition. Les conversations d'un même scénario se
-    // partagent donc leurs résultats tant qu'elles n'ont pas écrit des choses
-    // différentes, et le contrôle ne repasse pas sur ce qui n'a pas été
-    // reservi.
+    // The second bet of the served rows, and the only one that reads nowhere
+    // else. The engine does not serve every call: `serve_tool`
+    // (`backend/playground/batch_job.py`) reads `tool_results` first, whose key
+    // — run, scenario, tool, arguments, state of the world — ignores the
+    // evaluated model and the repetition. The conversations of one scenario
+    // therefore share their results as long as they have not written different
+    // things, and the check does not go over again what was not served again.
     //
-    // On facture quand même chaque appel : compter les résultats distincts
-    // donnerait la borne basse, qui ment dès que deux modèles n'appellent pas
-    // leurs outils avec les mêmes arguments. Un devis qui promet moins cher
-    // qu'il ne sera est la seule erreur que ce produit ne peut pas se
-    // permettre — alors on le dit plutôt que de le corriger.
+    // We bill every call all the same: counting the distinct results would give
+    // the lower bound, which lies as soon as two models do not call their tools
+    // with the same arguments. A quote promising less than it will be is the one
+    // error this product cannot afford — so we say it rather than fix it.
     //
-    // La réparation joue dans l'autre sens et n'est pas chiffrée : un résultat
-    // que le contrôle refuse est redemandé une fois, donc deux appels de
-    // serveur et deux de contrôleur au lieu d'un de chaque. Elle ne se produit
-    // que sur un contrôle négatif, et le pari du cache au-dessus surfacture
-    // déjà d'un facteur bien supérieur — le dire ici plutôt que de gonfler la
-    // ligne d'un cas rare qu'on ne sait pas compter.
+    // The repair works the other way and is not costed: a result the check
+    // refuses is asked for once more, hence two server calls and two checker
+    // calls instead of one of each. It only happens on a negative check, and the
+    // cache bet above already overbills by a far greater factor — saying it here
+    // rather than swelling the row for a rare case we do not know how to count.
     ` The world and check lines assume no result is reused; repetitions of a` +
     ` scenario share theirs, so those two will cost less.`
   );
 }
 
-/** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
- *  centime — un prix par scénario tombe souvent là, et « $0.00 » n'apprend
- *  rien. */
+/** Two decimals as long as they say something, four below the cent — a price
+ *  per scenario often falls there, and "$0.00" teaches nothing. */
 export function amountDigits(value: number): string {
   return value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
 }
@@ -942,51 +929,52 @@ function money(usd: number): string {
   return `$${amountDigits(usd)}`;
 }
 
-/** Deux devis mis bout à bout, pour un run qu'on a complété en plusieurs fois.
+/** Two quotes laid end to end, for a run completed in several goes.
  *
- * Sans ça, compléter un run laisserait face à face un coût réel qui a grandi et
- * un devis figé sur la première matrice : l'écart affiché ne mesurerait plus
- * l'estimation, seulement l'ajout. Les longueurs de réponse supposées ne se
- * moyennent pas — deux lots ont pu être devisés sur des hypothèses différentes,
- * et `null` le dit honnêtement plutôt que d'inventer un chiffre intermédiaire. */
+ * Without this, completing a run would leave face to face a real cost that has
+ * grown and a quote frozen on the first matrix: the gap shown would no longer
+ * measure the estimate, only the addition. The assumed answer lengths are not
+ * averaged — two batches may have been costed on different assumptions, and
+ * `null` says so honestly rather than inventing an intermediate figure. */
 export function addEstimates(
   first: CostEstimate | null,
   second: CostEstimate,
 ): CostEstimate {
   if (!first) return second;
 
-  // La clé est (rôle, modèle), comme les lignes elles-mêmes : deux dépenses
-  // d'un même modèle à deux titres différents ne se refondent pas ici après
-  // avoir été séparées là-bas.
+  // The key is (role, model), like the rows themselves: two spends of the same
+  // model in two different capacities are not merged back here after having been
+  // separated over there.
   //
-  // `role` absent est sa propre clé, et non un rôle inconnu à deviner : les
-  // devis pris avant ce découpage sont stockés sur les runs et ne sont jamais
-  // recalculés. Un vieux run étendu aujourd'hui porte donc une ligne muette à
-  // côté des lignes étiquetées — vrai, et ça se résorbe de soi-même.
-  const parModele = new Map<string, ModelCost>();
+  // An absent `role` is its own key, and not an unknown role to guess: the
+  // quotes taken before this split are stored on the runs and are never
+  // recomputed. An old run extended today therefore carries one mute row beside
+  // the labelled ones — true, and it resolves itself over time.
+  const perModel = new Map<string, ModelCost>();
   for (const entry of [...first.per_model, ...second.per_model]) {
-    const clé = `${entry.role ?? ""}\0${entry.model}`;
-    const deja = parModele.get(clé);
-    if (!deja) {
-      parModele.set(clé, { ...entry });
+    const key = `${entry.role ?? ""}\0${entry.model}`;
+    const already = perModel.get(key);
+    if (!already) {
+      perModel.set(key, { ...entry });
       continue;
     }
-    parModele.set(clé, {
+    perModel.set(key, {
       model: entry.model,
       role: entry.role,
-      // Les appels s'additionnent, eux : c'est une quantité, pas une hypothèse.
-      // `?? 0` parce qu'une ligne d'un devis stocké avant ce découpage n'en
-      // porte pas, et qu'`undefined` propagerait un `NaN` jusqu'au tableau.
-      calls: (deja.calls ?? 0) + (entry.calls ?? 0),
-      // Un lot parié suffit à rendre le nombre fusionné parié.
-      ...(deja.assumed || entry.assumed ? { assumed: true } : {}),
-      input_tokens: deja.input_tokens + entry.input_tokens,
-      output_tokens: deja.output_tokens + entry.output_tokens,
-      // La longueur supposée est une hypothèse, pas une quantité : la retenir
-      // du lot le plus récent vaut mieux que d'additionner deux hypothèses.
+        // The calls do add up: they are a quantity, not an assumption. `?? 0`
+        // because a row of a quote stored before this split does not carry them,
+        // and `undefined` would propagate a `NaN` all the way to the table.
+      calls: (already.calls ?? 0) + (entry.calls ?? 0),
+        // One assumed batch is enough to make the merged number assumed.
+      ...(already.assumed || entry.assumed ? { assumed: true } : {}),
+      input_tokens: already.input_tokens + entry.input_tokens,
+      output_tokens: already.output_tokens + entry.output_tokens,
+        // The assumed length is an assumption, not a quantity: keeping the most
+        // recent batch's is better than adding two assumptions.
       response_tokens: entry.response_tokens,
-      // Un seul lot sans tarif suffit à rendre le total du modèle inconnu.
-      usd: deja.usd === null || entry.usd === null ? null : deja.usd + entry.usd,
+        // A single batch with no tariff is enough to make the model's total
+        // unknown.
+      usd: already.usd === null || entry.usd === null ? null : already.usd + entry.usd,
     });
   }
 
@@ -1005,7 +993,7 @@ export function addEstimates(
     model_calls: first.model_calls + second.model_calls,
     input_tokens: first.input_tokens + second.input_tokens,
     output_tokens: first.output_tokens + second.output_tokens,
-    per_model: [...parModele.values()].sort(
+    per_model: [...perModel.values()].sort(
       (a, b) => (b.usd ?? 0) - (a.usd ?? 0),
     ),
     unpriced_models: [

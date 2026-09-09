@@ -1,6 +1,6 @@
-// Les données que Python et TypeScript lisent à l'identique — tarifs,
-// longueurs de réponse mesurées, catalogue, gabarits du prompt du juge.
-// Voir `shared/pricing.json` et le module Python `shared_data`.
+// The data Python and TypeScript read identically — prices, measured response
+// lengths, catalogue, judge prompt templates.
+// See `shared/pricing.json` and the Python module `shared_data`.
 import pricing from "../../shared/pricing.json" with { type: "json" };
 import judgePrompt from "../../shared/judge-prompt.json" with { type: "json" };
 import adversaryPrompt from "../../shared/adversary-prompt.json" with { type: "json" };

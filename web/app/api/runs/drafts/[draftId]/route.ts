@@ -9,17 +9,17 @@ import {
 } from "@/lib/drafts";
 import type { EvalRunConfig, ExtendRequest } from "@/lib/types";
 
-/** Le contenu d'un brouillon, pour que le formulaire ou le panneau
- *  d'extension l'ouvre prérempli.
+/** A draft's content, so that the form or the extension panel opens prefilled
+ *  on it.
  *
- * Gardée comme les autres routes `/api` : un brouillon porte la configuration
- * qu'un agent a soumise, pas un contenu public.
+ * Guarded like the other `/api` routes: a draft carries the configuration an
+ * agent submitted, not public content.
  *
- * `mine` s'ajoute au brouillon lui-même : le navigateur ne connaît jamais
- * l'adresse de l'utilisateur courant — seule la route la lie à la session —
- * et ne peut donc pas comparer `created_by` par lui-même. C'est ce verdict-là
- * qu'un bouton lit pour s'annoncer « Save as my own copy » avant d'écrire,
- * plutôt que de le découvrir après coup dans une redirection. */
+ * `mine` is added to the draft itself: the browser never knows the current
+ * user's address — only the route ties it to the session — and therefore cannot
+ * compare `created_by` by itself. It is that verdict a button reads to announce
+ * itself as "Save as my own copy" before writing, rather than discovering it
+ * afterwards in a redirection. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -29,8 +29,8 @@ export async function GET(
 
   const { draftId } = await params;
   try {
-    // Le brouillon entier : le genre en fait partie, et l'appelant ne peut
-    // pas lire sa charge sans savoir comment la lire.
+      // The whole draft: the kind is part of it, and the caller cannot read its
+      // payload without knowing how to read it.
     const draft = await loadDraft(draftId);
     return NextResponse.json({ ...draft, mine: draft.created_by === user.email });
   } catch (error) {
@@ -41,13 +41,13 @@ export async function GET(
   }
 }
 
-/** Jeter un brouillon : la corbeille.
+/** Discarding a draft: the bin.
  *
- * Il sort de la liste et son adresse cesse de répondre — c'est ce qui le
- * distingue d'un brouillon lancé. Rien n'est effacé pour autant.
+ * It leaves the list and its address stops answering — that is what distinguishes
+ * it from a launched draft. Nothing is erased for all that.
  *
- * Silencieuse sur un brouillon déjà jeté : deux onglets qui font le même
- * geste ne doivent pas produire une erreur sur le second. */
+ * Silent on a draft already discarded: two tabs making the same gesture must not
+ * produce an error on the second. */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -60,24 +60,23 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
-/** Les deux façons de reprendre un brouillon en main.
+/** The two ways of taking a draft back in hand.
  *
- * `launched` : il a servi. Il sort de la liste d'attente sans être jeté — son
- * adresse reste ouverte, et ce qu'il a produit se lit sur le run, qui porte
+ * `launched`: it has served. It leaves the waiting list without being discarded —
+ * its address stays open, and what it produced is read on the run, which carries
  * `draft_id`.
  *
- * `config` : on le réécrit — en place pour son auteur, remplacer plutôt qu'en
- * semer un second, sans quoi la liste d'attente accumulerait des doublons
- * dont on ne saurait plus lequel est le bon. Mais pour n'importe qui d'autre,
- * la réécriture pose un nouveau brouillon à la place : l'original n'est pas
- * touché, exactement la règle que l'outil MCP `update_draft_run` applique
- * déjà — `updateDraftOwned` la porte pour les deux plutôt que de la répéter
- * ici sous une autre forme. `forked` le dit dans la réponse, pour que l'écran
- * navigue vers la bonne adresse au lieu de laisser croire qu'il éditait
- * encore l'original.
+ * `config`: it is rewritten — in place for its author, replacing rather than
+ * sowing a second one, without which the waiting list would accumulate
+ * duplicates among which nobody could tell which is the right one. But for
+ * anyone else, the rewrite lays a new draft instead: the original is untouched,
+ * exactly the rule the MCP tool `update_draft_run` already applies —
+ * `updateDraftOwned` carries it for both rather than repeating it here in
+ * another form. `forked` says so in the response, so that the screen navigates
+ * to the right address instead of suggesting it was still editing the original.
  *
- * Pas de validation sur le second : un brouillon manuel a le droit d'être
- * incomplet, c'est même sa raison d'être. */
+ * No validation on the second: a manual draft has the right to be incomplete,
+ * which is even its reason for being. */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },

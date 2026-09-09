@@ -1,19 +1,19 @@
-// Ce que le viewer d'Inspect attend, en fonctions pures.
+// What Inspect's viewer expects, in pure functions.
 //
-// Séparé de `storage.ts`, qui est `server-only` et que `node --test` ne peut
-// pas importer. Ce qui est ici décide de la forme des URL que le viewer va
-// suivre : c'est la partie qu'il faut tenir par des tests, parce qu'une erreur
-// y est silencieuse — le viewer demande simplement la mauvaise adresse.
+// Separated from `storage.ts`, which is `server-only` and which `node --test`
+// cannot import. What is here decides the shape of the URLs the viewer will
+// follow: it is the part that has to be held by tests, because a mistake there
+// is silent — the viewer simply asks for the wrong address.
 
-/** L'origine telle que le navigateur l'a demandée.
+/** The origin as the browser asked for it.
  *
- * Et non `new URL(request.url).origin` : Next normalise `request.url` — une
- * page ouverte sur `127.0.0.1` s'y relit `localhost` — et derrière le proxy de
- * Vercel il porte l'URL interne, pas l'adresse publique. Comme le `log_dir`
- * doit être une URI absolue, une origine fausse rend le dossier de journaux
- * cross-origin : le navigateur refuse, et le viewer n'affiche qu'un « Failed to
- * fetch ». L'en-tête `host` est ce que le navigateur a écrit ; `x-forwarded-*`
- * ce que le proxy a retenu de lui. */
+ * And not `new URL(request.url).origin`: Next normalises `request.url` — a page
+ * opened on `127.0.0.1` reads back as `localhost` — and behind Vercel's proxy it
+ * carries the internal URL, not the public address. Since the `log_dir` must be
+ * an absolute URI, a wrong origin makes the log directory cross-origin: the
+ * browser refuses, and the viewer shows nothing but a "Failed to fetch". The
+ * `host` header is what the browser wrote; `x-forwarded-*` what the proxy kept
+ * of it. */
 export function originOf(
   headers: { get(name: string): string | null },
   fallback: string,
@@ -28,25 +28,26 @@ export function originOf(
   return `${proto}://${host}`;
 }
 
-/** Le dossier de journaux d'un run, en **URI complète**.
+/** A run's log directory, as a **complete URI**.
  *
- * L'URI complète n'est pas un détail de goût, c'est la seule forme qui marche.
- * `canonicalDirUrl` (viewer) rend `log_dir` tel quel si `isUri` le reconnaît —
- * `new URL(value)` réussit, donc dès qu'il y a un schéma. Sinon il le passe à
- * `joinURI`, qui **retire les barres obliques de tête de chaque segment** et
- * recolle le reste au dossier de la page. Un chemin absolu
- * `/inspect-view/<runId>/logs`, servi depuis `/inspect-view/<runId>`, donnerait
- * donc `/inspect-view/inspect-view/<runId>/logs`. */
+ * The complete URI is not a matter of taste, it is the only form that works.
+ * `canonicalDirUrl` (viewer) returns `log_dir` as it stands if `isUri`
+ * recognises it — `new URL(value)` succeeds, so as soon as there is a scheme.
+ * Otherwise it hands it to `joinURI`, which **strips the leading slashes from
+ * every segment** and sticks the rest back onto the page's folder. An absolute
+ * path `/inspect-view/<runId>/logs`, served from `/inspect-view/<runId>`, would
+ * therefore give `/inspect-view/inspect-view/<runId>/logs`. */
 export function logDirUri(origin: string, runId: string): string {
   return `${origin.replace(/\/$/, "")}/inspect-view/${runId}/logs`;
 }
 
-/** L'`index.html` du viewer, prêt à être servi sous `/inspect-view/<runId>`.
+/** The viewer's `index.html`, ready to be served under
+ *  `/inspect-view/<runId>`.
  *
- * Deux retouches, celles que fait `inspect view bundle` : les assets, que le
- * paquet écrit en relatif, deviennent absolus — le navigateur les résout
- * lui-même, `joinURI` n'y touche pas — et le dossier de journaux est injecté
- * dans le `#log_dir_context` que le viewer lit au démarrage. */
+ * Two touch-ups, the ones `inspect view bundle` makes: the assets, which the
+ * package writes as relative, become absolute — the browser resolves them
+ * itself, `joinURI` does not touch them — and the log directory is injected
+ * into the `#log_dir_context` the viewer reads at start-up. */
 export function viewerHtml(
   dist: string,
   options: { assetsBase: string; logDir: string },
@@ -60,12 +61,12 @@ export function viewerHtml(
     .replace("</head>", `  ${context}\n  </head>`);
 }
 
-/** Un nom d'objet acceptable dans le dossier d'un run.
+/** An object name acceptable inside a run's folder.
  *
- * La route reçoit ce nom depuis l'URL. Sans ce filtre, un `..` suffirait à
- * sortir du préfixe du run et à lire le journal d'un autre — y compris celui
- * d'un run qui n'est pas publié. Le dossier d'un run est plat : un nom n'a
- * jamais de barre oblique. */
+ * The route receives this name from the URL. Without this filter, a `..` would
+ * be enough to escape the run's prefix and read another's log — including that
+ * of a run which is not published. A run's directory is flat: a name never has a
+ * slash. */
 export function isSafeLogName(name: string): boolean {
   return (
     name.length > 0 &&
@@ -78,10 +79,11 @@ export function isSafeLogName(name: string): boolean {
   );
 }
 
-/** Le nom d'un objet tel que Storage le rend, ramené au nom nu.
+/** An object's name as Storage returns it, reduced to the bare name.
  *
- * Selon le préfixe demandé, Storage rend `a.eval` ou `<runId>/a.eval`. On ne
- * veut que le premier : c'est la clé sous laquelle le manifeste les nomme. */
+ * Depending on the prefix asked for, Storage returns `a.eval` or
+ * `<runId>/a.eval`. Only the first is wanted: it is the key under which the
+ * manifest names them. */
 export function bareLogName(name: string, runId: string): string {
   return name.startsWith(`${runId}/`) ? name.slice(runId.length + 1) : name;
 }

@@ -1,17 +1,17 @@
 "use client";
 
-// La liste des brouillons, dans la forme exacte de celle des runs.
+// The drafts list, in exactly the shape of the runs list.
 //
-// Un brouillon n'est rien d'autre qu'un run qu'on n'a pas encore lancé : le
-// lire demande les mêmes repères — un nom, une date, une taille, un coût —
-// et deux mises en page différentes obligeraient l'œil à réapprendre à chaque
-// bascule. Mêmes colonnes, mêmes largeurs, même en-tête collant.
+// A draft is nothing but a run one has not launched yet: reading it asks for the
+// same landmarks — a name, a date, a size, a cost — and two different layouts
+// would force the eye to relearn on every toggle. Same columns, same widths,
+// same sticky header.
 //
-// Ce qui change tient aux quatre colonnes du milieu : la date est celle du
-// dépôt et non du lancement, la forme est celle que ce brouillon PRODUIRA, le
-// statut dit sa nature plutôt que son avancement, et le coût est un devis. La
-// dernière colonne remplace la note moyenne — un brouillon n'a rien été noté —
-// par ce qui décide vraiment : peut-il partir ?
+// What changes lies in the four middle columns: the date is that of the deposit
+// and not of the launch, the shape is the one this draft WILL PRODUCE, the
+// status says its nature rather than its progress, and the cost is a quote. The
+// last column replaces the mean grade — a draft has had nothing graded — by what
+// really decides: can it go?
 import Link from "next/link";
 import { CopyId } from "@/components/CopyButton";
 import { InfoDot } from "@/components/InfoDot";
@@ -29,8 +29,8 @@ import { PSEUDO_TAG_CLASSES } from "@/lib/run-filters";
 import { DimensionIcon } from "@/components/DimensionIcon";
 import type { Draft, Tag } from "@/lib/types";
 
-/** Une fusée : ouvrir ce brouillon là où on peut le lancer — ou, s'il a déjà
- *  servi, le run qu'il a produit. Elle ne lance rien elle-même. */
+/** A rocket: opening this draft where it can be launched — or, if it has already
+ *  served, the run it produced. It launches nothing itself. */
 function RocketIcon() {
   return (
     <svg
@@ -106,8 +106,8 @@ export function DraftTable({
             <th className="relative w-24 py-3 pr-8 font-medium">
               Shape{" "}
               <InfoDot label="What Shape means">
-                scénarios × modèles × répétitions — précédé d’un « + » pour une
-                extension, qui ajoute au run plutôt que d’en faire un neuf
+                scenarios × models × repetitions — preceded by a &ldquo;+&rdquo; for an
+                extension, which adds to the run rather than making a fresh one
               </InfoDot>
             </th>
             <th className="w-32 py-3 pr-8 font-medium">Status</th>
@@ -115,19 +115,19 @@ export function DraftTable({
             <th className="relative w-24 py-3 pr-8 font-medium">
               Ready{" "}
               <InfoDot label="What Ready means">
-                Un brouillon du formulaire peut être incomplet — c’est sa raison
-                d’être. Une extension ne se juge pas d’ici : son devis et sa
-                validité dépendent du run qu’elle agrandit.
+                A draft from the form may be incomplete — that is its reason for
+                being. An extension is not judged from here: its quote and its
+                validity depend on the run it enlarges.
               </InfoDot>
             </th>
             <th className="w-14 py-3" />
           </tr>
         </thead>
         <tbody>
-          {/* Le squelette reste, seul le corps attend. Les colonnes sont
-              connues d'avance : les remplacer par un message ferait sauter
-              toute la page au moment où la réponse arrive, pour une liste dont
-              la forme n'a jamais été en question. */}
+          {/* The skeleton stays, only the body waits. The columns are known in
+              advance: replacing them by a message would make the whole page jump
+              at the moment the answer arrives, for a list whose shape was never in
+              question. */}
           {drafts === null && (
             <tr>
               <td colSpan={7} className="py-3 text-sm text-zinc-500">
@@ -150,7 +150,7 @@ export function DraftTable({
               <tr
                 key={draft.id}
                 className={`border-b border-zinc-200 align-top hover:bg-zinc-50${
-                  // Déjà lancé : présent, mais visiblement plus dans la file.
+                  // Already launched: present, but visibly out of the queue.
                   launched ? " opacity-60" : ""
                 }`}
               >
@@ -162,21 +162,21 @@ export function DraftTable({
                     {draftName(draft)}
                   </Link>
                   <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    {/* L'identifiant se copie : c'est ce qu'on colle à un agent
-                        pour qu'il reprenne ce brouillon. */}
+                    {/* The identifier is copied: it is what one pastes into an
+                        agent so that it takes this draft up again. */}
                     <CopyId value={draft.id} title="Copy draft id" />
                   </div>
-                  {/* Une extension ne dit rien d'elle-même : son nom est
-                      générique, et ce qui l'identifie vraiment est le run
-                      qu'elle agrandit. Le lien y mène, et la recherche le
-                      trouve — voir `draftHaystacks`. */}
+                  {/* An extension says nothing of itself: its name is generic, and
+                      what really identifies it is the run it enlarges. The link
+                      leads there, and the search finds it — see
+                      `draftHaystacks`. */}
                   {draft.kind === "extend" && (
                     <div className="flex items-center gap-2 text-xs text-zinc-500">
                       <span>extension of</span>
-                      {/* Se copie plutôt que de mener au run : la fusée y va
-                          déjà, et ce qu'on veut de cet identifiant est le
-                          coller — dans un agent, dans une note. Deux chemins
-                          vers la même page auraient été un de trop. */}
+                      {/* Copied rather than leading to the run: the rocket already
+                          goes there, and what one wants from this identifier is to
+                          paste it — into an agent, into a note. Two paths to the
+                          same page would have been one too many. */}
                       <CopyId
                         value={draft.extends_run_id}
                         title="Copy the extended run's id"
@@ -192,10 +192,9 @@ export function DraftTable({
                   />
                   <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                     <span>{draft.created_by}</span>
-                    {/* Les deux côtés se valent : savoir qu'un humain a
-                        déposé ce brouillon est une information, pas une
-                        absence d'information. L'icône dit la question, le mot
-                        dit la réponse. */}
+                    {/* Both sides are worth as much: knowing a human deposited this
+                        draft is information, not an absence of information. The
+                        icon says the question, the word says the answer. */}
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
                         draft.origin === "mcp"
@@ -204,19 +203,19 @@ export function DraftTable({
                       }`}
                       title={
                         draft.origin === "mcp"
-                          ? "Soumis par un agent — validé au dépôt"
-                          : "Enregistré depuis le formulaire — peut être incomplet"
+                          ? "Submitted by an agent — validated on deposit"
+                          : "Saved from the form — may be incomplete"
                       }
                     >
                       <DimensionIcon dimension="author" />
                       {draft.origin === "mcp" ? "mcp" : "manual"}
                     </span>
-                    {/* « launched » seulement : attendre est l'état ordinaire
-                        d'un brouillon, et la file entière le porterait. */}
+                    {/* "launched" only: waiting is a draft's ordinary state, and
+                        the whole queue would carry it. */}
                     {launched && (
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${PSEUDO_TAG_CLASSES.launched}`}
-                        title={`Sorti de la file le ${formatDate(draft.launched_at!)} — son adresse reste ouverte`}
+                        title={`Left the queue on ${formatDate(draft.launched_at!)} — its address stays open`}
                       >
                         <DimensionIcon dimension="launch" />
                         launched
@@ -242,8 +241,8 @@ export function DraftTable({
                     }`}
                     title={
                       draft.kind === "extend"
-                        ? "Agrandit un run existant"
-                        : "Propose un run neuf"
+                        ? "Enlarges an existing run"
+                        : "Proposes a fresh run"
                     }
                   >
                     <DimensionIcon dimension="kind" />
@@ -257,8 +256,8 @@ export function DraftTable({
                       className="text-zinc-400"
                       title={
                         draft.kind === "extend"
-                          ? "Le devis d’une extension dépend du run qu’elle agrandit — il se lit sur la page de ce run."
-                          : "Pas chiffrable tant que la configuration est incomplète."
+                          ? "An extension's quote depends on the run it enlarges — it reads on that run's page."
+                          : "Not costable while the configuration is incomplete."
                       }
                     >
                       —
@@ -269,19 +268,19 @@ export function DraftTable({
                 </td>
 
                 <td className="py-3 pr-8 text-xs">
-                  {/* Une icône et non la phrase : un motif de validation un
-                      peu long triplait la hauteur de sa ligne et déformait
-                      tout le tableau. Le motif entier s'ouvre au clic, là où
-                      il ne coûte plus rien à personne. */}
+                  {/* An icon and not the sentence: a slightly long validation
+                      reason tripled its row's height and deformed the whole table.
+                      The whole reason opens on click, where it no longer costs
+                      anybody anything. */}
                   {blocker === undefined ? (
                     <span
                       className="text-zinc-400"
-                      title="Sa validité dépend du run qu’elle agrandit."
+                      title="Its validity depends on the run it enlarges."
                     >
                       —
                     </span>
                   ) : blocker === null ? (
-                    <span className="text-teal-700" title="Prêt à lancer">
+                    <span className="text-teal-700" title="Ready to launch">
                       ✓
                     </span>
                   ) : (
@@ -297,19 +296,19 @@ export function DraftTable({
 
                 <td className="py-3 align-middle">
                   <div className="flex items-center justify-end gap-1">
-                    {/* La fusée ne lance rien : elle ouvre là où on peut lancer,
-                        après avoir relu. Un brouillon vient souvent d'un agent,
-                        et dépenser sur un clic de liste serait un piège. */}
+                    {/* The rocket launches nothing: it opens where one can launch,
+                        after rereading. A draft often comes from an agent, and
+                        spending on a click in a list would be a trap. */}
                     <Link
                       href={draftDestination(draft)}
                       title={
                         launched
                           ? draft.kind === "extend"
-                            ? "Voir ce que cette extension a fait"
-                            : "Voir le run produit"
+                            ? "See what this extension did"
+                            : "Show the produced run"
                           : draft.kind === "extend"
-                            ? "Ouvrir le run pour appliquer cette extension"
-                            : "Ouvrir le formulaire pour le relire et le lancer"
+                            ? "Open the run to apply this extension"
+                            : "Open the form to reread it and launch it"
                       }
                       aria-label={
                         launched
@@ -318,10 +317,10 @@ export function DraftTable({
                             : "Show the produced run"
                           : "Open to launch"
                       }
-                      // Un nouvel onglet : on parcourt une file, et ouvrir un
-                      // brouillon ne doit pas coûter la liste qu'on était en
-                      // train de lire. `noopener` parce que `_blank` sans lui
-                      // donne à la page ouverte une prise sur celle-ci.
+                      // A new tab: one is going through a queue, and opening a
+                      // draft must not cost the list one was reading. `noopener`
+                      // because `_blank` without it gives the opened page a handle
+                      // on this one.
                       target="_blank"
                       rel="noopener noreferrer"
                       className="rounded-full p-1 text-zinc-300 hover:text-teal-700"

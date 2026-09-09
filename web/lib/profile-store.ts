@@ -1,13 +1,13 @@
 "use client";
 
-/** Le profil et son activité récente, gardés en mémoire pour toute la visite.
+/** The profile and its recent activity, kept in memory for the whole visit.
  *
- * Un seul cache pour deux pages : « Profile » l'affiche en entier, et
- * « Scenarios » y lit le conseil d'écriture (`profile.scenario_advice`). Les
- * deux appelaient `getProfile()` chacune de son côté, à chaque visite, pour une
- * ressource qui ne change qu'au moment où l'on écrit dedans.
+ * One single cache for two pages: "Profile" shows it whole, and "Scenarios"
+ * reads the writing advice from it (`profile.scenario_advice`).
+ * The two each called `getProfile()` on their own side, at every visit, for a
+ * resource that only changes when something is written into it.
  *
- * Voir `store.ts` pour la mécanique, partagée avec les trois autres caches.
+ * See `store.ts` for the mechanism, shared with the three other caches.
  */
 
 import { useSyncExternalStore } from "react";
@@ -25,13 +25,12 @@ const profile = createResource<ProfileData>(getProfile);
 export const refreshProfile = profile.refresh;
 export const ensureProfileLoaded = profile.ensureLoaded;
 
-/** Écrit le profil rendu par une sauvegarde, sans relire.
+/** Writes the profile a save returned, without rereading.
  *
- * Les trois écritures qui existent — les plafonds de dépense et les modèles
- * favoris, toutes deux sur « Profile », et le conseil de scénario, sur
- * « Scenarios » — reçoivent le profil à jour dans leur réponse. S'en servir
- * évite un aller-retour, et surtout évite qu'une autre écriture affiche
- * encore l'ancienne version au prochain clic. */
+ * The three writes that exist — the spending caps and the favourite models,
+ * both on "Profile", and the scenario advice, on "Scenarios" — receive the
+ * up-to-date profile in their response. Using it avoids a round trip, and above
+ * all avoids another screen still showing the old version at the next click. */
 export function putProfile(next: ProfileData): void {
   profile.set(next);
 }

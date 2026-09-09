@@ -20,9 +20,8 @@ export async function PUT(
     );
   }
   try {
-    // Vérifier l'existence d'abord : un PATCH PostgREST sur un identifiant
-    // inconnu ne touche aucune ligne et répond 204, ce qui se lirait comme un
-    // enregistrement réussi.
+    // Check existence first: a PostgREST PATCH on an unknown identifier touches
+    // no row and answers 204, which would read as a successful save.
     await loadRun(runId);
   } catch (error) {
     if (error instanceof NotFound) {

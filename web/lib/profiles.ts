@@ -1,31 +1,30 @@
-// Le profil d'une personne : ses deux plafonds de dépense par agent, propres
-// à elle plutôt qu'à tout le monde — voir la migration `profiles` dans
-// `polaris-supabase` pour pourquoi ce choix, et son prix assumé (plus de
-// coupe-circuit global).
+// A person's profile: their two spending caps per agent, their own rather than
+// everyone's — see the `profiles` migration in `polaris-supabase` for why that
+// choice, and its accepted price (no global circuit breaker any more).
 //
-// Une seule fonction, `ensureProfile`, appelée par les deux portes qui
-// établissent une identité authentifiée — `requireUser` côté web,
-// `callerEmail` côté MCP — pour que le profil existe avant même qu'on en ait
-// besoin : un agent qui n'a jamais ouvert l'écran ne doit pas découvrir
-// l'absence de profil au moment où il tente de dépenser.
+// A single function, `ensureProfile`, called by the two doors that establish an
+// authenticated identity — `requireUser` on the web side, `callerEmail` on the
+// MCP side — so that the profile exists before anyone even needs it: an agent
+// that has never opened the screen must not discover the profile's absence at
+// the moment it tries to spend.
 import "server-only";
 import { DEFAULT_ADVICE, type AdviceTopic } from "./advice";
 import { PROFILES, SupabaseError, insert, select, update } from "./supabase";
 import type { Profile } from "./types";
 
-/** Le profil de `email`, créé aux défauts de la table s'il n'existait pas
- *  encore.
+/** The profile of `email`, created at the table's defaults if it did not exist
+ *  yet.
  *
- * Lit d'abord plutôt que d'insérer à l'aveugle : passé la première fois, le
- * cas courant ne coûte qu'une lecture. La clé primaire est l'adresse, donc
- * deux requêtes qui créent le même profil en même temps peuvent se
- * télescoper — l'une des deux insertions échoue alors avec une contrainte
- * violée. Ce n'est pas une erreur à remonter : le profil existe, c'est tout
- * ce qui compte, donc on relit plutôt que de propager l'échec de l'écriture.
+ * Reads first rather than inserting blind: past the first time, the common case
+ * costs only one read. The primary key is the address, so two requests creating
+ * the same profile at the same time can collide — one of the two insertions
+ * then fails on a violated constraint. That is not an error to report: the
+ * profile exists, which is all that matters, so we read again rather than
+ * propagating the write's failure.
  *
- * Ne lève que si le profil ne peut vraiment ni être lu ni être créé —
- * l'appelant en fait alors un refus de dépense, jamais un plafond deviné à
- * sa place. */
+ * Raises only if the profile can really neither be read nor created — the
+ * caller then makes a refusal to spend out of it, never a cap guessed on the
+ * person's behalf. */
 export async function ensureProfile(email: string): Promise<Profile> {
   const found = await select<Profile>(PROFILES, {
     user_email: `eq.${email}`,
@@ -38,11 +37,11 @@ export async function ensureProfile(email: string): Promise<Profile> {
     const created = await insert<Profile>(PROFILES, { user_email: email }, { returning: true });
     if (created[0]) return created[0];
   } catch (error) {
-    // Course perdue contre une autre requête : l'adresse a déjà été prise
-    // entre notre lecture et notre écriture. Pas une erreur — la ligne
-    // existe, il suffit de la relire ci-dessous. Toute autre erreur
-    // (connexion, droits) se retrouvera de toute façon dans la relecture qui
-    // suit : si le profil n'y est pas non plus, elle finit par lever.
+      // A race lost against another request: the address was taken between our
+      // read and our write. Not an error — the row exists, it is enough to read
+      // it again below. Any other error (connection, permissions) will turn up
+      // in the reread that follows anyway: if the profile is not there either,
+      // it ends up raising.
     if (!(error instanceof SupabaseError)) throw error;
   }
 
@@ -55,14 +54,14 @@ export async function ensureProfile(email: string): Promise<Profile> {
   throw new SupabaseError(`Could not create or read a profile for ${email}.`);
 }
 
-/** Change les deux plafonds de `email`, depuis l'écran de profil — la
- *  seule écriture sur cette table hors de sa création.
+/** Changes the two caps of `email`, from the profile screen — the only write
+ *  on this table outside its creation.
  *
- * Ne valide rien : `capProblem`, dans `profile-caps.ts`, l'a déjà fait avant
- * d'arriver ici, côté route comme côté formulaire. Relit après coup plutôt
- * que de renvoyer ce qu'on vient d'écrire : `ensureProfile` est la seule
- * fonction qui sache encore faire exister la ligne si, par une course
- * improbable, elle avait disparu entre-temps. */
+ * Validates nothing: `capProblem`, in `profile-caps.ts`, already did so before
+ * reaching here, on the route side as much as the form side. Reads back
+ * afterwards rather than returning what was just written: `ensureProfile` is
+ * the only function that still knows how to make the row exist if, through an
+ * unlikely race, it had vanished in the meantime. */
 export async function updateProfileCaps(
   email: string,
   caps: { max_usd_per_run: number; max_usd_per_hour: number },
@@ -71,21 +70,22 @@ export async function updateProfileCaps(
   return ensureProfile(email);
 }
 
-/** Écrit — ou efface — la surcharge du conseil d'écriture de scénario.
+/** Writes — or erases — the override of the scenario writing advice.
  *
- * `null` remet le défaut. Une chaîne blanche, ou détourée égale au défaut,
- * est ramenée à `null` avant d'écrire : stocker du blanc, ou une copie du
- * défaut, ferait une surcharge qui existe sans rien dire — indistinguable à
- * la lecture d'un vrai texte pour `scenarioAdvice`, mais qui prive
- * silencieusement cette personne des améliorations futures du défaut. Le
- * détourage ne sert qu'à cette comparaison : un texte réellement différent
- * garde ses blancs internes, écrit tel quel.
+ * `null` restores the default. A blank string, or a trimmed one equal to the
+ * default, is brought back to `null` before writing: storing blank, or a copy
+ * of the default, would make an override that exists without saying anything —
+ * indistinguishable on reading from a real text for `scenarioAdvice`, but
+ * silently depriving that person of the default's future improvements. The
+ * trimming serves only that comparison: a genuinely different text keeps its
+ * internal whitespace, written as it stands.
  *
- * Ce filet existe en plus de celui de la page `/scenarios` : la route peut
- * être appelée sans passer par elle.
+ * This net exists on top of the `/scenarios` page's own: the route can be
+ * called without going through it.
  *
- * Relit après coup pour la même raison qu'`updateProfileCaps` : `ensureProfile`
- * est la seule fonction qui sache refaire exister la ligne. */
+ * Reads back afterwards for the same reason as `updateProfileCaps`:
+ * `ensureProfile` is the only function that knows how to make the row exist
+ * again. */
 export async function updateScenarioAdvice(
   email: string,
   advice: string | null,
@@ -130,17 +130,18 @@ export async function updateAdvice(
   return ensureProfile(email);
 }
 
-/** Écrit les favoris de `email`, depuis l'écran de profil.
+/** Writes the favourites of `email`, from the profile screen.
  *
- * Ne valide rien : `favoritesProblem`, dans `favorite-models.ts`, l'a déjà
- * fait avant d'arriver ici, côté route comme côté formulaire.
+ * Validates nothing: `favoritesProblem`, in `favorite-models.ts`, already did
+ * so before reaching here, on the route side as much as the form side.
  *
- * N'écrit jamais `null` : remettre le défaut se fait en cochant ce qu'on
- * veut, pas en vidant la liste — et une liste vide est refusée en amont. La
- * colonne ne redevient `null` que si personne n'y a jamais touché.
+ * Never writes `null`: restoring the default is done by ticking what one wants,
+ * not by emptying the list — and an empty list is refused upstream. The column
+ * only becomes `null` again if nobody has ever touched it.
  *
- * Relit après coup pour la même raison qu'`updateProfileCaps` :
- * `ensureProfile` est la seule fonction qui sache refaire exister la ligne. */
+ * Reads back afterwards for the same reason as `updateProfileCaps`:
+ * `ensureProfile` is the only function that knows how to make the row exist
+ * again. */
 export async function updateFavoriteModels(
   email: string,
   models: string[],

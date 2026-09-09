@@ -1,4 +1,5 @@
-// La règle d'un plafond valide, sans Supabase ni session : voir profile-caps.ts.
+// The rule for a valid cap, with no Supabase and no session: see
+// profile-caps.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { capProblem, profilePatchProblem } from "./profile-caps.ts";
@@ -9,62 +10,62 @@ test("un nombre positif passe, entier ou non", () => {
   assert.equal(capProblem(0.0001), null);
 });
 
-test("zéro passe : c'est le frein d'urgence", () => {
-  // À zéro, tout devis strictement positif est refusé — les agents de cette
-  // personne ne dépensent plus rien. C'est le seul geste qui coupe vite, et
-  // l'interdire fermait la porte qu'on croyait avoir laissée ouverte.
+test("zero passes: it is the emergency brake", () => {
+  // At zero, any strictly positive quote is refused — this person's agents
+  // spend nothing any more. It is the only gesture that cuts quickly, and
+  // forbidding it closed the door we thought we had left open.
   assert.equal(capProblem(0), null);
 });
 
-test("le négatif est refusé — il se lirait comme zéro en disant autre chose", () => {
+test("a negative is refused — it would read as zero while saying something else", () => {
   assert.notEqual(capProblem(-1), null);
 });
 
-test("un plafond démesuré est refusé : c'est une faute de frappe", () => {
-  // Un run coûte des centimes à quelques dollars, les défauts sont 2 et 10.
-  // Un plafond qu'une glissade de clavier peut lever ne protège de rien.
+test("an outsized cap is refused: it is a typo", () => {
+  // A run costs cents to a few dollars, the defaults are 2 and 10. A cap a slip
+  // of the keyboard can lift protects nothing.
   assert.equal(capProblem(100), null);
   assert.notEqual(capProblem(101), null);
   assert.notEqual(capProblem(1000), null);
 });
 
-test("ce qui n'est pas un nombre fini est refusé", () => {
+test("anything that is not a finite number is refused", () => {
   assert.notEqual(capProblem(NaN), null);
   assert.notEqual(capProblem(Infinity), null);
   assert.notEqual(capProblem(-Infinity), null);
 });
 
-test("ce qui n'est même pas du type number est refusé", () => {
-  // Le corps d'une requête PATCH est un JSON quelconque avant d'être vérifié.
+test("anything that is not even of type number is refused", () => {
+  // A PATCH request's body is arbitrary JSON before it is checked.
   assert.notEqual(capProblem("2"), null);
   assert.notEqual(capProblem(undefined), null);
   assert.notEqual(capProblem(null), null);
 });
 
-test("le conseil seul passe : c'est la requête de la page des scénarios", () => {
-  assert.equal(profilePatchProblem({ scenario_advice: "Ma règle." }), null);
+test("the advice alone passes: it is the scenarios page's request", () => {
+  assert.equal(profilePatchProblem({ scenario_advice: "My rule." }), null);
 });
 
-test("les plafonds seuls passent : c'est la requête de la page de profil", () => {
+test("the caps alone pass: it is the profile page's request", () => {
   assert.equal(
     profilePatchProblem({ max_usd_per_run: 2, max_usd_per_hour: 10 }),
     null,
   );
 });
 
-test("le conseil et un seul plafond sont refusés ensemble", () => {
-  // Choisir lequel des deux écraser serait arbitraire pour qui a envoyé la
-  // requête — un seul plafond suffit à rendre le corps mixte.
+test("the advice and a single cap are refused together", () => {
+  // Choosing which of the two to overwrite would be arbitrary for whoever sent
+  // the request — a single cap is enough to make the body mixed.
   assert.notEqual(
-    profilePatchProblem({ scenario_advice: "Ma règle.", max_usd_per_run: 2 }),
+    profilePatchProblem({ scenario_advice: "My rule.", max_usd_per_run: 2 }),
     null,
   );
 });
 
-test("le conseil et les deux plafonds sont refusés ensemble", () => {
+test("the advice and both caps are refused together", () => {
   assert.notEqual(
     profilePatchProblem({
-      scenario_advice: "Ma règle.",
+      scenario_advice: "My rule.",
       max_usd_per_run: 2,
       max_usd_per_hour: 10,
     }),
@@ -72,28 +73,28 @@ test("le conseil et les deux plafonds sont refusés ensemble", () => {
   );
 });
 
-test("un corps vide passe : rien à croiser", () => {
-  // `undefined` partout veut dire « ne touche à rien » côté route, jamais un
-  // conflit — c'est ce que reçoit la route quand le JSON envoyé ne parse pas.
+test("an empty body passes: nothing to cross", () => {
+  // `undefined` everywhere means "touch nothing" on the route side, never a
+  // conflict — it is what the route receives when the JSON sent does not parse.
   assert.equal(profilePatchProblem({}), null);
 });
 
-test("favorite_models ne voyage pas avec les plafonds", () => {
-  // Même raison que le conseil de scénario : la route applique une chose ou
-  // l'autre, et choisir laquelle écraser serait arbitraire pour qui envoie.
+test("favorite_models does not travel with the caps", () => {
+  // The same reason as the scenario advice: the route applies one thing or the
+  // other, and choosing which to overwrite would be arbitrary for the sender.
   assert.notEqual(
     profilePatchProblem({ favorite_models: ["grok/grok-4.6"], max_usd_per_run: 2 }),
     null,
   );
 });
 
-test("favorite_models ne voyage pas avec le conseil de scénario", () => {
+test("favorite_models does not travel with the scenario advice", () => {
   assert.notEqual(
     profilePatchProblem({ favorite_models: ["grok/grok-4.6"], scenario_advice: "x" }),
     null,
   );
 });
 
-test("favorite_models seul passe", () => {
+test("favorite_models on its own passes", () => {
   assert.equal(profilePatchProblem({ favorite_models: ["grok/grok-4.6"] }), null);
 });

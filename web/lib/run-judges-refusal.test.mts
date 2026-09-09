@@ -1,31 +1,33 @@
-// Classe les refus des deux fonctions RPC de `run_judges`, sans Supabase :
-// voir run-judges-refusal.ts.
+// Classifies the refusals of the two `run_judges` RPC functions, with no
+// Supabase: see run-judges-refusal.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classifyRunJudgesRefusal } from "./run-judges-refusal.ts";
 
-// Les messages ci-dessous sont ceux, exacts, que rendent le déclencheur
-// différé et les deux fonctions RPC — voir
-// .superpowers/sdd/fix-principal-rpc-report.md pour le SQL qui les produit.
+// The messages below are the exact ones the deferred trigger and the two RPC
+// functions return. They stay in French on purpose: they are written that way
+// in the SQL, in the polaris-supabase repository, and a translated fixture
+// would stop matching what Postgres actually says — see
+// .superpowers/sdd/fix-principal-rpc-report.md for the SQL that produces them.
 
-test("le déclencheur différé (délier le principal sans remplaçant) devient un refus lisible", () => {
+test("the deferred trigger (unlinking the principal with no replacement) becomes a readable refusal", () => {
   const refusal = classifyRunJudgesRefusal(
     "run 3fa85f64-5717-4562-b3fc-2c963f66afa6 a 1 liaison(s) vivante(s) et aucune principale",
   );
   assert.equal(refusal?.kind, "principal_needs_replacement");
   assert.match(refusal!.message, /replacement principal/i);
-  // Le texte rendu à l'appelant est en anglais : jamais le message Postgres
-  // d'origine, ni un fragment français dedans.
+  // The text returned to the caller is in English: never the original Postgres
+  // message, nor a French fragment inside it.
   assert.doesNotMatch(refusal!.message, /liaison|principale|remplaçant/);
 });
 
-test("délier une liaison déjà déliée devient introuvable", () => {
+test("unlinking a link already unlinked becomes not-found", () => {
   const refusal = classifyRunJudgesRefusal("run_judge 111 est déjà déliée");
   assert.equal(refusal?.kind, "not_found");
   assert.match(refusal!.message, /already unlinked/i);
 });
 
-test("transférer le principal vers une liaison déjà supprimée devient introuvable", () => {
+test("transferring the principal to a link already deleted becomes not-found", () => {
   const refusal = classifyRunJudgesRefusal(
     "run_judge 111 est une liaison supprimée ; elle ne peut pas devenir principale",
   );
@@ -33,25 +35,25 @@ test("transférer le principal vers une liaison déjà supprimée devient introu
   assert.match(refusal!.message, /cannot be made principal again/i);
 });
 
-test("un remplaçant d'un autre run devient introuvable", () => {
+test("a replacement from another run becomes not-found", () => {
   const refusal = classifyRunJudgesRefusal("le remplaçant 222 n'appartient pas au run 333");
   assert.equal(refusal?.kind, "not_found");
   assert.match(refusal!.message, /replacement judge does not belong/i);
 });
 
-test("un remplaçant déjà délié devient introuvable", () => {
+test("a replacement already unlinked becomes not-found", () => {
   const refusal = classifyRunJudgesRefusal("le remplaçant 222 est une liaison déjà supprimée");
   assert.equal(refusal?.kind, "not_found");
   assert.match(refusal!.message, /replacement judge is already unlinked/i);
 });
 
-test("une liaison ou un remplaçant inconnu devient introuvable", () => {
+test("an unknown link or replacement becomes not-found", () => {
   const refusal = classifyRunJudgesRefusal("run_judge 444 introuvable sur le run 555");
   assert.equal(refusal?.kind, "not_found");
   assert.match(refusal!.message, /does not exist on this run/i);
 });
 
-test("désigner comme remplaçant la liaison qu'on délie est invalide", () => {
+test("naming the link being unlinked as the replacement is invalid", () => {
   const refusal = classifyRunJudgesRefusal(
     "le remplaçant ne peut pas être la liaison qu'on délie (666)",
   );
@@ -59,10 +61,10 @@ test("désigner comme remplaçant la liaison qu'on délie est invalide", () => {
   assert.match(refusal!.message, /cannot be the same link/i);
 });
 
-test("un message qui ne vient pas de ces fonctions n'est pas classé", () => {
-  // Preuve que la fonction peut échouer : sans le garde-fou sur le texte
-  // exact, une contrainte sans rapport (ici une clé étrangère générique de
-  // PostgREST) se ferait reconnaître à tort.
+test("a message that does not come from these functions is not classified", () => {
+  // Proof the function can fail: without the guard on the exact text, an
+  // unrelated constraint (here a generic PostgREST foreign key) would be
+  // wrongly recognised.
   assert.equal(
     classifyRunJudgesRefusal(
       'insert or update on table "run_judges" violates foreign key constraint',
@@ -72,34 +74,34 @@ test("un message qui ne vient pas de ces fonctions n'est pas classé", () => {
   assert.equal(classifyRunJudgesRefusal(""), null);
 });
 
-test("le dernier juge ordinaire ne se délie pas, et la phrase dit quoi faire", () => {
-  // L'écran refuse déjà ce geste, mais un outil MCP ou un appel direct n'a
-  // pas cet écran devant lui : le message doit tenir tout seul.
-  const refus = classifyRunJudgesRefusal(
+test("the last ordinary judge cannot be unlinked, and the sentence says what to do", () => {
+  // The screen already refuses this gesture, but an MCP tool or a direct call
+  // does not have that screen in front of it: the message must stand alone.
+  const refusal = classifyRunJudgesRefusal(
     "run 3f9 se retrouverait sans aucun juge ordinaire vivant",
   );
-  assert.equal(refus?.kind, "last_ordinary_judge");
-  // Il dit l'ordre à suivre — ajouter puis délier — sinon on est bloqué sans
-  // savoir comment changer de juge.
-  assert.match(refus?.message ?? "", /Add another judge first/);
-  // Et il dit que l'éveil ne compte pas, sinon on croit ne plus jamais
-  // pouvoir le retirer.
-  assert.match(refus?.message ?? "", /eval-awareness judge does not count/);
+  assert.equal(refusal?.kind, "last_ordinary_judge");
+  // It says the order to follow — add then unlink — otherwise you are stuck with
+  // no idea how to change judge.
+  assert.match(refusal?.message ?? "", /Add another judge first/);
+  // And it says awareness does not count, otherwise you believe you can never
+  // remove it.
+  assert.match(refusal?.message ?? "", /eval-awareness judge does not count/);
 });
 
-test("un juge système ne peut pas devenir principal, et on dit pourquoi", () => {
-  const refus = classifyRunJudgesRefusal(
+test("a system judge cannot become principal, and we say why", () => {
+  const refusal = classifyRunJudgesRefusal(
     "run_judge 7c1 est un juge système (awake) ; seul un juge ordinaire peut devenir principal",
   );
-  assert.equal(refus?.kind, "system_judge_cannot_be_principal");
-  // La raison compte autant que le refus : sa question et son échelle ne
-  // sont pas celles du run, donc la matrice mentirait.
-  assert.match(refus?.message ?? "", /own fixed question/);
+  assert.equal(refusal?.kind, "system_judge_cannot_be_principal");
+  // The reason counts as much as the refusal: its question and its scale are not
+  // the run's, so the matrix would lie.
+  assert.match(refusal?.message ?? "", /own fixed question/);
 });
 
-test("aucun message rendu à l'appelant ne cite un nom de fonction interne", () => {
-  // Un message d'erreur qui dit « passe-le à unlinkJudge » parle d'un
-  // symbole que personne, hors de ce dépôt, ne peut voir.
+test("no message returned to the caller cites an internal function name", () => {
+  // An error message saying "pass it to unlinkJudge" speaks of a symbol
+  // nobody outside this repository can see.
   const messages = [
     "run 3f9 a encore des liaison(s) vivante(s) et aucune principale",
     "run_judge 7c1 est déjà déliée",
