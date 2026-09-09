@@ -1,14 +1,14 @@
 // An extension's quote: one computation, called from both sides.
 //
-// Le panneau annonce un prix avant qu'on confirme ; `extendRun` enregistre
-// that of the same extension just afterwards. They were two distinct
-// computations, and two computations of the same thing always end up saying
-// different things: the panel passed no length and fell back on the declared
-// number where the server weighed what the run had actually spent — up to a
-// facteur trois sur un approfondissement, sous une phrase qui promettait
-// pourtant « priced on what this run actually spent ».
+// The panel announces a price before one confirms; `extendRun` records that of
+// the same extension just afterwards. They were two distinct computations, and
+// two computations of the same thing always end up saying different things: the
+// panel passed no length and fell back on the declared number where the server
+// weighed what the run had actually spent — up to a factor of three on a
+// deepening, under a sentence that promised "priced on what this run actually
+// spent" all the same.
 //
-// Il n'y a donc plus qu'une fonction, et les deux appelants l'appellent. Elle
+// There is therefore only one function left, and both callers call it. It
 // touches neither the database nor the network: each brings it what it already
 // knows, the page its cells in memory and `extendRun` the ones it has just
 // read.
@@ -25,14 +25,13 @@ import type {
 } from "./types";
 
 /** A scenario the extension will have played, and the index it carries — or
- *  portera — dans le run.
+ *  will carry — in the run.
  *
- * The index is not decorative: it is what says what the run has already
- * measured of that scenario. A new scenario has no already-played index and
- * therefore inherits
- * de la moyenne du run, ce qui est exactement la cascade d'`answerLengthsFor`.
- * Carrying them in pairs forbids the shift that would give one scenario the
- * longueur d'un autre. */
+ * The index is not decorative: it is what says what the run has already measured
+ * of that scenario. A new scenario has no already-played index and therefore
+ * inherits the run's average, which is exactly `answerLengthsFor`'s cascade.
+ * Carrying them in pairs forbids the shift that would give one scenario
+ * another's length. */
 export interface AddedScenario {
   index: number;
   scenario: EvalScenario;
@@ -44,7 +43,7 @@ export interface Extension {
   scenarios: AddedScenario[];
   /** The target models of the new cells. */
   targets: string[];
-  /** Combien d'essais par case neuve. */
+  /** How many attempts per fresh cell. */
   repetitions: number;
   /** The depth asked for: that of the new cells, and the depth to which the
    *  attempts being continued are pushed. */
@@ -58,8 +57,8 @@ export interface Extension {
 
 /** What this extension will cost, measurement included.
  *
- * `null` quand elle n'ajoute rien et n'approfondit rien — il n'y a alors pas de
- * price to show, and nothing to add to the run's recorded quote.
+ * `null` when it adds nothing and deepens nothing — there is then no price to
+ * show, and nothing to add to the run's recorded quote.
  *
  * The lengths come from `measured`, never from the general constant: a scenario
  * replayed takes its own measurement, a new scenario the run's, and the
@@ -74,7 +73,7 @@ export function estimateExtension(
 
   // The new cells, at the depth asked for: that is the depth they will run at,
   // the configuration having received it before they are born.
-  const ajout =
+  const added =
     scenarios.length > 0 && targets.length > 0
       ? estimateCost(
           {
@@ -99,12 +98,11 @@ export function estimateExtension(
   // The deepening, grouped by (target model, starting depth) pair — see
   // `estimateDeepeningCost`. One single length for the answers and not one per
   // scenario: the groups are not scenarios, and one group covers several at
-  // once. The adversary keeps the
-  // sienne, comme pour les cases neuves ; les deux retombent sur la
-  // run's declaration when nothing could be measured. Nothing as long as the
-  // depth asked for does not exceed the run's: `extendProblem` refuses
-  // d'ailleurs d'approfondir sans elle.
-  const approfondi =
+  // once. The adversary keeps its own, as for the fresh cells; both fall back on
+  // the run's declaration when nothing could be measured. Nothing as long as the
+  // depth asked for does not exceed the run's: `extendProblem` refuses to deepen
+  // without that anyway.
+  const deepened =
     deepen.length > 0 && turns > config.turns
       ? estimateDeepeningCost(config, deepen, turns, config.turns, {
           answer: measured.run,
@@ -112,6 +110,6 @@ export function estimateExtension(
         })
       : null;
 
-  if (!ajout) return approfondi;
-  return approfondi ? addEstimates(ajout, approfondi) : ajout;
+  if (!added) return deepened;
+  return deepened ? addEstimates(added, deepened) : added;
 }

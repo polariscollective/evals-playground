@@ -1,7 +1,7 @@
-// La demande d'extension telle que le panneau la compose — extraite de sa
-// fermeture React (`ExtendPanel.buildRequest`) pour qu'elle se teste sans
-// monter de composant, comme `extend-estimate.ts`, `deepen-counts.ts` et
-// `measured-length.ts` avant elle.
+// The extension request as the panel composes it — taken out of its React
+// closure (`ExtendPanel.buildRequest`) so that it tests without mounting a
+// component, like `extend-estimate.ts`, `deepen-counts.ts` and
+// `measured-length.ts` before it.
 //
 // `needsWorldModel` answers two questions that must stay one: the screen uses
 // it to show the "World model" field and to block confirmation while it is
@@ -9,24 +9,22 @@
 // by construction until a fix nested the second under `newTools.length > 0`
 // (CRITICAL 2) — a run predating `models.world` can already serve without
 // naming it (see `extendProblem`, A1), and for such a run the screen showed the
-// field, demanded its
-// remplissage, puis l'omettait de la demande : le serveur refusait alors avec
-// the very message that had sent the user here. One function decides now, and
-// `buildExtendRequest` and the panel both call it
-// tous les deux — voir `components/ExtendPanel.tsx`.
+// field, demanded it be filled in, then left it out of the request: the server
+// then refused with the very message that had sent the user here. One function
+// decides now, and `buildExtendRequest` and the panel both call it — see
+// `components/ExtendPanel.tsx`.
 import { servesTools } from "./tools.ts";
 import type { EvalRunConfig, EvalScenario, ExtendRequest, ToolSpec } from "./types";
 
-/** Does this run need a world model named for it, once this
- *  extension prise en compte ?
+/** Does this run need a world model named for it, once this extension is taken
+ *  into account?
  *
- * Vrai seulement quand le run n'en a pas encore un et que l'union de ce qu'il
- * already serves and what `newTools` adds serves something — not `newTools`
- * alone: a run launched before `models.world` existed may already
- * servir sans le nommer, et c'est justement le cas que ce module ferme (voir
- * the head comment). A run that already serves silently imposes its model
- * (`extendRun`); sending it another would be refused for nothing,
- * donc jamais vrai dans ce cas. */
+ * True only when the run does not have one yet and the union of what it already
+ * serves and what `newTools` adds serves something — not `newTools` alone: a run
+ * launched before `models.world` existed may already serve without naming it,
+ * and that is precisely the case this module closes (see the head comment). A
+ * run that already serves silently imposes its model (`extendRun`); sending it
+ * another would be refused for nothing, and so it is never true in that case. */
 export function needsWorldModel(
   config: Pick<EvalRunConfig, "tools" | "models">,
   newTools: ToolSpec[],
@@ -36,13 +34,12 @@ export function needsWorldModel(
 }
 
 /** What the panel has gathered in its state, before `buildExtendRequest` makes
- *  a request of it — one field per React state, as `ExtendPanel` holds them
- *  tient. */
+ *  a request of it — one field per React state, as `ExtendPanel` holds them. */
 export interface ExtendPanelValues {
   /** The scenarios already present to be covered again, by their index. */
   indices: number[];
   /** The new scenarios — by hand and from the CSV, already merged by the
-   *  panneau. */
+   *  panel. */
   newScenarios: EvalScenario[];
   targets: string[];
   repetitions: number;
@@ -55,26 +52,24 @@ export interface ExtendPanelValues {
   /** Do the existing scenarios with no named tools inherit the new ones?
    *  `null` while the question has not been answered. */
   forExisting: boolean | null;
-  /** Ce que le champ « World model » porte, tel quel — vide tant que rien n'a
-   *  been chosen. */
+  /** What the "World model" field carries, as it stands — empty as long as
+   *  nothing has been chosen. */
   worldModel: string;
-  /** La profondeur voulue. */
+  /** The depth wanted. */
   turns: number;
   deepen: "all" | number[] | null;
 }
 
 /** The extension request as it stands — used both to confirm and to save a
- *  draft, the only difference between the two uses of the
- *  panneau.
+ *  draft, the only difference between the panel's two uses.
  *
  * `new_tools_for_existing` is written only if the question was answered: an
  * absent key and `true` read the same to the server (see `extendProblem`), so
  * nothing changes for confirmation, where the button already guarantees an
  * answer — but a draft may leave it hanging, and reading it back must then find
- * "not answered yet" rather than an
- * `true` que personne n'a choisi.
+ * "not answered yet" rather than a `true` nobody chose.
  *
- * `world` suit `needsWorldModel(config, newTools)`, jamais
+ * `world` follows `needsWorldModel(config, newTools)`, never
  * `newTools.length > 0`: see the head comment for what the difference cost. */
 export function buildExtendRequest(
   config: Pick<EvalRunConfig, "tools" | "models" | "turns">,

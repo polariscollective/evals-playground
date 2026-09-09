@@ -1,7 +1,7 @@
 /** What a draft row shows: its shape, its quote, how ready it is.
  *
- * Une extension ne se chiffre pas ici, et c'est un fait, pas un oubli :
- * `estimateExtension` et `extendProblem` exigent tous deux la configuration du
+ * An extension is not costed here, and that is a fact, not an oversight:
+ * `estimateExtension` and `extendProblem` both demand the configuration of the
  * extended run — how many scenarios it carries, at what depth, which tools. The
  * list does not have it, and fetching it would mean one request per row. An
  * honest dash beats an invented figure: the run's page says everything, and
@@ -15,24 +15,23 @@ import type { Draft } from "./types.ts";
 /** The name shown. An extension has no title of its own: what it proposes is
  *  not a run but an addition to a run which already has one.
  *
- * Ici et non dans le tableau, parce que la recherche doit chercher exactement
- * what the list shows — two definitions of the name would have contradicted
- * each other at the
- * premier renommage. */
+ * Here and not in the table, because the search must search exactly what the
+ * list shows — two definitions of the name would have contradicted each other at
+ * the first rename. */
 export function draftName(draft: Draft): string {
   if (draft.kind === "extend") return "an extension of an existing run";
   return draft.config.label || "Untitled run";
 }
 
-/** Ce dans quoi la recherche fouille pour un brouillon.
+/** What the search rummages through for a draft.
  *
- * Son nom, son identifiant, et — pour une extension — celui du run qu'elle
- * agrandit. Ce dernier compte : on part souvent d'un run pour retrouver ce qui
- * is waiting to be added to it, and without it one would have to know by heart
- * l'identifiant du brouillon.
+ * Its name, its identifier, and — for an extension — that of the run it
+ * enlarges. The last one counts: one often starts from a run to find what is
+ * waiting to be added to it, and without it one would have to know the draft's
+ * identifier by heart.
  *
- * Ici et non dans la page, pour que ce qu'on cherche reste exactement ce que
- * la ligne montre. */
+ * Here and not in the page, so that what one searches stays exactly what the row
+ * shows. */
 export function draftHaystacks(draft: Draft): (string | null)[] {
   return [draftName(draft), draft.id, draft.extends_run_id];
 }
@@ -58,8 +57,8 @@ export function draftShape(draft: Draft): string {
 /** The quote, or `null` when it cannot be computed here.
  *
  * `estimateCost` assumes a whole configuration; a half-written draft would give
- * it an incomplete one. The guard returns `null` rather than
- * laisser lever — une ligne de liste ne doit jamais faire tomber la page. */
+ * it an incomplete one. The guard returns `null` rather than letting it throw —
+ * a list row must never bring the page down. */
 export function draftCost(draft: Draft): number | null {
   if (draft.kind === "extend") return null;
   if (configProblem(draft.config) !== null) return null;
@@ -72,10 +71,9 @@ export function draftCost(draft: Draft): number | null {
 
 /** What stops this draft going out, or `null` if it is ready.
  *
- * `undefined` : on ne peut pas le dire d'ici — le cas des extensions. Trois
- * three states, then, not two: "ready", "this is missing", "I do not know".
- * Les confondre ferait passer une extension parfaitement valide pour un
- * broken draft. */
+ * `undefined`: it cannot be said from here — the extensions' case. Three states,
+ * then, not two: "ready", "this is missing", "I do not know". Confusing them
+ * would make a perfectly valid extension pass for a broken draft. */
 export function draftBlocker(draft: Draft): string | null | undefined {
   if (draft.kind === "extend") return undefined;
   return configProblem(draft.config);
@@ -83,8 +81,8 @@ export function draftBlocker(draft: Draft): string | null | undefined {
 
 /** Where the rocket leads.
  *
- * Trois destinations, et aucune ne lance quoi que ce soit : lancer reste un
- * clic humain pris devant la configuration, jamais depuis une liste.
+ * Three destinations, and none of them launches anything: launching stays a
+ * human click taken in front of the configuration, never from a list.
  *
  * A draft already launched leads to the run it produced — that is what one
  * comes to see. An extension leads to its run's page, in the panel meant for

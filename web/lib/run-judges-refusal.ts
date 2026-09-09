@@ -1,9 +1,9 @@
 // Recognises the refusals of the two RPC functions that make `run_judges`
-// liaisons de `run_judges` — `run_judges_unlink` et
-// `run_judges_transfer_principal`, voir `unlinkJudge` et `designatePrincipal`
-// in runs.ts, the only ones that call them — as well as those of the deferred
-// trigger covering them. The exact SQL and the meaning of each message live
-// dans .superpowers/sdd/fix-principal-rpc-report.md.
+// links — `run_judges_unlink` and `run_judges_transfer_principal`, see
+// `unlinkJudge` and `designatePrincipal` in runs.ts, the only ones that call
+// them — as well as those of the deferred trigger covering them. The exact SQL
+// and the meaning of each message live in
+// .superpowers/sdd/fix-principal-rpc-report.md.
 //
 // Postgres answers in French, in a text meant for a server trace; what a caller
 // should read is in English, and says what to do rather than quoting a
@@ -14,18 +14,18 @@
 // `mcp-budget.ts` beside it for the same reason.
 //
 // Knows neither `SupabaseError` nor the error classes `runs.ts` exposes: it is
-// for the caller to choose which to raise according to `kind`, and this
-// fichier ne fait que classer un message.
+// for the caller to choose which to raise according to `kind`, and this file
+// does nothing but classify a message.
 
 /** `not_found`: the identifier aimed at (the link, or its replacement) names
  *  nothing live on this run — not found, already unlinked, or already unlinked
  *  for the replacement. `principal_needs_replacement`: the deferred trigger's
  *  specific refusal, see `unlinkJudge`. `last_ordinary_judge`: the last
- *  ordinary judge was being unlinked, which
- *  laisserait le run sans principal possible. `system_judge_cannot_be_principal` :
- *  a system judge was offered as principal or as replacement. `invalid`: a
- *  pair of arguments that can never succeed, whatever the state of the
- *  database — replacement confused with the link being unlinked.
+ *  ordinary judge was being unlinked, which would leave the run with no possible
+ *  principal. `system_judge_cannot_be_principal`: a system judge was offered as
+ *  principal or as replacement. `invalid`: a pair of arguments that can never
+ *  succeed, whatever the state of the database — replacement confused with the
+ *  link being unlinked.
  *
  *  The two before last are refused by the screen before reaching the database;
  *  they are translated all the same, because an MCP tool or a direct call does
@@ -39,22 +39,21 @@ export type RunJudgesRefusalKind =
 
 export interface RunJudgesRefusal {
   kind: RunJudgesRefusalKind;
-  /** Toujours en anglais : c'est ce texte, et rien du message Postgres
-   *  d'origine, qui doit atteindre l'appelant. */
+  /** Always in English: it is this text, and nothing of the original Postgres
+   *  message, that must reach the caller. */
   message: string;
 }
 
-/** Classe un message d'erreur brut, tel que Postgres/PostgREST le rend pour
+/** Classifies a raw error message, as Postgres/PostgREST returns it for
  *  `run_judges_unlink`, `run_judges_transfer_principal`, or the deferred
  *  trigger `run_judges_require_principal_trg` covering them. `null` if nothing
- *  n'est reconnu — l'appelant doit alors laisser passer l'erreur d'origine
- *  rather than swallow one it could not read. */
+ *  is recognised — the caller must then let the original error through rather
+ *  than swallow one it could not read. */
 export function classifyRunJudgesRefusal(rawMessage: string): RunJudgesRefusal | null {
   // The deferred trigger: the principal was unlinked with no valid replacement
-  // alors qu'il restait d'autres liaisons vivantes sur ce run. C'est le seul
-  // a refusal the database returns *at commit* rather than at the function
-  // call —
-  // voir le commentaire au-dessus d'`unlinkJudge` dans runs.ts.
+  // while other live links remained on this run. It is the only refusal the
+  // database returns *at commit* rather than at the function call — see the
+  // comment above `unlinkJudge` in runs.ts.
   if (/liaison\(s\) vivante\(s\) et aucune principale/.test(rawMessage)) {
     return {
       kind: "principal_needs_replacement",
@@ -64,10 +63,10 @@ export function classifyRunJudgesRefusal(rawMessage: string): RunJudgesRefusal |
     };
   }
 
-  // The trigger that forbids a run losing its last ordinary judge.
-  // Un run sans juge ordinaire n'a plus de principal possible, donc plus de
-  // matrix: the screen does not offer this gesture, and the database refuses it
-  // too so that it does not depend on an interface filter somebody will forget.
+  // The trigger that forbids a run losing its last ordinary judge. A run with no
+  // ordinary judge has no possible principal any more, and therefore no matrix:
+  // the screen does not offer this gesture, and the database refuses it too so
+  // that it does not depend on an interface filter somebody will forget.
   if (/sans aucun juge ordinaire vivant/.test(rawMessage)) {
     return {
       kind: "last_ordinary_judge",
@@ -80,9 +79,8 @@ export function classifyRunJudgesRefusal(rawMessage: string): RunJudgesRefusal |
 
   // Both functions: a system judge offered as principal, or as the principal's
   // replacement. Its question and its scale are not in the database — they live
-  // in the code — so the screen would fall back on those of
-  // l'utilisateur et afficherait sa question au-dessus de notes qui ne
-  // do not follow its scale.
+  // in the code — so the screen would fall back on the user's and would show its
+  // question above grades that do not follow its scale.
   if (/est un juge système .* seul un juge ordinaire peut devenir principal/.test(rawMessage)) {
     return {
       kind: "system_judge_cannot_be_principal",
@@ -98,7 +96,7 @@ export function classifyRunJudgesRefusal(rawMessage: string): RunJudgesRefusal |
     return { kind: "not_found", message: "This judge is already unlinked from this run." };
   }
 
-  // `run_judges_transfer_principal`, sur la cible.
+  // `run_judges_transfer_principal`, on the target.
   if (/est une liaison supprimée ; elle ne peut pas devenir principale/.test(rawMessage)) {
     return {
       kind: "not_found",

@@ -1,9 +1,9 @@
-// Ce qui ne passe pas par la porte, en une seule liste.
+// What does not go through the door, in one single list.
 //
-// Le proxy ne peut pas appeler cette fonction : Next exige que `matcher` soit
-// a constant analysable at compile time and ignores any computed value —
-// le proxy tournerait alors sur tous les chemins, `_next/static` compris. Le
-// literal therefore stays written over there, and a test holds their agreement.
+// The proxy cannot call this function: Next demands that `matcher` be a constant
+// analysable at compile time and ignores any computed value — the proxy would
+// then run on every path, `_next/static` included. The literal therefore stays
+// written over there, and a test holds their agreement.
 
 /** The open directories, anchored on `/` or the exact end. Without the anchor,
  *  a plain prefix would let a longer neighbouring path through.
@@ -17,13 +17,12 @@
  * the database: it is `loadPublicRun` that refuses an unpublished run, with the
  * same message as an unknown run, and it is that function which is
  * authoritative — not this list. Any future entry under that prefix inherits
- * the same obligation,
- * silencieusement : rien ici ne la rappelle par fichier. */
+ * the same obligation, silently: nothing here recalls it file by file. */
 export const OPEN_PREFIXES = [
   // Signing in itself, without which nobody can get in.
   "api/auth",
-  // The instructions and the checker: they address an agent, which has
-  // pas de session et ne saurait pas en obtenir une.
+  // The instructions and the checker: they address an agent, which has no
+  // session and would not know how to obtain one.
   "prompt",
   "validate",
   // The scenario-writing advice, always its default version — see the head
@@ -36,8 +35,8 @@ export const OPEN_PREFIXES = [
   // and it is `canReadRun` that holds it: a run in the bin or unpublished is
   // refused to a stranger, with the 404 of a run that does not exist.
   "inspect-view",
-  // Le connecteur MCP et son serveur d'autorisation : une machine sans
-  // session, comme prompt et validate.
+  // The MCP connector and its authorisation server: a machine with no session,
+  // like prompt and validate.
   "mcp",
   ".well-known",
   "_next/static",
@@ -69,7 +68,7 @@ export function proxyMatcher(): string {
   return `/((?!${alternatives.join("|")}).*)`;
 }
 
-/** Ce chemin passe-t-il sans session ?
+/** Does this path go through without a session?
  *
  * Derived from the pattern and not rewritten beside it: two formulations of the
  * same rule would end up saying different things, and it is that drift the test

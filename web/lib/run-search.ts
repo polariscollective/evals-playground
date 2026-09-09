@@ -2,15 +2,14 @@
 //
 // `search_runs` (the MCP connector) answers "have you already seen a run about
 // this?". The filtering happens here, in TypeScript, on what `loadRuns` has
-// already brought back: the agent's keyword never touches a
-// expression de filtre PostgREST, et cette fonction reste pure — donc l'une
-// des rares parties du connecteur que `node --test` couvre vraiment. Pas de
-// `server-only` ici : `route.ts` charge les runs, cette fonction ne fait que
-// sort them and slice them.
+// already brought back: the agent's keyword never touches a PostgREST filter
+// expression, and this function stays pure — and so one of the rare parts of the
+// connector `node --test` really covers. No `server-only` here: `route.ts` loads
+// the runs, this function does nothing but sort them and slice them.
 import type { EvalRun, RunStatus, RunSummary, Tag } from "./types";
 
-/** A short card — never the whole notes nor the matrix. The agent
- *  rappelle `get_run_metadata` ou `get_run_results` sur ce qu'il retient. */
+/** A short card — never the whole notes nor the matrix. The agent calls
+ *  `get_run_metadata` or `get_run_results` back on what it keeps. */
 export interface SearchHit {
   id: string;
   label: string | null;
@@ -22,13 +21,13 @@ export interface SearchHit {
   total_samples: number;
   mean: number | null;
   cost_usd: number | null;
-  /** The labels of the run's tags, in the order `tagsByRun` carries them —
-   *  jamais la couleur : un agent ne peint rien. Vide si le run n'en a pas. */
+  /** The labels of the run's tags, in the order `tagsByRun` carries them — never
+   *  the colour: an agent paints nothing. Empty if the run has none. */
   tags: string[];
   /** Only if a query was given: the fields that carry it. */
   matched_in?: MatchedField[];
-  /** Only if a query was given: the text around the first
-   *  occurrence, dans le premier champ de `FIELDS` qui correspond. */
+  /** Only if a query was given: the text around the first occurrence, in the
+   *  first field of `FIELDS` that matches. */
   snippet?: string;
 }
 
@@ -37,16 +36,14 @@ export interface SearchOptions {
   limit?: number;
   status?: string;
   /** Keep only the runs carrying this tag label, case-insensitively, on exact
-   *  equality — never as a substring: `api` must not bring back an
-   *  tag `rapide`. */
+   *  equality — never as a substring: `api` must not bring back a `rapide`
+   *  tag. */
   tag?: string;
 }
 
-/** Les tags d'un run, par identifiant de run — la forme que rend
- *  `tagsByRun()` (`lib/tags.ts`). Passed as an argument rather than imported:
- *  this
- *  module reste pur, chargeable par `node --test`, et `lib/tags.ts` est
- *  `server-only`. */
+/** A run's tags, by run identifier — the shape `tagsByRun()` (`lib/tags.ts`)
+ *  returns. Passed as an argument rather than imported: this module stays pure,
+ *  loadable by `node --test`, and `lib/tags.ts` is `server-only`. */
 export type RunTags = Map<string, Tag[]>;
 
 type MatchedField = "label" | "notes" | "analysis" | "criterion";
@@ -55,7 +52,7 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
 /** Where to search, and in what order: it is also the priority order of the
- *  snippet — le premier champ qui correspond fournit l'extrait. */
+ *  snippet — the first field that matches supplies the excerpt. */
 const FIELDS: { field: MatchedField; text: (run: EvalRun) => string }[] = [
   { field: "label", text: (run) => run.label ?? "" },
   { field: "criterion", text: (run) => run.config.criterion ?? "" },
@@ -74,16 +71,15 @@ const SNIPPET_MAX = 250;
  * re-sorting; a caller passing a different order would get their runs in that
  * order, not by date.
  *
- * Avec `query` : les runs dont `label`, `notes`, `analysis` ou
+ * With `query`: the runs whose `label`, `notes`, `analysis` or
  * `config.criterion` carries it, case-insensitively, as a substring — never as
  * a regular expression, so that a `(` or a `*` in an agent's query never
  * crashes nor over-matches. The input order is preserved.
  *
  * `status`, in every case, filters on strict equality against `run.status`, and
  * `tag` on the exact label of one of the run's tags (case-insensitively) — the
- * tags themselves come from `tagsByRun`, not from `summaries`, and by default
- * no run
- * porte. */
+ * tags themselves come from `tagsByRun`, not from `summaries`, and by default no
+ * run carries any. */
 export function searchRuns(
   summaries: RunSummary[],
   options: SearchOptions = {},
@@ -93,7 +89,7 @@ export function searchRuns(
   return hitsOf(summaries, tagsByRun, options).slice(0, limit);
 }
 
-/** Combien de runs correspondent — avant que `limit` n'en coupe l'affichage.
+/** How many runs match — before `limit` cuts what is shown.
  *  Lets the caller say "you see 10 of 34", which the list bounded by
  *  `searchRuns` no longer allows once cut. */
 export function countMatches(
@@ -105,8 +101,8 @@ export function countMatches(
 }
 
 /** Every matching card, in input order, without applying `limit` yet: the only
- *  function that filters and scores, shared by
- *  `searchRuns` et `countMatches` pour qu'elles ne divergent jamais. */
+ *  function that filters and scores, shared by `searchRuns` and `countMatches`
+ *  so that the two never drift apart. */
 function hitsOf(
   summaries: RunSummary[],
   tagsByRun: RunTags,
@@ -159,7 +155,7 @@ function cardOf(summary: RunSummary, tagsByRun: RunTags): SearchHit {
 }
 
 /** The fields carrying `needle` (already lower-cased), and the excerpt of the
- *  premier d'entre eux dans l'ordre de `FIELDS` — ou `null` si aucun. */
+ *  first of them in `FIELDS` order — or `null` if none. */
 function matchOf(
   run: EvalRun,
   needle: string,
