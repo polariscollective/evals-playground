@@ -222,7 +222,7 @@ export default function AdvicePage() {
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 rows={30}
-                className="w-full rounded border border-zinc-300 p-3 font-mono text-xs"
+                className="max-h-[calc(100vh-26rem)] w-full rounded border border-zinc-300 p-3 font-mono text-xs"
               />
               <div className="flex gap-2">
                 <button
@@ -247,7 +247,9 @@ export default function AdvicePage() {
             </div>
           ) : (
             <div
-              className="notes-prose w-full rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
+              // Scrolls inside its own frame, so the tab strip stays put while
+              // a long document moves under it.
+              className="notes-prose max-h-[calc(100vh-26rem)] w-full overflow-y-auto rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
               // Safe: `renderMarkdown` escapes all the input HTML before producing
               // the only tags it builds itself.
               // `reflow`: this document is stored wrapped at 78 columns, and those

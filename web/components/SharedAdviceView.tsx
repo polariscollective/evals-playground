@@ -57,7 +57,10 @@ export function SharedAdviceView({
         <div
           key={entry}
           hidden={entry !== topic}
-          className="notes-prose w-full rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
+          // The document scrolls inside its own frame, and the page does not.
+          // These are long texts read against the tab strip: a reader comparing
+          // two of them should not have to scroll back up to switch.
+          className="notes-prose max-h-[calc(100vh-22rem)] w-full overflow-y-auto rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
           // Safe: `renderMarkdown` escapes every bit of incoming HTML before
           // producing the only tags it builds itself.
           dangerouslySetInnerHTML={{ __html: rendered[entry] }}

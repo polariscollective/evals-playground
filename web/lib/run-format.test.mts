@@ -203,7 +203,7 @@ test("the prompt says the run names the world's server, at its own rate", () => 
     mcpRunFormat(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /`models\.world` is what names its server/);
-    assert.match(prompt, /billed at `models\.world`'s own rate, not some flat constant/);
+    assert.match(prompt, /billed at `models\.world`'s own rate rather than a flat constant/);
   }
 });
 
