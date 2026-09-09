@@ -34,6 +34,7 @@ import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
+import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { JudgeTarget } from "@/lib/types";
 import {
@@ -1933,25 +1934,8 @@ const handler = createMcpHandler((server) => {
     },
   );
 }, {
-  // The only channel that reaches an agent before it calls anything: tool
-  // descriptions are fetched one at a time, and only once the agent has
-  // already decided which tool it wants. Everything a caller has to know
-  // *before* choosing goes here — what this server is for, which document to
-  // read first, and which single tool spends money.
-  instructions:
-    "Evals playground: run behavioural evaluations of language models — one scenario played " +
-    "against several models, several times each, graded by judges on a scale you define, and " +
-    "read as a matrix.\n\n" +
-    "Start with `read_format`. It is the entire manual for writing a run, and nothing else on " +
-    "this server explains the format: a run written without it is written from guesswork, and " +
-    "this server will refuse it. Before writing anything, also call `read_advice` with " +
-    "`[\"scenario\", \"batch\", \"judge\"]` — one call, three documents: what keeps a scenario " +
-    "from reading as a test to the model being evaluated, how the rows of a run relate to each " +
-    "other, and how to write a scale someone else could apply. The first is the one failure no " +
-    "validation can catch. A fourth, `analysis`, is for when the results are in — read it before " +
-    "concluding anything from a matrix or extending a run.\n\n" +
-    "Both start nothing and spend nothing. So does everything else here, with a single " +
-    "exception: `launch_draft` spends real money.",
+  // See `lib/mcp-catalogue.ts`: the MCP page shows this exact string.
+  instructions: MCP_INSTRUCTIONS,
 });
 
 async function verifyToken(

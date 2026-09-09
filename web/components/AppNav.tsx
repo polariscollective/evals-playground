@@ -27,7 +27,7 @@ const LINKS = [
   { href: "/", label: "Evaluate" },
   { href: "/runs", label: "Runs" },
   { href: "/advice", label: "Advice" },
-  { href: "/settings/connections", label: "Connections" },
+  { href: "/settings/mcp", label: "MCP" },
 ];
 
 /** Which tab the open page belongs to.
