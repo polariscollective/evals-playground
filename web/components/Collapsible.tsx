@@ -3,16 +3,16 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-/** Une case qu'on replie en cliquant son titre.
+/** A box one folds away by clicking its heading.
  *
- * Ouverte au départ : ce qu'on vient lire est là sans un geste, et replier
- * n'est utile qu'une fois qu'on a lu. Seul le titre bascule, pas l'en-tête
- * entier — plusieurs de ces cases y portent un bouton (« Edit », « Save »),
- * qu'un en-tête cliquable en entier avalerait.
+ * Open to start with: what one comes to read is there without a gesture, and
+ * folding is only useful once one has read. Only the heading toggles, not the
+ * whole header — several of these boxes carry a button there ("Edit", "Save"),
+ * which a fully clickable header would swallow.
  *
- * Ce qui est replié n'est pas rendu du tout : les cases repliables d'ici
- * portent des tableaux et des transcriptions, et les garder montées pour la
- * seule beauté d'une animation ferait payer une lecture qu'on a rangée.
+ * What is folded away is not rendered at all: the foldable boxes here carry
+ * tables and transcripts, and keeping them mounted for the sole beauty of an
+ * animation would make one pay for a reading one has put away.
  */
 export function Collapsible({
   title,
@@ -22,25 +22,25 @@ export function Collapsible({
   pinned = false,
   children,
 }: {
-  /** Le titre avec ses propres classes — `eyebrow` sur les cases de lecture,
-   *  `text-sm font-medium` sur les champs : chaque case garde la sienne. */
+  /** The heading with its own classes — `eyebrow` on the reading boxes,
+   *  `text-sm font-medium` on the fields: each box keeps its own. */
   title: ReactNode;
-  /** Ce qui se tient à droite du titre. Reste visible une fois repliée :
-   *  « judged by claude-x », « Edit », se lisent justement quand le reste
-   *  est rangé — et « Edit » rouvre la case en y entrant. */
+  /** What stands to the right of the heading. Stays visible once folded:
+   *  "judged by claude-x", "Edit", read precisely when the rest is put away —
+   *  and "Edit" reopens the box on the way in. */
   aside?: ReactNode;
   className?: string;
-  /** L'espacement entre les enfants, celui que portait la case avant qu'ils
-   *  passent dans un bloc à eux, pour que rien ne bouge une fois ouverte. */
+  /** The spacing between the children, the one the box carried before they moved
+   *  into a block of their own, so that nothing shifts once open. */
   bodyClassName?: string;
-  /** Ouverte de force, sans chevron ni bascule. C'est ce dont un champ en
-   *  cours d'édition a besoin : replier ce qu'on est en train d'écrire
-   *  ferait disparaître la frappe sous les doigts. */
+  /** Forced open, with no chevron and no toggle. It is what a field being edited
+   *  needs: folding away what one is writing would make the typing disappear
+   *  under one's fingers. */
   pinned?: boolean;
   children: ReactNode;
 }) {
-  const [replié, setReplié] = useState(false);
-  const ouvert = pinned || !replié;
+  const [folded, setFolded] = useState(false);
+  const open = pinned || !folded;
 
   return (
     <section className={className}>
@@ -50,15 +50,15 @@ export function Collapsible({
         ) : (
           <button
             type="button"
-            onClick={() => setReplié((plié) => !plié)}
-            aria-expanded={ouvert}
+              onClick={() => setFolded((current) => !current)}
+              aria-expanded={open}
             className="group flex cursor-pointer items-baseline gap-1.5 text-left"
           >
             <svg
               viewBox="0 0 10 10"
               aria-hidden="true"
               className={`h-2.5 w-2.5 shrink-0 text-zinc-400 transition-transform group-hover:text-zinc-700 ${
-                ouvert ? "" : "-rotate-90"
+                  open ? "" : "-rotate-90"
               }`}
             >
               <path
@@ -75,7 +75,7 @@ export function Collapsible({
         )}
         {aside}
       </div>
-      {ouvert && <div className={bodyClassName}>{children}</div>}
+        {open && <div className={bodyClassName}>{children}</div>}
     </section>
   );
 }

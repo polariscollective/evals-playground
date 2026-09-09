@@ -2,21 +2,21 @@
 
 import { useState } from "react";
 
-/** Copie une valeur dans le presse-papier, et le confirme brièvement.
+/** Copies a value to the clipboard, and briefly confirms it.
  *
- * `navigator.clipboard` n'existe pas hors contexte sécurisé — un accès autre
- * que localhost sans HTTPS, par exemple. On retombe alors sur une invite
- * manuelle plutôt que d'échouer en silence.
+ * `navigator.clipboard` does not exist outside a secure context — an access other
+ * than localhost without HTTPS, for instance. We then fall back on a manual
+ * prompt rather than failing in silence.
  *
- * `value` peut être une fonction : un lien public se construit avec
- * `window.location.origin`, qui n'existe pas pendant le rendu côté serveur.
- * La lire seulement au clic — jamais pendant le rendu — évite le problème
- * sans qu'aucun appelant n'ait à y penser.
+ * `value` can be a function: a public link is built with
+ * `window.location.origin`, which does not exist during server-side rendering.
+ * Reading it only on click — never during render — avoids the problem without
+ * any caller having to think about it.
  *
- * Le contenu est laissé à l'appelant via `children`, qui reçoit l'état
- * `copied` : un identifiant se lit en clair suivi d'une icône, un lien se
- * cache derrière une icône seule, une pastille peut afficher tout autre
- * chose une fois copiée. Un seul geste, trois habillages différents. */
+ * The content is left to the caller through `children`, which receives the
+ * `copied` state: an identifier reads in plain text followed by an icon, a link
+ * hides behind an icon alone, a pill may show something else entirely once
+ * copied. One gesture, three different guises. */
 export function CopyButton({
   value,
   title,
@@ -54,7 +54,7 @@ export function CopyButton({
   );
 }
 
-/** L'icône de copie, partagée par tous les habillages. */
+/** The copy icon, shared by every guise. */
 export function CopyIcon() {
   return (
     <svg
@@ -71,8 +71,8 @@ export function CopyIcon() {
   );
 }
 
-/** Un globe minimal : le seul rôle est de se reconnaître au premier coup
- *  d'œil comme « ce run est public », pas de représenter une géographie. */
+/** A minimal globe: its only role is to be recognised at a glance as "this run
+ *  is public", not to represent a geography. */
 export function PublicIcon() {
   return (
     <svg

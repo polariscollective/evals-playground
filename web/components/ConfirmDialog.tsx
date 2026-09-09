@@ -1,11 +1,11 @@
 "use client";
 
-// La confirmation d'une action qu'on ne peut pas défaire.
+// The confirmation of an action one cannot undo.
 //
-// `window.confirm` faisait le travail, mal : une fenêtre du système, sans mise
-// en forme, dont le titre porte le nom du domaine et où un tableau de chiffres
-// se lit comme un paragraphe. Ici les issues d'un arrêt tiennent dans un
-// tableau, et c'est précisément ce qu'on veut lire avant de cliquer.
+// `window.confirm` did the job, badly: a system window, with no layout, whose
+// title carries the domain name and where a table of figures reads as a
+// paragraph. Here the outcomes of a stop fit in a table, and that is precisely
+// what one wants to read before clicking.
 import type { ReactNode } from "react";
 import { Dialog } from "./Dialog";
 
@@ -22,7 +22,7 @@ export function ConfirmDialog({
   open: boolean;
   title: string;
   confirmLabel: string;
-  /** `warning` pour ce qui détruit ou interrompt. */
+  /** `warning` for what destroys or interrupts. */
   tone?: "neutral" | "warning";
   busy?: boolean;
   onConfirm: () => void;
@@ -62,11 +62,11 @@ export function ConfirmDialog({
   );
 }
 
-/** Le détail d'une action, une ligne par issue.
+/** The detail of an action, one row per outcome.
  *
- * Un tableau plutôt qu'une phrase : ce qu'on veut savoir avant d'arrêter un run,
- * c'est combien de cases dans chaque cas, et un chiffre se trouve mal au milieu
- * d'un paragraphe. */
+ * A table rather than a sentence: what one wants to know before stopping a run is
+ * how many cells fall in each case, and a figure is hard to find in the middle of
+ * a paragraph. */
 export function ConfirmRows({
   rows,
 }: {

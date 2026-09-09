@@ -1,10 +1,10 @@
 "use client";
 
-// La mécanique d'une fenêtre modale, en un seul endroit.
+// The mechanism of a modal window, in one single place.
 //
-// Bâtie sur `<dialog>` plutôt que sur un div en position fixe : le navigateur
-// donne le piège au clavier, le retour du focus, la touche Échap et le voile,
-// qu'il faudrait sinon écrire et maintenir.
+// Built on `<dialog>` rather than on a fixed-position div: the browser gives the
+// keyboard trap, the focus return, the Escape key and the backdrop, which would
+// otherwise have to be written and maintained.
 import { useEffect, useRef, type ReactNode } from "react";
 
 export function Dialog({
@@ -34,14 +34,14 @@ export function Dialog({
   return (
     <dialog
       ref={dialog}
-      // Échap déclenche `cancel` : le laisser fermer sans prévenir laisserait
-      // l'état du parent croire la fenêtre encore ouverte.
+        // Escape fires `cancel`: letting it close without warning would leave the
+        // parent's state believing the window still open.
       onCancel={(event) => {
         event.preventDefault();
         onClose();
       }}
-      // Un clic sur le voile a pour cible le dialogue lui-même, jamais son
-      // contenu : c'est ce qui distingue les deux.
+        // A click on the backdrop has the dialog itself as its target, never its
+        // content: that is what tells the two apart.
       onClick={(event) => {
         if (event.target === dialog.current) onClose();
       }}
