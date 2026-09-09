@@ -344,3 +344,30 @@ The toggle, disabled with an explanation when the displayed judge has no targets
 **Ordering.** Task B1 first, because the CI takes time and the columns are optional, so nothing breaks while it runs. Phase A depends on nothing but its own migration line, which rides along in B1.
 
 **A rule worth restating during execution:** `sees_system_prompt` defaults to `true`. A default of `false` would silently produce nonsense for every criterion referring to the model's instructions, and would change how every run already stored is graded.
+
+---
+
+## What was left out, and why
+
+Written during execution rather than after, so the reasoning survives.
+
+**An extension that adds scenarios does not extend the targets.** The rule the
+spec names — refuse an extension adding `new_scenarios` to a run whose judges
+carry targets, unless it supplies targets for the new rows — is not implemented.
+`extendProblem` does not receive the run's judges, and the extension request has
+no field to carry per-judge targets for new rows, so enforcing it would have
+meant either blocking a workflow the analysis guide actively recommends (adding
+variant rows to a study) or designing that field.
+
+What happens instead is graceful and visible: the new rows have no target,
+`targetOf` returns undefined, and the deviation view shows them empty rather
+than inventing a zero. `relative-view.test.mts` pins that behaviour so it cannot
+silently become a zero later.
+
+The follow-up is to add `new_targets` to the extension request, per judge, and
+then make the rule an error.
+
+**`profilePatchProblem` was not taught about `advice_topic`.** It refuses a
+request carrying two settings at once; `advice_topic` travels beside
+`scenario_advice` as a qualifier rather than as a setting of its own, so the
+existing rule still holds. Worth a test if a third qualifier ever appears.
