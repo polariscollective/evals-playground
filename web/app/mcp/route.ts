@@ -34,6 +34,7 @@ import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
+import { PLAIN_VIEW } from "@/lib/view";
 import type { JudgeTarget } from "@/lib/types";
 import {
   NotFound,
@@ -562,8 +563,20 @@ const handler = createMcpHandler((server) => {
         }));
         return {
           judge,
-          cells: cellsOf(ownSamples, run.config.scenarios.length, judgeRubric),
-          overall_mean: overallMean(ownSamples, judgeRubric),
+          cells: cellsOf(
+            ownSamples,
+            run.config.scenarios.length,
+            judgeRubric,
+            PLAIN_VIEW,
+            judge.targets,
+          ),
+          // This judge's own targets, so its own control rows leave its own
+          // figure — see `overallMean`, `lib/matrix.ts`. Without them this
+          // number would contradict what the analysis advice tells the agent
+          // reading it: a control row is odd on purpose, and a feasibility row
+          // aiming at the bottom of the scale would drag a mean that is meant
+          // to be about the rows actually under study.
+          overall_mean: overallMean(ownSamples, judgeRubric, PLAIN_VIEW, judge.targets),
         };
       });
       const results = {
@@ -579,7 +592,9 @@ const handler = createMcpHandler((server) => {
             // mean: it is counted in `excluded`, never in `grades`.
           excluded: level.excluded ?? false,
         })),
-        overall_mean: overallMean(matrixSamples, rubric),
+        // The PRINCIPAL's targets, since this figure follows the principal like
+        // everything else at this level.
+        overall_mean: overallMean(matrixSamples, rubric, PLAIN_VIEW, principal?.targets),
         // Every living judge of this run, the principal included and marked —
         // never an unlinked one. Full identity (`judgeIdentity`, the same shape as
         // get_run_metadata and get_run_trajectory) plus the overall mean of THIS
