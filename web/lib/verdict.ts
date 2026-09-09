@@ -1,24 +1,24 @@
-// Le verdict que rend `/validate` sur un document, en trois issues.
+// The verdict `/validate` returns on a document, in three outcomes.
 //
-// Séparé de la route parce que c'est la partie qui a une règle à tenir, et la
-// seule que le dépôt sache tester : `node --test` ne regarde que `lib/`. La
-// route ne garde que le transport — lire un corps, rendre une réponse.
+// Separated from the route because it is the part that holds a rule, and the
+// only part the repository knows how to test: `node --test` looks only at
+// `lib/`. The route keeps the transport alone — read a body, return a response.
 //
-// Les trois issues ne se confondent pas :
+// The three outcomes are not to be confused:
 //
 //   OK          le document est complet, le run peut partir tel quel
 //   INCOMPLETE  le document est valide et chargera, mais il annonce un CSV
-//               qu'il ne porte pas : rien ne se lance avant le téléversement
+//               it does not carry: nothing launches before the upload
 //   (refus)     le document ne charge pas, et la phrase dit pourquoi
 //
-// Le premier mot porte la distinction parce que le lecteur est une machine qui
-// lit une phrase. Le code d'état, lui, ne dit que refusé ou non : un document
-// incomplet est valide, ce n'est pas une erreur mais une étape qui reste.
+// The first word carries the distinction because the reader is a machine
+// reading a sentence. The status code says only refused or not: an incomplete
+// document is valid, not an error but a step that remains.
 import { ConfigFileError, readConfigFile } from "./config-file.ts";
 import type { EvalRunConfig } from "./types";
 
-/** Le plafond du corps. Un run de deux cents scénarios avec historiques tient
- *  très en dessous ; au-delà, ce n'est plus une configuration. */
+/** The body's cap. A run of two hundred scenarios with histories fits well
+ *  below it; beyond that, it is no longer a configuration. */
 export const MAX_BYTES = 256 * 1024;
 
 export interface Verdict {
@@ -26,45 +26,45 @@ export interface Verdict {
   message: string;
 }
 
-/** De quoi chiffrer le run, passé de l'extérieur.
+/** What it takes to price the run, passed in from outside.
  *
- * `pricing.ts` est une dépendance plus lourde que le reste de ce module — il
- * lit `shared/pricing.json` et fait le calcul du devis. L'importer ici
- * coudrait cette charge à un module qui n'a par ailleurs qu'à comparer des
- * nombres, et qui reste ainsi trivialement testable. La route passe
- * `costSentence`, les tests passent ce qu'ils veulent. */
+ * `pricing.ts` is a heavier dependency than the rest of this module — it reads
+ * `shared/pricing.json` and computes the quote. Importing it here would sew
+ * that weight onto a module that otherwise only compares numbers, and that
+ * stays trivially testable as a result. The route passes `costSentence`, the
+ * tests pass whatever they like. */
 export type Pricer = (config: EvalRunConfig) => string | null;
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
 }
 
-/** La forme du run : ce que le validateur sert à vérifier, et la seule chose
- *  qui ne dépende pas du nombre de scénarios. Un document incomplet la rend
- *  donc aussi — c'est la partie de son travail qui, elle, est faite. */
+/** The run's shape: what the validator serves to check, and the only thing
+ *  that does not depend on the number of scenarios. An incomplete document
+ *  therefore returns it too — the part of its work that is done. */
 function shape(config: EvalRunConfig): string {
   const counted = config.rubric.filter((level) => !level.excluded).length;
-  // Le nombre de juges est rendu parce que c'est la seule façon de voir une
-  // clé mal orthographiée : `judge:` au lieu de `judges:` est avalé sans un
-  // mot — comme n'importe quelle clé que ce format ne définit pas — et le
-  // document tourne alors avec un juge de moins que ce qu'on croyait avoir
-  // écrit. Le compte inclut le principal et, s'il est allumé, le juge
-  // d'éveil : c'est le nombre d'appels de modèle par conversation qu'on paie.
-  const eveil = config.check_eval_awareness === false ? 0 : 1;
-  const juges = 1 + (config.judges?.length ?? 0) + eveil;
+  // The number of judges is returned because it is the only way to see a
+  // misspelled key: `judge:` instead of `judges:` is swallowed without a word —
+  // like any key this format does not define — and the document then runs with
+  // one judge fewer than was thought to have been written. The count includes
+  // the principal and, if it is on, the awareness judge: it is the number of
+  // model calls per conversation being paid for.
+  const awareness = config.check_eval_awareness === false ? 0 : 1;
+  const judges = 1 + (config.judges?.length ?? 0) + awareness;
   return (
     `${plural(config.models.targets.length, "target model")}, ` +
-    `${plural(juges, "judge")} (eval-awareness ${eveil ? "on" : "off"}), ` +
+    `${plural(judges, "judge")} (eval-awareness ${awareness ? "on" : "off"}), ` +
     `${plural(config.rubric.length, "grade")} (${counted} counted), ` +
     `${plural(config.turns, "turn")} × ${plural(config.repetitions, "repetition")}.`
   );
 }
 
-/** Ce qui manque à un document qui annonce un CSV sans le porter.
+/** What is missing from a document announcing a CSV without carrying it.
  *
- * Les colonnes sont nommées quand le document les nomme : c'est là que se
- * jouent les erreurs d'alignement, et les répéter permet de les relire sans
- * rouvrir le fichier. La forme courte `scenarios: csv` n'en nomme aucune. */
+ * The columns are named when the document names them: that is where alignment
+ * errors happen, and repeating them makes it possible to read them back without
+ * reopening the file. The short form `scenarios: csv` names none. */
 function csvGap(columns: string[]): string {
   const named = columns.filter((column) => column.trim() !== "");
   return (
@@ -74,7 +74,7 @@ function csvGap(columns: string[]): string {
   );
 }
 
-/** Le verdict, dans les mots qui servent à corriger. */
+/** The verdict, in the words that serve to correct it. */
 export function verdictOf(text: string, priceOf?: Pricer): Verdict {
   if (text.trim() === "") {
     return { status: 400, message: "Nothing to validate. Send the YAML document." };
@@ -96,9 +96,9 @@ export function verdictOf(text: string, priceOf?: Pricer): Verdict {
           ])} ` + shape(config),
       };
     }
-    // Le prix ne va qu'au document complet : un document qui annonce un CSV
-    // n'a aucun scénario, et le coût est précisément ce qui dépend de leur
-    // nombre — le seul chiffre que la forme du run ne porte pas.
+    // The price goes only to a complete document: a document announcing a CSV
+    // has no scenario, and the cost is precisely what depends on their number —
+    // the one figure the run's shape does not carry.
     const price = priceOf?.(config) ?? null;
     return {
       status: 200,

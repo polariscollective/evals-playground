@@ -1,24 +1,25 @@
-// Comment une case de la matrice se calcule, du côté de celui qui regarde.
+// How a cell of the matrix is computed, from the point of view of whoever is
+// looking.
 //
-// Rien de tout ceci ne touche la base : les notes du juge restent ce qu'elles
-// sont, et c'est leur lecture qu'on change. Un run ne se rejoue pas pour poser
-// une autre question à ses résultats.
+// None of this touches the database: the judge's grades stay what they are, and
+// it is how they are read that changes. A run is not replayed to ask its
+// results a different question.
 //
-// Deux réglages seulement, parce qu'ils composent :
+// Two settings only, because they compose:
 //
-//   - une **table de correspondance**, qui remplace chaque note par une autre,
-//     ou la met hors du calcul ;
-//   - une **fonction d'agrégation**, qui réduit les notes d'une case à un nombre.
+//   - a **mapping table**, which replaces each grade with another, or puts it
+//     outside the computation;
+//   - an **aggregate function**, which reduces a cell's grades to one number.
 //
-// « 0 et 1 valent 0, 2 et 3 valent 1, puis moyenne » n'est pas un mode à part :
-// c'est une correspondance suivie d'une moyenne, et le résultat est la
-// proportion de conversations arrivées au niveau 2. C'est aussi pourquoi il n'y
-// a pas de mode « taux au-dessus d'un seuil » : il existe déjà.
+// "0 and 1 count as 0, 2 and 3 count as 1, then a mean" is not a mode of its
+// own: it is a mapping followed by a mean, and the result is the proportion of
+// conversations that reached level 2. That is also why there is no "rate above
+// a threshold" mode: it exists already.
 //
-// Pas de code arbitraire, volontairement. Une expression ne se met pas dans
-// l'en-tête d'un CSV, et un nombre qu'on ne peut pas expliquer à qui reçoit le
-// fichier ne vaut pas mieux qu'un nombre faux. Ces deux réglages-là s'écrivent
-// en une phrase — `describeView` le fait.
+// No arbitrary code, deliberately. An expression does not go into a CSV header,
+// and a number that cannot be explained to whoever receives the file is no
+// better than a wrong number. These two settings are written in one sentence —
+// `describeView` does it.
 import type { RubricLevel } from "./types";
 
 export type Aggregate = "mean" | "median" | "min" | "max";
@@ -42,10 +43,10 @@ export function isPlainView(view: MatrixView): boolean {
   return view.aggregate === "mean" && Object.keys(view.remap).length === 0;
 }
 
-/** Ce que devient une note, ou `null` si elle sort du calcul.
+/** What a grade becomes, or `null` if it leaves the computation.
  *
- * L'échelle du run tranche en dernier : un palier « sans objet » reste dehors
- * tant qu'une correspondance ne le rappelle pas explicitement. */
+ * The run's scale decides last: a "not applicable" level stays outside as long
+ * as a mapping does not explicitly call it back. */
 export function mapScore(
   score: number,
   rubric: RubricLevel[] | undefined,
@@ -56,7 +57,7 @@ export function mapScore(
   return level?.excluded ? null : score;
 }
 
-/** Les notes d'une case, réduites à un nombre. */
+/** A cell's grades, reduced to one number. */
 export function aggregate(values: number[], how: Aggregate): number | null {
   if (values.length === 0) return null;
   if (how === "min") return Math.min(...values);
@@ -66,17 +67,17 @@ export function aggregate(values: number[], how: Aggregate): number | null {
   }
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
-  // Un nombre pair de notes n'a pas de milieu : la moyenne des deux valeurs
-  // centrales est la convention, et elle garde la médiane dans l'échelle.
+  // An even number of grades has no middle: the mean of the two central values
+  // is the convention, and it keeps the median inside the scale.
   return sorted.length % 2 === 1
     ? sorted[middle]
     : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-/** Les bornes de l'échelle telle qu'on la regarde.
+/** The bounds of the scale as it is being looked at.
  *
- * Sans elles, une correspondance qui ramène l'échelle à 0–1 laisserait la
- * couleur des cases calée sur l'ancienne étendue : tout paraîtrait pâle. */
+ * Without them, a mapping that brings the scale back to 0–1 would leave the
+ * cells' colour calibrated on the old range: everything would look pale. */
 export function viewBounds(
   rubric: RubricLevel[] | undefined,
   view: MatrixView,
@@ -88,10 +89,10 @@ export function viewBounds(
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 
-/** La vue en une phrase, pour l'écran et pour l'en-tête d'un export.
+/** The view in one sentence, for the screen and for an export's header.
  *
- * Un nombre qui n'est plus la moyenne des notes doit dire ce qu'il est, surtout
- * une fois recopié dans un tableur où plus rien ne le rappelle. */
+ * A number that is no longer the mean of the grades must say what it is,
+ * especially once copied into a spreadsheet where nothing recalls it. */
 export function describeView(
   view: MatrixView,
   rubric: RubricLevel[] | undefined,
@@ -108,11 +109,11 @@ export function describeView(
   return changed.length === 0 ? how : `${how}, with ${changed.join(", ")}`;
 }
 
-// --- le passage par une URL ---------------------------------------------------
+// --- the trip through a URL ---------------------------------------------------
 //
-// L'export est produit par le serveur, qui ne voit pas l'écran : la vue voyage
-// donc dans la requête. Le même encodage rendrait une vue partageable par
-// simple lien, si on en vient là.
+// The export is produced by the server, which does not see the screen: the view
+// therefore travels in the request. The same encoding would make a view
+// shareable by a plain link, if it ever comes to that.
 
 export function viewToQuery(view: MatrixView): string {
   const params = new URLSearchParams();
@@ -137,8 +138,8 @@ export function viewFromQuery(params: URLSearchParams): MatrixView {
     const [from, to] = pair.split(":");
     const score = Number(from);
     if (!Number.isFinite(score)) continue;
-    // Une valeur illisible est ignorée plutôt que traduite en zéro : un zéro
-    // inventé changerait la matrice sans le dire.
+    // An unreadable value is ignored rather than translated into zero: an
+    // invented zero would change the matrix without saying so.
     if (to === "x") remap[score] = null;
     else if (Number.isFinite(Number(to))) remap[score] = Number(to);
   }

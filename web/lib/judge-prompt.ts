@@ -1,5 +1,5 @@
-// Le prompt du juge, rendu depuis le même gabarit que le Python qui l'envoie
-// réellement — voir `shared/judge-prompt.json`. Un aperçu qui décrirait un
+// The judge prompt, rendered from the same template as the Python that
+// actually sends it — see `shared/judge-prompt.json`. A preview describing a
 // prompt qui n'est plus celui qui part serait un mensonge que personne ne
 // verrait.
 import { SHARED_JUDGE_PROMPT } from "./shared.ts";
@@ -7,19 +7,19 @@ import type { RubricLevel } from "./types";
 
 export const JUDGE_SYSTEM = SHARED_JUDGE_PROMPT.system;
 
-/** La note telle qu'on l'écrit au juge et à l'écran.
+/** The grade as it is written to the judge and on screen.
  *
- * Un entier reste un entier : `2` et non `2.0`. Les échelles sont écrites à la
- * main, souvent en nombres ronds, et une décimale parasite dans le prompt
- * invite le juge à répondre autre chose que ce qu'on lui a proposé. */
+ * A whole number stays a whole number: `2`, not `2.0`. Scales are written by
+ * hand, often in round numbers, and a stray decimal in the prompt invites the
+ * judge to answer something other than what it was offered. */
 export function formatValue(value: number): string {
   return String(value);
 }
 
-/** L'échelle triée de la note la plus basse à la plus haute.
+/** The scale sorted from lowest grade to highest.
  *
- * Une échelle présentée dans le désordre se lit comme une liste d'options sans
- * progression, alors que l'ordre est précisément ce qui en fait une échelle. */
+ * A scale presented out of order reads as a list of options with no
+ * progression, when the order is precisely what makes it a scale. */
 export function sortedRubric(rubric: RubricLevel[]): RubricLevel[] {
   return [...rubric].sort((a, b) => a.value - b.value);
 }
@@ -35,11 +35,11 @@ export function renderRubric(rubric: RubricLevel[]): string {
     .join("\n");
 }
 
-/** Remplace les emplacements d'un gabarit, sans interpréter le remplacement.
+/** Replaces a template's slots, without interpreting the replacement.
  *
  * `String.replace` traite `$&`, `$1` et consorts comme des motifs dans la
- * chaîne de remplacement : un critère contenant `$&` verrait son texte
- * corrompu. Une fonction de remplacement échappe à cette règle. */
+ * replacement string: a criterion containing `$&` would have its text
+ * corrupted. A replacement function escapes that rule. */
 function fill(template: string, values: Record<string, string>): string {
   let out = template;
   for (const [name, value] of Object.entries(values)) {
@@ -48,18 +48,18 @@ function fill(template: string, values: Record<string, string>): string {
   return out;
 }
 
-/** Met le transcript en forme pour le juge, tours numérotés.
+/** Lays the transcript out for the judge, turns numbered.
  *
- * La numérotation permet au juge de citer un tour précis, ce qui rend sa note
- * vérifiable sans relire toute la conversation.
+ * The numbering lets the judge cite a particular turn, which makes its grade
+ * checkable without rereading the whole conversation.
  *
- * @param systemPrompt Le system prompt du scénario joué, à faire précéder au
- *   transcript — même mécanique que `render_transcript` côté Python
- *   (`backend/playground/scoring.py`). Rendu hors numérotation des tours, mais
- *   marqué `given as context` comme un tour posé : ce n'est pas un tour de la
- *   conversation, et ce n'est pas non plus un mot du modèle évalué. Absent,
- *   le rendu ne change pas — c'est le cas de cet aperçu, qui n'est attaché à
- *   aucun scénario réel. */
+ * @param systemPrompt The system prompt of the scenario played, to precede the
+ *   transcript — the same mechanism as `render_transcript` on the Python side
+ *   (`backend/playground/scoring.py`). Rendered outside the turn numbering, but
+ *   marked `given as context` like a seeded turn: it is not a turn of the
+ *   conversation, and neither is it a word from the evaluated model. Absent,
+ *   the rendering does not change — which is the case for this preview, tied to
+ *   no real scenario. */
 export function renderTranscript(
   messages: { role: string; content: string }[],
   systemPrompt?: string | null,
