@@ -1,14 +1,14 @@
-// Lire un run décrit dans un fichier, JSON ou YAML.
+// Reading a run described in a file, JSON or YAML.
 //
-// L'idée est qu'un agent puisse écrire la configuration d'un run — scénarios,
-// échelle, modèles — et qu'on la dépose telle quelle dans le formulaire. Ce qui
-// est demandé ici est exactement la forme stockée dans `eval_runs.config` : une
-// seule forme à apprendre, et un run exporté se réimporte sans traduction.
+// The idea is that an agent can write a run's configuration — scenarios, scale,
+// models — and that it is laid down as it stands in the form. What is asked for
+// here is exactly the shape stored in `eval_runs.config`: one shape to learn,
+// and an exported run reimports without translation.
 //
-// Un seul analyseur pour les deux formats : JSON 1.2 est un sous-ensemble de
-// YAML, et `parse` avale donc les deux. Il vit côté serveur pour rester hors du
-// paquet envoyé au navigateur, et pour que la validation reste celle qui fait
-// autorité.
+// One parser for both formats: JSON 1.2 is a subset of YAML, and `parse`
+// therefore swallows both. It lives on the server side to stay out of the
+// bundle sent to the browser, and so that the validation stays the one that has
+// authority.
 import { parse, stringify } from "yaml";
 import { served, writesWorld } from "./tools.ts";
 import { configProblem } from "./validate.ts";
@@ -24,12 +24,12 @@ import type {
 } from "./types";
 
 export interface ImportedConfig {
-  /** Les scénarios sont vides quand le fichier annonce un CSV. */
+  /** The scenarios are empty when the file announces a CSV. */
   config: EvalRunConfig;
   csv: ExpectedCsv | null;
 }
 
-/** Levée telle quelle vers l'utilisateur : son message doit se lire. */
+/** Raised as it stands to the user: its message must read. */
 export class ConfigFileError extends Error {}
 
 function asString(value: unknown, fallback = ""): string {
@@ -40,14 +40,14 @@ function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** Absent, le champ prend son défaut ; présent, il passe tel quel — même mal
- *  typé — pour que `configProblem` puisse le refuser.
+/** Absent, the field takes its default; present, it passes as it stands — even
+ *  badly typed — so that `configProblem` can refuse it.
  *
- *  Coercer ici rendait la faute invisible : `turns: "4"`, un 4 mis entre
- *  guillemets comme YAML y invite, retombait sur le défaut 1 et le document
- *  passait, puisqu'à un seul tour l'adversaire n'est plus exigé. On recevait
- *  un run à un tour en croyant en avoir commandé quatre. Même raisonnement
- *  que pour `check_eval_awareness` plus bas : ce fichier lit, il ne juge pas. */
+ *  Coercing here made the mistake invisible: `turns: "4"`, a 4 put in quotes as
+ *  YAML invites, fell back on the default 1 and the document passed, since at a
+ *  single turn the adversary is no longer required. One received a one-turn run
+ *  believing one had ordered four. Same reasoning as for `check_eval_awareness`
+ *  further down: this file reads, it does not judge. */
 function asGiven(value: unknown, fallback: number): number {
   return value === undefined || value === null ? fallback : (value as number);
 }
@@ -61,27 +61,27 @@ function scenarioOf(entry: unknown, position: number): EvalScenario {
     title: asString(row.title),
     system_prompt: asString(row.system_prompt ?? row.system),
     opening_message: asString(row.opening_message ?? row.opening ?? row.message),
-    // L'historique posé, propre à ce scénario. Absent la plupart du temps, et
-    // absent du fichier écrit quand il l'est : un tableau vide partout ferait
-    // du bruit dans un gabarit.
+      // The seeded history, this scenario's own. Absent most of the time, and
+      // absent from the written file when it is: an empty array everywhere
+      // would make noise in a template.
     note: asString(row.note),
-    // Ce que cette ligne change au monde du run. Ajouté au sien comme un bloc
-    // nommé et prioritaire, jamais fondu dedans : c'est ce qui rend une
-    // négation sûre plutôt qu'une contradiction à démêler.
+      // What this row changes about the run's world. Added to its own as a
+      // named and prioritised block, never melted into it: that is what makes a
+      // negation safe rather than a contradiction to untangle.
     world: asString(row.world),
     history: readHistory(row.history, position),
-    // Trois états à préserver : absent offre tous les outils du run, une liste
-    // offre ceux-là, `none` n'en offre aucun. Les confondre ferait disparaître
-    // la comparaison « la même ligne, avec et sans outils ».
+      // Three states to preserve: absent offers all the run's tools, a list
+      // offers those, `none` offers none. Confusing them would make the
+      // comparison "the same row, with and without tools" disappear.
     tools: readScenarioTools(row.tools, position),
   };
 }
 
 function readScenarioTools(value: unknown, position: number): string[] | null {
   if (value === undefined || value === null) return null;
-  // `tools: none` est la façon lisible de dire « aucun » dans un fichier écrit
-  // à la main. YAML rendrait `~` ou `null`, qui veut dire « absent » — donc
-  // « tous » — et l'écart entre les deux est exactement ce qui compte ici.
+    // `tools: none` is the readable way of saying "none" in a file written by
+    // hand. YAML would return `~` or `null`, which means "absent" — hence
+    // "all" — and the gap between the two is exactly what counts here.
   if (value === "none") return [];
   if (!Array.isArray(value)) {
     throw new ConfigFileError(
@@ -113,13 +113,13 @@ function readHistory(value: unknown, position: number): SeededTurn[] {
   });
 }
 
-/** La partie « scénarios » du fichier : une liste, ou l'annonce d'un CSV. */
+/** The file's "scenarios" part: a list, or the announcement of a CSV. */
 function readScenarios(value: unknown): {
   scenarios: EvalScenario[];
   csv: ExpectedCsv | null;
 } {
-  // `scenarios: csv` — la forme la plus courte, quand les colonnes portent les
-  // noms qu'on devinera de toute façon au téléversement.
+  // `scenarios: csv` — the shortest form, when the columns carry the names one
+  // will guess anyway at upload time.
   if (value === "csv") {
     return {
       scenarios: [],
@@ -181,27 +181,27 @@ function readTools(value: unknown): ToolSpec[] {
           })
         : [],
       result: asString(tool.result ?? tool.output),
-      // Le discriminant des deux formes. Renseigné, l'outil est servi depuis
-      // le monde ; vide, il rend `result` sans qu'aucun modèle ne soit appelé.
-      // `configProblem` refuse les deux ensemble.
+        // The discriminant of the two forms. Filled in, the tool is served from
+        // the world; empty, it returns `result` with no model called at all.
+        // `configProblem` refuses both together.
       retrieval_rules: asString(tool.retrieval_rules),
-      // Le second discriminant, indépendant du premier : ce que l'appeler
-      // CHANGE au monde. Renseigné, l'appel entre au journal de la
-      // conversation et les lectures qui suivent en tiennent compte. Un outil
-      // fixe peut le porter — c'est même la forme courante.
+        // The second discriminant, independent of the first: what calling it
+        // CHANGES about the world. Filled in, the call enters the
+        // conversation's log and the reads that follow take it into account. A
+        // fixed tool can carry it — that is even the common form.
       world_effect: asString(tool.world_effect),
     };
   });
 }
 
-/** `where` situe l'erreur : `"rubric"` pour l'échelle du principal, au
- *  premier niveau ; `"judge 2: rubric"` pour celle d'un juge secondaire —
- *  voir `readJudges`. Les deux lisent la même forme, donc le même code. */
+/** `where` locates the error: `"rubric"` for the principal's scale, at the top
+ *  level; `"judge 2: rubric"` for a secondary judge's — see `readJudges`. Both
+ *  read the same shape, hence the same code. */
 function readRubric(value: unknown, where = "rubric"): RubricLevel[] {
-  // Deux torts différents, deux messages : « missing » pour une échelle
-  // absente, et ce qu'on attend pour une échelle présente mais mal formée —
-  // une table de paliers, ou un autre nom de clé, disaient tous les deux
-  // « missing », ce qui envoyait chercher au mauvais endroit.
+  // Two different faults, two messages: "missing" for an absent scale, and what
+  // is expected for a scale that is present but malformed — a table of levels,
+  // or another key name, both used to say "missing", which sent people looking
+  // in the wrong place.
   if (value === undefined || value === null) {
     throw new ConfigFileError(`${where} is missing.`);
   }
@@ -218,18 +218,18 @@ function readRubric(value: unknown, where = "rubric"): RubricLevel[] {
     return {
       value: asNumber(row.value, NaN),
       meaning: asString(row.meaning ?? row.description),
-      // Un palier « sans objet » : le juge peut le choisir, la moyenne
-      // l'ignore.
+        // A "not applicable" level: the judge may choose it, the mean ignores
+        // it.
       excluded: row.excluded === true,
     };
   });
 }
 
-/** La forme d'une échelle telle qu'on l'écrit dans le fichier : `excluded`
- *  omis quand il vaut `false`, le défaut du lecteur — l'écrire partout
- *  serait du bruit et enseignerait un champ là où il ne sert pas. Partagée
- *  entre l'échelle du principal et celle de chaque juge secondaire : les
- *  deux doivent s'écrire pareil, et un seul endroit le garantit. */
+/** The shape of a scale as it is written in the file: `excluded` omitted when
+ *  it is `false`, the reader's default — writing it everywhere would be noise
+ *  and would teach a field where it serves no purpose. Shared between the
+ *  principal's scale and each secondary judge's: the two must be written the
+ *  same way, and one single place guarantees it. */
 function rubricDocument(rubric: RubricLevel[]): unknown[] {
   return rubric.map((level) =>
     level.excluded
@@ -238,22 +238,21 @@ function rubricDocument(rubric: RubricLevel[]): unknown[] {
   );
 }
 
-/** Les juges secondaires du run, en plus du principal — voir `JudgeSpec`
- *  dans `types.ts`.
+/** The run's secondary judges, on top of the principal — see `JudgeSpec` in
+ *  `types.ts`.
  *
- * Absent ou vide : la forme ancienne, celle de tous les fichiers déjà
- * écrits — `criterion`/`rubric` au premier niveau restent le seul juge, et
- * décrivent le principal. Chaque entrée ici en ajoute un de plus, toujours
- * ordinaire : `JudgeSpec` ne porte ni type système ni marque de principal,
- * donc aucune entrée ne peut se réclamer de l'un ou de l'autre — une clé
- * comme `system_type` ou `is_principal`, glissée ici par erreur ou par un
- * agent qui n'a pas compris le format, n'est simplement jamais lue, comme
- * toute autre clé inconnue dans ce fichier.
+ * Absent or empty: the old shape, that of every file already written —
+ * `criterion`/`rubric` at the top level stay the only judge, and describe the
+ * principal. Each entry here adds one more, always ordinary: `JudgeSpec`
+ * carries neither a system type nor a mark of principal, so no entry can claim
+ * either — a key such as `system_type` or `is_principal`, slipped in here by
+ * mistake or by an agent that has not understood the format, is simply never
+ * read, like any other unknown key in this file.
  *
- * La validation sémantique (un critère non vide, une échelle qui tient,
- * deux paliers comptés) est laissée à `configProblem`, appelé à la fin de
- * `readConfigFile` — exactement comme pour le principal et pour les outils :
- * ce qui est lu ici ne fait que donner une forme, jamais un jugement. */
+ * The semantic validation (a non-empty criterion, a scale that holds, two
+ * counted levels) is left to `configProblem`, called at the end of
+ * `readConfigFile` — exactly as for the principal and for the tools: what is
+ * read here only gives a shape, never a judgement. */
 function readJudges(value: unknown): JudgeSpec[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
@@ -265,10 +264,10 @@ function readJudges(value: unknown): JudgeSpec[] {
     }
     const row = entry as Record<string, unknown>;
     const model = row.model;
-    // Comme `check_eval_awareness` : un type qui n'est pas le bon ne se
-    // devine pas. `asString` effacerait silencieusement un nombre ou un
-    // booléen glissé ici en chaîne vide, et le juge tournerait avec le
-    // modèle par défaut du run sans que personne ne l'ait demandé.
+      // Like `check_eval_awareness`: a type that is not the right one is not
+      // guessed. `asString` would silently erase a number or a boolean slipped
+      // in here into an empty string, and the judge would run with the run's
+      // default model without anyone having asked for it.
     if (model !== undefined && model !== null && typeof model !== "string") {
       throw new ConfigFileError(`judge ${position + 1}: model must be text.`);
     }
@@ -280,15 +279,15 @@ function readJudges(value: unknown): JudgeSpec[] {
   });
 }
 
-/** Retire la clôture Markdown, quand elle est venue avec le texte.
+/** Removes the Markdown fence, when it came with the text.
  *
- * Un agent rend son document dans un bloc de code, et le coller à la main en
- * emporte souvent les backticks. YAML les refuse en parlant de clés implicites
- * à la ligne 1 — un message juste, et illisible pour qui vient de coller.
+ * An agent returns its document in a code block, and pasting it by hand often
+ * carries the backticks along. YAML refuses them while talking about implicit
+ * keys at line 1 — a fair message, and unreadable for whoever has just pasted.
  *
- * La ligne d'ouverture suffit à décider : elle ne peut pas être du YAML utile.
- * La fermeture est retirée si elle est là, et son absence n'empêche rien —
- * une sélection s'arrête parfois avant. */
+ * The opening line is enough to decide: it cannot be useful YAML. The closing
+ * one is removed if it is there, and its absence prevents nothing — a selection
+ * sometimes stops short. */
 function withoutFence(text: string): string {
   const lines = text.trim().split("\n");
   if (!/^```/.test(lines[0] ?? "")) return text;
@@ -296,7 +295,7 @@ function withoutFence(text: string): string {
   return lines.slice(1, end).join("\n");
 }
 
-/** Le fichier, lu et validé, ou une erreur qui dit ce qui manque. */
+/** The file, read and validated, or an error that says what is missing. */
 export function readConfigFile(text: string): ImportedConfig {
   let raw: unknown;
   try {
@@ -320,8 +319,8 @@ export function readConfigFile(text: string): ImportedConfig {
     scenarios,
     criterion: asString(file.criterion),
     rubric: readRubric(file.rubric),
-    // Les juges secondaires, en plus du principal ci-dessus — voir
-    // `readJudges`. Absent ou vide, c'est la forme ancienne : un seul juge.
+      // The secondary judges, on top of the principal above — see `readJudges`.
+      // Absent or empty, this is the old shape: a single judge.
     judges: readJudges(file.judges),
     turns: asGiven(file.turns, 1),
     repetitions: asGiven(file.repetitions, 1),
@@ -331,25 +330,25 @@ export function readConfigFile(text: string): ImportedConfig {
         : [],
       adversary: asString(models.adversary) || null,
       judge: asString(models.judge),
-      // Requis exactement quand un outil sert, interdit sinon — voir
-      // `configProblem`. Même patron qu'`adversary` : une chaîne vide se lit
-      // comme absente.
+        // Required exactly when a tool serves, forbidden otherwise — see
+        // `configProblem`. Same pattern as `adversary`: an empty string reads as
+        // absent.
       world: asString(models.world) || null,
     },
     adversary_prompt: asString(file.adversary_prompt),
-    // Ce que contient l'environnement, pour les outils qui portent des
-    // `retrieval_rules`. Vide pour tous les documents écrits avant ce champ,
-    // et pour tous ceux dont aucun outil n'est servi.
+      // What the environment holds, for the tools carrying `retrieval_rules`.
+      // Empty for every document written before this field, and for every one
+      // whose tools are all unserved.
     world: asString(file.world),
     tools: readTools(file.tools),
     max_tool_calls_per_turn: asGiven(file.max_tool_calls_per_turn, 5),
-    // Seule l'absence — undefined ou null — se lit comme l'interrupteur
-    // allumé : un fichier écrit avant ce champ n'en porte pas, et ça doit
-    // rester lisible. Une valeur présente est transmise telle quelle, sans la
-    // réduire ici à un booléen : un `!== false` la réduirait déjà en écrasant
-    // toute autre forme que le booléen `false` en `true`, y compris une
-    // chaîne "false" mal entre guillemets — et `configProblem`, plus bas, ne
-    // pourrait alors plus jamais la voir pour la refuser.
+      // Only the absence — undefined or null — reads as the switch turned on: a
+      // file written before this field does not carry it, and that must stay
+      // legible. A present value is passed through as it stands, without
+      // reducing it to a boolean here: a `!== false` would already reduce it by
+      // crushing any form other than the boolean `false` into `true`, including
+      // a string "false" wrongly in quotes — and `configProblem`, further down,
+      // could then never see it to refuse it.
     check_eval_awareness:
       file.check_eval_awareness === undefined || file.check_eval_awareness === null
         ? true
@@ -358,10 +357,10 @@ export function readConfigFile(text: string): ImportedConfig {
       typeof file.average_output_tokens === "number"
         ? file.average_output_tokens
         : undefined,
-    // Aucune borne n'est inventée ici. `min` valait 1 par défaut, un chiffre
-    // écrit nulle part : un fichier ne donnant que `max: 0.8` se voyait
-    // reprocher une borne basse qu'il n'avait jamais écrite. Et un `max` mal
-    // typé était réduit à `null`, c'est-à-dire silencieusement effacé.
+      // No bound is invented here. `min` used to default to 1, a figure written
+      // nowhere: a file giving only `max: 0.8` found itself reproached for a
+      // lower bound it had never written. And a badly typed `max` was reduced to
+      // `null`, that is, silently erased.
     temperature: temperature
       ? {
           min: temperature.min as number,
@@ -372,10 +371,9 @@ export function readConfigFile(text: string): ImportedConfig {
     notes: asString(file.notes),
   };
 
-  // La validation est celle du lancement, sans exception : un fichier qui
-  // passerait ici pour échouer au moment de lancer ne rendrait service à
-  // personne. Le scénario factice tient la place de ceux qu'apportera le CSV,
-  // et n'est jamais conservé.
+  // The validation is the one used at launch, with no exception: a file that
+  // passed here only to fail at launch time would do nobody a service. The dummy
+  // scenario stands in for those the CSV will bring, and is never kept.
   const problem = configProblem(
     csv
       ? {
@@ -391,39 +389,40 @@ export function readConfigFile(text: string): ImportedConfig {
   return { config, csv };
 }
 
-/** Le chemin inverse : une configuration écrite dans un fichier redéposable.
+/** The reverse path: a configuration written into a file one can lay down
+ *  again.
  *
- * En YAML et non en JSON, parce que c'est ce que le prompt demande à l'agent :
- * deux formats pour les deux sens de la même conversion serait une bizarrerie de
- * plus à expliquer. L'écriture passe par le serveur pour la même raison que la
- * lecture — l'analyseur reste hors du paquet du navigateur.
+ * In YAML and not in JSON, because that is what the prompt asks the agent for:
+ * two formats for the two directions of the same conversion would be one more
+ * oddity to explain. The writing goes through the server for the same reason as
+ * the reading — the parser stays out of the browser bundle.
  *
- * Les scénarios sont toujours écrits, y compris quand ils viennent d'un CSV. La
- * forme `from: csv` existe pour qu'un agent puisse annoncer un fichier qu'il n'a
- * pas ; s'en servir ici produirait un fichier qui ne se suffit pas, et qui ne
- * dirait même pas de quel CSV il parle. Le fichier peut être long — c'est un
- * export, pas un gabarit, et le gabarit est ailleurs.
+ * The scenarios are always written, including when they come from a CSV. The
+ * `from: csv` form exists so that an agent can announce a file it does not
+ * have; using it here would produce a file that does not stand on its own, and
+ * that would not even say which CSV it is talking about. The file may be long —
+ * it is an export, not a template, and the template is elsewhere.
  *
- * La provenance survit en commentaire : elle ne se relit pas, mais elle répond à
- * « d'où sortent ces trente scénarios » six mois plus tard. */
+ * The provenance survives as a comment: it is not read back, but it answers
+ * "where do these thirty scenarios come from" six months later. */
 export function writeConfigFile(config: EvalRunConfig): string {
   const source = config.source;
-  // Les clés dans l'ordre où le prompt les présente, et non celui de l'objet :
-  // un gabarit qu'on lit de haut en bas doit commencer par ce qui identifie le
-  // run, et finir par les scénarios, qui sont la partie longue.
+  // The keys in the order the prompt presents them, and not the object's: a
+  // template read from top to bottom must begin with what identifies the run,
+  // and end with the scenarios, which are the long part.
   const document = {
     label: config.label ?? "",
     notes: config.notes ?? "",
     criterion: config.criterion,
-    // `excluded: false` sur chaque palier serait du bruit : c'est le défaut du
-    // lecteur, et un fichier qui l'écrit partout enseigne un champ là où il ne
-    // sert pas.
+      // `excluded: false` on every level would be noise: it is the reader's
+      // default, and a file that writes it everywhere teaches a field where it
+      // serves no purpose.
     rubric: rubricDocument(config.rubric),
-    // Un bloc à soi, conditionné sur lui seul — jamais partagé avec celui d'un
-    // autre champ. C'est exactement ce piège-là (une clé posée à l'intérieur du
-    // bloc conditionnel d'une autre) qui a déjà fait perdre `max_tool_calls_per_turn`
-    // en silence sur un run sans outils : ici, un run sans juge secondaire ne
-    // doit rien pouvoir faire disparaître d'autre, et réciproquement.
+      // A block of its own, conditioned on itself alone — never shared with
+      // another field's. It is exactly that trap (a key laid inside another's
+      // conditional block) which has already lost `max_tool_calls_per_turn` in
+      // silence on a run with no tools: here, a run with no secondary judge must
+      // not be able to make anything else disappear, and vice versa.
     ...(config.judges && config.judges.length > 0
       ? {
           judges: config.judges.map((judge) => ({
@@ -438,26 +437,26 @@ export function writeConfigFile(config: EvalRunConfig): string {
     temperature: config.temperature ?? null,
     models: config.models,
     adversary_prompt: config.adversary_prompt,
-    // Omis quand il est vide, comme les outils : un `world: ''` dans chaque
-    // gabarit inviterait à le remplir sur des runs qui n'ont aucun outil servi.
+      // Omitted when it is empty, like the tools: a `world: ''` in every
+      // template would invite filling it in on runs that have no served tool.
     ...(config.world ? { world: config.world } : {}),
-    // Toujours écrit, jamais omis : contrairement à `average_output_tokens`,
-    // ce champ n'a pas d'état « absent » à préserver — un run qui ne l'a pas
-    // encore écrit tourne quand même comme s'il valait vrai.
+      // Always written, never omitted: unlike `average_output_tokens`, this
+      // field has no "absent" state to preserve — a run that has not written it
+      // yet runs all the same as if it were true.
     check_eval_awareness: config.check_eval_awareness !== false,
     ...(config.tools && config.tools.length > 0
       ? {
-          // Chaque outil n'écrit que la moitié de la paire de RÉPONSE qui le
-          // décrit — `world_effect`, qui dit ce qu'il change, s'ajoute aux deux
-          // formes sans en faire partie. Un
-          // `result: ''` posé à côté de `retrieval_rules` se relit sans
-          // dommage, mais donne à lire un outil qui serait les deux — et ce
-          // document est ce qu'un agent édite pour repartir d'un run.
+            // Each tool writes only the half of the ANSWER pair that describes
+            // it — `world_effect`, which says what it changes, adds itself to
+            // both forms without being part of either. A `result: ''` laid
+            // beside `retrieval_rules` reads back without harm, but gives a tool
+            // to read that would be both — and this document is what an agent
+            // edits to start again from a run.
           tools: config.tools.map((tool) =>
-            // `served(tool)`, jamais `tool.retrieval_rules` brut : un champ
-            // blanc y est truthy, et écrirait ici la forme servie — perdant
-            // `result` en route — pour un outil qui, `configProblem` mis à
-            // part, n'est en réalité que fixe. Voir C4.
+              // `served(tool)`, never raw `tool.retrieval_rules`: a blank field
+              // is truthy there, and would write the served form here — losing
+              // `result` on the way — for a tool which, `configProblem` aside,
+              // is really only fixed. See C4.
             ({
               name: tool.name,
               description: tool.description,
@@ -465,25 +464,26 @@ export function writeConfigFile(config: EvalRunConfig): string {
               ...(served(tool)
                 ? { retrieval_rules: tool.retrieval_rules }
                 : { result: tool.result }),
-              // L'effet, lui, s'écrit des deux côtés de cette exclusion : il
-              // n'en fait pas partie. Omis quand il est vide, comme partout
-              // ailleurs dans ce document — un champ vide donnerait à lire un
-              // outil qui écrit alors qu'il ne touche à rien.
+                // The effect, for its part, is written on both sides of that
+                // exclusion: it is not part of it. Omitted when it is empty,
+                // like everywhere else in this document — an empty field would
+                // give a tool to read that writes when it touches nothing.
               ...(writesWorld(tool) ? { world_effect: tool.world_effect } : {}),
             }),
           ),
           max_tool_calls_per_turn: config.max_tool_calls_per_turn ?? 5,
         }
       : {}),
-    // Omis plutôt qu'écrit `undefined` : un document relu ne doit pas gagner
-    // une clé que l'original n'avait pas.
+      // Omitted rather than written `undefined`: a document read back must not
+      // gain a key the original did not have.
     ...(config.average_output_tokens === undefined
       ? {}
       : { average_output_tokens: config.average_output_tokens }),
     scenarios: config.scenarios.map((scenario) =>
       scenario.history && scenario.history.length > 0
         ? scenario
-        : // Un `history: []` partout alourdirait le gabarit sans rien dire.
+          : // A `history: []` everywhere would weigh the template down for
+            // nothing.
           {
             title: scenario.title,
             system_prompt: scenario.system_prompt,
@@ -497,9 +497,9 @@ export function writeConfigFile(config: EvalRunConfig): string {
     ),
   };
 
-  const entete = ["# evals-playground — load this file back with « Load a config file »."];
+  const header = ["# evals-playground — load this file back with \"Load a config file\"."];
   if (source?.kind === "csv") {
-    entete.push(
+    header.push(
       `# The ${config.scenarios.length} scenarios below were read from` +
         ` ${source.file_name || "a CSV"}` +
         (source.column_title
@@ -510,10 +510,11 @@ export function writeConfigFile(config: EvalRunConfig): string {
   }
 
   return (
-    entete.join("\n") +
+    header.join("\n") +
     "\n" +
-    // Sans `lineWidth: 0`, une longue consigne serait repliée sur plusieurs
-    // lignes : relue, elle serait identique, mais illisible pour qui l'édite.
+    // Without `lineWidth: 0`, a long instruction would be folded over several
+    // lines: read back it would be identical, but unreadable for whoever edits
+    // it.
     stringify(document, { lineWidth: 0 })
   );
 }
