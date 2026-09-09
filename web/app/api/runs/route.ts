@@ -9,16 +9,15 @@ export async function GET() {
   const user = await requireUser();
   if ("response" in user) return user.response;
 
-  // La liste, pas les runs entiers : voir `loadRunList` et `RunListRun`.
-  // La recherche MCP, elle, continue de passer par `loadRuns`.
+  // The list, not the whole runs: see `loadRunList` and `RunListRun`. The MCP
+  // search, for its part, keeps going through `loadRuns`.
   return NextResponse.json(await loadRunList());
 }
 
-/** Crée un run, écrit toute sa matrice en attente, puis démarre le job.
+/** Creates a run, writes its whole matrix pending, then starts the job.
  *
- * Dans cet ordre : le run existe en base avant que quoi que ce soit ne tourne,
- * si bien qu'un déclenchement raté laisse une trace visible plutôt qu'un
- * silence. */
+ * In that order: the run exists in the database before anything runs, so that a
+ * failed trigger leaves a visible trace rather than a silence. */
 export async function POST(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -32,10 +31,10 @@ export async function POST(request: Request) {
   const problem = configProblem(body?.config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  // L'auteur vient de la session, jamais de ce que le client prétend. Le
-  // brouillon d'origine, lui, ne peut venir que du client : c'est lui qui sait
-  // sur quoi le formulaire était ouvert, et s'en tromper ne fait qu'attribuer
-  // une provenance, jamais un droit.
+  // The author comes from the session, never from what the client claims. The
+  // original draft, for its part, can only come from the client: it is the client
+  // that knows what the form was open on, and getting it wrong only attributes a
+  // provenance, never a right.
   const run = await createRun(
     body!.config!,
     user.email,
@@ -46,9 +45,9 @@ export async function POST(request: Request) {
   try {
     await recordStart(run.id, await startJob(run.id, "run"));
   } catch (error) {
-    // Sans ça, le run resterait en attente jusqu'à ce que la fonction
-    // d'expiration le ramasse deux heures plus tard, avec un message parlant
-    // d'un job disparu plutôt que d'un job jamais lancé.
+      // Without this, the run would stay pending until the expiry function picked
+      // it up two hours later, with a message speaking of a job that had vanished
+      // rather than of a job never launched.
     const reason = `Could not start the job: ${(error as Error).message}`;
     await failToStart(run.id, reason);
     return NextResponse.json({ run_id: run.id, error: reason }, { status: 502 });

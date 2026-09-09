@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, designatePrincipal } from "@/lib/runs";
 
-/** Désigne le principal de ce run : le juge que la matrice affiche — voir
+/** Designates this run's principal: the judge the matrix shows — see
  *  `designatePrincipal` (`lib/runs.ts`).
  *
- * Sans corps : l'adresse porte déjà toute l'information. Idempotent —
- * désigner un juge déjà principal ne réécrit rien. */
+ * With no body: the address already carries all the information. Idempotent —
+ * designating a judge that is already principal rewrites nothing. */
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ runId: string; runJudgeId: string }> },

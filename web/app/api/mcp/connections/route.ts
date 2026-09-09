@@ -8,9 +8,9 @@ export async function GET() {
   return NextResponse.json(await listGrants(user.email));
 }
 
-/** Révoque une connexion. Le propriétaire vient de la session, jamais du
- *  corps : sans quoi n'importe quel email connecté pourrait couper celle
- *  d'un autre en devinant son empreinte. */
+/** Revokes a connection. The owner comes from the session, never from the body:
+ *  without which any signed-in email could cut somebody else's by guessing its
+ *  fingerprint. */
 export async function DELETE(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -20,8 +20,8 @@ export async function DELETE(request: Request) {
     all?: boolean;
   } | null;
 
-  // Tout couper d'un geste. L'email vient de la session comme pour une
-  // révocation unitaire : « all » ne veut jamais dire celles de tout le monde.
+    // Cut everything off in one gesture. The email comes from the session as for
+    // a single revocation: "all" never means everybody's.
   if (body?.all) {
     return NextResponse.json({ ok: true, revoked: await revokeAllGrants(user.email) });
   }

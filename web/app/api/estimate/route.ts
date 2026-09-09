@@ -4,11 +4,11 @@ import { estimateCost } from "@/lib/pricing";
 import { configProblem } from "@/lib/validate";
 import type { EvalRunConfig } from "@/lib/types";
 
-/** Estime le coût d'un run sans rien lancer.
+/** Estimates a run's cost without launching anything.
  *
- * Même schéma d'entrée que le lancement : l'interface estime donc exactement ce
- * qu'elle s'apprête à envoyer, sans transformation intermédiaire susceptible de
- * diverger. */
+ * The same input schema as the launch: the interface therefore estimates exactly
+ * what it is about to send, with no intermediate transformation liable to
+ * diverge. */
 export async function POST(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -18,8 +18,7 @@ export async function POST(request: Request) {
   const problem = configProblem(config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  // La longueur supposée est dans la config, comme le reste : un paramètre de
-  // requête à côté permettait d'estimer autre chose que ce qu'on s'apprêtait à
-  // lancer.
+  // The assumed length is in the config, like the rest: a query parameter on the
+  // side allowed estimating something other than what one was about to launch.
   return NextResponse.json(estimateCost(config!));
 }

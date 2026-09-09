@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, cancelRun, loadRun } from "@/lib/runs";
 
-/** Demande l'arrêt d'un run en cours.
+/** Asks for a running run to stop.
  *
- * N'arrête rien directement : écrit `cancelled` sur le run, que le job lit
- * avant chaque case. Tuer l'exécution Cloud Run serait plus brutal sans être
- * plus propre — le conteneur mourrait en pleine écriture et les cases
- * resteraient en cours pour toujours. Ici le job se termine lui-même, marque ce
- * qu'il n'a pas fait et enregistre ce qu'il a consommé.
+ * Stops nothing directly: writes `cancelled` on the run, which the job reads
+ * before each cell. Killing the Cloud Run execution would be more brutal without
+ * being cleaner — the container would die mid-write and the cells would stay
+ * running forever. Here the job ends itself, marks what it did not do and
+ * records what it consumed.
  *
- * Conséquence à assumer : la case en cours va à son terme. Ce qui coûte, ce
- * sont les appels de modèle, pas les secondes de conteneur.
+ * A consequence to accept: the cell under way runs to its end. What costs is the
+ * model calls, not the container's seconds.
  */
 export async function POST(
   request: Request,
@@ -32,8 +32,8 @@ export async function POST(
     throw error;
   }
 
-  // Un run terminé ne s'annule pas. Le dire plutôt que d'écrire `cancelled`
-  // par-dessus un `done` : ça effacerait un résultat acquis.
+  // A finished run is not cancelled. Saying so rather than writing `cancelled`
+  // over a `done`: that would erase a result already acquired.
   if (detail.run.status !== "triggered" && detail.run.status !== "running") {
     return NextResponse.json(
       { error: `This run is already ${detail.run.status}.` },

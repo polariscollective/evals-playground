@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 
-/** Qui regarde.
+/** Who is looking.
  *
- * Le navigateur ne l'a jamais su : rien ne l'exigeait tant que tout le monde
- * voyait tout sans distinction. Filtrer « les miens » demande de comparer une
- * adresse à celles que portent déjà les runs et les brouillons — d'où cette
- * route, et rien de plus qu'elle. */
+ * The browser never knew it: nothing demanded it as long as everybody saw
+ * everything without distinction. Filtering "mine" asks for an address to be
+ * compared to those the runs and the drafts already carry — hence this route,
+ * and nothing more than it. */
 export async function GET() {
   const user = await requireUser();
   if ("response" in user) return user.response;

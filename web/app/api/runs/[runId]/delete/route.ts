@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, loadRun, softDeleteRun } from "@/lib/runs";
 
-/** Écarter un run — la corbeille, pas l'effacement.
+/** Setting a run aside — the bin, not erasure.
  *
- * Sous `/delete` plutôt qu'un `DELETE` sur la route du run : celle-ci sert
- * déjà à le lire, et un verbe qui n'efface rien gagne à le dire dans son
- * adresse.
+ * Under `/delete` rather than a `DELETE` on the run's route: that one already
+ * serves to read it, and a verb that erases nothing gains from saying so in its
+ * address.
  *
- * Tout le monde peut écarter le run de tout le monde, comme tout le monde
- * peut déjà tout lire et tout relancer : c'est une équipe, pas un système de
- * permissions. Ce qui protège n'est pas le droit d'accès mais le fait que
- * rien n'est perdu — la ligne reste, seule sa visibilité change. */
+ * Everybody can set aside everybody's run, as everybody can already read and
+ * relaunch everything: it is a team, not a permission system. What protects is
+ * not the access right but the fact that nothing is lost — the row stays, only
+ * its visibility changes. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -21,8 +21,8 @@ export async function POST(
 
   const { runId } = await params;
   try {
-    // Vérifier d'abord : un PATCH PostgREST sur un identifiant inconnu ne
-    // touche aucune ligne et répond 204, ce qui se lirait comme un succès.
+    // Check first: a PostgREST PATCH on an unknown identifier touches no row and
+    // answers 204, which would read as a success.
     await loadRun(runId);
   } catch (error) {
     if (error instanceof NotFound) {

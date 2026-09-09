@@ -6,8 +6,8 @@ import { setRunTags, tagsOfDraft } from "@/lib/tags";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
 
-/** Lance un brouillon : le même chemin que `POST /api/runs`, config et auteur
- *  près, mais tirés du brouillon plutôt que du corps de la requête. */
+/** Launches a draft: the same path as `POST /api/runs`, config and author
+ *  aside, but drawn from the draft rather than from the request body. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -26,10 +26,10 @@ export async function POST(
     throw error;
   }
 
-  // Un brouillon d'extension ne se lance pas ici : il n'a pas de run à créer,
-  // il en agrandit un. Son lancement passe par le panneau d'extension, sur la
-  // page du run concerné, parce qu'il demande une confirmation humaine — c'est
-  // là que les outils proposés s'appliquent enfin.
+  // An extension draft is not launched here: it has no run to create, it
+  // enlarges one. Its launch goes through the extension panel, on the page of
+  // the run concerned, because it asks for a human confirmation — that is where
+  // the offered tools finally apply.
   if (draft.kind !== "run") {
     return NextResponse.json(
       {
@@ -52,12 +52,12 @@ export async function POST(
     await failToStart(run.id, reason);
     return NextResponse.json({ run_id: run.id, error: reason }, { status: 502 });
   }
-  // Recopier les tags maintenant : le run existe et tourne, et le brouillon
-  // est encore lisible — après markDraftLaunched ce ne serait pas plus
-  // dangereux ici, mais autant rester du bon côté de la frontière. Un échec
-  // ici ne doit pas faire échouer la réponse : le run est déjà lancé, le
-  // signaler en erreur mentirait à l'appelant sur ce qui a réussi. On
-  // journalise donc plutôt que de relancer l'erreur.
+  // Copy the tags now: the run exists and is running, and the draft is still
+  // readable — after markDraftLaunched it would be no more dangerous here, but we
+  // may as well stay on the right side of the boundary. A failure here must not
+  // make the response fail: the run is already launched, and reporting an error
+  // would lie to the caller about what succeeded. So we log rather than rethrow
+  // the error.
   try {
     const tags = await tagsOfDraft(draftId);
     if (tags.length > 0) {
@@ -67,9 +67,9 @@ export async function POST(
     console.error(`Could not copy tags from draft ${draftId} to run ${run.id}:`, (error as Error).message);
   }
 
-  // Marqué lancé, pas effacé : il sort de la liste d'attente et garde son
-  // adresse ouverte pour un relancement. Ce qu'il a produit se lit sur le run,
-  // qui porte `draft_id` — plusieurs peuvent le porter.
+  // Marked launched, not erased: it leaves the waiting list and keeps its
+  // address open for a relaunch. What it produced is read on the run, which
+  // carries `draft_id` — several may carry it.
   await markDraftLaunched(draftId);
   return NextResponse.json({ run_id: run.id }, { status: 201 });
 }

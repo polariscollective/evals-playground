@@ -10,18 +10,18 @@ import {
 import { startJob } from "@/lib/trigger";
 import { worldEquivalenceProblem } from "@/lib/validate";
 
-/** Remplit les lignes de `judge_scores` encore en attente OU en erreur sur ce
- *  run, pour toute liaison vivante et toute conversation déjà terminée.
+/** Fills in the rows of `judge_scores` still pending OR in error on this run,
+ *  for every living link and every conversation already finished.
  *
- * Généralise l'ancien bouton d'éveil à n'importe quel juge : un juge ajouté
- * après coup, un run étendu, un juge tombé sur quelques cases, un run
- * interrompu s'y couvrent tous du même geste — un seul mode dans le job
- * (`catchup`, voir `run_batch_job`, `backend/playground/batch_job.py`). Voir
- * `.superpowers/sdd/task-9-report.md` pour ce que cette route remplace.
+ * Generalises the old awareness button to any judge: a judge added afterwards, a
+ * run extended, a judge fallen over on a few cells, a run interrupted — all are
+ * covered by the same gesture, one single mode in the job (`catchup`, see
+ * `run_batch_job`, `backend/playground/batch_job.py`). See
+ * `.superpowers/sdd/task-9-report.md` for what this route replaces.
  *
- * Sans corps : rien à régler, le job retrouve lui-même ce qui reste. Ne
- * touche aucune note déjà rendue : les transcripts sont relus, les modèles
- * évalués et l'adversaire ne sont pas rappelés. */
+ * With no body: nothing to set, the job finds what is left on its own. Touches
+ * no grade already returned: the transcripts are reread, the evaluated models
+ * and the adversary are not called again. */
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -33,11 +33,11 @@ export async function POST(
 
   let detail;
   try {
-    // `withCatchupMissingFlag: true` demande le compte que la garde
-    // ci-dessous lit — sans lui, `catchupMissingTotal` renverrait toujours
-    // zéro, calcul sur demande oblige (voir `lib/runs.ts`). Pas besoin des
-    // transcripts : ce compte ne relit plus les conversations elles-mêmes,
-    // seulement le statut de `judge_scores` et d'`eval_samples`.
+      // `withCatchupMissingFlag: true` asks for the count the guard below reads —
+      // without it, `catchupMissingTotal` would always return zero, being computed
+      // on demand (see `lib/runs.ts`). No need for the transcripts: that count no
+      // longer rereads the conversations themselves, only the status of
+      // `judge_scores` and of `eval_samples`.
     detail = await loadRun(runId, { withCatchupMissingFlag: true });
   } catch (error) {
     if (error instanceof NotFound) {
@@ -53,12 +53,12 @@ export async function POST(
     );
   }
 
-  // `catchup_missing` vient de `loadRun`, qui l'a calculé à l'instant : le
-  // recalculer ici recompterait la même chose une seconde fois — voir
-  // `catchupMissingTotal`, l'unique fonction qui porte ce compte, appelée
-  // des deux côtés (l'affichage, et cette garde). Lecture seule, donc avant
-  // la garde qui suit : un run qui n'a rien à rattraper n'a pas à s'entendre
-  // dire que sa configuration est cassée (CRITICAL 1).
+  // `catchup_missing` comes from `loadRun`, which computed it just now:
+  // recomputing it here would count the same thing a second time — see
+  // `catchupMissingTotal`, the one function that carries that count, called from
+  // both sides (the display, and this guard). Read only, hence before the guard
+  // that follows: a run with nothing to catch up must not be told its
+  // configuration is broken (CRITICAL 1).
   if (detail.catchup_missing === 0) {
     return NextResponse.json(
       {
@@ -70,14 +70,13 @@ export async function POST(
     );
   }
 
-  // Même garde que `retry` (voir CRITICAL 1) : un run lancé avant
-  // `models.world` peut servir des outils sans en nommer un, et le job
-  // applique la même équivalence qu'`extendProblem` — une levée à froid qui
-  // effacerait le coût déjà enregistré. Seulement cette équivalence, jamais
-  // `configProblem` entier : ce dernier refuse aussi des fautes qu'un run
-  // enregistré avant ce chantier porte déjà sans que le job s'en soucie
-  // (`average_output_tokens`, notamment), et que `retry`/`catchup` ne savent
-  // de toute façon pas réparer.
+  // Same guard as `retry` (see CRITICAL 1): a run launched before `models.world`
+  // may serve tools without naming one, and the job applies the same equivalence
+  // as `extendProblem` — a cold raise that would erase the cost already recorded.
+  // Only that equivalence, never the whole `configProblem`: the latter also
+  // refuses faults a run recorded before this project already carries without the
+  // job minding (`average_output_tokens`, notably), and which `retry`/`catchup`
+  // cannot repair anyway.
   const worldProblem = worldEquivalenceProblem(detail.run.config);
   if (worldProblem) {
     return NextResponse.json(
