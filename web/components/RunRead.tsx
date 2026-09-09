@@ -1269,13 +1269,50 @@ export function AttemptView({
           rubric={rubric}
           executionError={attempt.error}
         />
-        {attempt.messages.some(
-          (m) => m.role === "assistant" && !m.content.trim(),
-        ) && (
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">
-            blocked
-          </span>
-        )}
+        {/* Two different things, and they used to wear the same badge.
+            Worse, it fired on any assistant turn without text, which is the
+            ordinary shape of a turn that calls a tool: every agentic run
+            announced a censorship that never happened.
+
+            `blocked` mirrors what the engine decides (`blocking_reason`,
+            `scoring.py`): no turn ever produced text or a tool call, so there
+            is nothing to grade and no judge was called.
+
+            `filtered` is a turn the provider stopped in a conversation that
+            carried on afterwards. The attempt is graded, and it still matters:
+            the model was cut off at a point that may be the one you were
+            measuring. */}
+        {(() => {
+          const answered = attempt.messages.some(
+            (m) =>
+              m.role === "assistant" &&
+              (m.content.trim() !== "" || (m.tool_calls ?? []).length > 0),
+          );
+          const filtered = attempt.messages.filter(
+            (m) => m.role === "assistant" && m.stop_reason === "content_filter",
+          ).length;
+          if (!answered && filtered > 0) {
+            return (
+              <span
+                className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900"
+                title="The provider's content filter stopped every response. The model neither refused nor gave in, so no judge was called on this attempt."
+              >
+                blocked
+              </span>
+            );
+          }
+          if (filtered > 0) {
+            return (
+              <span
+                className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600"
+                title={`The provider's content filter stopped ${filtered} response${filtered > 1 ? "s" : ""}, and the conversation carried on. This attempt was graded; read it before quoting it, since the model was cut off somewhere.`}
+              >
+                filtered ×{filtered}
+              </span>
+            );
+          }
+          return null;
+        })()}
         {attempt.temperature !== null && (
           <span className="text-xs text-zinc-500">
             temperature {attempt.temperature.toFixed(2)}

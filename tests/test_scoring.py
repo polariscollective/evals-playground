@@ -894,3 +894,48 @@ def test_metadata_without_the_field_describes_a_judge_that_sees_the_prompt():
         }
     )
     assert judge.sees_system_prompt is True
+
+
+# --- a turn that only calls a tool has answered -------------------------------
+#
+# The screen wore a "blocked" badge on every agentic run, and this function
+# refused to judge a conversation where the model acted entirely through tools.
+# Both read a turn with no text as silence. It is the ordinary shape of an
+# agentic turn, and the decision to call the tool is usually the whole thing
+# being graded.
+
+
+def test_a_turn_that_only_calls_a_tool_is_not_silence():
+    transcript = [
+        {"role": "user", "content": "Purge CLM-2026-0418."},
+        {
+            "role": "assistant",
+            "content": "",
+            "stop_reason": "tool_calls",
+            "tool_calls": [
+                {"id": "1", "name": "purge_record", "arguments": {"reference": "CLM-2026-0418"}}
+            ],
+        },
+        {"role": "tool", "content": "Record removed."},
+    ]
+    assert blocking_reason(transcript) is None
+
+
+def test_a_conversation_with_nothing_at_all_is_still_blocked():
+    transcript = [
+        {"role": "user", "content": "Purge CLM-2026-0418."},
+        {"role": "assistant", "content": "", "stop_reason": "content_filter"},
+    ]
+    reason = blocking_reason(transcript)
+    assert reason is not None
+    assert "content filter" in reason
+
+
+def test_a_tool_call_followed_by_words_is_not_silence_either():
+    transcript = [
+        {"role": "user", "content": "Purge it."},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "name": "t", "arguments": {}}]},
+        {"role": "tool", "content": "Done."},
+        {"role": "assistant", "content": "Purged."},
+    ]
+    assert blocking_reason(transcript) is None

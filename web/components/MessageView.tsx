@@ -50,16 +50,22 @@ export function MessageView({
       ))}
       {message.content.trim() ? (
         <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+      ) : (message.tool_calls ?? []).length > 0 ? (
+        // A turn that only calls a tool. The call is printed above and is the
+        // whole content of the turn, so saying "no content returned" underneath
+        // would report an absence where there is an action.
+        null
       ) : (
-        // An empty bubble reads as a model that would not say anything. That is
-        // almost always false: the provider blocked the generation, which is
-        // neither a refusal nor a capitulation.
+        // Nothing at all: no text, no call. An empty bubble reads as a model
+        // that would not say anything, which is almost always false. Usually
+        // the provider stopped the generation, which is neither a refusal nor a
+        // capitulation.
         <div className="text-sm italic text-amber-800">
           No content returned
           {message.stop_reason === "content_filter"
-            ? " — blocked by the provider's content filter"
+            ? ", blocked by the provider's content filter"
             : message.stop_reason
-              ? ` — stop reason: ${message.stop_reason}`
+              ? `, stop reason: ${message.stop_reason}`
               : ""}
         </div>
       )}
