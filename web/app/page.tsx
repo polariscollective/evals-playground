@@ -941,9 +941,9 @@ function EvaluateForm() {
       setHistory(config.scenarios[0].history ?? []);
       setScenarioTools(config.scenarios[0].tools ?? null);
     } else {
-      // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
-      // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
-      // en mémoire — c'est déjà ce que fait la reprise d'un vieux run.
+      // Manual mode holds one scenario only. Several scenarios written in the
+      // file therefore go through the same path as a CSV, rebuilt in memory —
+      // which is already what duplicating an old run does.
       const { columns, rows } = rebuildCsv(config.scenarios);
       setSource("csv");
       setCsvText(toCsv(columns, rows));
@@ -984,10 +984,10 @@ function EvaluateForm() {
     }
   };
 
-  /** Un juge secondaire de plus, en plus du principal ci-dessus — une
-   *  répétition de la même mécanique (critère, échelle, modèle), jamais une
-   *  seconde invention. La même échelle de départ que le principal : deux
-   *  paliers sans texte, à écrire. */
+  /** One more secondary judge, on top of the principal above — a repetition of
+   *  the same mechanism (criterion, scale, model), never a second invention. The
+   *  same starting scale as the principal: two levels with no text, to be
+   *  written. */
   const addSecondaryJudge = () =>
     setSecondaryJudges((current) => [
       ...current,
@@ -1002,19 +1002,19 @@ function EvaluateForm() {
   const removeSecondaryJudge = (index: number) =>
     setSecondaryJudges((current) => current.filter((_, i) => i !== index));
 
-  // Ce que l'enregistrement vient de faire, le temps qu'on le lise.
+  // What the save has just done, for as long as it takes to read it.
   const [draftNotice, setDraftNotice] = useState("");
   const [clearing, setClearing] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
 
-  /** Mettre le formulaire de côté, dans l'état où il est.
+  /** Setting the form aside, in the state it is in.
    *
-   * Aucune validation, contrairement au lancement : c'est précisément quand il
-   * manque des morceaux qu'on veut y revenir plus tard. Rouvrir un brouillon
-   * et réenregistrer le réécrit plutôt que d'en semer un second — sauf si ce
-   * brouillon n'est pas le nôtre : la route le fork alors plutôt que de
-   * l'écraser, et `forked` le dit pour qu'on navigue vers la bonne adresse
-   * au lieu de laisser croire qu'on éditait encore l'original. */
+   * No validation, unlike the launch: it is precisely when pieces are missing
+   * that one wants to come back to it later. Reopening a draft and saving again
+   * rewrites it rather than sowing a second one — unless that draft is not ours:
+   * the route then forks it rather than crushing it, and `forked` says so, so
+   * that one navigates to the right address instead of being left believing one
+   * was still editing the original. */
   const saveAsDraft = async () => {
     setError(null);
     setSavingDraft(true);
@@ -1030,8 +1030,8 @@ function EvaluateForm() {
         }
       } else {
         const { id } = await saveDraft(config(), csv);
-        // L'adresse dans la barre suit : réenregistrer met à jour celui-ci au
-        // lieu d'en créer un troisième.
+          // The address in the bar follows: saving again updates this one instead
+          // of creating a third.
         router.replace(`/?draft=${id}`);
         setDraftNotice("Saved as draft.");
       }
@@ -1130,11 +1130,12 @@ function EvaluateForm() {
         source === "csv" ? csvText : null,
         draftOf,
       );
-      // Le brouillon a servi : marqué lancé. Il sort de la liste d'attente sans
-      // être jeté — son adresse reste ouverte si l'on veut relancer la même
-      // chose. Après la création, jamais avant : un lancement qui échoue doit
-      // laisser de quoi recommencer. Et un échec de marquage ne fait pas
-      // échouer le lancement, le run existe — c'est lui qui porte le lien.
+        // The draft has served: marked launched. It leaves the waiting list
+        // without being discarded — its address stays open if one wants to
+        // relaunch the same thing. After the creation, never before: a launch that
+        // fails must leave something to start again from. And a failed marking
+        // does not make the launch fail, the run exists — it is what carries the
+        // link.
       if (draftOf) await markDraftLaunched(draftOf).catch(() => {});
       // The form has served. The run carries its configuration and
       // "Duplicate" brings it back whole; keeping it here would invite
@@ -1149,22 +1150,20 @@ function EvaluateForm() {
     }
   };
 
-  // Les favoris seulement — plus, s'il y a lieu, les modèles que ce
-  // formulaire porte déjà. Une relance pré-remplie peut nommer un modèle
-  // qui a quitté les favoris depuis : le retirer du menu rendrait le
-  // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
-  // Les juges secondaires en font partie : chacun peut porter son propre
-  // modèle (absent, il suit celui du run, déjà dans l'ensemble). Le modèle du
-  // monde aussi, et l'oublier était pire qu'un menu incomplet : le select se
-  // serait affiché vide — indistinguable de « rien choisi » — alors que
-  // `worldModel` tenait toujours l'identifiant, que `config()` aurait
-  // resoumis au lancement suivant. Un choix facturé que personne ne voit.
+  // The favourites only — plus, where applicable, the models this form already
+  // carries. A prefilled relaunch may name a model that has left the favourites
+  // since: removing it from the menu would make the form unusable without saying
+  // why. We keep it, and we say so. The secondary judges are part of it: each can
+  // carry its own model (absent, it follows the run's, already in the set). The
+  // world model too, and forgetting it was worse than an incomplete menu: the
+  // select would have shown empty — indistinguishable from "nothing chosen" —
+  // while `worldModel` still held the identifier, which `config()` would have
+  // resubmitted at the next launch. A billed choice nobody sees.
   //
-  // `carriedModels` s'ajoute à la sélection vivante plutôt que de s'y
-  // substituer : un modèle carried qu'on désélectionne (par exemple, un
-  // juge changé pour un favori puis reposé sur l'ancien modèle) doit rester
-  // proposable, alors qu'il aurait disparu d'un ensemble recalculé seulement
-  // depuis l'état courant.
+  // `carriedModels` adds itself to the live selection rather than replacing it: a
+  // carried model one deselects (for instance, a judge changed to a favourite
+  // then laid back on the old model) must stay offerable, whereas it would have
+  // disappeared from a set recomputed from the current state alone.
   const chosen = new Set(
     [
       ...targets,
@@ -1197,9 +1196,9 @@ function EvaluateForm() {
     label: string,
     value: string,
     onChange: (v: string) => void,
-    // Un premier `<option>` vide, jamais présélectionné : sert le champ qui
-    // n'a pas de défaut raisonnable — voir « World model » plus bas, dont un
-    // choix silencieux se découvrirait sur une facture.
+    // A first empty `<option>`, never preselected: serves the field that has no
+    // reasonable default — see "World model" below, a silent choice of which
+    // would be discovered on an invoice.
     placeholder?: string,
   ) => (
     <div className="space-y-1">
@@ -1250,11 +1249,10 @@ function EvaluateForm() {
         </div>
       )}
 
-      {/* Un run peut arriver tout écrit : un agent le rend, on le dépose ici.
-          Deux portes pour un seul chemin — un agent rend du texte, et n'en fait
-          un fichier que si on le lui demande. La forme attendue est celle
-          stockée en base, si bien qu'un run exporté se réimporte sans
-          traduction. */}
+      {/* A run can arrive fully written: an agent returns one, one deposits it
+          here. Two doors for one path — an agent returns text, and only makes a
+          file of it if asked. The expected shape is the one stored in the
+          database, so that an exported run reimports without translation. */}
       <div className="flex flex-wrap items-center gap-3 rounded border border-dashed border-zinc-300 p-3 text-sm">
         <label className="cursor-pointer">
           <span className="rounded border border-zinc-300 bg-white px-3 py-1 hover:bg-zinc-50">
@@ -1342,8 +1340,8 @@ function EvaluateForm() {
         />
       </label>
 
-      {/* Le même commentaire que sur la page du run : écrit ici avant de
-          lancer, modifiable ensuite quand on a vu les résultats. */}
+      {/* The same comment as on the run's page: written here before launching,
+          changeable afterwards once the results have been seen. */}
       <NotesField
         value={notes}
         onChange={setNotes}
@@ -1351,8 +1349,8 @@ function EvaluateForm() {
       />
 
       {/* ---------------- Tools ---------------- */}
-      {/* Avant les scénarios, parce qu'un outil décrit le monde dans lequel ils
-          se déroulent : on pose le décor, puis ce qu'on y demande. */}
+      {/* Before the scenarios, because a tool describes the world in which they
+          take place: one lays the setting, then what one asks in it. */}
       <section className="space-y-3">
         <h2 className="eyebrow">
           Tools{" "}
@@ -1362,10 +1360,10 @@ function EvaluateForm() {
         </h2>
         <ToolsEditor tools={tools} onChange={setTools} />
 
-        {/* Le monde ne s'écrit que s'il a un lecteur : un run dont aucun outil
-            n'est servi n'a personne pour le lire, et un champ vide de plus
-            inviterait à le remplir pour rien. Même prédicat que partout
-            ailleurs (`servesTools`, `lib/tools.ts`) — jamais réécrit ici. */}
+        {/* The world is only written if it has a reader: a run in which no tool is
+            served has nobody to read it, and one more empty field would invite
+            filling it in for nothing. The same predicate as everywhere else
+            (`servesTools`, `lib/tools.ts`) — never rewritten here. */}
         {servesTools(tools) && (
           <>
             <label className="block space-y-1">
@@ -1430,9 +1428,9 @@ function EvaluateForm() {
               className="w-20 rounded border border-zinc-300 px-2 py-1"
             />
             <span className="text-xs text-zinc-500">
-              {/* Le plafond existe pour deux raisons opposées, et les deux
-                  comptent : voir un enchaînement, et ne pas laisser une boucle
-                  vider le budget sur une seule case. */}
+              {/* The cap exists for two opposite reasons, and both count: seeing a
+                  chain of calls, and not letting a loop empty the budget on a
+                  single cell. */}
               A model may call, read the result and call again before answering —
               all of it one turn. Three steps do not fit under a cap of one.
             </span>
@@ -1481,9 +1479,9 @@ function EvaluateForm() {
                 className="w-full rounded border border-zinc-300 p-3 font-mono text-sm"
               />
             </label>
-            {/* Avant le message d'ouverture, parce que c'est l'ordre dans
-                lequel la conversation se déroule : les tours posés d'abord, le
-                message d'ouverture ensuite. */}
+              {/* Before the opening message, because it is the order in which the
+                  conversation unfolds: the seeded turns first, the opening message
+                  after. */}
             <div className="space-y-1">
               <span className="text-sm font-medium">
                 Prior history{" "}
@@ -1579,11 +1577,10 @@ function EvaluateForm() {
                 <p className="text-sm text-zinc-600">
                   Tell us which column holds what:
                 </p>
-                {/* `items-end` parce que les intitulés n'ont pas tous la même
-                    hauteur : « Prior history (optional) » passe sur deux lignes
-                    à cette largeur, et sans ça son menu descendait d'un cran,
-                    seul de sa rangée. Ce sont les menus qui doivent s'aligner,
-                    pas les intitulés. */}
+                  {/* `items-end` because the labels do not all have the same
+                      height: "Prior history (optional)" runs to two lines at this
+                      width, and without it its menu dropped a notch, alone in its
+                      row. It is the menus that must line up, not the labels. */}
                 <div className="grid grid-cols-4 items-end gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
@@ -1597,8 +1594,8 @@ function EvaluateForm() {
                       value: colOpening,
                       set: setColOpening,
                     },
-                    // Facultative, et c'est le cas courant : un scénario sans
-                    // historique laisse ce sélecteur sur « — ».
+                    // Optional, and it is the common case: a scenario with no
+                    // history leaves this selector on "—".
                     {
                       label: "Prior history (optional)",
                       value: colHistory,
@@ -1637,9 +1634,9 @@ function EvaluateForm() {
                     </label>
                   ))}
                 </div>
-                {/* Trois titres ne disaient pas si les colonnes étaient
-                    tombées au bon endroit — la seule question qui compte après
-                    un import, et la seule qu'aucune validation ne peut poser. */}
+                  {/* Three titles did not say whether the columns had landed in the
+                      right place — the one question that counts after an import,
+                      and the only one no validation can ask. */}
                 <ScenarioList scenarios={scenarios} />
               </div>
             )}
