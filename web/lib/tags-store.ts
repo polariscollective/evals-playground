@@ -10,12 +10,11 @@
  *
  * That is latency, not volume: exactly what a cache settles.
  *
- * Les deux vont ensemble et se rechargent ensemble. Le catalogue seul ne suffit
- * not — it must be known which tag is on which row — and the assignments
- * seules non plus : `TagField` a besoin du catalogue pour ses suggestions. Un
- * a removal being able to empty a tag of its last link and make it disappear
- * from the catalogue, reading them back in one gesture is what keeps them in
- * agreement.
+ * The two go together and reload together. The catalogue alone is not enough —
+ * it must be known which tag is on which row — and the assignments are not
+ * enough either: `TagField` needs the catalogue for its suggestions. A removal
+ * being able to empty a tag of its last link and make it disappear from the
+ * catalogue, reading them back in one gesture is what keeps them in agreement.
  */
 
 import { useSyncExternalStore } from "react";

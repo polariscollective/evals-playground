@@ -36,8 +36,8 @@ export function knownModelIds(): Set<string> {
  *
  * `favorites` is required rather than optional: every caller has an answer to
  * that question — the caller's favourites, or the code's default for a public
- * route — and an implicit default here would make
- * l'oubli pour un choix. */
+ * route — and an implicit default here would pass an oversight off as a
+ * choice. */
 export function catalog(favorites: readonly string[]): ProviderInfo[] {
   const informed = canSeeProviderKeys();
   const preferred = new Set(favorites);
@@ -61,7 +61,7 @@ export function catalog(favorites: readonly string[]): ProviderInfo[] {
         output_per_mtok: price?.output_per_mtok ?? null,
         // Absent means "yes": the mark serves only to report the exception,
         // and writing it on thirty-four entries for seven cases would drown the
-        // signal dans le bruit.
+        // signal in the noise.
         honours_temperature: declared !== false,
         favorite: preferred.has(model.id),
       };

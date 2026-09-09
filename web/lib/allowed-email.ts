@@ -1,6 +1,6 @@
 // Who is allowed in. The same definition serves the Google front door and any
-// route that wants to check again: two definitions would end up
-// diverger, et c'est la plus permissive qui l'emporterait.
+// route that wants to check again: two definitions would end up diverging, and
+// it is the more permissive one that would win.
 function parseList(value: string | undefined): string[] {
   return (value || "")
     .split(",")

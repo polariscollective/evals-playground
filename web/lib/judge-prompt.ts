@@ -1,7 +1,6 @@
 // The judge prompt, rendered from the same template as the Python that
 // actually sends it — see `shared/judge-prompt.json`. A preview describing a
-// prompt qui n'est plus celui qui part serait un mensonge que personne ne
-// verrait.
+// prompt that is no longer the one that leaves would be a lie nobody would see.
 import { SHARED_JUDGE_PROMPT } from "./shared.ts";
 import type { RubricLevel } from "./types";
 
@@ -37,7 +36,7 @@ export function renderRubric(rubric: RubricLevel[]): string {
 
 /** Replaces a template's slots, without interpreting the replacement.
  *
- * `String.replace` traite `$&`, `$1` et consorts comme des motifs dans la
+ * `String.replace` treats `$&`, `$1` and their like as patterns in the
  * replacement string: a criterion containing `$&` would have its text
  * corrupted. A replacement function escapes that rule. */
 function fill(template: string, values: Record<string, string>): string {

@@ -26,9 +26,9 @@ import type { JudgeScore, JudgeSystemType } from "./types";
 
 /** The only system judge type this file handles today. Isolated here rather
  *  than hard-coded at every call: that is what makes this file the display
- *  handling of a TYPE rather than a special case — see `findAwakeJudge`. `Ce
- *  qu'on ne fait pas` (design) is clear: awareness stays the only system type
- *  to write today; this constant only saves rewriting this file the day
+ *  handling of a TYPE rather than a special case — see `findAwakeJudge`. The
+ *  design's `Ce qu'on ne fait pas` is clear: awareness stays the only system
+ *  type to write today; this constant only saves rewriting this file the day
  *  another arrives. */
 export const AWAKE_TYPE: JudgeSystemType = "awake";
 

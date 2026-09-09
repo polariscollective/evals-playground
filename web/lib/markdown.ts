@@ -5,8 +5,8 @@
  * and only the tags this file makes itself survive. No path lets input HTML
  * through.
  *
- * Covers what gets written in a working note: headings, bold, italic,
- * code, listes, citations, liens. Pas les tableaux ni les images.
+ * Covers what gets written in a working note: headings, bold, italic, code,
+ * lists, quotations, links. Neither tables nor images.
  */
 
 const ESCAPES: Record<string, string> = {
@@ -23,8 +23,8 @@ function escapeHtml(text: string): string {
 
 /** A link is rendered only if its scheme is harmless.
  *
- * `javascript:` and `data:` execute code on click; a rejected link
- * retombe sur son texte, visible mais inerte. */
+ * `javascript:` and `data:` execute code on click; a rejected link falls back on
+ * its text, visible but inert. */
 function safeHref(url: string): string | null {
   const trimmed = url.trim();
   if (/^(https?:\/\/|mailto:|#|\/)/i.test(trimmed)) return trimmed;
@@ -102,7 +102,7 @@ function listItems(
   return { html: parts.join(""), used: i - from };
 }
 
-/** Ce qui ouvre autre chose qu'un paragraphe. */
+/** What opens something other than a paragraph. */
 function opensBlock(line: string): boolean {
   return (
     HEADING.test(line) ||
@@ -115,10 +115,10 @@ function opensBlock(line: string): boolean {
 /** Markdown to HTML. The input is treated as text, never as HTML.
  *
  * The reading is done line by line, not block by block. The earlier version
- * required a paragraph to be entirely of one kind: a heading did not
- * comptait que seul entre deux lignes vides, une liste que si aucune ligne n'en
- * came out. Writing a heading and carrying straight on below it — which
- * everybody does — rendered the hash in full. */
+ * required a paragraph to be entirely of one kind: a heading counted only alone
+ * between two blank lines, a list only if no line strayed from it. Writing a
+ * heading and carrying straight on below it — which everybody does — rendered
+ * the hash in full. */
 export function renderMarkdown(
   source: string,
   options: { reflow?: boolean } = {},
@@ -156,8 +156,8 @@ export function renderMarkdown(
 
       const quoted = run(lines, i, QUOTE);
       if (quoted.length > 0) {
-        const texte = quoted.map((l) => l.replace(QUOTE, "")).join(" ");
-        html.push(`<blockquote>${inline(texte)}</blockquote>`);
+        const text = quoted.map((l) => l.replace(QUOTE, "")).join(" ");
+        html.push(`<blockquote>${inline(text)}</blockquote>`);
         i += quoted.length;
         continue;
       }
@@ -176,10 +176,10 @@ export function renderMarkdown(
       // asterisks. Bullets were already joined this way.
       //
       // In reflow mode a plain line break was only a breath of the source and
-      // redevient une espace. Sinon il reste une intention : on assemble avec
-      // un vrai saut de ligne, qu'on convertit en `<br />` une fois les marques
-      // recognised. Single-star italic, for its part, still refuses to
-      // traverser un retour — voir `inline`.
+      // becomes a space again. Otherwise it stays an intention: we assemble with
+      // a real line break, which we turn into `<br />` once the marks are
+      // recognised. Single-star italic, for its part, still refuses to cross a
+      // break — see `inline`.
       const BREAK = "\n";
       const assembled = reflow
         ? paragraph.map((line) => line.trim()).join(" ")

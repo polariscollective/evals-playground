@@ -2,11 +2,9 @@
  *
  * The `eval_run_list` view does not compute the mean, and that is deliberate: a
  * grade goes through `mapScore`, which sets aside the levels marked `excluded`
- * in the
- * rubrique et applique les substitutions de la vue d'affichage choisie.
+ * in the rubric and applies the substitutions of the chosen display view.
  * Rewriting that semantics in SQL would have duplicated it, and let it diverge
- * at the
- * premier changement de l'une des deux.
+ * at the first change to either of the two.
  *
  * The view therefore returns `{"0": 3, "2": 5}` — how many times each grade was
  * given by the principal judge — and the computation stays here, with the same

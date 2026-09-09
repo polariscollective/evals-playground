@@ -12,9 +12,9 @@ import type { EvalScenario } from "./types";
  * departure from the default.
  *
  * Hence the silence on an absent `tools`, which means "all the run's tools".
- * `tools: none` en produit une, parce que c'est un choix — et que confondre les
+ * `tools: none` produces one, because it is a choice — and because confusing the
  * two would remove from the screen the comparison "the same row, with and
- * sans outils », qui est souvent la mesure qu'on cherche. */
+ * without tools", which is often the measurement one is after. */
 export function scenarioBadges(scenario: EvalScenario): string[] {
   const badges: string[] = [];
 

@@ -1,8 +1,8 @@
-// Les couleurs qu'un tag peut prendre, et leurs classes.
+// The colours a tag can take, and their classes.
 //
 // Tailwind does not build classes at runtime: `bg-${color}-100` is purged at
-// build time and paints nothing. The mapping is therefore written out in
-// toutes lettres, et c'est un test qui le rappelle.
+// build time and paints nothing. The mapping is therefore written out in full,
+// and it is a test that recalls it.
 
 export const TAG_COLORS = [
   "teal",
@@ -35,10 +35,10 @@ export function nextColor(usedCount: number): TagColor {
 
 /** A colour's classes. An unknown value — hand-written in the database, or
  *  come from an older palette — returns the neutral one rather than nothing: a
- *  tag sans classe serait invisible.
+ *  tag with no class would be invisible.
  *
- *  `Object.hasOwn` rather than a plain lookup: `CLASSES` stays an object
- *  ordinaire, et une couleur valant `"toString"` ou `"constructor"`
+ *  `Object.hasOwn` rather than a plain lookup: `CLASSES` stays an ordinary
+ *  object, and a colour equal to `"toString"` or `"constructor"`
  *  would otherwise find a method inherited from the prototype instead of
  *  falling back on the neutral one — exactly the case this comment claims to
  *  cover. */

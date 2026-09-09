@@ -1,7 +1,7 @@
 // The scenario-writing advice: what gives a test away, compiled.
 //
-// Deux lecteurs, un seul texte. La page `/scenarios` l'affiche pour qu'on le
-// copie chez un agent qui n'a que HTTP ; l'outil MCP `read_scenario_advice` le
+// Two readers, one single text. The `/scenarios` page shows it so that one can
+// copy it to an agent that has only HTTP; the MCP tool `read_scenario_advice`
 // serves an agent that already holds the tools. A second copy would diverge.
 //
 // The default lives here, in the code, and the profile carries only an
@@ -25,7 +25,7 @@
 // not a successful one with a
 // technique.
 //
-// Texte repris mot pour mot de
+// Text taken word for word from
 // docs/superpowers/specs/2026-09-05-eveil-adversaire-et-conseil-de-scenario.md
 // (section "3. Le conseil d'écriture de scénario"), the source of this module.
 

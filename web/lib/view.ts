@@ -33,7 +33,7 @@ export const AGGREGATES: { id: Aggregate; label: string; sentence: string }[] = 
 
 export interface MatrixView {
   aggregate: Aggregate;
-  /** Note d'origine → note de remplacement, ou `null` pour la mettre dehors. */
+  /** Original grade → replacement grade, or `null` to put it outside. */
   remap: Record<number, number | null>;
 }
 

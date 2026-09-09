@@ -58,8 +58,8 @@ export interface ConsumedCode {
   code_challenge: string;
 }
 
-/** Lit un code puis le supprime, pour qu'il ne serve qu'une fois. `null`
- *  if it is unknown, already consumed, or expired. */
+/** Reads a code then deletes it, so that it serves only once. `null` if it is
+ *  unknown, already consumed, or expired. */
 export async function consumeAuthCode(code: string): Promise<ConsumedCode | null> {
   const hash = hashOf(code);
   const rows = await select<ConsumedCode & { expires_at: string }>(AUTH_CODES, {
@@ -108,9 +108,9 @@ export async function issueTokenPair(
 
 /** The email behind an access token, or `null` if it is unknown or expired.
  *
- * Marque au passage la connexion comme vivante — au plus une fois par
- * interval, and never to the point of failing the call: a timestamp of
- * convenience must not cost the tool that was being served. */
+ * Marks the connection as alive along the way — at most once per interval, and
+ * never to the point of failing the call: a timestamp of convenience must not
+ * cost the tool that was being served. */
 export async function verifyAccessToken(token: string): Promise<string | null> {
   const hash = hashOf(token);
   const rows = await select<{
@@ -135,8 +135,8 @@ export async function verifyAccessToken(token: string): Promise<string | null> {
 }
 
 /** Rotation: the old pair dies, a new one is born for the same email. `null`
- *  if the refresh token is unknown or expired — never "
- *  presque » : Claude retente sur un `invalid_grant` net. */
+ *  if the refresh token is unknown or expired — never "almost": Claude retries
+ *  on a clean `invalid_grant`. */
 export async function rotateRefreshToken(
   refreshToken: string,
   userAgent?: string | null,
@@ -164,10 +164,10 @@ export interface Grant {
 
 let lastSweep = 0;
 
-/** Erases stale codes and forgotten connections before any read — even
- *  patron que `sweepStaleDrafts`, avec un intervalle large : rien de ce que ce
- *  broom sweeps up is urgent, since every read already checks its own expiry.
- *  It is there only so the screen does not end up a graveyard. */
+/** Erases stale codes and forgotten connections before any read — the same
+ *  pattern as `sweepStaleDrafts`, with a wide interval: nothing this broom
+ *  sweeps up is urgent, since every read already checks its own expiry. It is
+ *  there only so the screen does not end up a graveyard. */
 async function sweepExpiredGrants(): Promise<void> {
   const now = Date.now();
   if (now - lastSweep < 5 * 60 * 1000) return;
@@ -197,10 +197,10 @@ export async function listGrants(userEmail: string): Promise<Grant[]> {
  *  email could cut somebody else's.
  *
  *  Returns `true` when a row has really gone. It is the only way to know: an
- *  access token rotates at every refresh
- *  (`rotateRefreshToken` efface la ligne et en pose une neuve), si bien que
- *  the fingerprint the screen holds may name a row already gone — and that
- *  revocation must not pass itself off as a success. */
+ *  access token rotates at every refresh (`rotateRefreshToken` erases the row
+ *  and lays a fresh one), so that the fingerprint the screen holds may name a
+ *  row already gone — and that revocation must not pass itself off as a
+ *  success. */
 export async function revokeGrant(
   accessTokenHash: string,
   userEmail: string,

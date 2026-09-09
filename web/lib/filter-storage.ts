@@ -7,10 +7,10 @@
  * both would let a collapse set on the drafts survive the return to the runs,
  * where it means nothing.
  *
- * `localStorage` and not `sessionStorage`: this is a preference, not a state
- * de navigation. Quelqu'un qui ne veut voir que ses runs d'agent le pense pour
- * de bon. Contrairement aux caches de `store.ts`, qui eux doivent repartir de
- * from zero so as never to show yesterday's data.
+ * `localStorage` and not `sessionStorage`: this is a preference, not a browsing
+ * state. Somebody who wants to see only their agent runs means it for good.
+ * Unlike the caches in `store.ts`, which must start again from zero so as never
+ * to show yesterday's data.
  *
  * The keys carry a version suffix: the stored shape went from a list of
  * switched-off labels to an object, and reading the old one as the new would
@@ -35,9 +35,9 @@ const KEYS: Record<FilterMode, string> = {
  *
  * On the runs side, `author: "b"` — only what a human launched: agent runs are
  * many and rarely what one comes looking for. On the drafts side,
- * `launch: "b"` — only what is waiting, the queue being made for that. A
- * brouillon d'agent, lui, est justement ce qu'on vient voir : l'auteur reste
- * open on that side. */
+ * `launch: "b"` — only what is waiting, the queue being made for that. An
+ * agent's draft, for its part, is precisely what one comes to see: the author
+ * stays open on that side. */
 const DEFAULTS: Record<FilterMode, FilterState> = {
   runs: { dims: { author: "b" }, off: [] },
   drafts: { dims: { launch: "b" }, off: [] },

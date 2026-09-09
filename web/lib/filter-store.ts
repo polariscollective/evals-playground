@@ -64,11 +64,11 @@ export function cycleDim(mode: FilterMode, key: DimensionKey): void {
 
 /** Show everything: no dimension collapsed, no tag switched off.
  *
- * Distinct du geste ci-dessous, et c'est la distinction qui compte. « Tout
+ * Distinct from the gesture below, and it is the distinction that counts. "Show
  * everything" and "go back to the starting settings" do not give the same
  * screen: the defaults deliberately hide agent runs and drafts already
- * launched. A single button for both would have made a choice look like
- * une absence de choix. */
+ * launched. A single button for both would have made a choice look like an
+ * absence of choice. */
 export function clearFilters(mode: FilterMode): void {
   commit(mode, OPEN);
 }

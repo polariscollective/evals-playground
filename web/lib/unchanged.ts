@@ -6,9 +6,9 @@
  * seems to reload endlessly.
  *
  * The comparison goes through serialisation rather than a hand-written deep
- * equality: the payloads here are a few kilobytes,
- * et une comparaison qui oublierait un champ serait pire que pas de
- * comparison at all — the screen would stop reflecting the database. */
+ * equality: the payloads here are a few kilobytes, and a comparison that forgot
+ * a field would be worse than no comparison at all — the screen would stop
+ * reflecting the database. */
 export function keepIfUnchanged<T>(previous: T | null, next: T): T | null {
   if (previous !== null && JSON.stringify(previous) === JSON.stringify(next)) {
     return previous;

@@ -8,7 +8,7 @@
 // between its `cost_before_usd` and the next extension's, or the run's current
 // cost for the last.
 //
-// Pure et calculable, comme `matrix.ts` : la page et un test la lisent pareil.
+// Pure and computable, like `matrix.ts`: the page and a test read it alike.
 import type { EvalRun, RunExtensionLogEntry } from "./types";
 
 /** A history entry, augmented with what it actually cost. */
@@ -18,8 +18,7 @@ export interface RunExtension extends RunExtensionLogEntry {
    *
    * `null` as soon as either end is missing — never 0, which would wrongly
    * claim a free extension when its cost is simply unknown: a run that has not
-   * finished playing since, or one of whose models
-   * n'a pas de tarif. */
+ * finished playing since, or one of whose models has no price. */
   actual_cost_usd: number | null;
 }
 

@@ -1,6 +1,5 @@
 // Validates a spending cap as it is typed into the profile form, before the
-// route writes it into `profiles` — see
-// `updateProfileCaps` dans `profiles.ts`.
+// route writes it into `profiles` — see `updateProfileCaps` in `profiles.ts`.
 //
 // With no Supabase and no session: the same rule serves the form, which
 // refuses before sending, and the route, which refuses even if the form was
@@ -14,7 +13,7 @@
  * of the keyboard can lift protects nothing. */
 const CAP_MAX = 100;
 
-/** `null` si `value` peut devenir un plafond, sinon ce qui cloche.
+/** `null` if `value` can become a cap, otherwise what is wrong.
  *
  * Zero is allowed, and is in fact the only emergency brake left: at zero, any
  * strictly positive quote is refused, so this person's agents spend nothing any
@@ -36,15 +35,15 @@ export function capProblem(value: unknown): string | null {
 }
 
 /** `null` if the body of a PATCH `/api/profile` can be handled, otherwise what
- *  qui cloche.
+ *  is wrong.
  *
  * The route applies either the caps, or the scenario-writing advice, or the
  * favourite models — never two at once. Choosing which of the settings carried
  * by one body to overwrite would be arbitrary for whoever sent it. It validates
  * only that mutual exclusion: the shape of each field (a cap through
  * `capProblem`, a string or `null` for the advice, an array through
- * `favoritesProblem` for the favourites) remains the
- * charge de la route, qui seule sait quoi faire du corps une fois admis. */
+ * `favoritesProblem` for the favourites) remains the route's business, since it
+ * alone knows what to do with the body once admitted. */
 export function profilePatchProblem(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const b = body as {

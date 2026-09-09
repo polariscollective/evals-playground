@@ -2,8 +2,8 @@
 
 /** The profile and its recent activity, kept in memory for the whole visit.
  *
- * Un seul cache pour deux pages : « Profile » l'affiche en entier, et
- * "Scenarios" reads the writing advice from it (`profile.scenario_advice`).
+ * One single cache for two pages: "Profile" shows it whole, and "Scenarios"
+ * reads the writing advice from it (`profile.scenario_advice`).
  * The two each called `getProfile()` on their own side, at every visit, for a
  * resource that only changes when something is written into it.
  *

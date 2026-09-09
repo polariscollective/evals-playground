@@ -1,6 +1,6 @@
-// Ce que dit l'heure glissante d'un agent, en une phrase — pour la page de
-// profil. Le compte qui fait foi vit dans `mcp_launches`, lu par
-// `mcpActivityLastHour` dans `runs.ts` ; cette fonction ne fait que le dire,
+// What an agent's sliding hour says, in one sentence — for the profile page.
+// The authoritative count lives in `mcp_launches`, read by
+// `mcpActivityLastHour` in `runs.ts`; this function does nothing but say it,
 // without touching Supabase, like `mcp-budget.ts` beside it.
 import { amountDigits } from "./pricing.ts";
 

@@ -1,15 +1,15 @@
 // A minimal ZIP writer, with no dependency.
 //
-// A run's detail fits in two files that do not mix: a CSV
-// d'une ligne par case, et un Markdown qui porte ce qui vaut pour tout le run —
+// A run's detail fits in two files that do not mix: a CSV of one row per cell,
+// and a Markdown carrying what holds for the whole run —
 // the grades, the tools, the configuration. Offering them separately would
 // mean clicking twice and remembering the second; an archive holds them
 // together.
 //
 // Written by hand rather than with a library: the "stored" format, with no
-// compression, tient en trois structures, et Node sait calculer le CRC32 depuis
-// la version 20. Deux fichiers de quelques centaines de kilo-octets ne gagnent
-// nothing from being compressed at the price of one more dependency.
+// compression, fits in three structures, and Node has been able to compute the
+// CRC32 since version 20. Two files of a few hundred kilobytes gain nothing from
+// being compressed at the price of one more dependency.
 import { crc32 } from "node:zlib";
 
 interface Entry {
@@ -19,7 +19,7 @@ interface Entry {
   offset: number;
 }
 
-/** Date et heure au format MS-DOS, que le format impose.
+/** Date and time in the MS-DOS format the format imposes.
  *
  * Frozen at 1980-01-01, the first representable date: a real timestamp would
  * make two archives of the same run differ byte for byte, which would stop an

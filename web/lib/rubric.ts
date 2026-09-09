@@ -29,12 +29,11 @@ export function rubricBounds(
   rubric: RubricLevel[] | undefined,
 ): { min: number; max: number } {
   // The levels outside the mean are set aside: a "not applicable" at -1 would
-  // pull
-  // sinon la borne basse vers lui, et toute la matrice changerait de couleur
-  // pour un palier qui ne mesure rien.
-  const comptes = (rubric ?? []).filter((level) => !level.excluded);
-  if (!comptes.length) return { min: 0, max: 0 };
-  const values = comptes.map((level) => level.value);
+  // otherwise pull the lower bound towards it, and the whole matrix would change
+  // colour for a grade that measures nothing.
+  const counted = (rubric ?? []).filter((level) => !level.excluded);
+  if (!counted.length) return { min: 0, max: 0 };
+  const values = counted.map((level) => level.value);
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 

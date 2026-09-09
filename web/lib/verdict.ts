@@ -6,10 +6,10 @@
 //
 // The three outcomes are not to be confused:
 //
-//   OK          le document est complet, le run peut partir tel quel
-//   INCOMPLETE  le document est valide et chargera, mais il annonce un CSV
+//   OK          the document is complete, the run can leave as it stands
+//   INCOMPLETE  the document is valid and will load, but it announces a CSV
 //               it does not carry: nothing launches before the upload
-//   (refus)     le document ne charge pas, et la phrase dit pourquoi
+//   (refusal)   the document does not load, and the sentence says why
 //
 // The first word carries the distinction because the reader is a machine
 // reading a sentence. The status code says only refused or not: an incomplete

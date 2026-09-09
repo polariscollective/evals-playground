@@ -19,9 +19,9 @@ import type { TemperatureSpec } from "./types";
  * interval to travel.
  *
  * The last repetition returns `spec.max` as it stands rather than computing it
- * by accumulation: `spec.min + step * index` can land a hair away from the
- * borne haute par arrondi flottant (`0.2 + 0.7 === 0.8999999999999999`), ce que
- * bound the user asked for must not suffer. */
+ * by accumulation: `spec.min + step * index` can land a hair away from the upper
+ * bound through floating-point rounding (`0.2 + 0.7 === 0.8999999999999999`),
+ * which the bound the user asked for must not suffer. */
 export function temperaturesFor(
   spec: TemperatureSpec | null | undefined,
   repetitions: number,

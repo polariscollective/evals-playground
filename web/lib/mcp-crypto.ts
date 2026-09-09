@@ -10,12 +10,12 @@ export function newToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-/** L'empreinte d'un secret, pour ne jamais le garder en clair en base. */
+/** A secret's fingerprint, so as never to keep it in the clear in the database. */
 export function hashOf(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-/** Le challenge PKCE S256 attendu d'un `code_verifier` — RFC 7636 §4.2. */
+/** The S256 PKCE challenge expected of a `code_verifier` — RFC 7636 §4.2. */
 export function challengeOf(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }

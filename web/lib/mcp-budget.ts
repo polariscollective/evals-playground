@@ -1,17 +1,16 @@
-// Le budget qu'un appelant MCP peut lancer, en dollars.
+// The budget an MCP caller may launch, in dollars.
 //
 // Two caps, belonging to each person rather than identical for everyone: one
 // launch taken alone, and what the same caller has launched through MCP over
-// the hour just gone. They live in their profile — see
-// `profiles.ts` — jamais dans une variable d'environnement : deux endroits
-// claiming to state the same limit would end up disagreeing. Nothing here
-// talks to Supabase — that read lives in `profiles.ts`, the
-// seule qui connaisse la forme de la table — si bien que tout ce fichier
-// fits inside `node --test`, exactly like `mcp-grants.ts` beside
+// the hour just gone. They live in their profile — see `profiles.ts` — never in
+// an environment variable: two places claiming to state the same limit would end
+// up disagreeing. Nothing here talks to Supabase — that read lives in
+// `profiles.ts`, the only place that knows the table's shape — so that this
+// whole file fits inside `node --test`, exactly like `mcp-grants.ts` beside
 // `mcp-auth.ts`.
 
-/** Formatted for a message read by an agent: two decimals, four when
- *  dessous du centime pour qu'un devis minuscule ne s'affiche pas « $0.00 ».
+/** Formatted for a message read by an agent: two decimals, four when below the
+ *  cent so that a tiny quote does not show as "$0.00".
  *  Exported: it is also what `launch_draft` writes in its success response, so
  *  as not to duplicate the same rounding rule in two places. */
 export function formatUsd(amount: number): string {
@@ -19,17 +18,15 @@ export function formatUsd(amount: number): string {
 }
 
 /** The decision — "does this quote pass, given what is already spent?" —
- *  separated from the profile read that feeds it. `null` if the
- *  lancement passe ; sinon le message de refus, en anglais parce que c'est un
- *  agent qui le lit, avec le chiffre en cause, le plafond, et ce que
- *  l'appelant peut en faire.
+ *  separated from the profile read that feeds it. `null` if the launch passes;
+ *  otherwise the refusal message, in English because it is an agent that reads
+ *  it, with the figure at stake, the cap, and what the caller can do about it.
  *
  * The per-run cap is checked before the per-hour one: a quote that exceeds it
  * on its own does not need what was spent before to be known in order to be
  * refused. Both caps are those of the caller's profile — this function does not
  * know where they come from, only that they are theirs: hence "your" rather
- * than "the" in both
- * messages. */
+ * than "the" in both messages. */
 export function budgetProblem(
   quoteUsd: number,
   spentLastHourUsd: number,

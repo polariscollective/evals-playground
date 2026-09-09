@@ -7,37 +7,35 @@
 //
 // THE TRAP this file exists to close, and which has already bitten this work
 // once over awareness (see the design,
-// docs/superpowers/specs/2026-09-06-juges-multiples.md) : une ligne de
-// `judge_scores` en attente ou en erreur sur une liaison vivante n'est pas
-// necessarily catchable — its conversation must ALSO be finished (`status =
-// 'done'`). Le moteur (`catchup_dataset`, backend/playground/batch_job.py)
-// applique ces trois conditions ensemble — en attente ou en erreur, liaison
-// live link, finished conversation — and never catches up a conversation that
-// is not. A count ignoring the third would announce "17 to catch up" for a
-// catch-up that would do none, and the button would stay lit forever: that is
-// this work's original bug, reproduced exactly if it is forgotten a second time
-// — a second time already, on
-// les lignes en erreur que le rattrapage ne reprenait pas : voir
-// `catchupMissingTotal` (`runs.ts`), which now filters the same way as
-// `catchup_dataset` (`status = "in.(pending,error)"`).
+// docs/superpowers/specs/2026-09-06-juges-multiples.md): a `judge_scores` row
+// pending or in error on a live link is not necessarily catchable — its
+// conversation must ALSO be finished (`status = 'done'`). The engine
+// (`catchup_dataset`, backend/playground/batch_job.py) applies those three
+// conditions together — pending or in error, live link, finished conversation —
+// and never catches up a conversation that is not. A count ignoring the third
+// would announce "17 to catch up" for a catch-up that would do none, and the
+// button would stay lit forever: that is this work's original bug, reproduced
+// exactly if it is forgotten a second time — a second time already, over the
+// rows in error the catch-up did not take up: see `catchupMissingTotal`
+// (`runs.ts`), which now filters the same way as `catchup_dataset`
+// (`status = "in.(pending,error)"`).
 //
 // One function carries this predicate, `catchupCandidateCount` below.
-// `catchupMissingTotal` (`runs.ts`) est son seul appelant : c'est le compte
-// the screen shows, and it is that same count the route triggering the
-// catch-up reads back before starting the job — never a separate recomputation
-// at that point.
+// `catchupMissingTotal` (`runs.ts`) is its only caller: it is the count the
+// screen shows, and it is that same count the route triggering the catch-up
+// reads back before starting the job — never a separate recomputation at that
+// point.
 
-/** Une ligne de `judge_scores` encore rattrapable au sens du statut — en
- *  pending or in error — already filtered on a live link. The name keeps
- *  « Pending » par habitude du chantier ; lire « en attente ou en erreur ». */
+/** A `judge_scores` row still catchable as far as its status goes — pending or
+ *  in error — already filtered on a live link. The name keeps "Pending" out of
+ *  the habit of this work; read it as "pending or in error". */
 export interface PendingJudgeScore {
   sample_id: string;
 }
 
 /** Among `judge_scores` rows pending or in error, already filtered on live
- *  links, how many bear on a finished conversation
- *  (`doneSampleIds`) — donc sur lesquelles le prochain rattrapage va
- *  really write a verdict. */
+ *  links, how many bear on a finished conversation (`doneSampleIds`) — and so on
+ *  which the next catch-up will really write a verdict. */
 export function catchupCandidateCount(
   pending: PendingJudgeScore[],
   doneSampleIds: ReadonlySet<string>,
