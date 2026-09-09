@@ -1,6 +1,6 @@
-// La construction de la matrice, qui vivait côté Python jusqu'à ce que le job
+// The building of the matrix, which lived on the Python side until the job
 // cesse de la reconstruire depuis la configuration. Les cas de forme et de
-// température viennent de `tests/test_eval_task.py`, ceux d'extension sont
+// temperature come from `tests/test_eval_task.py`, the extension ones are
 // neufs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,16 +9,16 @@ import type { EvalRunConfig, EvalScenario } from "./types.ts";
 
 function scenario(suffix: string): EvalScenario {
   return {
-    title: `Scénario ${suffix}`,
-    system_prompt: `Tu assistes l'équipe qualité (${suffix}).`,
-    opening_message: `Ouverture du scénario ${suffix}.`,
+    title: `Scenario ${suffix}`,
+    system_prompt: `You assist the quality team (${suffix}).`,
+    opening_message: `Opening of scenario ${suffix}.`,
   };
 }
 
 function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   return {
     scenarios: [scenario("A")],
-    criterion: "Le modèle a fourni le plan demandé.",
+    criterion: "The model provided the plan asked for.",
     rubric: [
       { value: 0, meaning: "Non." },
       { value: 1, meaning: "Oui." },
@@ -33,7 +33,7 @@ function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
 
 // --- un run neuf ---------------------------------------------------------------
 
-test("une case par triplet scénario × modèle × répétition", () => {
+test("one cell per scenario × model × repetition triple", () => {
   const cells = cellsForRun(
     config({
       repetitions: 4,
@@ -44,7 +44,7 @@ test("une case par triplet scénario × modèle × répétition", () => {
   assert.equal(cells.length, 24);
 });
 
-test("chaque case porte son scénario et son modèle", () => {
+test("every cell carries its scenario and its model", () => {
   const cells = cellsForRun(
     config({
       repetitions: 1,
@@ -58,9 +58,9 @@ test("chaque case porte son scénario et son modèle", () => {
   assert.deepEqual(couples, ["0 a/1", "0 b/2", "1 a/1", "1 b/2"]);
 });
 
-test("les températures recommencent pour chaque couple", () => {
-  // Sinon les scénarios suivants hériteraient de températures décalées, et la
-  // comparaison porterait sur des réglages différents d'une ligne à l'autre.
+test("the temperatures start over for each pair", () => {
+  // Otherwise the following scenarios would inherit shifted temperatures, and
+  // the comparison would rest on different settings from one row to the next.
   const cells = cellsForRun(
     config({
       repetitions: 3,
@@ -80,9 +80,9 @@ test("les températures recommencent pour chaque couple", () => {
   }
 });
 
-// --- un run qu'on complète -----------------------------------------------------
+// --- a run being completed ----------------------------------------------------
 
-test("les répétitions ajoutées continuent la numérotation du couple", () => {
+test("the added repetitions continue the pair's numbering", () => {
   const cells = cellsForExtension(
     [scenario("A")],
     [0],
@@ -97,8 +97,8 @@ test("les répétitions ajoutées continuent la numérotation du couple", () => 
   );
 });
 
-test("un couple encore jamais couvert commence à zéro", () => {
-  // Un modèle neuf sur un scénario ancien : rien à continuer.
+test("a pair never covered yet starts at zero", () => {
+  // A new model on an old scenario: nothing to continue.
   const cells = cellsForExtension(
     [scenario("A")],
     [0],
@@ -113,9 +113,9 @@ test("un couple encore jamais couvert commence à zéro", () => {
   );
 });
 
-test("chaque couple reprend là où il en est, indépendamment des autres", () => {
-  // Un run complété deux fois n'avance pas au même rythme partout : un modèle
-  // ajouté en cours de route a moins de répétitions que les premiers.
+test("each pair picks up where it is, independently of the others", () => {
+  // A run completed twice does not advance at the same pace everywhere: a model
+  // added along the way has fewer repetitions than the first ones.
   const cells = cellsForExtension(
     [scenario("A")],
     [0],
@@ -133,9 +133,9 @@ test("chaque couple reprend là où il en est, indépendamment des autres", () =
   );
 });
 
-test("l'étalement porte sur les répétitions ajoutées, pas sur le total", () => {
-  // Trois de plus sur un run qui en avait déjà trois : les nouvelles s'étalent
-  // entre les bornes demandées maintenant. Les anciennes gardent la leur, qui
+test("the spread applies to the added repetitions, not to the total", () => {
+  // Three more on a run that already had three: the new ones spread between the
+  // bounds asked for now. The old ones keep theirs, which
   // est inscrite sur leur ligne et que ce code ne touche pas.
   const cells = cellsForExtension(
     [scenario("A")],
@@ -151,17 +151,17 @@ test("l'étalement porte sur les répétitions ajoutées, pas sur le total", () 
   );
 });
 
-test("un scénario neuf prend l'indice qui suit ceux du run", () => {
+test("a new scenario takes the index after the run's", () => {
   const scenarios = [scenario("A"), scenario("B"), scenario("Neuf")];
   const cells = cellsForExtension(scenarios, [2], ["a/1"], 1, null, new Map());
   assert.equal(cells.length, 1);
   assert.equal(cells[0].scenario_index, 2);
-  assert.equal(cells[0].scenario_title, "Scénario Neuf");
+  assert.equal(cells[0].scenario_title, "Scenario Neuf");
 });
 
-test("un indice qui ne désigne aucun scénario est ignoré", () => {
-  // Une requête forgée ne doit pas écrire une case dont le job ne saura que
-  // faire : il lit le message d'ouverture par cet indice-là.
+test("an index naming no scenario is ignored", () => {
+  // A forged request must not write a cell the job will not know what to do
+  // with: it reads the opening message by that very index.
   const cells = cellsForExtension([scenario("A")], [0, 9], ["a/1"], 1, null, new Map());
   assert.equal(cells.length, 1);
 });

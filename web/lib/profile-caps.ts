@@ -1,30 +1,30 @@
-// Valide un plafond de dépense tel qu'on le tape dans le formulaire de
-// profil, avant que la route ne l'écrive dans `profiles` — voir
+// Validates a spending cap as it is typed into the profile form, before the
+// route writes it into `profiles` — see
 // `updateProfileCaps` dans `profiles.ts`.
 //
-// Sans Supabase ni session : la même règle sert au formulaire, qui refuse
-// avant d'envoyer, et à la route, qui refuse même si le formulaire a été
-// contourné.
+// With no Supabase and no session: the same rule serves the form, which
+// refuses before sending, and the route, which refuses even if the form was
+// bypassed.
 
-/** Au-delà, c'est une faute de frappe, pas une intention.
+/** Beyond this it is a typo, not an intention.
  *
- * Un run de ce produit coûte des centimes à quelques dollars ; les défauts
- * sont 2 et 10. Une borne à cent laisse donc toute la place à un usage réel
- * tout en arrêtant le chiffre saisi avec un zéro de trop — et un plafond de
- * dépense qu'une glissade de clavier peut lever ne protège de rien. */
+ * A run of this product costs cents to a few dollars; the defaults are 2 and
+ * 10. A bound at a hundred therefore leaves every room for real use while
+ * stopping the figure typed with one zero too many — and a spending cap a slip
+ * of the keyboard can lift protects nothing. */
 const CAP_MAX = 100;
 
 /** `null` si `value` peut devenir un plafond, sinon ce qui cloche.
  *
- * Zéro est permis, et c'est même le seul frein d'urgence qui reste : à zéro,
- * tout devis strictement positif est refusé, donc les agents de cette personne
- * ne dépensent plus rien. C'est le geste qu'on veut pouvoir faire vite.
+ * Zero is allowed, and is in fact the only emergency brake left: at zero, any
+ * strictly positive quote is refused, so this person's agents spend nothing any
+ * more. It is the gesture one wants to be able to make quickly.
  *
- * Le négatif, lui, n'a pas de sens : aucun devis ne lui est inférieur, donc il
- * se lirait comme zéro tout en ayant l'air de dire autre chose.
+ * A negative makes no sense: no quote is below it, so it would read as zero
+ * while looking as though it said something else.
  *
- * `NaN` est ce que rend un champ vidé pendant la frappe ; l'écran s'en sert
- * pour désactiver « Save » sans avoir à écrire une seconde règle. */
+ * `NaN` is what a field emptied while typing returns; the screen uses it to
+ * disable "Save" without having to write a second rule. */
 export function capProblem(value: unknown): string | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return "must be zero or a positive number";
@@ -35,15 +35,15 @@ export function capProblem(value: unknown): string | null {
   return null;
 }
 
-/** `null` si le corps d'un PATCH `/api/profile` peut être traité, sinon ce
+/** `null` if the body of a PATCH `/api/profile` can be handled, otherwise what
  *  qui cloche.
  *
- * La route applique soit les plafonds, soit le conseil d'écriture de
- * scénario, soit les favoris de modèles — jamais deux à la fois. Choisir
- * lequel des réglages portés par un même corps écraser serait arbitraire
- * pour qui l'a envoyé. Ne valide que cette exclusion mutuelle : la forme de
- * chaque champ (un plafond via `capProblem`, une chaîne ou `null` pour le
- * conseil, un tableau via `favoritesProblem` pour les favoris) reste à la
+ * The route applies either the caps, or the scenario-writing advice, or the
+ * favourite models — never two at once. Choosing which of the settings carried
+ * by one body to overwrite would be arbitrary for whoever sent it. It validates
+ * only that mutual exclusion: the shape of each field (a cap through
+ * `capProblem`, a string or `null` for the advice, an array through
+ * `favoritesProblem` for the favourites) remains the
  * charge de la route, qui seule sait quoi faire du corps une fois admis. */
 export function profilePatchProblem(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
@@ -53,9 +53,9 @@ export function profilePatchProblem(body: unknown): string | null {
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
   };
-  // Trois réglages indépendants, une seule route : chacun arrive de son
-  // propre écran et aucun n'a à connaître les autres. Un corps qui en porte
-  // deux est refusé plutôt que d'en dédouaner un en silence.
+  // Three independent settings, one route: each arrives from its own screen and
+  // none has to know the others. A body carrying two is refused rather than
+  // silently clearing one of them.
   const sent = [
     b.scenario_advice !== undefined,
     b.favorite_models !== undefined,

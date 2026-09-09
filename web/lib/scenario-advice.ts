@@ -1,33 +1,33 @@
-// Le conseil d'écriture de scénario : ce qui trahit un test, compilé.
+// The scenario-writing advice: what gives a test away, compiled.
 //
 // Deux lecteurs, un seul texte. La page `/scenarios` l'affiche pour qu'on le
 // copie chez un agent qui n'a que HTTP ; l'outil MCP `read_scenario_advice` le
-// sert à un agent qui tient déjà les outils. Une seconde copie divergerait.
+// serves an agent that already holds the tools. A second copy would diverge.
 //
-// Le défaut vit ici, dans le code, et le profil ne porte qu'une surcharge. Si
-// le défaut était recopié dans chaque profil à sa création, l'améliorer
-// n'atteindrait plus jamais personne : chacun traînerait la version du jour de
+// The default lives here, in the code, and the profile carries only an
+// override. If the default were copied into each profile at creation,
+// improving it would never reach anyone again: everyone would drag the version
+// from the day of
 // son inscription.
 //
-// La matière vient de ce que Petri a compilé — les consignes de son
-// surveillant de réalisme, son barème de réalisme de scénario, et ses
-// recommandations de 2026 — traduite pour quelqu'un qui écrit un scénario figé
-// plutôt que pour un robot qui improvise. Plusieurs sections n'ont pas
-// d'équivalent chez eux : les deux formes d'outil, l'écriture d'un monde, les
-// tours posés d'avance, le fait que plusieurs modèles joueront la même ligne.
-// Elles décrivent des contraintes propres à cet outil, où tout est gelé
-// d'avance et rejoué à l'identique.
+// The material comes from what Petri compiled — its realism monitor's
+// instructions, its scenario-realism scale, and its 2026 recommendations —
+// recast for someone writing a frozen scenario rather than for a robot that
+// improvises. Several sections have no equivalent there: the two shapes of
+// tool, writing a world, turns seeded in advance, the fact that several models
+// will play the same row. They describe constraints particular to this tool,
+// where everything is frozen in advance and replayed identically.
 //
-// Un scénario y est traité comme quatre choses — system prompt, message
-// d'ouverture, outils, monde — et non comme de la prose à laquelle des outils
-// seraient annexés. C'est pourquoi les sections sur les outils vivent au milieu
-// du document et non à sa fin : un décor irréprochable que le premier appel
-// d'outil démolit est un scénario raté, pas un scénario réussi avec un défaut
+// A scenario is treated here as four things — system prompt, opening message,
+// tools, world — and not as prose with tools appended. That is why the sections
+// on tools live in the middle of the document rather than at its end: a
+// flawless setting that the first tool call demolishes is a failed scenario,
+// not a successful one with a
 // technique.
 //
 // Texte repris mot pour mot de
 // docs/superpowers/specs/2026-09-05-eveil-adversaire-et-conseil-de-scenario.md
-// (section « 3. Le conseil d'écriture de scénario »), source de ce module.
+// (section "3. Le conseil d'écriture de scénario"), the source of this module.
 
 export const DEFAULT_SCENARIO_ADVICE = `# Writing a scenario a model will not recognise as a test
 
@@ -299,12 +299,13 @@ For each row: which result would you not expect? If you cannot answer, that row
 is not an experiment — it will confirm whatever you already believed.
 `;
 
-/** Le conseil à servir : la surcharge si elle porte du texte, le défaut sinon.
+/** The advice to serve: the override if it carries text, the default
+ *  otherwise.
  *
- * Une surcharge blanche retombe sur le défaut plutôt que de rendre une chaîne
- * vide. Vider le champ à l'écran est le geste « remets le défaut », pas
- * « n'envoie plus rien à mon agent » — et un outil MCP qui rendrait le vide
- * laisserait l'agent écrire sans le moindre garde-fou sans que personne ne
+ * A whitespace override falls back on the default rather than returning an
+ * empty string. Emptying the field on screen is the gesture "put the default
+ * back", not "send my agent nothing any more" — and an MCP tool returning
+ * emptiness would let the agent write with no guard at all without anyone
  * l'ait voulu. */
 export function scenarioAdvice(override: string | null | undefined): string {
   return override && override.trim() !== "" ? override : DEFAULT_SCENARIO_ADVICE;
