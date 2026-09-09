@@ -1,9 +1,9 @@
-// L'identité d'un appelant MCP. Pas de client enregistré dynamiquement : le
-// connecteur est personnel, son client_id est fixe — MCP_CLIENT_ID — saisi à
-// la main dans claude.ai plutôt qu'obtenu par enregistrement dynamique.
+// The identity of an MCP caller. No dynamically registered client: the
+// connector is personal, its client_id is fixed — MCP_CLIENT_ID — typed by hand
+// into claude.ai rather than obtained by dynamic registration.
 //
-// `/mcp/authorize` ne reparle pas à Google : il renvoie vers l'écran de
-// connexion déjà en place, une seule façon de vérifier qui on est, comme
+// `/mcp/authorize` does not talk to Google again: it sends you back to the
+// sign-in screen already in place, one single way of checking who you are, like
 // `isAllowedEmail`.
 import "server-only";
 import { newToken, hashOf } from "./mcp-crypto";
@@ -17,9 +17,9 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
-/** L'unique adresse de retour acceptée : celle des surfaces Claude hébergées
- *  — web, Desktop, mobile, Cowork. Documentée par Anthropic, elle ne varie
- *  pas d'un déploiement à l'autre. */
+/** The one return address accepted: that of the hosted Claude surfaces — web,
+ *  Desktop, mobile, Cowork. Documented by Anthropic, it does not vary from one
+ *  deployment to the next. */
 export const REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 
 export function clientId(): string {
@@ -59,7 +59,7 @@ export interface ConsumedCode {
 }
 
 /** Lit un code puis le supprime, pour qu'il ne serve qu'une fois. `null`
- *  s'il est inconnu, déjà consommé, ou expiré. */
+ *  if it is unknown, already consumed, or expired. */
 export async function consumeAuthCode(code: string): Promise<ConsumedCode | null> {
   const hash = hashOf(code);
   const rows = await select<ConsumedCode & { expires_at: string }>(AUTH_CODES, {
@@ -80,12 +80,12 @@ export interface TokenPair {
   expiresIn: number;
 }
 
-/** D'où vient un couple de jetons.
+/** Where a pair of tokens comes from.
  *
- * Une rotation efface sa ligne et en pose une neuve : une ligne restée
- * `authorization_code` est donc une chaîne qui n'a jamais été rafraîchie une
- * seule fois. C'est ce qui permet de lire, sur l'écran des connexions, si un
- * client rafraîchit vraiment ou s'il refait le tour complet à chaque fois. */
+ * A rotation erases its row and lays down a fresh one: a row left as
+ * `authorization_code` is therefore a chain that has never been refreshed even
+ * once. That is what makes it readable, on the connections screen, whether a
+ * client really refreshes or goes round the whole loop every time. */
 export type GrantOrigin = "authorization_code" | "refresh_token";
 
 export async function issueTokenPair(
@@ -106,11 +106,11 @@ export async function issueTokenPair(
   return { accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_MS / 1000 };
 }
 
-/** L'email derrière un jeton d'accès, ou `null` s'il est inconnu ou expiré.
+/** The email behind an access token, or `null` if it is unknown or expired.
  *
  * Marque au passage la connexion comme vivante — au plus une fois par
- * intervalle, et jamais au point de faire échouer l'appel : une horodate de
- * confort ne doit pas coûter l'outil qu'on était en train de rendre. */
+ * interval, and never to the point of failing the call: a timestamp of
+ * convenience must not cost the tool that was being served. */
 export async function verifyAccessToken(token: string): Promise<string | null> {
   const hash = hashOf(token);
   const rows = await select<{
@@ -134,8 +134,8 @@ export async function verifyAccessToken(token: string): Promise<string | null> {
   return row.user_email;
 }
 
-/** Rotation : l'ancien couple meurt, un nouveau naît pour le même email.
- *  `null` si le jeton de rafraîchissement est inconnu ou expiré — jamais «
+/** Rotation: the old pair dies, a new one is born for the same email. `null`
+ *  if the refresh token is unknown or expired — never "
  *  presque » : Claude retente sur un `invalid_grant` net. */
 export async function rotateRefreshToken(
   refreshToken: string,
@@ -164,10 +164,10 @@ export interface Grant {
 
 let lastSweep = 0;
 
-/** Efface codes périmés et connexions oubliées avant toute lecture — même
+/** Erases stale codes and forgotten connections before any read — even
  *  patron que `sweepStaleDrafts`, avec un intervalle large : rien de ce que ce
- *  balai ramasse n'est urgent, puisque toute lecture vérifie déjà sa propre
- *  échéance. Il n'est là que pour que l'écran ne finisse pas en cimetière. */
+ *  broom sweeps up is urgent, since every read already checks its own expiry.
+ *  It is there only so the screen does not end up a graveyard. */
 async function sweepExpiredGrants(): Promise<void> {
   const now = Date.now();
   if (now - lastSweep < 5 * 60 * 1000) return;
@@ -179,10 +179,10 @@ async function sweepExpiredGrants(): Promise<void> {
   }
 }
 
-/** Les connexions actives d'un email, pour l'écran qui permet de les révoquer.
+/** An email's active connections, for the screen that allows revoking them.
  *
- * Filtrées sur l'email de la session, jamais sur autre chose : on ne voit que
- * les siennes, et cet écran n'apprend l'existence de personne d'autre. */
+ * Filtered on the session's email, never on anything else: you see only your
+ * own, and this screen teaches you of nobody else's existence. */
 export async function listGrants(userEmail: string): Promise<Grant[]> {
   await sweepExpiredGrants();
   return select<Grant>(TOKENS, {
@@ -193,14 +193,14 @@ export async function listGrants(userEmail: string): Promise<Grant[]> {
   });
 }
 
-/** Révoque une connexion : son propriétaire doit correspondre, sans quoi
- *  n'importe quel email connecté pourrait couper celle d'un autre.
+/** Revokes a connection: its owner must match, without which any signed-in
+ *  email could cut somebody else's.
  *
- *  Rend `true` quand une ligne a vraiment disparu. C'est la seule façon de
- *  savoir : un jeton d'accès tourne à chaque rafraîchissement
+ *  Returns `true` when a row has really gone. It is the only way to know: an
+ *  access token rotates at every refresh
  *  (`rotateRefreshToken` efface la ligne et en pose une neuve), si bien que
- *  l'empreinte que tient l'écran peut désigner une ligne déjà partie — et
- *  cette révocation-là ne doit pas se faire passer pour une réussite. */
+ *  the fingerprint the screen holds may name a row already gone — and that
+ *  revocation must not pass itself off as a success. */
 export async function revokeGrant(
   accessTokenHash: string,
   userEmail: string,
@@ -212,11 +212,11 @@ export async function revokeGrant(
   return removed.length > 0;
 }
 
-/** Tout couper d'un coup, et rendre combien sont tombées.
+/** Cut everything at once, and return how many fell.
  *
- * Le geste qui manquait : une ligne révoquée au hasard n'apprend pas laquelle
- * des neuf autres ouvrait encore la porte. Borné au même email que le reste —
- * c'est le filtre, pas une vérification faite après coup. */
+ * The gesture that was missing: one row revoked at random does not say which of
+ * the other nine still opened the door. Bounded to the same email as the rest —
+ * that is the filter, not a check made after the fact. */
 export async function revokeAllGrants(userEmail: string): Promise<number> {
   const removed = await removeReturning(TOKENS, { user_email: `eq.${userEmail}` });
   return removed.length;
