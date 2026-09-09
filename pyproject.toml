@@ -1,25 +1,26 @@
 [project]
 name = "evals-playground"
 version = "0.1.0"
-description = "Playground de génération et de notation de scénarios d'évaluation"
+description = "Playground for composing evaluation runs and grading the conversations they produce"
 requires-python = ">=3.11"
 dependencies = [
-    # 0.3.263 et pas moins : en 0.3.259, `gpt-6-astra` part en Chat Completions
-    # avec `max_tokens` et OpenAI le refuse (« use max_completion_tokens »).
+    # 0.3.263 and no less: in 0.3.259, `gpt-6-astra` leaves through Chat
+    # Completions with `max_tokens` and OpenAI refuses it ("use
+    # max_completion_tokens").
     "inspect-ai>=0.3.263",
-    # Providers d'inspect : chacun exige son SDK, sans quoi le modèle
-    # échoue silencieusement au premier appel — une colonne vide dans la
-    # matrice, sans message d'erreur.
-    # `anthropic` en 1.x est exigé par inspect-ai 0.3.263, qui refuse en
-    # dessous : « Anthropic API requires at least version 1.0.0 ».
+    # Inspect's providers: each one demands its SDK, without which the model
+    # fails silently on the first call — an empty column in the matrix, with no
+    # error message.
+    # `anthropic` in 1.x is demanded by inspect-ai 0.3.263, which refuses below
+    # it: "Anthropic API requires at least version 1.0.0".
     "anthropic>=1.0",
     "openai>=1.0",
     "xai-sdk>=0.1",
     "google-genai>=1.0",
     "pydantic>=2.7",
-    # Le client HTTP du magasin Supabase. Le SDK `supabase-py` traînerait son
-    # propre client, sa gestion d'authentification et son moteur de requêtes
-    # pour la poignée d'opérations que fait le job.
+    # The HTTP client of the Supabase store. The `supabase-py` SDK would drag
+    # along its own client, its authentication handling and its query engine for
+    # the handful of operations the job makes.
     "httpx>=0.27",
     "python-dotenv>=1.0",
 ]

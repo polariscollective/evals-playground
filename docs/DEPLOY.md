@@ -1,52 +1,51 @@
-# Déployer
+# Deploying
 
-Trois morceaux, trois endroits. Rien de tout cela n'est automatique la première
-fois ; ensuite, tout part d'un push sur `main`.
+Three pieces, three places. None of it is automatic the first time; afterwards,
+everything starts from a push to `main`.
 
-## L'application — Vercel
+## The application — Vercel
 
-Le dépôt se connecte tel quel. Trois réglages qui ne se devinent pas :
+The repository connects as it stands. Three settings that cannot be guessed:
 
-| réglage | valeur | pourquoi |
+| setting | value | why |
 |---|---|---|
-| Root Directory | `web` | l'application Next.js n'est pas à la racine |
-| Framework Preset | **Next.js** | à vérifier : tant que le Root Directory est la racine, Vercel voit `pyproject.toml` et propose un préréglage Python |
-| Include source files outside of the Root Directory | **coché** | `shared/` est à la racine, lu par l'interface *et* par le job |
+| Root Directory | `web` | the Next.js application is not at the root |
+| Framework Preset | **Next.js** | worth checking: as long as the Root Directory is the root, Vercel sees `pyproject.toml` and offers a Python preset |
+| Include source files outside of the Root Directory | **ticked** | `shared/` is at the root, read by the interface *and* by the job |
 
-Régler le Root Directory sur `web` d'abord : la détection se refait alors sur
-ce dossier, y trouve `next` dans `package.json`, et le bon préréglage se
-propose tout seul.
+Set the Root Directory to `web` first: the detection is then redone on that
+folder, finds `next` in `package.json` there, and the right preset offers itself.
 
-Sans le second, le build échoue : `web/lib/shared.ts` lit `shared/pricing.json`
-et les gabarits du prompt du juge par chemin relatif, hors de `web/`. Ces
-fichiers sont partagés avec le Python, et les recopier dans `web/` serait
-exactement ce qu'on cherche à éviter.
+Without the second, the build fails: `web/lib/shared.ts` reads
+`shared/pricing.json` and the judge prompt's templates by relative path, outside
+`web/`. Those files are shared with the Python, and copying them into `web/`
+would be exactly what one is trying to avoid.
 
-### Les variables d'environnement
+### The environment variables
 
 ```
 SUPABASE_URL                   https://hkqzamibfpyvlowiqgpn.supabase.co
-SUPABASE_SERVICE_ROLE_KEY      la clé de service du projet « evals »
+SUPABASE_SERVICE_ROLE_KEY      the service key of the "evals" project
 BATCH_TRIGGER_URL              https://polaris-batch-trigger-…-ew.a.run.app
-BATCH_TRIGGER_SECRET    le secret d'evals-playground (voir plus bas)
-AUTH_GOOGLE_ID                 client OAuth Google
+BATCH_TRIGGER_SECRET    the evals-playground secret (see below)
+AUTH_GOOGLE_ID                 Google OAuth client
 AUTH_GOOGLE_SECRET
 AUTH_SECRET                    openssl rand -base64 32
-ALLOWED_EMAILS                 adresses autorisées, séparées par des virgules
-ALLOWED_DOMAINS                domaines autorisés, idem
-MCP_CLIENT_ID                  openssl rand -hex 16 — voir « Le connecteur MCP »
+ALLOWED_EMAILS                 allowed addresses, comma separated
+ALLOWED_DOMAINS                allowed domains, likewise
+MCP_CLIENT_ID                  openssl rand -hex 16 — see "The MCP connector"
 ```
 
-Les deux plafonds de `launch_draft` (le devis d'un run pris seul, et ce qu'un
-même appelant MCP a lancé sur l'heure glissante) ne sont plus des variables
-d'environnement : ils vivent dans la table `profiles`, une ligne par personne,
-défauts 2 $ et 10 $ posés par la migration. Pas de réglage à faire ici.
+The two caps of `launch_draft` (a run's quote taken alone, and what one same MCP
+caller has launched over the sliding hour) are no longer environment variables:
+they live in the `profiles` table, one row per person, defaults of $2 and $10 laid
+down by the migration. Nothing to set here.
 
-**Aucune clé de fournisseur.** Aucune route n'appelle un modèle : le devis est
-du calcul, l'aperçu du prompt de la mise en forme, le reste de la lecture. Ce
-qui coûte de l'argent ne vit que dans le job.
+**No provider key.** No route calls a model: the quote is arithmetic, the prompt
+preview is formatting, the rest is reading. What costs money lives in the job
+alone.
 
-Le secret du déclencheur se relit depuis Secret Manager :
+The trigger's secret is read back from Secret Manager:
 
 ```bash
 gcloud secrets versions access latest --secret=BATCH_TRIGGER_CALLERS \
@@ -56,53 +55,52 @@ gcloud secrets versions access latest --secret=BATCH_TRIGGER_CALLERS \
 
 ### Google OAuth
 
-L'URI de redirection à déclarer : `https://<domaine-vercel>/api/auth/callback/google`.
+The redirect URI to declare: `https://<vercel-domain>/api/auth/callback/google`.
 
-### Le connecteur MCP
+### The MCP connector
 
-`MCP_CLIENT_ID` n'a rien à voir avec Google : c'est une chaîne qu'on invente,
-et la seule chose qui identifie claude.ai auprès de `/mcp/authorize` et
-`/mcp/token`. Sans elle, ces deux routes rendent un 500 sans rien expliquer.
+`MCP_CLIENT_ID` has nothing to do with Google: it is a string one invents, and
+the only thing identifying claude.ai to `/mcp/authorize` and `/mcp/token`.
+Without it, those two routes return a 500 explaining nothing.
 
-Côté claude.ai, une fois l'application déployée — Réglages → Connectors → Add
-custom connector :
+On the claude.ai side, once the application is deployed — Settings → Connectors →
+Add custom connector:
 
-| champ | valeur |
+| field | value |
 |---|---|
-| Remote MCP server URL | `https://<domaine-vercel>/mcp` |
+| Remote MCP server URL | `https://<vercel-domain>/mcp` |
 | Authentication | *Always required* |
 | OAuth client | *Use your own OAuth client* |
-| Client ID | la valeur de `MCP_CLIENT_ID` |
-| Client Secret | **vide** |
+| Client ID | the value of `MCP_CLIENT_ID` |
+| Client Secret | **empty** |
 
-Le secret reste vide parce qu'il n'existe pas : le serveur n'en vérifie aucun,
-c'est PKCE qui tient l'échange. Les réglages d'authentification ne se modifient
-pas après coup — pour en changer un, il faut retirer le connecteur et le
-rajouter.
+The secret stays empty because it does not exist: the server checks none, it is
+PKCE that holds the exchange. The authentication settings cannot be changed
+afterwards — to change one, the connector has to be removed and added again.
 
-## Le moteur — Cloud Run Job
+## The engine — Cloud Run Job
 
-Un push sur `main` qui touche `backend/`, `shared/`, le `Dockerfile` ou
-`pyproject.toml` construit l'image et met à jour le job. Les tests passent
-avant : une image poussée sur un moteur cassé serait déployée avant que
-quiconque le remarque.
+A push to `main` touching `backend/`, `shared/`, the `Dockerfile` or
+`pyproject.toml` builds the image and updates the job. The tests run first: an
+image pushed onto a broken engine would be deployed before anybody noticed.
 
-Le job et ses secrets sont décrits dans `polaris-tf`
-(`environments/app/evals_playground_batch.tf`), pas ici.
+The job and its secrets are described in `polaris-tf`
+(`environments/app/evals_playground_batch.tf`), not here.
 
-Quatre clés de fournisseur y sont montées : `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, `XAI_API_KEY` et `GEMINI_API_KEY`. La dernière est arrivée
-avec le catalogue élargi ; comme les autres, `polaris-tf` crée le conteneur et
-jamais la valeur — et le piège rappelé plus bas s'applique à elle en premier.
+Four provider keys are mounted there: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`XAI_API_KEY` and `GEMINI_API_KEY`. The last arrived with the widened catalogue;
+like the others, `polaris-tf` creates the container and never the value — and the
+trap recalled below applies to it first.
 
-## Le schéma — polaris-supabase
+## The schema — polaris-supabase
 
-Les migrations ne sont pas dans ce dépôt. Voir le `CLAUDE.md` de l'espace de
-travail pour la raison, et `polaris-supabase` pour la procédure.
+The migrations are not in this repository. See the workspace's `CLAUDE.md` for
+the reason, and `polaris-supabase` for the procedure.
 
-## Un piège, une fois
+## One trap, once
 
-Cloud Run refuse de créer un conteneur qui monte un secret **sans version**, et
-`polaris-tf` ne gère jamais les valeurs. Un secret neuf monté par une ressource
-neuve doit donc recevoir sa valeur **avant** le premier apply. C'est écrit en
-tête d'`evals_playground_batch.tf`, parce que ça a coûté un apply raté.
+Cloud Run refuses to create a container mounting a secret **with no version**,
+and `polaris-tf` never manages the values. A fresh secret mounted by a fresh
+resource must therefore receive its value **before** the first apply. It is
+written at the head of `evals_playground_batch.tf`, because it cost a failed
+apply.

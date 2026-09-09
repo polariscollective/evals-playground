@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
-# Copie le viewer d'Inspect dans `web/public/inspect-view/`.
+# Copies Inspect's viewer into `web/public/inspect-view/`.
 #
-# Le viewer est livré tel quel dans le paquet `inspect-ai`, sous `_view/dist` :
-# un `index.html` et un dossier `assets/`. `inspect view bundle` ne fait que le
-# recopier en lui injectant le dossier de journaux à lire — injection que fait
-# ici la route `web/app/inspect-view/[runId]/`, puisque les journaux d'un run
-# viennent de Storage et non d'un dossier voisin. On ne prend donc que la
-# coquille, ce qui évite d'avoir un run sous la main pour reconstruire.
+# The viewer ships as it stands in the `inspect-ai` package, under `_view/dist`:
+# an `index.html` and an `assets/` folder. `inspect view bundle` does nothing but
+# copy it while injecting the log folder to read — an injection the
+# `web/app/inspect-view/[runId]/` route makes here instead, since a run's logs
+# come from Storage and not from a neighbouring folder. We therefore take the
+# shell alone, which saves having a run to hand in order to rebuild.
 #
-# Le résultat est commité. À rejouer quand `inspect-ai` monte de version : le
-# viewer doit rester capable de lire les `.eval` que cette version écrit.
+# The result is committed. To be replayed when `inspect-ai` goes up a version:
+# the viewer must stay able to read the `.eval` files that version writes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SORTIE=web/public/inspect-view
+OUTPUT=web/public/inspect-view
 
-python - "$SORTIE" <<'PY'
+python - "$OUTPUT" <<'PY'
 import shutil
 import sys
 from pathlib import Path
 
 from inspect_ai._view._dist import resolve_dist_directory
 
-sortie = Path(sys.argv[1])
-shutil.rmtree(sortie, ignore_errors=True)
-shutil.copytree(resolve_dist_directory(), sortie)
+output = Path(sys.argv[1])
+shutil.rmtree(output, ignore_errors=True)
+shutil.copytree(resolve_dist_directory(), output)
 
 import inspect_ai
 
-poids = sum(f.stat().st_size for f in sortie.rglob("*") if f.is_file())
-print(f"Viewer écrit dans {sortie} ({poids // 1024} Ko)")
-print(f"Version d'inspect : {inspect_ai.__version__}")
+size = sum(f.stat().st_size for f in output.rglob("*") if f.is_file())
+print(f"Viewer written to {output} ({size // 1024} kB)")
+print(f"inspect version: {inspect_ai.__version__}")
 PY
