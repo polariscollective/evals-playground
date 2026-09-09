@@ -89,7 +89,7 @@ export function verdictOf(text: string, priceOf?: Pricer): Verdict {
       return {
         status: 200,
         message:
-          `INCOMPLETE — ${csvGap([
+          `INCOMPLETE: ${csvGap([
             csv.column_title,
             csv.column_system_prompt,
             csv.column_opening_message,
@@ -103,7 +103,7 @@ export function verdictOf(text: string, priceOf?: Pricer): Verdict {
     return {
       status: 200,
       message:
-        `OK — ${plural(config.scenarios.length, "scenario")}, ${shape(config)}` +
+        `OK: ${plural(config.scenarios.length, "scenario")}, ${shape(config)}` +
         (price ? ` ${price}` : ""),
     };
   } catch (error) {

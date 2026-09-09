@@ -40,7 +40,7 @@ scenarios:
 test("a complete document passes, and returns the run's shape", () => {
   const { status, message } = verdictOf(WITH_SCENARIO);
   assert.equal(status, 200);
-  assert.match(message, /^OK — 1 scenario, 2 target models, 2 judges \(eval-awareness on\), 3 grades \(2 counted\), 4 turns × 3 repetitions\.$/);
+  assert.match(message, /^OK: 1 scenario, 2 target models, 2 judges \(eval-awareness on\), 3 grades \(2 counted\), 4 turns × 3 repetitions\.$/);
 });
 
 test("a CSV announced but absent is incomplete, not refused", () => {
@@ -48,7 +48,7 @@ test("a CSV announced but absent is incomplete, not refused", () => {
   // missing is a file, not a correction.
   const { status, message } = verdictOf(`${RUN}\nscenarios: csv\n`);
   assert.equal(status, 200);
-  assert.match(message, /^INCOMPLETE — /);
+  assert.match(message, /^INCOMPLETE: /);
   assert.match(message, /does not carry it\. It will load; upload the CSV/);
 });
 
@@ -107,7 +107,7 @@ test("the incomplete one carries none: the cost depends on the missing scenarios
 test("with no pricer, the verdict holds all the same", () => {
   // The route passes one; a caller that passes none receives the bare verdict
   // rather than an error.
-  assert.match(verdictOf(WITH_SCENARIO).message, /^OK — 1 scenario, .*repetitions\.$/);
+  assert.match(verdictOf(WITH_SCENARIO).message, /^OK: 1 scenario, .*repetitions\.$/);
 });
 
 test("the OK line counts the judges, which makes a misspelled key visible", () => {
