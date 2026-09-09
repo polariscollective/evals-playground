@@ -2,12 +2,12 @@
 //
 // The third door onto the same texts, and the only one addressed to a human
 // without a session. `/advice` shows them to whoever is signed in and lets
-// them rewrite them; `/scenario-advice` serves one as plain text to an agent
+// them rewrite them; `/advice.txt` serves one as plain text to an agent
 // that only has HTTP; this one hands them to somebody we never invited into
 // the application.
 //
 // Always the defaults, never a profile's override — the rule of
-// `/scenario-advice`, for the same reason: without a session we do not know
+// `/advice.txt`, for the same reason: without a session we do not know
 // who is asking, so nothing that depends on who is asking can leave here.
 // Serving a stranger the version somebody rewrote for their own agents would
 // leak a text written in private.
@@ -94,7 +94,7 @@ export default async function SharedAdvice({
         <span className="text-xs text-zinc-500">
           The same text as plain text, for an agent:{" "}
           <code className="rounded bg-zinc-100 px-1">
-            /scenario-advice?topic={topic}
+            /advice.txt?topic={topic}
           </code>
         </span>
       </div>

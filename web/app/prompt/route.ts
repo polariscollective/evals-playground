@@ -27,7 +27,7 @@ function originOf(request: Request): string {
  *
  * The default, and never anybody's favourites: with no session one does not know
  * who is asking, so nothing depending on who is asking can come out here — the
- * same rule as `/scenario-advice`, which serves the default advice for that
+ * same rule as `/advice.txt`, which serves the default advice for that
  * exact reason. The agent going through MCP, for its part, is identified, and
  * `read_prompt` returns its own list.
  *

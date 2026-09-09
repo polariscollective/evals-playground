@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
     return [
       { source: "/scenarios", destination: "/advice", permanent: true },
       {
+        source: "/scenario-advice",
+        destination: "/advice.txt",
+        permanent: true,
+      },
+      {
         source: "/shared/scenarios",
         destination: "/shared/advice",
         permanent: true,

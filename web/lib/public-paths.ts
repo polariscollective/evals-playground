@@ -10,7 +10,7 @@
  *
  * Opening a path here does not make it safe: it only removes the door. What
  * remains behind must authorise itself. `prompt`, `validate` and
- * `scenario-advice` read nothing private — a fixed text, a verdict on what the
+ * `advice.txt` reads nothing private — a fixed text, a verdict on what the
  * caller already sends, or the default advice, never the override a profile
  * might have written: with no session we do not know who is asking, so nothing
  * that depends on who is asking can leave here. `shared`, for its part, reads
@@ -29,10 +29,6 @@ export const OPEN_PREFIXES = [
   // session and would not know how to obtain one.
   "prompt",
   "validate",
-  // The scenario-writing advice, always its default version — see the head
-  // comment. The same audience as `prompt` and `validate`: an agent with no
-  // session, to which the prompt gives this address.
-  "scenario-advice",
   // A published run.
   "shared",
   // Inspect's viewer and the logs it reads. The same obligation as `shared`,
@@ -55,7 +51,14 @@ export const OPEN_PREFIXES = [
  * looks at a page, and so the only place the omission would show. The query
  * string Next appends behind them changes nothing: the matcher reads the path
  * alone. */
-export const OPEN_FILES = ["favicon.ico", "icon.svg"];
+// The advice documents as plain text, always their default version — see the
+// head comment. The same audience as `prompt` and `validate`: an agent with no
+// session, to which the prompt gives this address.
+//
+// A FILE and not a prefix, and that is the whole point: `/advice`, the page
+// where a signed-in human rewrites those documents, must stay behind the door.
+// Anchored on the end, `advice.txt` opens itself and nothing near it.
+export const OPEN_FILES = ["favicon.ico", "icon.svg", "advice.txt"];
 
 /** The dot is the only character in these paths a regular expression would
  *  read as anything other than itself. */

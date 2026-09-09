@@ -8,7 +8,6 @@ import {
   isAdviceTopic,
   overridesOf,
 } from "./advice.ts";
-import { DEFAULT_SCENARIO_ADVICE, scenarioAdvice } from "./scenario-advice.ts";
 
 test("an absent override falls back to the default", () => {
   assert.equal(adviceFor("analysis", null), DEFAULT_ADVICE.analysis);
@@ -67,19 +66,6 @@ test("junk in the JSON column is ignored rather than served", () => {
     overridesOf({ advice_overrides: { scenario: 42, world: "no such topic" } }),
     {},
   );
-});
-
-// --- the alias -----------------------------------------------------------------
-//
-// `read_scenario_advice` is named in the MCP server's instructions and
-// interpolated into `agent-prompt.ts`. Breaking it would break every agent
-// already written.
-
-test("the old entry point still serves the scenario document", () => {
-  assert.equal(DEFAULT_SCENARIO_ADVICE, DEFAULT_ADVICE.scenario);
-  assert.equal(scenarioAdvice(null), DEFAULT_ADVICE.scenario);
-  assert.equal(scenarioAdvice("mine"), "mine");
-  assert.equal(scenarioAdvice("  "), DEFAULT_ADVICE.scenario);
 });
 
 // --- what each document has to cover -------------------------------------------

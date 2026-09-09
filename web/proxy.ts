@@ -64,6 +64,6 @@ export function proxy(request: NextRequest) {
 // `public-paths.test.mts` holds the two in agreement.
 export const config = {
   matcher: [
-    "/((?!api/auth(?:/|$)|signin(?:/|$)|prompt(?:/|$)|validate(?:/|$)|scenario-advice(?:/|$)|shared(?:/|$)|inspect-view(?:/|$)|mcp(?:/|$)|\\.well-known(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$|icon\\.svg$).*)",
+    "/((?!api/auth(?:/|$)|signin(?:/|$)|prompt(?:/|$)|validate(?:/|$)|shared(?:/|$)|inspect-view(?:/|$)|mcp(?:/|$)|\\.well-known(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$|icon\\.svg$|advice\\.txt$).*)",
   ],
 };

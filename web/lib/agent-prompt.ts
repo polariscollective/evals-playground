@@ -665,7 +665,15 @@ the cell empty for the scenarios that start from nothing, which is most of them.
 I upload the CSV separately, and the tool selects those columns for me. If I have
 not told you the column names, write \`scenarios: csv\` on its own and it will
 guess them.`,
-  advice: `Open {{ORIGIN}}/scenario-advice and read the text there, or ask me to paste it.`,
+  advice: `Open {{ORIGIN}}/advice.txt and read the text there — that is the first
+of four documents. Add \`?topic=batch\` and \`?topic=judge\` for the two others you
+need before launching: how the rows of a run relate to each other, and how to
+write a scale someone else could apply.
+
+A fourth, \`?topic=analysis\`, is for afterwards. Do not read it now; read it when
+the results are in, before concluding anything or extending anything.
+
+Or ask me to paste any of them.`,
   closing: `## The experiment I want
 
 REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
@@ -765,7 +773,7 @@ to write a scale someone other than you could apply.
 A fourth, \`analysis\`, is for afterwards. Do not read it now; read it when the
 results are in, before concluding anything or extending anything.
 
-(\`read_scenario_advice\` still works and returns the first document alone.)`,
+One call, and it starts nothing and spends nothing.\``,
   closing: `## The experiment I want
 
 It is what I have already told you, in my own words, in this conversation. If I
@@ -860,7 +868,7 @@ function fill(
  *
  * `origin` is left empty when it is not known: the address becomes `/validate`,
  * which an agent that has read `/prompt` resolves by itself — same for
- * `{{ORIGIN}}`, which points at `/scenario-advice`, the public route, not
+ * `{{ORIGIN}}`, which points at `/advice.txt`, the public route, not
  * `/advice`, the private page a human reads. Those that know it pass it —
  * the window reads it in the browser, the route in the headers — because a
  * copy-pasted prompt arrives at an agent that has no host context left at

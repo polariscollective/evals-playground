@@ -6,7 +6,7 @@
 
 ## How to create a good scenario?
 
-While Petri is mainly created for exploration, it might not be fully robust when the goal is to test a specific behavior, by making batches of scenarios all slightly differing by a controllable parameter (a tool, a sentence, the environment). But we still took all the advice found in Petri and other documentation in order to create good and realistic scenarios. These guidelines can be found at [/advice](https://evals-playground.polariscollective.org/shared/advice) and are available via MCP as well (`read_advice`, which serves all four; `read_scenario_advice` still serves the first alone).
+While Petri is mainly created for exploration, it might not be fully robust when the goal is to test a specific behavior, by making batches of scenarios all slightly differing by a controllable parameter (a tool, a sentence, the environment). But we still took all the advice found in Petri and other documentation in order to create good and realistic scenarios. These guidelines can be found at [/advice](https://evals-playground.polariscollective.org/shared/advice) and are available via MCP as well (`read_advice`, which serves all four in one call), or as plain text at `/advice.txt?topic=`.
 
 ## What each experiment can do?
 

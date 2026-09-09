@@ -9,9 +9,13 @@ import { ADVICE_TOPICS, DEFAULT_ADVICE, isAdviceTopic } from "@/lib/advice";
  * its content only arrives afterwards, through a client call, never in the
  * initial HTML an agent without a browser would read.
  *
- * `?topic=` picks which of the four. Absent returns the scenario one: that is
- * the address from before the advice was split in four, and it is written into
- * prompts that have already gone out.
+ * `?topic=` picks which of the four. Absent returns the scenario one, which is
+ * the one read first.
+ *
+ * The `.txt` is not decoration: it is what keeps this route open while
+ * `/advice`, the page where a signed-in human rewrites these documents, stays
+ * behind the door — see `OPEN_FILES` in `lib/public-paths.ts`, anchored on the
+ * end rather than treated as a prefix.
  *
  * Always serves the default, never a profile's override. Without a session we
  * do not know who is asking — handing a stranger the version somebody rewrote
