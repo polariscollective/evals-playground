@@ -25,13 +25,12 @@ const profile = createResource<ProfileData>(getProfile);
 export const refreshProfile = profile.refresh;
 export const ensureProfileLoaded = profile.ensureLoaded;
 
-/** Écrit le profil rendu par une sauvegarde, sans relire.
+/** Writes the profile a save returned, without rereading.
  *
  * The three writes that exist — the spending caps and the favourite models,
  * both on "Profile", and the scenario advice, on "Scenarios" — receive the
  * up-to-date profile in their response. Using it avoids a round trip, and above
- * all avoids another write showing
- * encore l'ancienne version au prochain clic. */
+ * all avoids another screen still showing the old version at the next click. */
 export function putProfile(next: ProfileData): void {
   profile.set(next);
 }

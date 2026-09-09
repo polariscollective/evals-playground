@@ -1,5 +1,5 @@
-// Un avertissement qui ne se déclenche jamais quand il n'y a rien à lire, et
-// qui se tait dès que le run ou le scénario porte de quoi lire.
+// A warning that never fires when there is nothing to read, and that keeps
+// quiet as soon as the run or the scenario carries something to read.
 //
 // Voir docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md, §7 :
 // c'est un avertissement, pas un refus, donc rien ici ne passe par
@@ -22,7 +22,7 @@ const OUTIL_SERVI: ToolSpec = {
 };
 
 /** Un run par ailleurs ordinaire, avec un outil servi sur son unique
- *  scénario — juste ce dont ces tests ont besoin, rien de plus. */
+ *  scenario — just what these tests need, nothing more. */
 function baseConfig(): EvalRunConfig {
   return {
     scenarios: [
@@ -49,14 +49,15 @@ function baseConfig(): EvalRunConfig {
   };
 }
 
-/** Le run porte un monde : personne n'a rien à lire ailleurs. */
+/** The run carries a world: nobody has anything to read elsewhere. */
 function configServiAvecMonde(): EvalRunConfig {
   const config = baseConfig();
   config.world = "A shared drive, thirty files.";
   return config;
 }
 
-/** Ni le run ni le scénario ne portent de monde : l'outil servi lit du vide. */
+/** Neither the run nor the scenario carries a world: the served tool reads
+ *  emptiness. */
 function configServiSansMonde(): EvalRunConfig {
   return baseConfig();
 }
@@ -65,30 +66,30 @@ test("un run qui porte un monde n'avertit personne", () => {
   assert.deepEqual(worldWarnings(configServiAvecMonde()), []);
 });
 
-test("un scénario servi sans aucun monde est signalé, par son titre", () => {
+test("a scenario served with no world at all is reported, by its title", () => {
   const config = configServiSansMonde();
   const [warning] = worldWarnings(config);
   assert.ok(warning?.includes(config.scenarios[0].title));
 });
 
-test("un scénario qui porte son propre monde suffit", () => {
+test("a scenario carrying its own world is enough", () => {
   const config = configServiSansMonde();
   config.scenarios[0].world = "Shared drive of the legal team.";
   assert.deepEqual(worldWarnings(config), []);
 });
 
-test("un scénario sans outil servi n'est jamais signalé", () => {
-  // Le monde ne lui sert à rien : l'avertir serait du bruit.
+test("a scenario with no served tool is never reported", () => {
+  // The world is of no use to it: warning it would be noise.
   const config = configServiSansMonde();
   config.scenarios[0].tools = [];
   assert.deepEqual(worldWarnings(config), []);
 });
 
-test("un scénario existant qui porte déjà son monde n'est pas averti", () => {
-  // Le faux positif que la première version faisait : elle ne regardait que
-  // le monde du run. Un scénario qui porte le sien a de quoi lire, rien ne
-  // lui manque, et rien n'est gelé pour lui. Crier ici apprendrait à ne plus
-  // lire l'avertissement — la seule façon de le rendre inutile.
+test("an existing scenario that already carries its world is not warned", () => {
+  // The false positive the first version produced: it looked only at the run's
+  // world. A scenario carrying its own has something to read, nothing is
+  // missing for it, and nothing is frozen for it. Shouting here would teach
+  // people to stop reading the warning — the only way to make it useless.
   const warnings = extendWorldWarnings(
     {
       new_tools: [
@@ -104,13 +105,13 @@ test("un scénario existant qui porte déjà son monde n'est pas averti", () => 
   assert.deepEqual(warnings, []);
 });
 
-test("appliquer un outil servi à des scénarios existants d'un run au monde vide dit que c'est gelé", () => {
+test("applying a served tool to existing scenarios of a run with an empty world says it is frozen", () => {
   const warnings = extendWorldWarnings(
     {
-      // `result: ""` ajouté au littéral du brief : `ToolSpec.result` est
-      // requis dans le type, et c'est la même valeur que porterait un outil
+      // `result: ""` added to the brief's literal: `ToolSpec.result` is
+      // required in the type, and it is the same value a tool would carry
       // servi ordinaire (voir `OUTIL_SERVI` ci-dessus, ou `extend.test.mts`) —
-      // ça ne change rien à ce que `served` regarde, qui n'est que
+      // it changes nothing about what `served` looks at, which is only
       // `retrieval_rules`.
       new_tools: [
         { name: "s", description: "d", parameters: [], result: "", retrieval_rules: "r" },
@@ -124,7 +125,7 @@ test("appliquer un outil servi à des scénarios existants d'un run au monde vid
 
 // --- Les cas qui ne doivent jamais avertir, pour ne jamais devenir du bruit -
 
-test("aucun outil servi ajouté : rien à avertir", () => {
+test("no served tool added: nothing to warn about", () => {
   const warnings = extendWorldWarnings(
     { new_tools: [{ name: "s", description: "d", parameters: [], result: "fixed" }] },
     { world: "", scenarios: [{ title: "T", tools: null, world: "" }] },
@@ -132,7 +133,7 @@ test("aucun outil servi ajouté : rien à avertir", () => {
   assert.deepEqual(warnings, []);
 });
 
-test("new_tools_for_existing à false gèle explicitement : rien n'a changé pour l'existant", () => {
+test("new_tools_for_existing at false freezes explicitly: nothing changed for what exists", () => {
   const warnings = extendWorldWarnings(
     {
       new_tools: [
@@ -145,7 +146,7 @@ test("new_tools_for_existing à false gèle explicitement : rien n'a changé pou
   assert.deepEqual(warnings, []);
 });
 
-test("le run porte déjà un monde : l'extension n'a rien à réparer", () => {
+test("the run already carries a world: the extension has nothing to repair", () => {
   const warnings = extendWorldWarnings(
     {
       new_tools: [
@@ -158,7 +159,7 @@ test("le run porte déjà un monde : l'extension n'a rien à réparer", () => {
   assert.deepEqual(warnings, []);
 });
 
-test("aucun scénario existant n'hérite — chacun nommait déjà les siens", () => {
+test("no existing scenario inherits — each already named its own", () => {
   const warnings = extendWorldWarnings(
     {
       new_tools: [
@@ -171,9 +172,9 @@ test("aucun scénario existant n'hérite — chacun nommait déjà les siens", (
   assert.deepEqual(warnings, []);
 });
 
-// --- Écrire dans un monde que rien ne lit ---------------------------------
+// --- Writing into a world nothing reads -----------------------------------
 
-const écrivain = {
+const writer = {
   name: "delete_file",
   description: "Deletes.",
   parameters: [],
@@ -181,7 +182,7 @@ const écrivain = {
   world_effect: "The file no longer exists.",
 };
 
-const lecteur = {
+const reader = {
   name: "search_files",
   description: "Searches.",
   parameters: [],
@@ -189,7 +190,7 @@ const lecteur = {
   retrieval_rules: "Return at most twenty lines.",
 };
 
-const runAvec = (tools: unknown[], scenarioTools?: string[] | null) =>
+const runWith = (tools: unknown[], scenarioTools?: string[] | null) =>
   ({
     scenarios: [
       {
@@ -199,38 +200,39 @@ const runAvec = (tools: unknown[], scenarioTools?: string[] | null) =>
         ...(scenarioTools === undefined ? {} : { tools: scenarioTools }),
       },
     ],
-    world: "Un lecteur partagé.",
+    world: "A shared drive.",
     tools,
   }) as never;
 
-test("un effet déclaré que rien ne lira est signalé, par le titre du scénario", () => {
-  // `world_effect` n'a qu'un lecteur : le modèle d'environnement, quand il sert
-  // un appel qui vient après. Sans outil servi, l'entrée s'écrit et n'est
+test("a declared effect nothing will read is reported, by the scenario's title", () => {
+  // `world_effect` has one reader only: the environment model, when it serves a
+  // call that comes afterwards. With no served tool, the entry is written and is
+  // never
   // jamais relue.
-  const warnings = writeWithoutReadWarnings(runAvec([écrivain]));
+  const warnings = writeWithoutReadWarnings(runWith([writer]));
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /Rappel/);
   assert.match(warnings[0], /never read/);
 });
 
-test("un scénario qui lit le monde n'est pas signalé", () => {
-  assert.deepEqual(writeWithoutReadWarnings(runAvec([écrivain, lecteur])), []);
+test("a scenario that reads the world is not reported", () => {
+  assert.deepEqual(writeWithoutReadWarnings(runWith([writer, reader])), []);
 });
 
-test("un run sans outil d'écriture n'a rien à signaler", () => {
-  assert.deepEqual(writeWithoutReadWarnings(runAvec([lecteur])), []);
+test("a run with no writing tool has nothing to report", () => {
+  assert.deepEqual(writeWithoutReadWarnings(runWith([reader])), []);
 });
 
-test("la question se pose scénario par scénario, pas run par run", () => {
-  // `tools: none` sur cette ligne : elle ne reçoit ni l'écrivain ni le lecteur,
-  // donc elle n'écrit rien et n'a rien à signaler.
+test("the question is asked scenario by scenario, not run by run", () => {
+  // `tools: none` on this row: it receives neither the writer nor the reader,
+  // so it writes nothing and has nothing to report.
   assert.deepEqual(
-    writeWithoutReadWarnings(runAvec([écrivain, lecteur], [])),
+    writeWithoutReadWarnings(runWith([writer, reader], [])),
     [],
   );
-  // Et la ligne qui ne reçoit QUE l'écrivain, elle, est signalée.
+  // And the row that receives ONLY the writer is reported.
   assert.equal(
-    writeWithoutReadWarnings(runAvec([écrivain, lecteur], ["delete_file"])).length,
+    writeWithoutReadWarnings(runWith([writer, reader], ["delete_file"])).length,
     1,
   );
 });

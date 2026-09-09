@@ -1,40 +1,39 @@
-// Les modèles qu'une personne veut voir proposés, et rien d'autre.
+// The models a person wants offered, and nothing else.
 //
-// Le catalogue compte quarante et un modèles ; un menu de quarante et une
-// entrées est pire que neuf. Chacun choisit donc ce qu'il en voit, et cette
-// liste décide de tout ce qui PROPOSE — les écrans, le prompt de l'agent, les
+// The catalogue holds forty-one models; a menu of forty-one entries is worse
+// than nine. Everyone therefore chooses what they see of it, and this list
+// decides everything that OFFERS — the screens, the agent's prompt, the
 // outils MCP.
 //
-// Ce qu'elle ne décide pas, jamais : ce qui EXISTE. `knownModelIds()` reste
-// seule à répondre à cette question-là, et c'est elle que `configProblem`
-// consulte. Un run déjà lancé s'affiche donc avec ses modèles quoi qu'il
-// arrive aux favoris, et une relance humaine reste lançable.
+// What it never decides: what EXISTS. `knownModelIds()` alone answers that
+// question, and it is what `configProblem` consults. A run already launched
+// therefore shows with its models whatever happens to the favourites, and a
+// human relaunch stays launchable.
 //
-// Sans Supabase ni session : la même règle sert au formulaire, qui refuse
-// avant d'envoyer, et à la route, qui refuse même si le formulaire a été
-// contourné.
+// With no Supabase and no session: the same rule serves the form, which refuses
+// before sending, and the route, which refuses even if the form was bypassed.
 import { knownModelIds } from "./catalog.ts";
 
-/** Le modèle sur lequel une page de run vierge s'ouvre.
+/** The model a blank run page opens on.
  *
- * Nommé, et non déduit du premier de la liste : tant qu'il était déduit, un
- * réordonnancement du catalogue déplaçait le défaut sans que personne le
- * demande — l'élargissement à quarante et un modèles a ainsi fait passer
- * l'ouverture d'Opus 5 à Fable 5.1, et doublé le devis d'une page vierge en
- * silence. Un nom résiste à l'ordre.
+ * Named, and not derived from the first of the list: while it was derived, a
+ * reordering of the catalogue moved the default without anyone asking — the
+ * widening to forty-one models thus moved the opening from Opus 5 to Fable 5.1,
+ * and silently doubled a blank page's quote. A name resists order.
  *
  * Sonnet 5 : le dernier Sonnet, et le moins cher des trois du catalogue. Il
- * ignore la température, comme tout Claude 4.7 et au-delà — donc une page
+ * ignores temperature, like every Claude 4.7 and above — so a page
  * vierge affiche l'avertissement. C'est vrai, et le dire vaut mieux que de
- * choisir un modèle plus ancien pour l'éviter. */
+ * choose an older model to avoid it. */
 export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5";
 
-/** Ce qu'on propose à qui n'a rien choisi.
+/** What is offered to whoever has chosen nothing.
  *
- * Les neuf modèles que le produit proposait quand le catalogue était écrit à
+ * The nine models the product offered when the catalogue was written by
  * la main, plus Fable 5.1. Vit dans le code et non en base : une ligne de
  * `profiles` qui recopierait cette liste ne recevrait plus jamais ce qu'on y
- * ajoutera — voir la migration `profiles_favorite_models`, qui porte le même
+ * will add — see the migration `profiles_favorite_models`, which carries the
+ * same
  * raisonnement que `scenario_advice` avant elle. */
 export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "anthropic/claude-fable-5-1",
@@ -49,18 +48,19 @@ export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "grok/grok-4.3",
 ];
 
-/** Les modèles à proposer à cette personne.
+/** The models to offer this person.
  *
- * `null` — le profil absent comme la colonne vide — rend le défaut. Ne pas
+ * `null` — an absent profile as much as an empty column — returns the default.
+ * Not
  * savoir qui regarde n'est pas une raison de ne rien proposer : une route
  * publique comme `/prompt` passe ici sans profil et doit servir quelque
  * chose.
  *
- * Les identifiants qui ne sont plus au catalogue sont écartés à la lecture
- * plutôt qu'à l'écriture : la liste est écrite à un instant, le catalogue
- * bouge sans elle, et un menu ne doit pas porter une entrée dont le seul
- * effet serait d'échouer au premier appel facturé. Si le tri ne laisse rien,
- * on retombe sur le défaut — un menu vide rendrait l'application
+ * Identifiers no longer in the catalogue are set aside on reading rather than
+ * on writing: the list is written at one moment, the catalogue moves without it,
+ * and a menu must not carry an entry whose only effect would be to fail at the
+ * first billed call. If the filtering leaves nothing, we fall back on the
+ * default — an empty menu would make the application
  * inutilisable sans qu'on puisse deviner pourquoi. */
 export function favoriteModels(
   profile: { favorite_models: string[] | null } | null,
@@ -74,13 +74,14 @@ export function favoriteModels(
 
 /** `null` si `value` peut devenir une liste de favoris, sinon ce qui cloche.
  *
- * Le tableau vide est refusé ici plutôt qu'en base : la contrainte se dit
+ * The empty array is refused here rather than in the database: the constraint
+ * is stated
  * mieux en une phrase qu'en SQL, et c'est cette phrase que le formulaire
  * affiche. Sans un seul favori, tous les menus de l'application seraient
  * vides.
  *
- * Un doublon est refusé plutôt que dédoublonné en silence : il vient d'un
- * client qui s'est trompé, et le corriger sans le dire cache l'erreur. */
+ * A duplicate is refused rather than silently deduplicated: it comes from a
+ * client that got it wrong, and fixing it without saying so hides the error. */
 export function favoritesProblem(value: unknown): string | null {
   if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) {
     return "favorite_models must be an array of model identifiers";
@@ -100,17 +101,17 @@ export function favoritesProblem(value: unknown): string | null {
   return null;
 }
 
-/** Le refus d'un modèle qui existe mais que cette personne ne s'est pas
+/** The refusal of a model that exists but which this person has not
  *  choisi, ou `null`.
  *
- * Ne dit rien d'un identifiant hors catalogue : `configProblem` l'a déjà
- * refusé avec son propre message, et lui répondre « ajoute-le à tes
+ * Says nothing about an identifier outside the catalogue: `configProblem` has
+ * already refused it with its own message, and answering "add it to your
  * favoris » enverrait corriger un profil qui ne pourra jamais le contenir.
- * Les deux refus sont distincts parce que les deux gestes de réparation le
+ * The two refusals are distinct because the two gestures of repair
  * sont.
  *
- * Une chaîne vide passe : plusieurs champs de modèle sont facultatifs, et un
- * champ absent n'est pas un modèle refusé. */
+ * An empty string passes: several model fields are optional, and an absent
+ * field is not a refused model. */
 export function notFavouriteProblem(
   id: string,
   favorites: readonly string[],

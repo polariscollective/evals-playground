@@ -35,7 +35,7 @@ const FIXED_TOOL: ToolSpec = {
   result: "1200",
 };
 
-const MODÈLES = (world: string | null = null): EvalModels => ({
+const MODELS = (world: string | null = null): EvalModels => ({
   targets: ["anthropic/claude-sonnet-5"],
   judge: "openai/gpt-5.6-luna",
   world,
@@ -45,7 +45,7 @@ type Config = Pick<EvalRunConfig, "tools" | "models" | "turns">;
 
 const CONFIG = (overrides: Partial<Config> = {}): Config => ({
   tools: [],
-  models: MODÈLES(null),
+  models: MODELS(null),
   turns: 3,
   ...overrides,
 });
@@ -80,7 +80,7 @@ test("needsWorldModel: adding a served tool to a run that serves nothing yet cre
 });
 
 test("needsWorldModel: a run that already has a world never asks for one again", () => {
-  const config = CONFIG({ tools: [SERVED_TOOL], models: MODÈLES("anthropic/claude-sonnet-5") });
+  const config = CONFIG({ tools: [SERVED_TOOL], models: MODELS("anthropic/claude-sonnet-5") });
   assert.equal(needsWorldModel(config, [SERVED_TOOL]), false);
 });
 
@@ -116,7 +116,7 @@ test("a run that already has a models.world: world is absent, even if the field 
   // Le sien est repris silencieusement (`extendRun`) ; en envoyer un autre
   // would be refused for nothing — the request must therefore never carry the
   // key.
-  const config = CONFIG({ tools: [SERVED_TOOL], models: MODÈLES("anthropic/claude-sonnet-5") });
+  const config = CONFIG({ tools: [SERVED_TOOL], models: MODELS("anthropic/claude-sonnet-5") });
   const request = buildExtendRequest(
     config,
     VALUES({ newTools: [], worldModel: "anthropic/claude-haiku-4-5" }),
