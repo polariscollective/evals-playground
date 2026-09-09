@@ -171,8 +171,8 @@ test("le principal done sans note (vide ou hors échelle) compte non jugée", ()
 test("une note du principal alimente la moyenne de la case", () => {
   const cells = cellsOf(
     [
-      sample({ principal: verdict(0) }),
-      sample({ principal: verdict(2) }),
+      sample({ scenario_index: 0, principal: verdict(0) }),
+      sample({ scenario_index: 0, principal: verdict(2) }),
     ],
     1,
     [
@@ -205,10 +205,10 @@ test("progressOf ne regarde que le statut d'exécution", () => {
 
 test("overallMean ignore pourquoi le principal n'a pas noté", () => {
   const mean = overallMean([
-    { principal: verdict(0) },
-    { principal: verdict(2) },
-    { principal: verdict(null, "pending") },
-    { principal: verdict(null, "error") },
+    { scenario_index: 0, principal: verdict(0) },
+    { scenario_index: 0, principal: verdict(2) },
+    { scenario_index: 0, principal: verdict(null, "pending") },
+    { scenario_index: 0, principal: verdict(null, "error") },
   ]);
   assert.equal(mean, 1);
 });

@@ -66,7 +66,7 @@ test("no targets at all stays absent rather than becoming null", () => {
   assert.equal(config.targets, undefined);
   // `models.targets` porte le même mot — ne chercher qu'une clé de premier
   // niveau, en début de ligne.
-  assert.ok(!/^targets:/m.test(writeConfigFile(config)));
+  assert.ok(!/(^|\n)targets:/.test(writeConfigFile(config)));
 });
 
 // `readConfigFile` fait passer la configuration par `configProblem` avant de
@@ -75,7 +75,7 @@ test("no targets at all stays absent rather than becoming null", () => {
 test("a partial list is refused, naming the judge and the count", () => {
   assert.throws(
     () => readConfigFile(document("targets:\n  - expected: 0")),
-    /principal judge.*1 entries for 2 scenarios/s,
+    /principal judge[\s\S]*1 entries for 2 scenarios/,
   );
 });
 

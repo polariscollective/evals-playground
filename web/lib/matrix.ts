@@ -14,6 +14,8 @@
 // donc que le verdict du principal sur chaque conversation, que l'appelant
 // leur apporte déjà joint depuis `EvalSample` et `judge_scores`.
 import type { Cell, Progress, RubricLevel, SampleStatus } from "./types";
+import { controlRows, deviation, targetOf } from "./targets.ts";
+import type { JudgeTarget } from "./types";
 import { PLAIN_VIEW, aggregate, mapScore, type MatrixView } from "./view.ts";
 // Le seuil et le prédicat du voyant du run : le compte par case doit
 // s'arrêter exactement à la même règle, sans quoi additionner les marqueurs
@@ -118,11 +120,23 @@ export function cellsOf(
   scenarioCount: number,
   rubric?: RubricLevel[],
   view: MatrixView = PLAIN_VIEW,
+  targets?: JudgeTarget[] | null,
 ): Record<string, Cell>[] {
   const cells: Record<string, Cell>[] = Array.from(
     { length: scenarioCount },
     () => ({}),
   );
+  // La note telle que cette lecture la compte : la note elle-même, ou la
+  // distance à ce que le juge attendait de CETTE ligne. `null` la met dehors
+  // du calcul, exactement comme un palier exclu — et une ligne sans cible en
+  // lecture d'écart n'a rien à montrer, ce qui est le cas d'une extension dont
+  // les cibles n'ont pas suivi.
+  const valueOf = (score: number, scenarioIndex: number): number | null => {
+    if (!view.relative) return mapScore(score, rubric, view);
+    const target = targetOf(targets, scenarioIndex);
+    if (target === undefined) return null;
+    return deviation(score, target.expected, rubric);
+  };
   // Les notes sont gardées et non additionnées au vol : une médiane ou un
   // minimum demandent de les voir toutes, ce qu'une somme courante interdit.
   const notes = new Map<string, number[]>();
@@ -161,7 +175,7 @@ export function cellsOf(
     } else if (sample.principal.score === null) {
       cell.unjudged += 1;
     } else {
-      const valeur = mapScore(sample.principal.score, rubric, view);
+      const valeur = valueOf(sample.principal.score, sample.scenario_index);
       if (valeur === null) {
         // Mise dehors, soit par l'échelle — le juge a tranché « sans objet » —
         // soit par la vue. C'est une réponse, pas une absence de réponse, mais
@@ -202,16 +216,29 @@ export function cellsOf(
  * échelle) — un score nul n'entre jamais dans la moyenne, exactement comme
  * avant que la note ne vive dans sa propre table. */
 export function overallMean(
-  samples: Pick<MatrixSample, "principal">[],
+  samples: Pick<MatrixSample, "principal" | "scenario_index">[],
   rubric?: RubricLevel[],
   view: MatrixView = PLAIN_VIEW,
+  targets?: JudgeTarget[] | null,
 ): number | null {
+  // Les lignes de contrôle sortent du chiffre d'ensemble. Elles sont bizarres
+  // exprès — une ligne de faisabilité vise le HAUT de l'échelle, un modèle
+  // coopératif étant censé y aller — et les mêler aux autres ferait dire à ce
+  // nombre quelque chose que personne n'a demandé.
+  //
+  // Suit le juge dont on affiche les cibles, comme tout le reste de la
+  // matrice : la même ligne peut être un contrôle chez le principal et une
+  // ligne ordinaire chez un autre juge.
+  const controls = controlRows(targets);
   const notes = samples
-    .map((sample) =>
-      sample.principal.score === null
-        ? null
-        : mapScore(sample.principal.score, rubric, view),
-    )
+    .filter((sample) => !controls.has(sample.scenario_index))
+    .map((sample) => {
+      if (sample.principal.score === null) return null;
+      if (!view.relative) return mapScore(sample.principal.score, rubric, view);
+      const target = targetOf(targets, sample.scenario_index);
+      if (target === undefined) return null;
+      return deviation(sample.principal.score, target.expected, rubric);
+    })
     .filter((value): value is number => value !== null);
   return aggregate(notes, view.aggregate);
 }
