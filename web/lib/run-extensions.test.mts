@@ -40,19 +40,19 @@ test("one alone, run finished: its real cost is the gap with the run's cost", ()
 
 test("several in a row: each is measured against the one after it", () => {
   const run = RUN([ENTRY(0), ENTRY(2), ENTRY(5)], 9);
-  const [premiere, seconde, derniere] = extensionsOf(run);
-  assert.equal(premiere.actual_cost_usd, 2); // 2 - 0
-  assert.equal(seconde.actual_cost_usd, 3); // 5 - 2
-  assert.equal(derniere.actual_cost_usd, 4); // 9 - 5
+  const [first, second, last] = extensionsOf(run);
+  assert.equal(first.actual_cost_usd, 2); // 2 - 0
+  assert.equal(second.actual_cost_usd, 3); // 5 - 2
+  assert.equal(last.actual_cost_usd, 4); // 9 - 5
 });
 
 test("the last one when the run has no real cost yet: null, never 0", () => {
   const run = RUN([ENTRY(0), ENTRY(2)], null);
-  const [premiere, derniere] = extensionsOf(run);
+  const [first, last] = extensionsOf(run);
   // The first is measured against the next, which is known: nothing stops it.
-  assert.equal(premiere.actual_cost_usd, 2);
+  assert.equal(first.actual_cost_usd, 2);
   // The last would be measured against the run's current cost, which is missing.
-  assert.equal(derniere.actual_cost_usd, null);
+  assert.equal(last.actual_cost_usd, null);
 });
 
 test("cost_before_usd missing on an entry: its real cost is unknown, not free", () => {
@@ -61,9 +61,9 @@ test("cost_before_usd missing on an entry: its real cost is unknown, not free", 
   // things, and confusing them would show a false figure with the same
   // assurance as a true one.
   const run = RUN([ENTRY(null), ENTRY(4)], 10);
-  const [premiere, derniere] = extensionsOf(run);
-  assert.equal(premiere.actual_cost_usd, null);
-  assert.equal(derniere.actual_cost_usd, 6);
+  const [first, last] = extensionsOf(run);
+  assert.equal(first.actual_cost_usd, null);
+  assert.equal(last.actual_cost_usd, 6);
 });
 
 test("every entry keeps what it already carried, plus the real cost", () => {

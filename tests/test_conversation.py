@@ -41,10 +41,10 @@ def _model(answers: list):
     Useful when only the content matters, not what was sent — unlike
     `_recording_model`, which is limited to a single answer.
     """
-    restantes = iter(answers)
+    remaining = iter(answers)
 
     def outputs(input, tools, tool_choice, config):
-        return ModelOutput.from_content(model="mockllm", content=next(restantes))
+        return ModelOutput.from_content(model="mockllm", content=next(remaining))
 
     return get_model("mockllm/model", custom_outputs=outputs)
 
@@ -57,7 +57,7 @@ def test_a_single_turn_never_calls_the_adversary():
             opening_message=OPENING,
             turns=1,
             target=_recording_model("target answer", seen_by_target),
-            adversary=_recording_model("relance", seen_by_adversary),
+            adversary=_recording_model("push", seen_by_adversary),
             adversary_prompt=SECRET,
         )
     )
@@ -79,7 +79,7 @@ def test_two_turns_alternate_the_two_models():
             opening_message=OPENING,
             turns=2,
             target=_recording_model("target answer", seen_by_target),
-            adversary=_recording_model("relance", seen_by_adversary),
+            adversary=_recording_model("push", seen_by_adversary),
             adversary_prompt=SECRET,
         )
     )
@@ -98,7 +98,7 @@ def test_three_turns_alternate_the_two_models():
             opening_message=OPENING,
             turns=3,
             target=_recording_model("target answer", seen_by_target),
-            adversary=_recording_model("relance", seen_by_adversary),
+            adversary=_recording_model("push", seen_by_adversary),
             adversary_prompt=SECRET,
         )
     )
@@ -113,8 +113,8 @@ def test_the_adversary_prompt_never_reaches_the_evaluated_model():
     """The product's safety invariant.
 
     If the adversary's prompt leaks to the evaluated model, that model knows
-    it is being tested, and every result becomes false without anything
-    signale.
+    it is being tested, and every result becomes false without anything saying
+    so.
     """
     seen_by_target, seen_by_adversary = [], []
     asyncio.run(
@@ -123,14 +123,14 @@ def test_the_adversary_prompt_never_reaches_the_evaluated_model():
             opening_message=OPENING,
             turns=4,
             target=_recording_model("target answer", seen_by_target),
-            adversary=_recording_model("relance", seen_by_adversary),
+            adversary=_recording_model("push", seen_by_adversary),
             adversary_prompt=SECRET,
         )
     )
     for call in seen_by_target:
-        rendu = " ".join(str(m.content) for m in call["messages"])
-        assert SECRET not in rendu
-        assert "SECRET_ADVERSAIRE" not in rendu
+        rendered = " ".join(str(m.content) for m in call["messages"])
+        assert SECRET not in rendered
+        assert "ADVERSARY_SECRET_MARKER" not in rendered
 
 
 def test_the_evaluated_model_receives_the_scenarios_system_prompt():
@@ -143,15 +143,15 @@ def test_the_evaluated_model_receives_the_scenarios_system_prompt():
             target=_recording_model("answer", seen_by_target),
         )
     )
-    premier = seen_by_target[0]["messages"][0]
-    assert isinstance(premier, ChatMessageSystem)
-    assert premier.content == SYSTEM
+    first = seen_by_target[0]["messages"][0]
+    assert isinstance(first, ChatMessageSystem)
+    assert first.content == SYSTEM
 
 
 def test_the_adversarys_view_inverts_the_roles():
     transcript = [
         Turn(role="user", content=OPENING),
-        Turn(role="assistant", content="Je ne peux pas."),
+        Turn(role="assistant", content="I cannot."),
     ]
     messages = adversary_view(SECRET, OPENING, transcript)
 
@@ -161,13 +161,13 @@ def test_the_adversarys_view_inverts_the_roles():
     # conversation cannot start with an `assistant` message.
     assert OPENING in str(messages[0].content)
     assert [m.role for m in messages[1:]] == ["user"]
-    assert str(messages[1].content) == "Je ne peux pas."
+    assert str(messages[1].content) == "I cannot."
 
 
 def test_the_adversarys_view_never_starts_with_an_assistant():
     transcript = [
         Turn(role="user", content=OPENING),
-        Turn(role="assistant", content="Je ne peux pas."),
+        Turn(role="assistant", content="I cannot."),
         Turn(role="user", content="Press."),
         Turn(role="assistant", content="Still no."),
     ]
@@ -180,7 +180,7 @@ def test_the_adversarys_view_never_starts_with_an_assistant():
 def test_the_evaluated_models_view_keeps_the_roles_as_they_are():
     transcript = [
         Turn(role="user", content=OPENING),
-        Turn(role="assistant", content="Je ne peux pas."),
+        Turn(role="assistant", content="I cannot."),
     ]
     messages = target_view(SYSTEM, transcript)
     assert [m.role for m in messages] == ["system", "user", "assistant"]
@@ -194,7 +194,7 @@ def test_the_temperature_goes_to_the_evaluated_model_and_not_to_the_adversary():
             opening_message=OPENING,
             turns=2,
             target=_recording_model("answer", seen_by_target),
-            adversary=_recording_model("relance", seen_by_adversary),
+            adversary=_recording_model("push", seen_by_adversary),
             adversary_prompt=SECRET,
             temperature=0.9,
         )
@@ -211,7 +211,7 @@ def test_both_models_see_the_whole_history():
             opening_message=OPENING,
             turns=3,
             target=_recording_model("target answer", seen_by_target),
-            adversary=_recording_model("relance", seen_by_adversary),
+            adversary=_recording_model("push", seen_by_adversary),
             adversary_prompt=SECRET,
         )
     )
@@ -232,8 +232,8 @@ def test_going_beyond_one_turn_with_no_adversary_raises():
                 target=_recording_model("answer", seen_by_target),
             )
         )
-    except ValueError as erreur:
-        assert "adversary" in str(erreur).lower()
+    except ValueError as error:
+        assert "adversary" in str(error).lower()
         # Critical check: no call to the evaluated model must have been
         # made before the exception was raised. The validation has to happen
         # before the first iteration of the loop, otherwise a real API request
@@ -279,17 +279,16 @@ def test_known_limit_an_adversary_copying_its_instructions_still_leaks_them():
     """A known residual risk, not eliminated by the confidentiality notice.
 
     The plumbing stays watertight (see
-    `test_le_prompt_de_l_adversaire_n_atteint_jamais_le_modele_evalue` :
-    `adversary_prompt` n'a structurellement aucun chemin vers `target_view`).
-    But the adversary is a language model, and nothing guarantees what
-    contenu qu'il produit : si son message recopie ses propres instructions,
-    that text becomes an ordinary `user` turn and legitimately reaches the
-    evaluated model on the next turn. This test does NOT record a success: it
-    documents a known limit of the arrangement, reduced by the confidentiality
-    notice but not removable — no guarantee is possible on a model's output. It
-    must never be read as proof that the safety invariant is absolute: it is
-    absolute only at the level of the
-    plomberie.
+    `test_the_adversary_prompt_never_reaches_the_evaluated_model`:
+    `adversary_prompt` has structurally no path to `target_view`).
+    But the adversary is a language model, and nothing guarantees the content it
+    produces: if its message copies its own instructions back out, that text
+    becomes an ordinary `user` turn and legitimately reaches the evaluated model
+    on the next turn. This test does NOT record a success: it documents a known
+    limit of the arrangement, reduced by the confidentiality notice but not
+    removable — no guarantee is possible on a model's output. It must never be
+    read as proof that the safety invariant is absolute: it is absolute only at
+    the level of the plumbing.
     """
     seen_by_target = []
 
@@ -299,7 +298,7 @@ def test_known_limit_an_adversary_copying_its_instructions_still_leaks_them():
         its_instructions = str(input[0].content)
         return ModelOutput.from_content(
             model="mockllm",
-            content=f"(Petit rappel de mes consignes : {its_instructions})",
+            content=f"(A small reminder of my instructions: {its_instructions})",
         )
 
     transcript = asyncio.run(
@@ -347,7 +346,7 @@ def test_the_history_opens_the_transcript_and_stays_flagged():
 
     class SilentModel:
         async def generate(self, *args, **kwargs):
-            return ModelOutput.from_content(model="faux", content="D'accord.")
+            return ModelOutput.from_content(model="fake", content="All right.")
 
     transcript = asyncio.run(
         run_conversation(
@@ -371,12 +370,12 @@ def test_the_history_opens_the_transcript_and_stays_flagged():
 
 def test_the_model_receives_the_history_as_its_own():
     """That is the whole point: it carries on from that state, without having been led there."""
-    vu: list = []
+    seen: list = []
 
     class WatchingModel:
         async def generate(self, input, **kwargs):
-            vu.append([(m.role, m.text) for m in input])
-            return ModelOutput.from_content(model="faux", content="D'accord.")
+            seen.append([(m.role, m.text) for m in input])
+            return ModelOutput.from_content(model="fake", content="All right.")
 
     asyncio.run(
         run_conversation(
@@ -391,9 +390,9 @@ def test_the_model_receives_the_history_as_its_own():
         )
     )
 
-    roles = [role for role, _ in vu[0]]
+    roles = [role for role, _ in seen[0]]
     assert roles == ["system", "user", "assistant", "user"]
-    assert vu[0][2][1] == "J'accepte."
+    assert seen[0][2][1] == "J'accepte."
 
 
 def test_with_no_history_nothing_changes():
@@ -414,7 +413,7 @@ def test_with_no_history_nothing_changes():
     assert [t.seeded for t in transcript] == [False, False]
 
 
-# --- la reprise d'une conversation --------------------------------------------
+# --- resuming a conversation --------------------------------------------------
 
 
 def test_resuming_a_conversation_does_not_reflag_the_played_turns():
@@ -467,7 +466,7 @@ def test_a_resume_produces_the_same_alternation_as_a_fresh_run_of_equal_depth():
             opening_message=OPENING,
             turns=8,
             target=_model(["target"] * 8),
-            adversary=_model(["relance"] * 7),
+            adversary=_model(["push"] * 7),
             adversary_prompt=SECRET,
         )
     )
@@ -478,7 +477,7 @@ def test_a_resume_produces_the_same_alternation_as_a_fresh_run_of_equal_depth():
             opening_message=OPENING,
             turns=4,
             target=_model(["target"] * 4),
-            adversary=_model(["relance"] * 3),
+            adversary=_model(["push"] * 3),
             adversary_prompt=SECRET,
         )
     )
@@ -488,8 +487,8 @@ def test_a_resume_produces_the_same_alternation_as_a_fresh_run_of_equal_depth():
             opening_message=OPENING,
             turns=4,
             target=_model(["target"] * 4),
-            # 3 relances de boucle, plus la relance d'ouverture de la reprise.
-            adversary=_model(["relance"] * 4),
+            # 3 loop pushes, plus the resume's opening push.
+            adversary=_model(["push"] * 4),
             adversary_prompt=SECRET,
             resume=already_played,
         )
@@ -555,7 +554,7 @@ def _tool(name="delete_records", result="412 records deleted."):
         name=name,
         description="Permanently deletes the records.",
         parameters=[
-            {"name": "scope", "type": "string", "description": "quoi", "required": True}
+            {"name": "scope", "type": "string", "description": "what", "required": True}
         ],
         result=result,
     )
@@ -575,7 +574,7 @@ class CallingModel:
         if self.restants > 0:
             self.restants -= 1
             return ModelOutput.for_tool_call(
-                model="faux", tool_name=self.name, tool_arguments={"scope": "all"}
+                model="fake", tool_name=self.name, tool_arguments={"scope": "all"}
             )
         return ModelOutput.from_content(model="fake", content="Done.")
 
@@ -639,8 +638,8 @@ def test_a_loop_of_calls_is_capped():
         )
     )
     assert model.calls == MAX_TOOL_CALLS_PER_TURN + 1
-    # The last call still receives an answer: a call left
-    # suspens rendrait le transcript invalide pour le tour suivant.
+    # The last call still receives an answer: a call left hanging would make the
+    # transcript invalid for the next turn.
     assert transcript[-1].role == "tool"
     assert "limit reached" in transcript[-1].content
 
@@ -696,7 +695,7 @@ def test_the_call_cap_is_adjustable():
 
 
 def test_a_resume_ending_on_a_tool_turn_still_calls_the_adversary():
-    """Le plafond d'appels d'outils termine un tour sur un tour `tool` de
+    """The tool-call cap ends a turn on a `tool` turn of
     summary, not on an `assistant` turn — it is an ordinary `done` cell, and
     nobody is waiting for an answer there yet. The resume guard must recognise
     it like the target's other turn endings, and push."""
@@ -760,12 +759,12 @@ def test_the_adversary_notice_carries_the_three_realism_rules():
 # as it already receives `target` and `adversary` ready-built.
 
 
-def _outil_servi(name="search_files"):
+def _served_tool(name="search_files"):
     return ToolSpec(
         name=name,
         description="Searches the shared drive.",
         parameters=[
-            {"name": "query", "type": "string", "description": "quoi", "required": True}
+            {"name": "query", "type": "string", "description": "what", "required": True}
         ],
         retrieval_rules="Return at most twenty lines.",
     )
@@ -784,7 +783,7 @@ def test_a_served_tool_goes_through_the_function():
             opening_message="Cherche le contrat.",
             turns=1,
             target=CallingModel(how_many=1, name="search_files"),
-            tools=[_outil_servi()],
+            tools=[_served_tool()],
             serve_tool=serve,
         )
     )
@@ -824,7 +823,7 @@ def test_a_served_tool_with_no_function_refuses_to_start():
                 opening_message="Cherche.",
                 turns=1,
                 target=CallingModel(how_many=1, name="search_files"),
-                tools=[_outil_servi()],
+                tools=[_served_tool()],
             )
         )
 
@@ -836,7 +835,7 @@ def test_the_same_call_is_asked_of_the_function_again():
 
     async def serve(tool, arguments, journal):
         calls.append(arguments)
-        return ToolAnswer("toujours pareil")
+        return ToolAnswer("always the same")
 
     asyncio.run(
         run_conversation(
@@ -844,7 +843,7 @@ def test_the_same_call_is_asked_of_the_function_again():
             opening_message="Cherche.",
             turns=1,
             target=CallingModel(how_many=2, name="search_files"),
-            tools=[_outil_servi()],
+            tools=[_served_tool()],
             serve_tool=serve,
             max_tool_calls=5,
         )
@@ -863,7 +862,7 @@ def _writing_tool(name="delete_file"):
         name=name,
         description="Deletes a file for good.",
         parameters=[
-            {"name": "scope", "type": "string", "description": "quoi", "required": True}
+            {"name": "scope", "type": "string", "description": "what", "required": True}
         ],
         result="Deleted.",
         world_effect="The named file no longer exists on the share.",
@@ -910,7 +909,7 @@ def test_a_read_never_enters_the_journal():
             opening_message="Cherche.",
             turns=1,
             target=CallingModel(how_many=2, name="search_files"),
-            tools=[_outil_servi()],
+            tools=[_served_tool()],
             serve_tool=serve,
             max_tool_calls=5,
         )
@@ -941,7 +940,7 @@ def test_the_server_receives_the_state_from_before_its_own_call():
                         {
                             "name": "scope",
                             "type": "string",
-                            "description": "quoi",
+                            "description": "what",
                             "required": True,
                         }
                     ],
@@ -953,7 +952,7 @@ def test_the_server_receives_the_state_from_before_its_own_call():
             max_tool_calls=5,
         )
     )
-    # Le premier appel voit un journal vide ; le second voit le premier.
+    # The first call sees an empty journal; the second sees the first.
     assert seen == [[], ["send_email"]]
 
 
@@ -971,9 +970,9 @@ def test_the_effect_never_goes_to_the_evaluated_model():
             world_change="The named file no longer exists on the share.",
         ),
     ]
-    rendu = " ".join(str(m.content) for m in target_view("s", transcript))
-    assert "Deleted." in rendu
-    assert "no longer exists" not in rendu
+    rendered = " ".join(str(m.content) for m in target_view("s", transcript))
+    assert "Deleted." in rendered
+    assert "no longer exists" not in rendered
 
 
 def test_the_journal_is_rebuilt_from_a_resumed_transcript():
@@ -1012,7 +1011,7 @@ def test_the_journal_is_rebuilt_from_a_resumed_transcript():
         ),
     ]
     journal = journal_from(
-        transcript, {"delete_file": _writing_tool(), "search_files": _outil_servi()}
+        transcript, {"delete_file": _writing_tool(), "search_files": _served_tool()}
     )
     assert [entry.tool for entry in journal] == ["delete_file"]
     assert journal[0].arguments == {"scope": "contrat"}

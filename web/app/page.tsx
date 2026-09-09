@@ -650,8 +650,8 @@ function EvaluateForm() {
       world,
       label: label.trim() || null,
       notes,
-      // La provenance suit le run : sans le nom du fichier et les colonnes
-      // choisies, on ne saurait plus, plus tard, quel lot a produit la matrice.
+      // The provenance follows the run: without the file's name and the columns
+      // chosen, one would no longer know, later, which batch produced the matrix.
       source: {
         kind: source,
         file_name: source === "csv" ? csvName : "",

@@ -24,14 +24,14 @@ test("a quote that would pass alone but would breach the hour is refused", () =>
   assert.doesNotMatch(problem!, /MCP_MAX_USD/);
 });
 
-test("pile au plafond passe, un cent au-dessus refuse", () => {
+test("exactly at the cap passes, one cent above refuses", () => {
   assert.equal(budgetProblem(2, 0, 2, 10), null);
   assert.notEqual(budgetProblem(2.01, 0, 2, 10), null);
   assert.equal(budgetProblem(1, 9, 2, 10), null);
   assert.notEqual(budgetProblem(1.01, 9, 2, 10), null);
 });
 
-test("un devis minuscule ne s'affiche pas 0,00 $", () => {
+test("a tiny quote does not show as $0.00", () => {
   const problem = budgetProblem(0.001, 0, 0.0001, 10);
   assert.match(problem!, /\$0\.0010/);
 });

@@ -15,7 +15,7 @@ test("the judge is warned about the SYSTEM PROMPT block", () => {
 
 test("the SYSTEM PROMPT block adds no grading instruction", () => {
   // The same lock as
-  // `tests/test_scoring.py::test_le_bloc_system_prompt_n_ajoute_aucune_consigne_de_notation`:
+  // `tests/test_scoring.py::test_the_system_prompt_block_adds_no_grading_instruction`:
   // this block receives factual labelling only — who wrote it, when, and that it
   // is neither a turn of the conversation nor a word from the assistant — never
   // an instruction about what to grade or not to grade concerning it. Any such

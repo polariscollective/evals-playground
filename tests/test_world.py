@@ -146,8 +146,8 @@ def test_the_journal_comes_after_the_scenario_and_before_the_call():
     """The order carries the priority: the world, its corrections, then what
     has happened to it since — the most recent wins."""
     _, message = world_prompt(
-        world="contracts/2026-03.pdf existe.",
-        scenario_world="Une correction.",
+        world="contracts/2026-03.pdf exists.",
+        scenario_world="A correction.",
         journal=[_entry()],
         tool=_tool(),
         arguments={"query": "contracts"},
@@ -268,13 +268,13 @@ def test_two_tools_do_not_share_a_key():
 def test_serving_returns_the_three_fields():
     model = ServingModel(
         result="contracts/2026-03.pdf\ncontracts/2026-04.pdf",
-        reasoning="deux fichiers correspondent",
+        reasoning="two files match",
         world_change="",
     )
     returned = asyncio.run(
         serve(
             model=model,
-            world="deux contrats",
+            world="two contracts",
             scenario_world="",
             journal=[],
             tool=_tool(),
@@ -282,7 +282,7 @@ def test_serving_returns_the_three_fields():
         )
     )
     assert returned.result == "contracts/2026-03.pdf\ncontracts/2026-04.pdf"
-    assert returned.reasoning == "deux fichiers correspondent"
+    assert returned.reasoning == "two files match"
     assert returned.world_change == ""
     assert model.calls == 1
 
@@ -291,7 +291,7 @@ def test_the_reasoning_does_not_leak_into_the_result():
     """That is the whole reason for closing the output: the completion used to
     go out verbatim in the `TOOL` turn the evaluated model reads."""
     model = ServingModel(
-        result="404 Not Found", reasoning="le monde ne contient pas ce fichier"
+        result="404 Not Found", reasoning="the world does not contain that file"
     )
     returned = asyncio.run(
         serve(
@@ -553,11 +553,10 @@ def test_a_fault_with_no_reason_is_given_one():
 
 
 def test_the_checker_is_from_another_provider_than_the_server():
-    """Le serveur est devenu un choix par run — `config.models.world` — et un
+    """The server has become a per-run choice — `config.models.world` — and a
     fixed checker would become hollow without saying so as soon as that choice
-    falls on
-    sa propre famille. `check_model_for` retient donc, parmi `CHECK_MODELS`,
-    the first whose provider differs from the server's."""
+    falls on its own family. `check_model_for` therefore keeps, among
+    `CHECK_MODELS`, the first whose provider differs from the server's."""
     assert check_model_for("openai/gpt-5.6-luna") == "anthropic/claude-haiku-4-5"
     assert check_model_for("anthropic/claude-haiku-4-5") == "openai/gpt-5.6-luna"
     assert check_model_for("grok/grok-4.3") == "anthropic/claude-haiku-4-5"
@@ -579,10 +578,10 @@ def test_the_first_checker_is_one_from_another_family():
 
 
 def test_the_fallback_accepts_the_same_family_rather_than_nothing():
-    """A checker with a shared bias beats no check at all —
-    l'appelant le signale."""
-    suivant = check_models_after("anthropic/claude-opus-5", ["openai/gpt-5.6-luna"])
-    assert suivant == "anthropic/claude-haiku-4-5"
+    """A checker with a shared bias beats no check at all — and the caller says
+    so."""
+    next_one = check_models_after("anthropic/claude-opus-5", ["openai/gpt-5.6-luna"])
+    assert next_one == "anthropic/claude-haiku-4-5"
 
 
 def test_when_everything_has_fallen_the_fallback_says_serve_without_checking():

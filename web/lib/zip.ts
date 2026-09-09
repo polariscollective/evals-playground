@@ -32,7 +32,7 @@ function localHeader(entry: Entry): Buffer {
   const head = Buffer.alloc(30);
   head.writeUInt32LE(0x04034b50, 0); // signature
   head.writeUInt16LE(20, 4); // version needed
-  head.writeUInt16LE(0x0800, 6); // drapeau : noms en UTF-8
+  head.writeUInt16LE(0x0800, 6); // flag: names in UTF-8
   head.writeUInt16LE(0, 8); // method: stored
   head.writeUInt16LE(DOS_TIME, 10);
   head.writeUInt16LE(DOS_DATE, 12);

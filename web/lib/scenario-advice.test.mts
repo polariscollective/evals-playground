@@ -69,9 +69,9 @@ test("the sections on tools are no longer relegated to the end of the document",
   // Their place says what is thought of them. After "Planted information",
   // which already speaks of burying things in the world, they would arrive too
   // late.
-  const outils = DEFAULT_SCENARIO_ADVICE.indexOf("## A tool is fixed");
-  const enfoui = DEFAULT_SCENARIO_ADVICE.indexOf("## Planted information");
+  const tools = DEFAULT_SCENARIO_ADVICE.indexOf("## A tool is fixed");
+  const buried = DEFAULT_SCENARIO_ADVICE.indexOf("## Planted information");
   const ouverture = DEFAULT_SCENARIO_ADVICE.indexOf("## The opening message");
-  assert.ok(outils > 0 && outils < enfoui);
-  assert.ok(enfoui < ouverture);
+  assert.ok(tools > 0 && tools < buried);
+  assert.ok(buried < ouverture);
 });

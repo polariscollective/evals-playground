@@ -30,7 +30,7 @@ function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   };
 }
 
-// --- un run neuf ---------------------------------------------------------------
+// --- a fresh run -------------------------------------------------------------
 
 test("one cell per scenario × model × repetition triple", () => {
   const cells = cellsForRun(
@@ -101,10 +101,10 @@ test("a pair never covered yet starts at zero", () => {
   const cells = cellsForExtension(
     [scenario("A")],
     [0],
-    ["neuf/1"],
+    ["new/1"],
     2,
     null,
-    new Map([["0 ancien/1", 7]]),
+    new Map([["0 old/1", 7]]),
   );
   assert.deepEqual(
     cells.map((cell) => cell.repetition),
@@ -151,11 +151,11 @@ test("the spread applies to the added repetitions, not to the total", () => {
 });
 
 test("a new scenario takes the index after the run's", () => {
-  const scenarios = [scenario("A"), scenario("B"), scenario("Neuf")];
+  const scenarios = [scenario("A"), scenario("B"), scenario("New")];
   const cells = cellsForExtension(scenarios, [2], ["a/1"], 1, null, new Map());
   assert.equal(cells.length, 1);
   assert.equal(cells[0].scenario_index, 2);
-  assert.equal(cells[0].scenario_title, "Scenario Neuf");
+  assert.equal(cells[0].scenario_title, "Scenario New");
 });
 
 test("an index naming no scenario is ignored", () => {

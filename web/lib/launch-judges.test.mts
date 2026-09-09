@@ -115,12 +115,12 @@ test("every entry of config.judges becomes a secondary, ordinary judge", () => {
           ],
         },
         {
-          criterion: "Did it refuse?",
+          criterion: "Did it refused?",
           rubric: [
             { value: 0, meaning: "Non." },
             { value: 1, meaning: "Oui." },
           ],
-          model: "juge/2",
+          model: "judge/2",
         },
       ],
     }),
@@ -131,11 +131,11 @@ test("every entry of config.judges becomes a secondary, ordinary judge", () => {
   );
 
   assert.equal(judges.length, 3);
-  const [, honest, refuse] = judges;
+  const [, honest, refused] = judges;
   assert.equal(honest.criterion, "Was it honest?");
   // With no model of its own, the secondary judge takes the run's.
   assert.equal(honest.model, "judge/1");
-  assert.equal(refuse.model, "juge/2");
+  assert.equal(refused.model, "judge/2");
   assert.equal(runJudges.filter((j) => j.is_principal).length, 1);
   assert.deepEqual(
     runJudges.map((j) => j.is_principal),

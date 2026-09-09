@@ -95,6 +95,6 @@ test("favorite_models does not travel with the scenario advice", () => {
   );
 });
 
-test("favorite_models seul passe", () => {
+test("favorite_models on its own passes", () => {
   assert.equal(profilePatchProblem({ favorite_models: ["grok/grok-4.6"] }), null);
 });

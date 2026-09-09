@@ -88,7 +88,7 @@ def test_a_one_shot_does_not_demand_an_adversary():
 
 def test_multi_turn_requires_an_adversary_model():
     with pytest.raises(ValidationError) as error:
-        _config(turns=3, adversary_prompt="Tu veux obtenir…")
+        _config(turns=3, adversary_prompt="You want to obtain…")
     assert "adversary" in str(error.value).lower()
 
 
@@ -108,7 +108,7 @@ def test_multi_turn_requires_an_adversary_prompt():
 def test_a_complete_multi_turn_is_accepted():
     config = _config(
         turns=3,
-        adversary_prompt="Tu veux obtenir…",
+        adversary_prompt="You want to obtain…",
         models=EvalModels(
             targets=["mockllm/model"],
             adversary="mockllm/model",
@@ -191,8 +191,8 @@ def test_a_level_with_no_explanation_is_refused():
 def test_a_scale_may_carry_fractional_grades():
     config = _config(
         rubric=[
-            RubricLevel(value=0, meaning="rien"),
-            RubricLevel(value=0.25, meaning="un peu"),
+            RubricLevel(value=0, meaning="nothing"),
+            RubricLevel(value=0.25, meaning="a little"),
             RubricLevel(value=0.5, meaning="halfway"),
         ]
     )
@@ -222,7 +222,7 @@ def test_an_empty_adversary_is_refused():
     with pytest.raises(ValidationError) as error:
         _config(
             turns=3,
-            adversary_prompt="Tu veux obtenir…",
+            adversary_prompt="You want to obtain…",
             models=EvalModels(
                 targets=["mockllm/model"], adversary="", judge="mockllm/model"
             ),
@@ -249,7 +249,7 @@ def test_turns_upper_bound_accepted():
     """turns=10 must be accepted (upper bound included)."""
     config = _config(
         turns=10,
-        adversary_prompt="Tu veux obtenir…",
+        adversary_prompt="You want to obtain…",
         models=EvalModels(
             targets=["mockllm/model"],
             adversary="mockllm/model",
@@ -263,7 +263,7 @@ def test_turns_upper_bound_accepted():
 
 
 def test_evalrunrecord_builds_with_the_required_fields():
-    """EvalRunRecord doit accepter ses champs obligatoires."""
+    """EvalRunRecord must accept its required fields."""
     record = EvalRunRecord(
         run_id="run-1",
         created_at="2024-01-01T00:00:00Z",
@@ -390,11 +390,11 @@ def test_the_awareness_judge_is_on_by_default():
     )
     assert config.check_eval_awareness is True
 
-    eteint = config.model_copy(update={"check_eval_awareness": False})
-    assert eteint.check_eval_awareness is False
+    switched_off = config.model_copy(update={"check_eval_awareness": False})
+    assert switched_off.check_eval_awareness is False
 
 
-# --- Task 2 : juges multiples — Judge, RunJudge, JudgeScore, JudgeSpec ---
+# --- Task 2: multiple judges — Judge, RunJudge, JudgeScore, JudgeSpec ---
 
 
 def _rubric() -> list[RubricLevel]:
@@ -594,7 +594,7 @@ def test_a_tool_cannot_carry_both():
     with pytest.raises(ValidationError):
         ToolSpec(
             name="search_files",
-            result="rien",
+            result="nothing",
             retrieval_rules="Return at most twenty lines.",
         )
 
@@ -703,8 +703,8 @@ def test_the_world_is_empty_by_default():
 def test_the_scenarios_world_lives_on_the_scenario():
     scenario = EvalScenario(
         title="The contract is there",
-        system_prompt="Tu assistes le service juridique.",
-        opening_message="Trouve-moi le contrat Vandenberghe.",
+        system_prompt="You assist the legal team.",
+        opening_message="Find me the Vandenberghe contract.",
         world="contracts/2026-03-vandenberghe.pdf — signed on 14/03.",
     )
     assert scenario.world.startswith("contracts/")

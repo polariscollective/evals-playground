@@ -396,10 +396,10 @@ def test_a_cell_is_reported_even_when_the_judging_fails():
 
 
 def test_a_tool_call_without_the_score_key_is_a_failure_of_that_judge():
-    # `required=("score",)` : un appel de `submit_score` qui omettrait ce champ
-    # must be rejected explicitly rather than letting `parse_score(None)`
-    # masquer silencieusement l'anomalie — et rester une panne de CE juge,
-    # never an exception that would reach the caller.
+    # `required=("score",)`: a `submit_score` call omitting that field must be
+    # rejected explicitly rather than letting `parse_score(None)` silently hide
+    # the anomaly — and must stay a failure of THIS judge, never an exception
+    # that would reach the caller.
     def output(input, tools, tool_choice, config):
         return ModelOutput.for_tool_call(
             model="mockllm",
@@ -437,7 +437,7 @@ def test_an_empty_conversation_is_not_judged_and_costs_nothing():
     cells: list[ScoredSample] = []
     score_fn = judges_scorer(_config(), on_scored=cells.append)
 
-    resultat = asyncio.run(
+    result = asyncio.run(
         score_fn(
             _BlockedTranscript(
                 [
@@ -453,8 +453,8 @@ def test_an_empty_conversation_is_not_judged_and_costs_nothing():
         )
     )
 
-    assert resultat.metadata["judged"][0]["score"] is None, "hors de la matrice"
-    assert "content filter" in resultat.metadata["judged"][0]["justification"]
+    assert result.metadata["judged"][0]["score"] is None, "out of the matrix"
+    assert "content filter" in result.metadata["judged"][0]["justification"]
     assert len(cells) == 1, "the attempted repetition is recorded all the same"
     assert cells[0].judged[0].score is None
     # An empty conversation is not a failure: the cell was indeed handled.
@@ -542,8 +542,8 @@ def test_the_system_prompt_is_marked_as_given_by_the_experimenter():
 
 
 def test_without_a_system_prompt_the_rendering_does_not_change():
-    """L'argument est optionnel, et son absence reproduit exactement le rendu
-    before: a caller that does not pass it must see no regression."""
+    """The argument is optional, and its absence reproduces exactly the earlier
+    rendering: a caller that does not pass it must see no regression."""
     assert render_transcript(TRANSCRIPT) == render_transcript(
         TRANSCRIPT, system_prompt=None
     )
@@ -596,7 +596,7 @@ def test_the_system_prompt_block_adds_no_grading_instruction():
     assert "<instructions>" not in block
 
 
-JUDGE_MARKER = "marqueur-system-prompt-juge-principal-b6e2d"
+JUDGE_MARKER = "marker-system-prompt-principal-judge-b6e2d"
 
 
 def test_an_ordinary_judge_receives_the_scenarios_system_prompt():
@@ -620,7 +620,7 @@ def test_an_ordinary_judge_receives_the_scenarios_system_prompt():
         return ModelOutput.for_tool_call(
             model="mockllm",
             tool_name="submit_score",
-            tool_arguments={"score": 1, "justification": "Peu importe ici."},
+            tool_arguments={"score": 1, "justification": "It does not matter here."},
         )
 
     _run_scorer(config, outputs)
@@ -636,7 +636,7 @@ def test_an_ordinary_judge_receives_the_scenarios_system_prompt():
 
 # --- the three invariants of multiple judges ---------------------------------
 #
-# Voir docs/superpowers/specs/2026-09-06-juges-multiples.md et le rapport de
+# See docs/superpowers/specs/2026-09-06-juges-multiples.md and the report of
 # task 4 (.superpowers/sdd/task-4-report.md) for the detail of each, and the
 # proof that each was seen to fail before being seen to pass.
 
@@ -646,8 +646,8 @@ def test_invariant_1_one_judge_failing_does_not_cost_another_its_grade():
     own row, and the first one's failure does not stop the second being called
     and grading normally."""
     judges = [
-        _ordinary_judge("j-en-panne", criterion="First question."),
-        _ordinary_judge("j-ok", criterion="Seconde question."),
+        _ordinary_judge("j-failing", criterion="First question."),
+        _ordinary_judge("j-ok", criterion="Second question."),
     ]
     calls: list[int] = []
 
@@ -655,11 +655,11 @@ def test_invariant_1_one_judge_failing_does_not_cost_another_its_grade():
         calls.append(1)
         if len(calls) == 1:
             # The first judge called answers in free text only: a failure.
-            return ModelOutput.from_content(model="mockllm", content="je ne juge pas")
+            return ModelOutput.from_content(model="mockllm", content="I do not grade")
         return ModelOutput.for_tool_call(
             model="mockllm",
             tool_name="submit_score",
-            tool_arguments={"score": 1, "justification": "Le tour 4 le montre."},
+            tool_arguments={"score": 1, "justification": "Turn 4 shows it."},
         )
 
     verdicts: list[tuple[str, JudgeOutcome]] = []
@@ -671,10 +671,10 @@ def test_invariant_1_one_judge_failing_does_not_cost_another_its_grade():
     )
 
     assert len(calls) == 2, "both judges must have been called"
-    assert [verdict.run_judge_id for _, verdict in verdicts] == ["j-en-panne", "j-ok"]
-    premier, second = verdicts[0][1], verdicts[1][1]
-    assert premier.score is None
-    assert premier.error is not None
+    assert [verdict.run_judge_id for _, verdict in verdicts] == ["j-failing", "j-ok"]
+    first, second = verdicts[0][1], verdicts[1][1]
+    assert first.score is None
+    assert first.error is not None
     assert second.score == 1.0
     assert second.error is None, (
         "the first judge's failure must not touch the second"
@@ -717,7 +717,7 @@ def test_invariant_2_a_cancellation_does_not_lose_a_grade_already_obtained():
 
     assert len(written) == 1, (
         "the first judge's grade must have been written before the cancellation"
-        " ne reparte"
+        " set off again"
     )
     assert written[0][1].run_judge_id == "j1"
     assert written[0][1].score == 2.0
@@ -767,7 +767,7 @@ def test_invariant_3_a_system_judge_ignores_the_criterion_and_scale_from_the_dat
         return ModelOutput.for_tool_call(
             model="mockllm",
             tool_name="submit_awareness",
-            tool_arguments={"score": 3, "justification": "Le tour 2 le dit."},
+            tool_arguments={"score": 3, "justification": "Turn 2 says so."},
         )
 
     verdicts: list[tuple[str, JudgeOutcome]] = []
@@ -795,21 +795,21 @@ def test_invariant_3_a_system_judge_ignores_the_criterion_and_scale_from_the_dat
 
 
 def test_judge_from_metadata_rebuilds_the_rubric():
-    brut = _ordinary_judge("j1", RUBRIC)
-    juge = judge_from_metadata(brut)
-    assert juge.run_judge_id == "j1"
-    assert juge.system_type == "ordinary"
-    assert [level.value for level in juge.rubric] == [0, 1, 2]
+    raw = _ordinary_judge("j1", RUBRIC)
+    judge = judge_from_metadata(raw)
+    assert judge.run_judge_id == "j1"
+    assert judge.system_type == "ordinary"
+    assert [level.value for level in judge.rubric] == [0, 1, 2]
 
 
 def test_judge_from_metadata_leaves_the_rubric_null_for_a_system_judge():
-    brut = {
-        "run_judge_id": "j-eveil",
+    raw = {
+        "run_judge_id": "j-awareness",
         "model": "m",
         "system_type": "awake",
         "criterion": None,
         "rubric": None,
     }
-    juge = judge_from_metadata(brut)
-    assert juge.rubric is None
-    assert juge.criterion is None
+    judge = judge_from_metadata(raw)
+    assert judge.rubric is None
+    assert judge.criterion is None
