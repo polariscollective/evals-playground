@@ -75,7 +75,7 @@ export async function updateProfileCaps(
  * `null` restores the default. A blank string, or a trimmed one equal to the
  * default, is brought back to `null` before writing: storing blank, or a copy
  * of the default, would make an override that exists without saying anything —
- * indistinguishable on reading from a real text for `scenarioAdvice`, but
+ * indistinguishable on reading from a real text for `adviceFor`, but
  * silently depriving that person of the default's future improvements. The
  * trimming serves only that comparison: a genuinely different text keeps its
  * internal whitespace, written as it stands.

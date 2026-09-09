@@ -157,8 +157,8 @@ test("the prompt announces the awareness judge and the writing advice", () => {
   assert.match(prompt, /check_eval_awareness/);
   // The MCP channel calls a tool; the HTTP channel opens the dedicated public
   // route — never `/scenarios`, the private page an agent with no session cannot
-  // read (see `web/app/scenario-advice/route.ts`).
-  assert.match(prompt, /read_scenario_advice|\/scenario-advice/);
+  // read (see `web/app/advice.txt/route.ts`).
+  assert.match(prompt, /read_advice|\/advice\.txt/);
 });
 
 test("the prompt announces the two tool forms and the world", () => {

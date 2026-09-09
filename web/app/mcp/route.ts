@@ -32,7 +32,6 @@ import { cellsOf, overallMean } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
 import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
-import { scenarioAdvice } from "@/lib/scenario-advice";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
 import type { JudgeTarget } from "@/lib/types";
@@ -289,7 +288,7 @@ const handler = createMcpHandler((server) => {
         "the finished run over. Everything this server expects of a run is in this one document, " +
         "and nothing else here repeats it — a run written without reading it is written from " +
         "guesswork, and the refusal comes a round trip later. It also names the second document " +
-        "to read, read_scenario_advice, before the scenarios themselves are written. Starts " +
+        "to read, read_advice, before the scenarios themselves are written. Starts " +
         "nothing and spends nothing.",
       inputSchema: z.object({}),
     },
@@ -314,33 +313,6 @@ const handler = createMcpHandler((server) => {
           },
         ],
       };
-    },
-  );
-
-  server.registerTool(
-    "read_scenario_advice",
-    {
-      title: "Read the scenario-writing advice",
-      description:
-        "Starts nothing and spends nothing. Returns what makes a scenario smell " +
-        "like a test to the model being evaluated, so you can avoid it: the tells, " +
-        "the naming patterns that give an AI-written scenario away, how tool " +
-        "results and planted information have to look. Read this before writing " +
-        "scenarios — a model that suspects a test behaves differently, and the run " +
-        "measures nothing. Returns the caller's own version when they have edited " +
-        "it on the Advice page, otherwise the default. This is one of four "
-        + "documents: read_advice serves this one plus how to put a batch together, "
-        + "how to read the results, and how to write a judge.",
-      inputSchema: z.object({}),
-    },
-    async (_input, ctx) => {
-      // The advice is personal: it is the one this person rewrote, not a global
-      // text. Hence reading the profile rather than a constant — and
-      // `ensureProfile` makes it exist along the way, as everywhere else on this
-      // server.
-      const caller = await callerEmail(ctx);
-      const profile = await ensureProfile(caller);
-      return { content: [{ type: "text", text: scenarioAdvice(profile.scenario_advice) }] };
     },
   );
 
@@ -1957,9 +1929,12 @@ const handler = createMcpHandler((server) => {
     "read as a matrix.\n\n" +
     "Start with `read_prompt`. It is the entire manual for writing a run, and nothing else on " +
     "this server explains the format: a run written without it is written from guesswork, and " +
-    "this server will refuse it. Before writing the scenarios themselves, also call " +
-    "`read_scenario_advice` — it is what keeps a scenario from reading as a test to the model " +
-    "being evaluated, which is the one failure no validation can catch.\n\n" +
+    "this server will refuse it. Before writing anything, also call `read_advice` with " +
+    "`[\"scenario\", \"batch\", \"judge\"]` — one call, three documents: what keeps a scenario " +
+    "from reading as a test to the model being evaluated, how the rows of a run relate to each " +
+    "other, and how to write a scale someone else could apply. The first is the one failure no " +
+    "validation can catch. A fourth, `analysis`, is for when the results are in — read it before " +
+    "concluding anything from a matrix or extending a run.\n\n" +
     "Both start nothing and spend nothing. So does everything else here, with a single " +
     "exception: `launch_draft` spends real money.",
 });
