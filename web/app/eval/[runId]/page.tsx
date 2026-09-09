@@ -1164,8 +1164,8 @@ export default function EvalRunPage({
       {extending && !running && (
         <ExtendPanel
           run={run}
-            // The living judges, never `run.config.judges`: see the comment on
-            // `liveJudges` on `ExtendPanel`.
+          // The living judges, never `run.config.judges`: see the comment on
+          // `liveJudges` on `ExtendPanel`.
           liveJudges={detail.judges ?? []}
           repetitionRange={repetitionRange(detail.samples)}
           samples={extendPanelSamples}
