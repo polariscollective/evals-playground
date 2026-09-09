@@ -28,6 +28,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
+import { extendedTargets } from "./targets";
 import { resolvedWorld } from "./tools";
 import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
@@ -1072,6 +1073,10 @@ export async function addJudge(
     judge_id: judge.id,
     system_type: judge.system_type,
     is_principal: false,
+    // Sur la liaison et non sur le juge — voir `RunJudge.targets`. Un juge posé
+    // sur un run de douze lignes doit dire ce qu'il attend des douze, ce que
+    // `judgeSpecProblem` a déjà vérifié à ce stade.
+    targets: spec.targets ?? null,
   });
   if (samples.length > 0) {
     await insert(
@@ -1649,6 +1654,32 @@ export async function extendRun(
     inserted.length > 0 || continuedSampleIds.length > 0
       ? (await loadLiveRunJudges(runId)).map((judge) => judge.id)
       : [];
+
+  // Les cibles des juges s'allongent des lignes qu'on vient d'ajouter.
+  //
+  // Une étude étendue sans ça garderait des cibles sur ses anciennes lignes et
+  // aucune sur les neuves, ce qui est exactement la matrice à deux moitiés que
+  // les cibles existent pour éviter — et `extendTargetsProblem` a refusé la
+  // demande en amont si elle n'apportait pas ce qu'il fallait.
+  //
+  // On n'écrit QUE ce qu'on ajoute : la liste existante est recopiée telle
+  // quelle en tête. Réécrire une cible déjà posée après avoir vu le résultat la
+  // viderait de son sens.
+  if (request.new_scenarios.length > 0 && request.new_targets) {
+    for (const [runJudgeId, added] of Object.entries(request.new_targets)) {
+      const liaison = (await loadLiveRunJudges(runId)).find(
+        (judge) => judge.id === runJudgeId,
+      );
+      if (!liaison) continue;
+      const allongée = extendedTargets(liaison.targets ?? null, added);
+      if (allongée === null) continue;
+      await update(
+        RUN_JUDGES,
+        { targets: allongée },
+        { id: `eq.${runJudgeId}` },
+      );
+    }
+  }
 
   if (inserted.length > 0 && liveJudgeIds.length > 0) {
     await insert(

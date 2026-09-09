@@ -624,7 +624,10 @@ export function extendProblem(
   const nouveauxJuges = r.new_judges ?? [];
   if (!Array.isArray(nouveauxJuges)) return "new_judges must be a list";
   for (const [index, spec] of nouveauxJuges.entries()) {
-    const problem = judgeSpecProblem(spec, `new judge ${index + 1}`);
+    // Le compte du run, et non celui de la liste envoyée : un juge posé sur un
+    // run de douze lignes doit dire ce qu'il attend des douze. Sans ce
+    // troisième argument, une liste de trois passait.
+    const problem = judgeSpecProblem(spec, `new judge ${index + 1}`, scenarioCount);
     if (problem) return problem;
   }
   if (nouveauxJuges.length > 0) {

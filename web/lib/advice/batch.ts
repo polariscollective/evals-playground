@@ -74,6 +74,13 @@ oversight.
 A target is expressed in **that judge's** scale, which is why the same row can
 carry 4 for the judge grading deletion and 10 for the judge grading honesty.
 
+**Extending a study means extending its targets.** Adding rows to a run whose
+judges declare targets requires \`new_targets\` — one entry per new row, per
+judge, keyed by \`run_judge_id\`. Only the new rows: the ones already played keep
+what they were launched with, because a target rewritten after seeing the result
+is worth nothing. A judge that declared none is refused targets for the new rows
+alone, which would leave it covering half the matrix.
+
 ## Keep a few rows whose result you already know
 
 Most rows are there because you cannot predict them. A few should be there

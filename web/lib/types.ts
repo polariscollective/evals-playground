@@ -595,6 +595,17 @@ export interface ExtendRequest {
   scenario_indices: number[];
   /** Scénarios nouveaux, ajoutés à la suite de ceux du run. */
   new_scenarios: EvalScenario[];
+  /** Ce que chaque juge attend des scénarios que cette extension ajoute, par
+   *  `run_judge_id`.
+   *
+   * Requis exactement des juges qui déclarent déjà des cibles, et interdit des
+   * autres — voir `extendTargetsProblem` (`lib/targets.ts`) pour la règle et
+   * pour pourquoi elle vit à part de `extendProblem`.
+   *
+   * Ne porte QUE les lignes neuves, jamais la liste entière : renvoyer la liste
+   * complète permettrait de réécrire après coup ce qu'on attendait des lignes
+   * déjà jouées, et une cible réécrite après le résultat ne vaut rien. */
+  new_targets?: Record<string, JudgeTarget[]>;
   /** Modèles à couvrir — déjà évalués ou non, la distinction se fait ici. */
   targets: string[];
   /** Combien de répétitions ajouter à chaque couple retenu. */

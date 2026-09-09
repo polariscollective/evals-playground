@@ -1,3 +1,4 @@
+import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import {
@@ -61,7 +62,8 @@ export async function POST(
 
   let detail;
   try {
-    detail = await loadRun(runId);
+    // `withJudges` : la règle des cibles regarde les juges vivants.
+    detail = await loadRun(runId, { withJudges: true });
   } catch (error) {
     if (error instanceof NotFound) {
       return NextResponse.json({ error: error.message }, { status: 404 });
@@ -79,6 +81,16 @@ export async function POST(
     detail.run.config.models.world ?? null,
   );
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
+
+  // À côté de `extendProblem`, jamais à sa place : cette règle a besoin des
+  // juges VIVANTS du run, qui vivent dans `run_judges` et non dans `config`.
+  const targetsProblem = extendTargetsProblem(
+    body ?? {},
+    judgesForTargets(detail.judges),
+  );
+  if (targetsProblem) {
+    return NextResponse.json({ error: targetsProblem }, { status: 422 });
+  }
 
   if (detail.run.status === "triggered" || detail.run.status === "running") {
     // Ajouter des cases pendant que le job tourne les lui ferait manquer : il a

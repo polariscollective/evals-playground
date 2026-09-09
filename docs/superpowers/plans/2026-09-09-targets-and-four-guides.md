@@ -351,21 +351,25 @@ The toggle, disabled with an explanation when the displayed judge has no targets
 
 Written during execution rather than after, so the reasoning survives.
 
-**An extension that adds scenarios does not extend the targets.** The rule the
-spec names — refuse an extension adding `new_scenarios` to a run whose judges
-carry targets, unless it supplies targets for the new rows — is not implemented.
-`extendProblem` does not receive the run's judges, and the extension request has
-no field to carry per-judge targets for new rows, so enforcing it would have
-meant either blocking a workflow the analysis guide actively recommends (adding
-variant rows to a study) or designing that field.
+**~~An extension that adds scenarios does not extend the targets.~~** Done after
+all — the first version of this section deferred it, which was a dodge. "It
+would block a workflow we recommend" is a reason to design the missing field,
+not a reason to skip the rule.
 
-What happens instead is graceful and visible: the new rows have no target,
-`targetOf` returns undefined, and the deviation view shows them empty rather
-than inventing a zero. `relative-view.test.mts` pins that behaviour so it cannot
-silently become a zero later.
+`new_targets` now travels on the extension request, keyed by `run_judge_id`, one
+entry per new scenario and only the new ones: resending the whole list would
+allow rewriting what was expected of rows already played, and a target rewritten
+after seeing the result is worth nothing.
 
-The follow-up is to add `new_targets` to the extension request, per judge, and
-then make the rule an error.
+`extendTargetsProblem` lives beside `extendProblem` rather than inside it,
+because it needs the run's LIVE judges — which sit in `run_judges`, not in
+`config` — and folding them in would have meant an eighth positional parameter
+on a function with seven, plus 36 test call sites. All three callers invoke both,
+in order.
+
+One real hole surfaced while doing it: `judgeSpecProblem` was called without a
+scenario count when validating `new_judges`, so a judge added to a twelve-row run
+could arrive with three targets. Fixed in the same change.
 
 **`profilePatchProblem` was not taught about `advice_topic`.** It refuses a
 request carrying two settings at once; `advice_topic` travels beside

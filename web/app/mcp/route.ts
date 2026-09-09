@@ -35,6 +35,7 @@ import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import { scenarioAdvice } from "@/lib/scenario-advice";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
+import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
 import {
   NotFound,
   createRun,
@@ -1183,6 +1184,14 @@ const handler = createMcpHandler((server) => {
           run.config.models.world ?? null,
         );
         if (problem) return toolError(problem);
+        // À côté de `extendProblem`, jamais à sa place : cette règle regarde
+        // les juges VIVANTS du run, qui vivent dans `run_judges` et non dans
+        // `config`.
+        const targetsProblem = extendTargetsProblem(
+          request,
+          judgesForTargets(target.run.judges),
+        );
+        if (targetsProblem) return toolError(targetsProblem);
 
         // Un seul appel pour les favoris ci-dessous et le budget plus bas, et
         // son refus posé ici, avant les favoris plutôt qu'après : un profil
@@ -1447,6 +1456,18 @@ const handler = createMcpHandler((server) => {
               "carries, which spares enumerating 0..n-1 on a run of a hundred; get_run_metadata gives " +
               "that count.",
           ),
+        new_targets: z
+          .record(z.string(), z.array(z.object({ expected: z.number(), check: z.boolean().optional() })))
+          .optional()
+          .describe(
+            "What each judge expects of the scenarios this extension adds, keyed by run_judge_id " +
+              "(get_run_metadata lists them). One entry per new scenario, in the same order, and " +
+              "only the new ones — the rows already played keep the targets they were launched " +
+              "with, because a target rewritten after seeing the result is worth nothing. " +
+              "Required from every judge that already declares targets, and refused from the " +
+              "others: a judge that declared none was written as an exploration, and giving it " +
+              "targets for the new rows alone would leave it covering half its scenarios.",
+          ),
         new_scenarios: z
           .array(
             z.object({
@@ -1667,6 +1688,10 @@ const handler = createMcpHandler((server) => {
             ? run.config.scenarios.map((_, index) => index)
             : input.scenario_indices,
         new_scenarios: input.new_scenarios,
+        // Absent reste absent : `extendTargetsProblem` distingue « pas de
+        // cibles à donner » de « une liste vide », et un objet vide posé ici
+        // ferait passer le second pour le premier.
+        ...(input.new_targets === undefined ? {} : { new_targets: input.new_targets }),
         targets: input.targets ?? [],
         repetitions: input.repetitions ?? 0,
         ...(input.new_tools
@@ -1708,6 +1733,14 @@ const handler = createMcpHandler((server) => {
       );
       if (problem) {
         return { content: [{ type: "text", text: problem }], isError: true };
+      }
+      // À côté de `extendProblem`, jamais à sa place — voir sa docstring.
+      const targetsProblem = extendTargetsProblem(
+        request,
+        judgesForTargets(found.run.judges),
+      );
+      if (targetsProblem) {
+        return { content: [{ type: "text", text: targetsProblem }], isError: true };
       }
 
       // Un seul appel pour les favoris ci-dessous et l'aperçu de budget plus
