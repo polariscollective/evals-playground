@@ -1,4 +1,4 @@
-// La décision de budget, sans Supabase : voir mcp-budget.ts.
+// The budget decision, without Supabase: see mcp-budget.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { budgetProblem } from "./mcp-budget.ts";
@@ -7,20 +7,20 @@ test("un devis sous les deux plafonds passe", () => {
   assert.equal(budgetProblem(1, 3, 2, 10), null);
 });
 
-test("un devis qui dépasse le plafond par run est refusé, sans regarder l'heure", () => {
+test("a quote over the per-run cap is refused, without looking at the hour", () => {
   const problem = budgetProblem(5, 0, 2, 10);
   assert.match(problem!, /\$5\.00/);
   assert.match(problem!, /\$2\.00/);
   // Les plafonds sont ceux du profil de l'appelant, plus une variable
-  // d'environnement partagée par tout le monde — voir profiles.ts.
+  // environment variable shared by everyone — see profiles.ts.
   assert.doesNotMatch(problem!, /MCP_MAX_USD/);
 });
 
-test("un devis qui passerait seul mais ferait dépasser l'heure est refusé", () => {
+test("a quote that would pass alone but would breach the hour is refused", () => {
   const problem = budgetProblem(2, 9, 5, 10);
-  assert.match(problem!, /\$9\.00/, "le déjà-dépensé doit être lisible");
-  assert.match(problem!, /\$11\.00/, "le projeté doit être lisible");
-  assert.match(problem!, /\$10\.00/, "le plafond doit être lisible");
+  assert.match(problem!, /\$9\.00/, "what is already spent must be readable");
+  assert.match(problem!, /\$11\.00/, "the projected figure must be readable");
+  assert.match(problem!, /\$10\.00/, "the cap must be readable");
   assert.doesNotMatch(problem!, /MCP_MAX_USD/);
 });
 

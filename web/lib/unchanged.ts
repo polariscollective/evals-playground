@@ -1,14 +1,14 @@
-/** Garde l'état précédent quand les données n'ont pas bougé.
+/** Keeps the previous state when the data has not moved.
  *
- * Un sondage renvoie un objet neuf à chaque fois, même quand la base n'a rien
- * changé. Le poser tel quel dans l'état fait redessiner toute la page toutes
- * les trois secondes : les lignes clignotent, une sélection de texte saute, et
- * l'écran paraît se recharger sans fin.
+ * Polling returns a fresh object every time, even when the database has
+ * changed nothing. Putting it into state as it stands redraws the whole page
+ * every three seconds: rows flicker, a text selection jumps, and the screen
+ * seems to reload endlessly.
  *
- * La comparaison passe par la sérialisation plutôt que par une égalité
- * profonde écrite à la main : les charges utiles ici font quelques kilo-octets,
+ * The comparison goes through serialisation rather than a hand-written deep
+ * equality: the payloads here are a few kilobytes,
  * et une comparaison qui oublierait un champ serait pire que pas de
- * comparaison du tout — l'écran cesserait de refléter la base. */
+ * comparison at all — the screen would stop reflecting the database. */
 export function keepIfUnchanged<T>(previous: T | null, next: T): T | null {
   if (previous !== null && JSON.stringify(previous) === JSON.stringify(next)) {
     return previous;

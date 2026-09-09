@@ -1,18 +1,19 @@
-// Ce qu'un scénario porte en plus des trois champs obligatoires.
+// What a scenario carries beyond the three required fields.
 //
-// Séparé du rendu parce que c'est la seule partie qui tient une règle, et la
-// seule que le dépôt sache tester — `node --test` ne regarde que `lib/`.
+// Separated from the rendering because it is the only part holding a rule, and
+// the only part the repository knows how to test — `node --test` looks only at
+// `lib/`.
 import type { EvalScenario } from "./types";
 
-/** Les étiquettes d'un scénario, dans l'ordre où on les lit.
+/** A scenario's labels, in the order they are read.
  *
- * Un scénario sans rien n'en produit aucune, et c'est le cas courant : une
- * pastille sur chaque ligne d'un lot n'apprendrait rien. Ce qui mérite d'être
- * vu est l'écart au défaut.
+ * A scenario with nothing produces none, and that is the common case: a pill on
+ * every row of a batch would teach nothing. What deserves to be seen is the
+ * departure from the default.
  *
- * D'où le silence sur `tools` absent, qui veut dire « tous les outils du run ».
+ * Hence the silence on an absent `tools`, which means "all the run's tools".
  * `tools: none` en produit une, parce que c'est un choix — et que confondre les
- * deux ferait disparaître de l'écran la comparaison « la même ligne, avec et
+ * two would remove from the screen the comparison "the same row, with and
  * sans outils », qui est souvent la mesure qu'on cherche. */
 export function scenarioBadges(scenario: EvalScenario): string[] {
   const badges: string[] = [];
@@ -22,8 +23,8 @@ export function scenarioBadges(scenario: EvalScenario): string[] {
   const turns = scenario.history?.length ?? 0;
   if (turns > 0) badges.push(`${turns} seeded turn${turns > 1 ? "s" : ""}`);
 
-  // `!= null` et non la vérité de la valeur : une liste vide est fausse pour
-  // personne en JavaScript, mais c'est précisément l'état qu'on veut nommer.
+  // `!= null` and not the truthiness of the value: an empty list is falsy for
+  // nobody in JavaScript, but it is precisely the state we want to name.
   if (scenario.tools != null) {
     badges.push(
       scenario.tools.length === 0

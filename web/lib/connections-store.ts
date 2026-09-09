@@ -1,12 +1,12 @@
 "use client";
 
-/** Les connecteurs MCP autorisés, gardés en mémoire pour toute la visite.
+/** The authorised MCP connectors, kept in memory for the whole visit.
  *
- * Même motif que les autres caches : la page repartait d'une zone vide et d'une
- * requête à chaque visite, pour une liste qui ne bouge qu'au moment où l'on
- * connecte ou révoque quelque chose.
+ * The same pattern as the other caches: the page started from an empty area
+ * and a request at every visit, for a list that only moves when something is
+ * connected or revoked.
  *
- * Voir `store.ts` pour la mécanique, partagée avec les trois autres caches.
+ * See `store.ts` for the mechanism, shared with the three other caches.
  */
 
 import { useSyncExternalStore } from "react";

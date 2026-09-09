@@ -1,5 +1,5 @@
-// La porte et la liste doivent dire la même chose. Elles ne l'ont pas toujours
-// dit, et le jour où elles ont divergé, rien ne l'a signalé.
+// The door and the list must say the same thing. They have not always said it,
+// and the day they diverged, nothing reported it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,7 +18,7 @@ test("les chemins ouverts passent la porte sans session", () => {
     "/favicon.ico",
     "/icon.svg",
     "/_next/static/chunks/main.js",
-    // Sans la chaîne de requête : `isOpen` prend un `pathname`, comme le
+    // Without the query string: `isOpen` takes a `pathname`, like the
     // `matcher` de Next — la query n'en fait jamais partie.
     "/_next/image",
     "/mcp",
@@ -31,7 +31,7 @@ test("les chemins ouverts passent la porte sans session", () => {
   }
 });
 
-test("leurs voisins de préfixe restent fermés", () => {
+test("their prefix neighbours stay closed", () => {
   // Sans ancrage, `/validatex` et `/sharedx` s'ouvriraient avec leurs voisins.
   for (const path of [
     "/",
@@ -41,8 +41,8 @@ test("leurs voisins de préfixe restent fermés", () => {
     "/sharedx",
     "/prompts-secrets",
     "/scenario-advicex",
-    // La page privée qu'un humain lit reste fermée : seule la route dédiée,
-    // qui rend le défaut, est publique.
+    // The private page a human reads stays closed: only the dedicated route,
+    // which returns the default, is public.
     "/scenarios",
     "/favicon.icon",
     "/icon.svgx",
@@ -53,12 +53,12 @@ test("leurs voisins de préfixe restent fermés", () => {
   }
 });
 
-test("le littéral du proxy est exactement celui que la liste produit", () => {
+test("the proxy's literal is exactly the one the list produces", () => {
   // Next exige que `matcher` soit une constante et ignore silencieusement toute
-  // valeur calculée : le motif reste donc écrit à la main dans `proxy.ts`. Ce
-  // test est ce qui empêche les deux de diverger.
+  // computed value: the pattern therefore stays hand-written in `proxy.ts`.
+  // This test is what stops the two diverging.
   const source = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
   const literal = source.match(/matcher:\s*\[\s*"((?:[^"\\]|\\.)*)"/);
-  assert.ok(literal, "aucun motif trouvé dans proxy.ts");
+  assert.ok(literal, "no pattern found in proxy.ts");
   assert.equal(JSON.parse(`"${literal[1]}"`), proxyMatcher());
 });

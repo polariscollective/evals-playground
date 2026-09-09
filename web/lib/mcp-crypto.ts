@@ -1,10 +1,11 @@
-// Le calcul derrière un jeton MCP : rien qui touche la base, tout ce qui se
-// teste. Séparé de `mcp-auth.ts`, qui est `server-only` et qu'un import
-// direct rendrait invisible à `node --test`.
+// The computation behind an MCP token: nothing that touches the database,
+// everything that can be tested. Separated from `mcp-auth.ts`, which is
+// `server-only` and which a direct import would make invisible to
+// `node --test`.
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 
-/** Un secret opaque — code d'autorisation ou jeton — prêt à circuler dans une
- *  URL ou un en-tête : 32 octets, en base64url, sans remplissage. */
+/** An opaque secret — authorisation code or token — ready to travel in a URL
+ *  or a header: 32 bytes, base64url, no padding. */
 export function newToken(): string {
   return randomBytes(32).toString("base64url");
 }
@@ -19,9 +20,9 @@ export function challengeOf(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-/** Comparaison à temps constant : un secret se compare comme un secret, pas
- *  comme une chaîne ordinaire — sinon la durée de la comparaison fuit le
- *  nombre de caractères déjà corrects. */
+/** Constant-time comparison: a secret is compared as a secret, not as an
+ *  ordinary string — otherwise the comparison's duration leaks how many
+ *  characters are already right. */
 export function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -29,7 +30,7 @@ export function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-/** Un `code_verifier` reproduit-il le `code_challenge` posé à l'autorisation ? */
+/** Does a `code_verifier` reproduce the `code_challenge` set at authorisation? */
 export function pkceMatches(verifier: string, challenge: string): boolean {
   return safeEqual(challengeOf(verifier), challenge);
 }

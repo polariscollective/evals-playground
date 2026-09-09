@@ -8,33 +8,33 @@ test("un grant qui n'a jamais servi se marque", () => {
   assert.equal(needsTouch(null, NOW), true);
 });
 
-test("un usage tout frais ne se réécrit pas", () => {
+test("a brand-new use is not rewritten", () => {
   const recent = new Date(NOW.getTime() - 60_000).toISOString();
   assert.equal(needsTouch(recent, NOW), false);
 });
 
-test("passé l'intervalle, on réécrit", () => {
+test("past the interval, we rewrite", () => {
   const old = new Date(NOW.getTime() - TOUCH_INTERVAL_MS - 1).toISOString();
   assert.equal(needsTouch(old, NOW), true);
 });
 
 test("une date illisible vaut une date absente", () => {
-  // Une colonne figée sur une valeur que personne ne sait relire ne se
+  // A column frozen on a value nobody can read back does not
   // rattraperait jamais.
   assert.equal(needsTouch("pas une date", NOW), true);
 });
 
-test("un agent utilisateur vide ou absent ne devient pas une chaîne vide", () => {
+test("an empty or missing user agent does not become an empty string", () => {
   assert.equal(clientLabelOf(null), null);
   assert.equal(clientLabelOf(undefined), null);
   assert.equal(clientLabelOf("   "), null);
 });
 
-test("un agent utilisateur est gardé tel quel, débarrassé de ses bords", () => {
+test("a user agent is kept as it stands, stripped of its edges", () => {
   assert.equal(clientLabelOf("  claude-ai/1.0  "), "claude-ai/1.0");
 });
 
-test("une tirade est tronquée plutôt que stockée entière", () => {
+test("a tirade is truncated rather than stored whole", () => {
   const label = clientLabelOf("x".repeat(500));
   assert.equal(label?.length, 200);
 });

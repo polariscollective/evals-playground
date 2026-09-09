@@ -1,19 +1,19 @@
 "use client";
 
-/** La liste des runs, gardée en mémoire pour toute la visite.
+/** The list of runs, kept in memory for the whole visit.
  *
- * Sans ça, chaque passage sur l'onglet « Runs » repartait d'un écran vide et
- * d'une requête : on arrivait sur « Evaluate », on cliquait sur « Runs », et on
- * attendait devant « Loading… » une liste qu'on avait déjà vue dix secondes
- * plus tôt. Le contenu ne bouge pourtant presque jamais entre deux clics.
+ * Without it, every visit to the "Runs" tab started from an empty screen and a
+ * request: you arrived on "Evaluate", clicked "Runs", and waited in front of
+ * "Loading…" for a list you had already seen ten seconds earlier. The content
+ * nonetheless almost never moves between two clicks.
  *
- * Un magasin de module plutôt qu'un contexte React : la page des runs n'est pas
- * la seule à déclencher le chargement — « Evaluate » le précharge en arrivant,
- * pour que l'onglet d'à côté soit déjà rempli quand on l'ouvre. Un contexte
- * aurait imposé un fournisseur dans `layout.tsx` pour un état que personne ne
+ * A module store rather than a React context: the runs page is not the only
+ * one that triggers the load — "Evaluate" preloads it on arrival, so that the
+ * next tab is already filled when it opens. A context would have imposed a
+ * provider in `layout.tsx` for a state nobody
  * modifie hors d'ici.
  *
- * La mécanique est dans `store.ts`, partagée avec les trois autres caches.
+ * The mechanism is in `store.ts`, shared with the three other caches.
  */
 
 import { useSyncExternalStore } from "react";
@@ -26,8 +26,8 @@ const runs = createResource(getRuns);
 export const refreshRuns = runs.refresh;
 export const ensureRunsLoaded = runs.ensureLoaded;
 
-/** Retire un run du cache après sa mise à la corbeille, sans aller-retour.
- *  Sans ça, la ligne effacée réapparaîtrait au premier retour sur l'onglet. */
+/** Removes a run from the cache after it goes to the bin, with no round trip.
+ *  Without it, the deleted row would reappear on the first return to the tab. */
 export function forgetRun(runId: string): void {
   const current = runs.get().data;
   if (current === null) return;

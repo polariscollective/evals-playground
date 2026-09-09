@@ -1,16 +1,18 @@
-/** La moyenne d'un run, tirée de l'histogramme que la vue rend.
+/** A run's mean, drawn from the histogram the view returns.
  *
- * La vue `eval_run_list` ne calcule pas la moyenne, et c'est délibéré : une
- * note passe par `mapScore`, qui écarte les paliers marqués `excluded` dans la
+ * The `eval_run_list` view does not compute the mean, and that is deliberate: a
+ * grade goes through `mapScore`, which sets aside the levels marked `excluded`
+ * in the
  * rubrique et applique les substitutions de la vue d'affichage choisie.
- * Réécrire cette sémantique en SQL l'aurait dédoublée, et laissée diverger au
+ * Rewriting that semantics in SQL would have duplicated it, and let it diverge
+ * at the
  * premier changement de l'une des deux.
  *
- * La vue rend donc `{"0": 3, "2": 5}` — combien de fois chaque note a été
- * donnée par le juge principal — et le calcul reste ici, avec le même
- * `mapScore` que la matrice. Le résultat est identique à ce que
- * `overallMean` produisait en parcourant les cases une à une : une moyenne ne
- * dépend que des valeurs et de leur nombre, pas de l'ordre où on les lit.
+ * The view therefore returns `{"0": 3, "2": 5}` — how many times each grade was
+ * given by the principal judge — and the computation stays here, with the same
+ * `mapScore` as the matrix. The result is identical to what `overallMean`
+ * produced by walking the cells one by one: a mean depends only on the values
+ * and their number, not on the order they are read in.
  */
 import { PLAIN_VIEW, aggregate, mapScore, type MatrixView } from "./view.ts";
 import type { RubricLevel } from "./types.ts";
@@ -25,9 +27,9 @@ export function meanFromHistogram(
   const values: number[] = [];
   for (const [raw, count] of Object.entries(histogram)) {
     const score = Number(raw);
-    // Postgres rend les clés d'un `jsonb_object_agg` sous la forme du type
-    // d'origine — « 0.0 » pour un `double precision`. `Number` les ramène,
-    // mais une clé illisible ne doit pas produire un `NaN` dans la moyenne.
+    // Postgres returns the keys of a `jsonb_object_agg` in the original type's
+    // form — "0.0" for a `double precision`. `Number` brings them back, but an
+    // unreadable key must not produce a `NaN` in the mean.
     if (!Number.isFinite(score)) continue;
     const mapped = mapScore(score, rubric ?? undefined, view);
     if (mapped === null) continue;

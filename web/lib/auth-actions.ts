@@ -4,13 +4,13 @@ import { signOut } from "@/auth";
 
 /** Fermer la session, depuis un composant client.
  *
- * `signOut` de NextAuth ne s'appelle que côté serveur, et la barre de
+ * NextAuth's `signOut` can only be called on the server, and the
  * navigation est un composant client — une action serveur est le pont. Écrire
- * le `POST` vers `/api/auth/signout` à la main obligerait à aller chercher le
- * jeton CSRF que NextAuth exige ; ces trois lignes l'évitent.
+ * doing the `POST` to `/api/auth/signout` by hand would mean fetching the CSRF
+ * token NextAuth demands; these three lines avoid it.
  *
- * `redirectTo` vaut `/` plutôt que l'écran de connexion : une fois le cookie
- * parti, le proxy y renvoie de lui-même. Un seul endroit sait donc où va un
+ * `redirectTo` is `/` rather than the sign-in screen: once the cookie is gone,
+ * the proxy sends you there itself. One place therefore knows where a
  * visiteur sans session. */
 export async function logout() {
   await signOut({ redirectTo: "/" });
