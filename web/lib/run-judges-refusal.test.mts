@@ -1,5 +1,5 @@
-// Classe les refus des deux fonctions RPC de `run_judges`, sans Supabase :
-// voir run-judges-refusal.ts.
+// Classifies the refusals of the two `run_judges` RPC functions, with no
+// Supabase: see run-judges-refusal.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classifyRunJudgesRefusal } from "./run-judges-refusal.ts";
@@ -8,7 +8,7 @@ import { classifyRunJudgesRefusal } from "./run-judges-refusal.ts";
 // functions return. They stay in French on purpose: they are written that way
 // in the SQL, in the polaris-supabase repository, and a translated fixture
 // would stop matching what Postgres actually says — see
-// .superpowers/sdd/fix-principal-rpc-report.md pour le SQL qui les produit.
+// .superpowers/sdd/fix-principal-rpc-report.md for the SQL that produces them.
 
 test("the deferred trigger (unlinking the principal with no replacement) becomes a readable refusal", () => {
   const refusal = classifyRunJudgesRefusal(
@@ -77,28 +77,26 @@ test("a message that does not come from these functions is not classified", () =
 test("the last ordinary judge cannot be unlinked, and the sentence says what to do", () => {
   // The screen already refuses this gesture, but an MCP tool or a direct call
   // does not have that screen in front of it: the message must stand alone.
-  const refus = classifyRunJudgesRefusal(
+  const refusal = classifyRunJudgesRefusal(
     "run 3f9 se retrouverait sans aucun juge ordinaire vivant",
   );
-  assert.equal(refus?.kind, "last_ordinary_judge");
-  // It says the order to follow — add then unlink — otherwise you are stuck
-  // with no
-  // savoir comment changer de juge.
-  assert.match(refus?.message ?? "", /Add another judge first/);
+  assert.equal(refusal?.kind, "last_ordinary_judge");
+  // It says the order to follow — add then unlink — otherwise you are stuck with
+  // no idea how to change judge.
+  assert.match(refusal?.message ?? "", /Add another judge first/);
   // And it says awareness does not count, otherwise you believe you can never
-  // pouvoir le retirer.
-  assert.match(refus?.message ?? "", /eval-awareness judge does not count/);
+  // remove it.
+  assert.match(refusal?.message ?? "", /eval-awareness judge does not count/);
 });
 
 test("a system judge cannot become principal, and we say why", () => {
-  const refus = classifyRunJudgesRefusal(
+  const refusal = classifyRunJudgesRefusal(
     "run_judge 7c1 est un juge système (awake) ; seul un juge ordinaire peut devenir principal",
   );
-  assert.equal(refus?.kind, "system_judge_cannot_be_principal");
-  // The reason counts as much as the refusal: its question and its scale do
-  // not
-  // sont pas celles du run, donc la matrice mentirait.
-  assert.match(refus?.message ?? "", /own fixed question/);
+  assert.equal(refusal?.kind, "system_judge_cannot_be_principal");
+  // The reason counts as much as the refusal: its question and its scale are not
+  // the run's, so the matrix would lie.
+  assert.match(refusal?.message ?? "", /own fixed question/);
 });
 
 test("no message returned to the caller cites an internal function name", () => {

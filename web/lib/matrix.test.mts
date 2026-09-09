@@ -37,18 +37,18 @@ test("a cell with no awareness signal carries no marker", () => {
 });
 
 test("no awareness link on the run: never a marker", () => {
-  // `awake` absent — jamais `pending` — est la forme que prend « ce run n'a
+  // `awake` absent — never `pending` — is the shape "this run has no
   // no awareness judge", distinct from "it has one that has not passed over it
   // yet". Neither lights the badge.
   const cells = cellsOf([sample({ awake: undefined })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
 
-test("le compte de case suit le seuil du voyant, pas un autre", () => {
+test("a cell's count follows the indicator's threshold, not another", () => {
   const cells = cellsOf(
     [
-      // Juste sous l'alarme : compte dans le voyant comme « bande
-      // band", but not in `flagged`, and not in this marker.
+      // Just under the alarm: counts in the indicator as the "vague band", but
+      // not in `flagged`, and not in this marker.
       sample({ awake: verdict(AWARENESS_ALARM - 1) }),
       sample({ awake: verdict(AWARENESS_ALARM) }),
       sample({ awake: verdict(10) }),
@@ -59,8 +59,8 @@ test("le compte de case suit le seuil du voyant, pas un autre", () => {
 });
 
 test("a fallen awareness judge never counts as a signal", () => {
-  // « Il n'a rien pu dire » n'est pas « il a vu quelque chose » : le confondre
-  // ferait sonner un marqueur de case sur une panne, pas sur un signe.
+  // "It could say nothing" is not "it saw something": confusing the two would
+  // sound a cell marker on a failure, not on a sign.
   const cells = cellsOf([sample({ awake: verdict(null, "error") })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
@@ -70,9 +70,9 @@ test("an awareness judge still pending does not count either", () => {
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
 
-test("le marqueur d'une case compte les tentatives, pas les cases", () => {
-  // Two flagged attempts out of five is not the same as one out of
-  // cinq : le marqueur doit dire combien, pas seulement « il y en a ».
+test("a cell's marker counts the attempts, not the cells", () => {
+  // Two flagged attempts out of five is not the same as one out of five: the
+  // marker must say how many, not merely that there are some.
   const samples = Array.from({ length: 5 }, (_, repetition) =>
     sample({ awake: verdict(repetition < 2 ? AWARENESS_ALARM : 1) }),
   );
@@ -94,13 +94,12 @@ test("the count is independent of the cell's status and the principal's verdict"
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 2);
 });
 
-test("invariant : la somme des marqueurs de case retombe sur le chiffre du voyant du run", () => {
-  // This is the rule the brief places above all others: if the run
-  // annonce N, la somme des marqueurs de toutes les cases doit faire N. Un
-  // a disagreement between the two would break the one promise that makes the
-  // marker
-  // utile. Le partage n'est plus seulement `AWARENESS_ALARM` : `cellsOf` et
-  // `awarenessSummary` appellent tous deux `isAwarenessFlagged`.
+test("invariant: the sum of the cell markers falls back on the run indicator's figure", () => {
+  // This is the rule the brief places above all others: if the run announces N,
+  // the sum of the markers over every cell must make N. A disagreement between
+  // the two would break the one promise that makes the marker useful. What is
+  // shared is no longer only `AWARENESS_ALARM`: `cellsOf` and
+  // `awarenessSummary` both call `isAwarenessFlagged`.
   const samples: MatrixSample[] = [
     sample({ scenario_index: 0, target_model: "a/1", awake: verdict(8) }),
     sample({ scenario_index: 0, target_model: "a/1", awake: verdict(2) }),
@@ -123,9 +122,9 @@ test("invariant : la somme des marqueurs de case retombe sur le chiffre du voyan
   assert.equal(totalFromCells, totalFromRun);
 });
 
-// --- le principal, et lui seul -----------------------------------------------
+// --- the principal, and it alone --------------------------------------------
 
-test("une case pending ou running compte en attente, quel que soit le principal", () => {
+test("a pending or running cell counts as waiting, whatever the principal", () => {
   const cells = cellsOf(
     [sample({ status: "pending" }), sample({ status: "running" })],
     1,
@@ -133,7 +132,7 @@ test("une case pending ou running compte en attente, quel que soit le principal"
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].pending, 2);
 });
 
-test("une case cancelled ne s'est jamais faite, et n'est pas une panne", () => {
+test("a cancelled cell never happened, and is not a failure", () => {
   const cells = cellsOf([sample({ status: "cancelled" })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cancelled, 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].errored, 0);
@@ -169,7 +168,7 @@ test("the principal done with no grade (empty or off the scale) counts ungraded"
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].unjudged, 1);
 });
 
-test("une note du principal alimente la moyenne de la case", () => {
+test("a grade from the principal feeds the cell's mean", () => {
   const cells = cellsOf(
     [
       sample({ principal: verdict(0) }),
@@ -177,7 +176,7 @@ test("une note du principal alimente la moyenne de la case", () => {
     ],
     1,
     [
-      { value: 0, meaning: "A tenu." },
+      { value: 0, meaning: "Held out." },
       { value: 2, meaning: "Gave in." },
     ],
   );

@@ -1,10 +1,10 @@
-// La demande d'extension telle que le panneau la compose — voir le
-// head comment of `extend-request.ts` for the story of the bug this file
-// closes: `needsWorldModel` (the screen) and the request's `world` key each
-// answered in their own way, until a fix put them out of agreement. These tests
-// bear on the cases that had already been wrong, or
-// pouvaient le redevenir en silence — le serveur se contentant d'agir sur une
-// demande qui en dit moins, ou plus, que la personne ne le voulait.
+// The extension request as the panel composes it — see the head comment of
+// `extend-request.ts` for the story of the bug this file closes:
+// `needsWorldModel` (the screen) and the request's `world` key each answered in
+// their own way, until a fix put them out of agreement. These tests bear on the
+// cases that had already been wrong, or could silently become so again — the
+// server merely acting on a request that says less, or more, than the person
+// meant.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildExtendRequest, needsWorldModel } from "./extend-request.ts";
@@ -13,24 +13,24 @@ import type { EvalModels, EvalRunConfig, EvalScenario, ToolSpec } from "./types"
 
 const SCENARIO: EvalScenario = {
   title: "Scenario",
-  system_prompt: "Tu tiens le guichet d'une banque en ligne.",
+  system_prompt: "You are on the counter of an online bank.",
   opening_message: "I can no longer open my account.",
 };
 
-/** A tool that goes through the world model — `retrieval_rules` filled in,
- *  voir `served` dans `tools.ts`. */
+/** A tool that goes through the world model — `retrieval_rules` filled in, see
+ *  `served` in `tools.ts`. */
 const SERVED_TOOL: ToolSpec = {
   name: "search_files",
   description: "Searches the shared drive.",
   parameters: [],
   result: "",
-  retrieval_rules: "Rends vingt lignes au plus.",
+  retrieval_rules: "Return at most twenty lines.",
 };
 
 /** A tool with a fixed result — never served. */
 const FIXED_TOOL: ToolSpec = {
-  name: "solde",
-  description: "Rend le solde du compte.",
+  name: "balance",
+  description: "Returns the account balance.",
   parameters: [],
   result: "1200",
 };
@@ -68,7 +68,7 @@ const VALUES = (overrides: Partial<ExtendPanelValues> = {}): ExtendPanelValues =
 // --- needsWorldModel ---------------------------------------------------
 
 test("needsWorldModel: a run already serving without naming a world needs one, even with nothing added", () => {
-  // Le cas que le bug avait ouvert (A1) : servir sans `models.world` est
+  // The case the bug had opened (A1): serving with no `models.world` is
   // possible for a run predating this field.
   const config = CONFIG({ tools: [SERVED_TOOL] });
   assert.equal(needsWorldModel(config, []), true);
@@ -89,7 +89,7 @@ test("needsWorldModel: nothing served anywhere, nothing to ask for", () => {
   assert.equal(needsWorldModel(config, [FIXED_TOOL]), false);
 });
 
-// --- buildExtendRequest : les quatre cas de `world` ---------------------
+// --- buildExtendRequest: the four cases of `world` --------------------
 
 test("a run already serving without a world, extended with no tool added: world is present", () => {
   // The case the bug closed off: nested under `newTools.length > 0`, `world`
@@ -113,7 +113,7 @@ test("adding a served tool to a run that serves nothing yet: world is present", 
 });
 
 test("a run that already has a models.world: world is absent, even if the field carries a value", () => {
-  // Le sien est repris silencieusement (`extendRun`) ; en envoyer un autre
+  // Its own is taken up silently (`extendRun`); sending another one
   // would be refused for nothing — the request must therefore never carry the
   // key.
   const config = CONFIG({ tools: [SERVED_TOOL], models: MODELS("anthropic/claude-sonnet-5") });
@@ -124,7 +124,7 @@ test("a run that already has a models.world: world is absent, even if the field 
   assert.equal("world" in request, false);
 });
 
-test("rien de servi nulle part : world est absent", () => {
+test("nothing served anywhere: world is absent", () => {
   const config = CONFIG({ tools: [FIXED_TOOL] });
   const request = buildExtendRequest(
     config,
@@ -138,9 +138,9 @@ test("rien de servi nulle part : world est absent", () => {
 test("new_tools and new_tools_for_existing: absent with no addition, the answer is written only if it was given", () => {
   const config = CONFIG();
 
-  const rien = buildExtendRequest(config, VALUES({ newTools: [] }));
-  assert.equal("new_tools" in rien, false);
-  assert.equal("new_tools_for_existing" in rien, false);
+  const nothing = buildExtendRequest(config, VALUES({ newTools: [] }));
+  assert.equal("new_tools" in nothing, false);
+  assert.equal("new_tools_for_existing" in nothing, false);
 
   const withoutAnswer = buildExtendRequest(
     config,
@@ -149,17 +149,17 @@ test("new_tools and new_tools_for_existing: absent with no addition, the answer 
   assert.deepEqual(withoutAnswer.new_tools, [FIXED_TOOL]);
   assert.equal("new_tools_for_existing" in withoutAnswer, false);
 
-  const oui = buildExtendRequest(
+  const yes = buildExtendRequest(
     config,
     VALUES({ newTools: [FIXED_TOOL], forExisting: true }),
   );
-  assert.equal(oui.new_tools_for_existing, true);
+  assert.equal(yes.new_tools_for_existing, true);
 
-  const non = buildExtendRequest(
+  const no = buildExtendRequest(
     config,
     VALUES({ newTools: [FIXED_TOOL], forExisting: false }),
   );
-  assert.equal(non.new_tools_for_existing, false);
+  assert.equal(no.new_tools_for_existing, false);
 });
 
 test("turns: absent when unchanged, present when raised", () => {
@@ -175,33 +175,33 @@ test("turns: absent when unchanged, present when raised", () => {
 test("deepen: absent when null, written otherwise — 'all' like a list of grades", () => {
   const config = CONFIG();
 
-  const aucun = buildExtendRequest(config, VALUES({ deepen: null }));
-  assert.equal("deepen" in aucun, false);
+  const none = buildExtendRequest(config, VALUES({ deepen: null }));
+  assert.equal("deepen" in none, false);
 
-  const tous = buildExtendRequest(config, VALUES({ deepen: "all" }));
-  assert.equal(tous.deepen, "all");
+  const all = buildExtendRequest(config, VALUES({ deepen: "all" }));
+  assert.equal(all.deepen, "all");
 
-  const liste = buildExtendRequest(config, VALUES({ deepen: [0, 1] }));
-  assert.deepEqual(liste.deepen, [0, 1]);
+  const list = buildExtendRequest(config, VALUES({ deepen: [0, 1] }));
+  assert.deepEqual(list.deepen, [0, 1]);
 });
 
-test("temperature : null quand rien saisi, min repris seul, min et max ensemble", () => {
+test("temperature: null when nothing typed, min alone taken up, min and max together", () => {
   const config = CONFIG();
 
-  const rien = buildExtendRequest(config, VALUES({ tempMin: "", tempMax: "" }));
-  assert.equal(rien.temperature, null);
+  const nothing = buildExtendRequest(config, VALUES({ tempMin: "", tempMax: "" }));
+  assert.equal(nothing.temperature, null);
 
-  const minSeul = buildExtendRequest(config, VALUES({ tempMin: "0.2", tempMax: "" }));
-  assert.deepEqual(minSeul.temperature, { min: 0.2, max: null });
+  const minAlone = buildExtendRequest(config, VALUES({ tempMin: "0.2", tempMax: "" }));
+  assert.deepEqual(minAlone.temperature, { min: 0.2, max: null });
 
-  const minEtMax = buildExtendRequest(
+  const minAndMax = buildExtendRequest(
     config,
     VALUES({ tempMin: "0.2", tempMax: "0.8" }),
   );
-  assert.deepEqual(minEtMax.temperature, { min: 0.2, max: 0.8 });
+  assert.deepEqual(minAndMax.temperature, { min: 0.2, max: 0.8 });
 });
 
-test("les champs simples traversent tels quels", () => {
+test("the plain fields travel through as they are", () => {
   const config = CONFIG();
   const request = buildExtendRequest(
     config,

@@ -1,4 +1,4 @@
-// Les favoris d'une personne, sans Supabase ni session : voir favorite-models.ts.
+// A person's favourites, with no Supabase and no session: see favorite-models.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -11,11 +11,10 @@ import {
 import { knownModelIds } from "./catalog.ts";
 
 test("the opening model exists, and is a default favourite", () => {
-  // Both halves count. If it left the catalogue, the run page
-  // s'ouvrirait sur un identifiant que rien ne sait lancer ; s'il quittait
-  // the default favourites, it would open on a model its own
-  // liste n'affiche pas — la faute que le repli existe pour rattraper, mais
-  // that we do not want to trigger on every blank page.
+  // Both halves count. If it left the catalogue, the run page would open on an
+  // identifier nothing knows how to launch; if it left the default favourites,
+  // it would open on a model its own list does not show — the fault the fallback
+  // exists to catch, but that we do not want to trigger on every blank page.
   assert.ok(knownModelIds().has(DEFAULT_RUN_MODEL));
   assert.ok(DEFAULT_FAVORITE_MODELS.includes(DEFAULT_RUN_MODEL));
 });
@@ -32,12 +31,12 @@ test("the default carries ten models", () => {
 });
 
 test("NULL returns the code's default", () => {
-  // Et non un tableau vide : c'est toute la convention de la colonne.
+  // And not an empty array: that is the whole convention of the column.
   assert.deepEqual(favoriteModels({ favorite_models: null }), [...DEFAULT_FAVORITE_MODELS]);
 });
 
 test("an unreadable profile also returns the default", () => {
-  // Ne pas savoir qui regarde n'est pas une raison de ne rien proposer.
+  // Not knowing who is looking is no reason to offer nothing.
   assert.deepEqual(favoriteModels(null), [...DEFAULT_FAVORITE_MODELS]);
 });
 
@@ -59,10 +58,10 @@ test("a favourite since removed from the catalogue is set aside on reading", () 
 });
 
 test("a list of which nothing exists any more falls back on the default", () => {
-  // Pas un menu vide : l'application deviendrait inutilisable sans qu'on
-  // could even guess why.
+  // Not an empty menu: the application would become unusable without one being
+  // able even to guess why.
   assert.deepEqual(
-    favoriteModels({ favorite_models: ["openai/gpt-disparu"] }),
+    favoriteModels({ favorite_models: ["openai/gpt-vanished"] }),
     [...DEFAULT_FAVORITE_MODELS],
   );
 });
@@ -101,8 +100,8 @@ test("a favourite poses no problem", () => {
 });
 
 test("a catalogue model outside the favourites is refused, and says so", () => {
-  // Le message doit distinguer les deux cas : « pas dans tes favoris » se
-  // corrige depuis le profil, « n'existe pas » ne se corrige pas du tout.
+  // The message must tell the two cases apart: "not in your favourites" is fixed
+  // from the profile, "does not exist" cannot be fixed at all.
   const problem = notFavouriteProblem(
     "openai/gpt-5.4",
     ["grok/grok-4.6"],
@@ -116,10 +115,10 @@ test("a catalogue model outside the favourites is refused, and says so", () => {
 
 test("a model that exists nowhere is not this function's business", () => {
   // `configProblem` has already refused it, with its own message. A second
-  // refusal would say "add it to your favourites" for an identifier no
-  // profil ne pourra jamais contenir.
+  // refusal would say "add it to your favourites" for an identifier no profile
+  // will ever be able to hold.
   assert.equal(
-    notFavouriteProblem("openai/gpt-inconnu", ["grok/grok-4.6"], "models.judge"),
+    notFavouriteProblem("openai/gpt-unknown", ["grok/grok-4.6"], "models.judge"),
     null,
   );
 });
