@@ -34,6 +34,7 @@ import type { MatrixSample } from "@/lib/matrix";
 import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import { scenarioAdvice } from "@/lib/scenario-advice";
+import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import {
   NotFound,
   createRun,
@@ -310,7 +311,9 @@ const handler = createMcpHandler((server) => {
         "results and planted information have to look. Read this before writing " +
         "scenarios — a model that suspects a test behaves differently, and the run " +
         "measures nothing. Returns the caller's own version when they have edited " +
-        "it on the Scenarios page, otherwise the default.",
+        "it on the Scenarios page, otherwise the default. This is one of four "
+        + "documents: read_advice serves this one plus how to put a batch together, "
+        + "how to read the results, and how to write a judge.",
       inputSchema: z.object({}),
     },
     async (_input, ctx) => {
@@ -321,6 +324,57 @@ const handler = createMcpHandler((server) => {
       const caller = await callerEmail(ctx);
       const profile = await ensureProfile(caller);
       return { content: [{ type: "text", text: scenarioAdvice(profile.scenario_advice) }] };
+    },
+  );
+
+  server.registerTool(
+    "read_advice",
+    {
+      title: "Read the advice documents",
+      description:
+        "Starts nothing and spends nothing. Returns the writing and reading advice for this " +
+        "tool, in four documents read at four different moments:\n\n" +
+        "- `scenario` — what makes a scenario smell like a test to the model being evaluated: the " +
+        "tells, the naming patterns that give an AI-written scenario away, what a tool result has " +
+        "to look like, where planted information has to sit. Read before writing scenarios.\n" +
+        "- `batch` — how the rows of a run relate to each other: whether you are exploring or " +
+        "proving, one axis per row, the rows that exist to check the rest, and what grade a " +
+        "well-behaved model should get on each. Read before launching.\n" +
+        "- `analysis` — how to read a matrix without concluding more than it says: what to check " +
+        "before looking at the colours, which transcripts to read, what a mixed cell actually " +
+        "means, and which follow-up it calls for. Read with results in hand, before writing a " +
+        "run's analysis or extending it.\n" +
+        "- `judge` — how to write a scale someone else could apply, whether the judge should see " +
+        "the scenario's system prompt, and how to find out whether it agrees with you.\n\n" +
+        "Ask for several at once: writing a run wants scenario, batch and judge together. Omit " +
+        "`topics` to get all four. Returns the caller's own version of any document they have " +
+        "edited on the Scenarios page, otherwise the default.",
+      inputSchema: z.object({
+        topics: z
+          .array(z.enum(ADVICE_TOPICS))
+          .optional()
+          .describe(
+            "Which documents to return. Omitted returns all four. Writing a run usually wants " +
+              '["scenario", "batch", "judge"]; reading results wants ["analysis"].',
+          ),
+      }),
+    },
+    async ({ topics }, ctx) => {
+      // Le conseil est personnel : c'est celui que cette personne a réécrit,
+      // pas un texte global. D'où la lecture du profil plutôt qu'une constante
+      // — et `ensureProfile` le fait exister au passage, comme partout
+      // ailleurs sur ce serveur.
+      const caller = await callerEmail(ctx);
+      const profile = await ensureProfile(caller);
+      const overrides = overridesOf(profile);
+      const wanted = topics && topics.length > 0 ? topics : ADVICE_TOPICS;
+      // Un seul bloc de texte plutôt qu'un contenu par sujet : l'agent lit
+      // l'ensemble d'affilée, et quatre blocs séparés lui demanderaient de
+      // recoller les titres pour savoir lequel parle de quoi.
+      const text = wanted
+        .map((topic) => adviceFor(topic, overrides))
+        .join("\n\n---\n\n");
+      return { content: [{ type: "text", text }] };
     },
   );
 

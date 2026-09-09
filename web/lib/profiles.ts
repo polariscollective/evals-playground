@@ -9,7 +9,7 @@
 // besoin : un agent qui n'a jamais ouvert l'écran ne doit pas découvrir
 // l'absence de profil au moment où il tente de dépenser.
 import "server-only";
-import { DEFAULT_SCENARIO_ADVICE } from "./scenario-advice";
+import { DEFAULT_ADVICE, type AdviceTopic } from "./advice";
 import { PROFILES, SupabaseError, insert, select, update } from "./supabase";
 import type { Profile } from "./types";
 
@@ -90,9 +90,43 @@ export async function updateScenarioAdvice(
   email: string,
   advice: string | null,
 ): Promise<Profile> {
+  return updateAdvice(email, "scenario", advice);
+}
+
+/** Écrit la surcharge d'UN document de conseil, depuis la page qui les édite.
+ *
+ * Écrire exactement le défaut vaut le remettre à `null` : le geste voulu est
+ * « je n'ai rien à moi ici », et recopier le défaut dans la ligne priverait
+ * cette personne de toute amélioration ultérieure sans qu'elle l'ait demandé.
+ * Une chaîne blanche fait la même chose, et c'est le geste « remets le défaut »
+ * à l'écran.
+ *
+ * Le sujet `scenario` écrit les DEUX colonnes : la neuve, et l'ancienne
+ * `scenario_advice`, pour qu'un déploiement revenu en arrière ne perde pas le
+ * texte. C'est la seule raison de garder l'ancienne à jour ; `overridesOf`
+ * (`advice.ts`) la lit toujours en second. */
+export async function updateAdvice(
+  email: string,
+  topic: AdviceTopic,
+  advice: string | null,
+): Promise<Profile> {
+  const profile = await ensureProfile(email);
   const trimmed = advice?.trim() ?? "";
-  const value = trimmed !== "" && trimmed !== DEFAULT_SCENARIO_ADVICE.trim() ? advice : null;
-  await update(PROFILES, { scenario_advice: value }, { user_email: `eq.${email}` });
+  const own =
+    trimmed !== "" && trimmed !== DEFAULT_ADVICE[topic].trim() ? advice : null;
+
+  const overrides: Record<string, string> = { ...(profile.advice_overrides ?? {}) };
+  if (own === null) delete overrides[topic];
+  else overrides[topic] = own;
+
+  const patch: Record<string, unknown> = {
+    // Un objet vide plutôt que `null` serait une surcharge qui ne surcharge
+    // rien : `overridesOf` le lirait pareil, mais `null` dit ce qu'on veut dire.
+    advice_overrides: Object.keys(overrides).length > 0 ? overrides : null,
+  };
+  if (topic === "scenario") patch.scenario_advice = own;
+
+  await update(PROFILES, patch, { user_email: `eq.${email}` });
   return ensureProfile(email);
 }
 

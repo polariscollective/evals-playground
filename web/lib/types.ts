@@ -810,6 +810,20 @@ export interface Profile {
    * personne, chacun traînant la version du jour de son inscription. Revenir
    * au défaut, c'est remettre `null`. */
   scenario_advice: string | null;
+  /** Les quatre documents de conseil, tels que cette personne les a réécrits,
+   *  rangés par sujet — voir `AdviceOverrides` dans `advice.ts`.
+   *
+   * `null`, un sujet absent, ou une chaîne blanche veulent tous dire « utilise
+   * le défaut du code ». Le défaut n'est jamais recopié ici, pour la même
+   * raison que `scenario_advice` et `favorite_models` : l'améliorer
+   * n'atteindrait plus personne.
+   *
+   * Une colonne JSON et non quatre colonnes de texte, pour qu'un cinquième
+   * document ne coûte pas de migration. `scenario_advice`, plus haut, reste la
+   * surcharge du sujet `scenario` tant que celle-ci n'en porte pas — personne
+   * ne doit perdre un texte écrit avant que le conseil ne se coupe en quatre.
+   * C'est `overridesOf` (`advice.ts`) qui tient cette règle. */
+  advice_overrides: Record<string, string> | null;
   /** Les modèles que cette personne veut voir proposés.
    *
    * `null` — le cas courant — veut dire « utilise le défaut du code », par

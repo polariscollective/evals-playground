@@ -679,7 +679,19 @@ a draft with a hole in it.
 So write the scenarios out, however many there are. If I already have them in a
 spreadsheet and retyping them would be lossy, say so and stop there: that path
 goes through the upload form in the application, and it is mine to walk.`,
-  advice: `Call \`read_scenario_advice\`. It starts nothing and spends nothing.`,
+  advice: `Call \`read_advice\` with \`topics: ["scenario", "batch", "judge"]\` — one
+call, three documents, and it starts nothing and spends nothing.
+
+The first is what makes a scenario smell like a test. The second is how the rows
+relate to each other: whether this is exploration or a study, one axis per row,
+the rows that exist to check the rest, and what grade a well-behaved model should
+get on each — which you write down before launching, not after. The third is how
+to write a scale someone other than you could apply.
+
+A fourth, \`analysis\`, is for afterwards. Do not read it now; read it when the
+results are in, before concluding anything or extending anything.
+
+(\`read_scenario_advice\` still works and returns the first document alone.)`,
   closing: `## The experiment I want
 
 It is what I have already told you, in my own words, in this conversation. If I
