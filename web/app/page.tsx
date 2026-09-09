@@ -29,6 +29,7 @@ import type {
   EvalScenario,
   JudgePromptPreview,
   JudgeSpec,
+  JudgeTarget,
   ProviderInfo,
   RubricLevel,
   SeededTurn,
@@ -48,6 +49,7 @@ import { SHARED_PRICING } from "@/lib/shared";
 import { servesTools } from "@/lib/tools";
 import { worldWarnings } from "@/lib/world-warnings";
 import { RubricEditor } from "@/components/RubricEditor";
+import { JudgeTargets } from "@/components/JudgeTargets";
 import { ScenarioList } from "@/components/ScenarioList";
 
 const MIN_TURNS = 1;
@@ -207,6 +209,13 @@ function EvaluateForm() {
 
   const [adversaryPrompt, setAdversaryPrompt] = useState("");
   const [criterion, setCriterion] = useState("");
+  // The principal's targets and whether it sees the system prompt. Both sit
+  // at the top level of the config, beside `criterion` and `rubric`, because
+  // that is the only judge those three fields ever describe.
+  const [targetsPerScenario, setTargetsPerScenario] = useState<
+    JudgeTarget[] | null
+  >(null);
+  const [seesSystemPrompt, setSeesSystemPrompt] = useState(true);
   const [rubric, setRubric] = useState<RubricLevel[]>(DEFAULT_RUBRIC);
   const [turns, setTurns] = useState(1);
   const [repetitions, setRepetitions] = useState(5);
@@ -332,6 +341,8 @@ function EvaluateForm() {
       setLabel(label);
       setNotes(config.notes ?? "");
       setCriterion(config.criterion ?? "");
+      setTargetsPerScenario(config.targets ?? null);
+      setSeesSystemPrompt(config.sees_system_prompt !== false);
       setRubric(config.rubric ?? DEFAULT_RUBRIC);
       setSecondaryJudges(config.judges ?? []);
       setTurns(config.turns ?? 1);
@@ -629,6 +640,10 @@ function EvaluateForm() {
       scenarios,
       criterion,
       rubric,
+      // Absent stays absent: `null` here would be a declaration of nothing,
+      // and `configProblem` tells the two apart.
+      ...(targetsPerScenario ? { targets: targetsPerScenario } : {}),
+      ...(seesSystemPrompt ? {} : { sees_system_prompt: false }),
       judges: secondaryJudges,
       turns,
       repetitions,
@@ -676,6 +691,8 @@ function EvaluateForm() {
       scenarios,
       criterion,
       rubric,
+      targetsPerScenario,
+      seesSystemPrompt,
       secondaryJudges,
       turns,
       repetitions,
@@ -869,6 +886,8 @@ function EvaluateForm() {
     setLabel(config.label ?? "");
     setNotes(config.notes ?? "");
     setCriterion(config.criterion);
+    setTargetsPerScenario(config.targets ?? null);
+    setSeesSystemPrompt(config.sees_system_prompt !== false);
     setRubric(config.rubric);
     setSecondaryJudges(config.judges ?? []);
     setTurns(config.turns);
@@ -1734,6 +1753,41 @@ function EvaluateForm() {
             The top of your scale is the dark end of the heatmap. Order your
             grades so the darkest cell is the one you want to spot.
           </p>
+
+          <div className="space-y-2 pt-2">
+            <span className="text-sm font-medium">
+              What a good model should score{" "}
+              <span className="font-normal text-zinc-500">
+                (optional, and all or nothing)
+              </span>
+            </span>
+            <JudgeTargets
+              scenarios={scenarios}
+              rubric={rubric}
+              targets={targetsPerScenario}
+              onChange={setTargetsPerScenario}
+            />
+          </div>
+
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={seesSystemPrompt}
+                onChange={(e) => setSeesSystemPrompt(e.target.checked)}
+                className="mt-1 cursor-pointer accent-teal-700"
+              />
+              <span>
+                Show this judge the scenario&rsquo;s system prompt
+                <span className="block text-xs text-zinc-500">
+                  On by default. Turn it off when the system prompt states the
+                  thing being graded: the judge is then handed the answer before
+                  reading a single turn, and its severity varies along an axis
+                  that puts the rule in the prompt on some rows and not others.
+                  Leave it on when the criterion refers to those instructions.
+                </span>
+              </span>
+            </label>
+
         </div>
 
         <button
@@ -1817,6 +1871,43 @@ function EvaluateForm() {
                 onChange={(rubric) => updateSecondaryJudge(index, { rubric })}
               />
             </div>
+
+            <div className="space-y-2">
+              <span className="text-sm font-medium">
+                What a good model should score{" "}
+                <span className="font-normal text-zinc-500">
+                  (in THIS judge&rsquo;s scale)
+                </span>
+              </span>
+              <JudgeTargets
+                scenarios={scenarios}
+                rubric={entry.rubric}
+                targets={entry.targets}
+                onChange={(targets) =>
+                  updateSecondaryJudge(index, { targets })
+                }
+              />
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={entry.sees_system_prompt !== false}
+                onChange={(e) => updateSecondaryJudge(index, { sees_system_prompt: e.target.checked })}
+                className="mt-1 cursor-pointer accent-teal-700"
+              />
+              <span>
+                Show this judge the scenario&rsquo;s system prompt
+                <span className="block text-xs text-zinc-500">
+                  On by default. Turn it off when the system prompt states the
+                  thing being graded: the judge is then handed the answer before
+                  reading a single turn, and its severity varies along an axis
+                  that puts the rule in the prompt on some rows and not others.
+                  Leave it on when the criterion refers to those instructions.
+                </span>
+              </span>
+            </label>
+
 
             <div className="space-y-1">
               <label
