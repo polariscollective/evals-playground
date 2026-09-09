@@ -60,7 +60,7 @@ export async function POST(
 
   let detail;
   try {
-    // `withJudges` : la règle des cibles regarde les juges vivants.
+    // `withJudges`: the targets rule looks at the live judges.
     detail = await loadRun(runId, { withJudges: true });
   } catch (error) {
     if (error instanceof NotFound) {
@@ -80,8 +80,8 @@ export async function POST(
   );
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  // À côté de `extendProblem`, jamais à sa place : cette règle a besoin des
-  // juges VIVANTS du run, qui vivent dans `run_judges` et non dans `config`.
+  // Beside `extendProblem`, never in its place: this rule needs the run's LIVE
+  // judges, which live in `run_judges` and not in `config`.
   const targetsProblem = extendTargetsProblem(
     body ?? {},
     judgesForTargets(detail.judges),

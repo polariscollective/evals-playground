@@ -1,24 +1,24 @@
-// Les quatre documents de conseil, et la règle qui décide lequel on sert.
+// The four advice documents, and the rule deciding which one is served.
 //
-// Un seul document couvrait quatre métiers, lus à quatre moments par un
-// lecteur dans quatre états : écrire un scénario, monter un batch, lire des
-// résultats, écrire un juge. Le troisième n'existait nulle part — `read_prompt`
-// accompagne l'écriture d'un run jusqu'au lancement et s'arrête là.
+// One document covered four jobs, read at four moments by a reader in four
+// different states: writing a scenario, putting a batch together, reading
+// results, writing a judge. The third existed nowhere — `read_prompt` walks an
+// agent through writing a run up to launch and stops there.
 //
-// Le défaut vit dans le code et le profil ne porte qu'une surcharge, comme
-// avant. Si le défaut était recopié dans chaque profil à sa création,
-// l'améliorer n'atteindrait plus jamais personne : chacun traînerait la version
-// du jour de son inscription.
+// The default lives in the code and the profile carries only an override, as
+// before. If the default were copied into each profile at creation, improving
+// it would never reach anyone again: everyone would drag the version from the
+// day they signed up.
 //
-// Une seule colonne JSON pour les surcharges plutôt que quatre colonnes de
-// texte, pour qu'un cinquième document ne coûte pas de migration.
+// One JSON column for the overrides rather than four text ones, so a fifth
+// document costs no migration.
 import { SCENARIO_ADVICE } from "./advice/scenario.ts";
 import { BATCH_ADVICE } from "./advice/batch.ts";
 import { ANALYSIS_ADVICE } from "./advice/analysis.ts";
 import { JUDGE_ADVICE } from "./advice/judge.ts";
 
-/** Les quatre documents, dans l'ordre où ils se lisent : trois avant le run,
- *  un après. */
+/** The four documents, in the order they are read: three before the run, one
+ *  after. */
 export const ADVICE_TOPICS = [
   "scenario",
   "batch",
@@ -28,10 +28,10 @@ export const ADVICE_TOPICS = [
 
 export type AdviceTopic = (typeof ADVICE_TOPICS)[number];
 
-/** Ce que chaque document couvre, en une phrase — pour la description de
- *  l'outil MCP et pour l'onglet à l'écran. Écrit ici plutôt qu'aux deux
- *  endroits : deux copies auraient divergé, comme le conseil lui-même l'aurait
- *  fait avant qu'on ne le mette dans le code. */
+/** What each document covers, in one sentence — for the MCP tool's
+ *  description and for the tab on screen. Written here rather than in both
+ *  places: two copies would have diverged, as the advice itself would have
+ *  before it was put in the code. */
 export const ADVICE_SUMMARY: Record<AdviceTopic, string> = {
   scenario:
     "What makes a scenario smell like a test to the model being evaluated, and " +
@@ -56,21 +56,22 @@ export const DEFAULT_ADVICE: Record<AdviceTopic, string> = {
   judge: JUDGE_ADVICE,
 };
 
-/** Les surcharges d'une personne, telles que `profiles.advice_overrides` les
- *  porte. Partielle : un sujet absent retombe sur le défaut. */
+/** One person's overrides, as `profiles.advice_overrides` carries them.
+ *  Partial: an absent topic falls back to the default. */
 export type AdviceOverrides = Partial<Record<AdviceTopic, string>>;
 
 export function isAdviceTopic(value: unknown): value is AdviceTopic {
   return ADVICE_TOPICS.includes(value as AdviceTopic);
 }
 
-/** Le document à servir : la surcharge si elle porte du texte, le défaut sinon.
+/** The document to serve: the override if it carries text, the default
+ *  otherwise.
  *
- * Une surcharge blanche retombe sur le défaut plutôt que de rendre une chaîne
- * vide. Vider le champ à l'écran est le geste « remets le défaut », pas
- * « n'envoie plus rien à mon agent » — et un outil MCP qui rendrait le vide
- * laisserait l'agent écrire sans le moindre garde-fou sans que personne ne
- * l'ait voulu. */
+ * A blank override falls back to the default rather than returning an empty
+ * string. Emptying the field on screen is the gesture for "put the default
+ * back", not "send my agent nothing" — and an MCP tool returning emptiness
+ * would leave the agent writing with no guard rail at all, without anyone
+ * having wanted that. */
 export function adviceFor(
   topic: AdviceTopic,
   overrides: AdviceOverrides | null | undefined,
@@ -79,12 +80,11 @@ export function adviceFor(
   return own && own.trim() !== "" ? own : DEFAULT_ADVICE[topic];
 }
 
-/** Les surcharges d'un profil, l'ancienne colonne comprise.
+/** A profile's overrides, the older column included.
  *
- * `profiles.scenario_advice` existait avant que les documents ne soient quatre.
- * Elle reste la surcharge du sujet `scenario` tant que la colonne neuve n'en
- * porte pas une : personne ne doit perdre un texte qu'il a écrit parce qu'on a
- * changé de rangement. */
+ * `profiles.scenario_advice` existed before the documents were four. It stays
+ * the override for the `scenario` topic as long as the new column carries none:
+ * nobody should lose a text they wrote because the filing changed. */
 export function overridesOf(profile: {
   advice_overrides?: unknown;
   scenario_advice?: string | null;

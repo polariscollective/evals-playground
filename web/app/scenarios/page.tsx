@@ -43,9 +43,9 @@ export default function ScenariosPage() {
   // "Profile" page reads the same resource. So we show what we already had, and
   // the re-check happens behind.
   const { data: profileData, loading, error: loadError } = useProfile();
-  // Quel document on regarde. Un état et non une adresse : la page est un
-  // client, le profil est déjà en cache, et changer d'onglet ne doit rien
-  // recharger.
+  // Which document we are looking at. A piece of state and not an address: the
+  // page is a client, the profile is already cached, and switching tabs should
+  // reload nothing.
   const [topic, setTopic] = useState<AdviceTopic>("scenario");
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
@@ -118,9 +118,9 @@ export default function ScenariosPage() {
         </p>
       </header>
 
-      {/* Quatre documents lus à quatre moments. Changer d'onglet abandonne une
-          édition en cours plutôt que de la traîner sur un autre document, où
-          elle s'écrirait par-dessus le mauvais texte. */}
+      {/* Four documents read at four moments. Switching tabs abandons an edit in
+          progress rather than dragging it onto another document, where it would
+          save over the wrong text. */}
       <nav className="flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
         {ADVICE_TOPICS.map((entry) => (
           <button

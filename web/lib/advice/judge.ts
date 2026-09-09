@@ -1,13 +1,13 @@
-// Guide 4 — écrire un juge, et savoir s'il est d'accord avec vous.
+// Guide 4 — writing a judge, and finding out whether it agrees with you.
 //
-// Neuf. Le juge était traité comme un instrument neutre : on écrivait sa
-// question, et on lisait ses notes. Il fait partie de l'expérience, et deux
-// choses au moins peuvent le fausser sans que rien ne le dise — un palier mal
-// écrit, et le prompt système du scénario qui lui souffle la réponse.
+// New. The judge was treated as a neutral instrument: you wrote its question
+// and you read its grades. It is part of the experiment, and at least two
+// things can bend it with nothing saying so — a badly written level, and the
+// scenario's system prompt handing it the answer.
 //
-// Le critère qui décide ce qui mérite d'être un juge système est écrit ici
-// parce qu'il manquait, et qu'on tranchait au cas par cas. Le seul candidat
-// nommé — le réalisme — ne fait pas partie de ce chantier.
+// The criterion deciding what earns a system judge is written here because it
+// was missing, and the question was being settled case by case. The one
+// candidate named — realism — is not part of this piece of work.
 
 export const JUDGE_ADVICE = `# Writing a judge
 

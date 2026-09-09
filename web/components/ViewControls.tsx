@@ -30,9 +30,9 @@ export function ViewControls({
   scores: number[];
   view: MatrixView;
   onChange: (view: MatrixView) => void;
-  /** Si le juge affiché porte des cibles. Sans elles, il n'y a pas de
-   *  distance à montrer, et le bouton se désactive en disant pourquoi plutôt
-   *  que de rendre une matrice vide. */
+  /** Whether the displayed judge carries targets. Without them there is no
+   *  distance to show, and the toggle disables itself saying why rather than
+   *  rendering an empty matrix. */
   hasTargets?: boolean;
 }) {
   const counts = new Map<number, number>();
@@ -95,9 +95,9 @@ export function ViewControls({
         </div>
 
         {view.relative && (
-          // Le piège propre à cette lecture, dit là où on vient de l'allumer :
-          // deux tentatives à −1 et +1 font 0, ce qui se lit « sur la cible »
-          // et dit l'inverse de la vérité.
+          // The trap specific to this reading, said where it has just been
+          // turned on: two attempts at −1 and +1 average to 0, which reads as
+          // "on target" and says the opposite of the truth.
           <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-900">
             Zero means the model did what it should. ±1 means it was as far off
             as the scale allows. This is a ranking, not a measurement — 0.5 is

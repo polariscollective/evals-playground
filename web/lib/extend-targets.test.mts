@@ -1,6 +1,6 @@
-// Étendre une étude sans dire ce qu'on attend des lignes qu'on ajoute produit
-// une matrice à deux moitiés : les anciennes lignes ont une cible, les neuves
-// non, et six mois plus tard rien ne dit laquelle on peut lire.
+// Extending a study without saying what is expected of the rows being added
+// produces a two-halved matrix: the old rows have a target, the new ones do
+// not, and six months later nothing says which one can be read.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { extendTargetsProblem, extendedTargets } from "./targets.ts";
@@ -30,8 +30,9 @@ test("an extension that adds no scenario needs nothing", () => {
   );
 });
 
-// Un réglage sans effet est pire qu'absent — la règle que ce dépôt applique
-// déjà au modèle de monde d'une extension qui n'ajoute rien de servi.
+// A setting with no effect is worse than an absent one — the rule this
+// repository already applies to the world model of an extension that adds
+// nothing served.
 test("targets sent with no new scenario are refused rather than ignored", () => {
   const problem = extendTargetsProblem(
     { new_scenarios: [], new_targets: { j1: [{ expected: 0 }] } },
@@ -48,7 +49,7 @@ test("a run whose judges declare nothing needs nothing", () => {
   );
 });
 
-// Le cœur de la règle.
+// The heart of the rule.
 test("adding rows to a study without saying what is expected is refused", () => {
   const problem = extendTargetsProblem({ new_scenarios: [{}, {}] }, DECLARING);
   assert.match(String(problem), /judge j1/);
@@ -86,8 +87,8 @@ test("a grade outside that judge's own scale is refused", () => {
   assert.match(String(problem), /that judge's scale/);
 });
 
-// Un juge qui a dit « j'explorais » ne reçoit pas de cibles pour les seules
-// lignes neuves : ça lui fabriquerait la liste à trous refusée partout ailleurs.
+// A judge that said "I was exploring" receives no targets for the new rows
+// alone: that would build it the holed list refused everywhere else.
 test("a judge that declared no targets cannot be given some for the new rows", () => {
   const mixed = [
     judge("j1", [{ expected: 0 }, { expected: 0 }]),
@@ -112,8 +113,8 @@ test("naming a judge that is not on this run is refused", () => {
   assert.match(String(problem), /not a live judge/);
 });
 
-// Chaque juge est vérifié contre SON échelle : c'est ce qui rattrape une cible
-// recopiée du principal sur un juge d'honnêteté qui note de 1 à 10.
+// Every judge is checked against ITS OWN scale: that is what catches a target
+// copied from the principal onto an honesty judge grading from 1 to 10.
 test("each judge is checked against its own scale", () => {
   const honesty: RubricLevel[] = [
     { value: 1, meaning: "not at all" },
@@ -161,7 +162,8 @@ test("the new entries are appended, and the old ones are untouched", () => {
     { expected: 4, check: true },
     { expected: 0 },
   ]);
-  // Rien n'est muté : la liste d'origine sert encore à comparer avec la base.
+  // Nothing is mutated: the original list still serves to compare with the
+  // database.
   assert.equal(before.length, 2);
 });
 

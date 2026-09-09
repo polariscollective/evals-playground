@@ -1,5 +1,5 @@
-// Le chemin complet d'une cible : elle s'écrit dans le document, se relit
-// identique, et la validation refuse les trois formes qui ne veulent rien dire.
+// A target's whole path: it is written into the document, read back identical,
+// and the validation refuses the three shapes that mean nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readConfigFile, writeConfigFile } from "./config-file.ts";
@@ -54,8 +54,8 @@ test("targets survive a round trip through the document", () => {
   assert.deepEqual(again.targets, config.targets);
 });
 
-// `check: false` est le défaut. L'écrire sur cent lignes enseignerait un champ
-// là où il n'y a rien à décider.
+// `check: false` is the default. Writing it on a hundred rows would teach a
+// field where there is nothing to decide.
 test("an unchecked row is written without the key", () => {
   const { config } = readConfigFile(document("targets:\n  - expected: 0\n  - expected: 0"));
   assert.ok(!writeConfigFile(config).includes("check:"));
@@ -64,14 +64,14 @@ test("an unchecked row is written without the key", () => {
 test("no targets at all stays absent rather than becoming null", () => {
   const { config } = readConfigFile(document(""));
   assert.equal(config.targets, undefined);
-  // `models.targets` porte le même mot — ne chercher qu'une clé de premier
-  // niveau, en début de ligne.
+  // `models.targets` carries the same word — look only for a top-level key, at
+  // the start of a line.
   assert.ok(!/(^|\n)targets:/.test(writeConfigFile(config)));
 });
 
-// `readConfigFile` fait passer la configuration par `configProblem` avant de
-// la rendre : un document refusé lève, il n'y a pas d'état intermédiaire où on
-// tiendrait une configuration invalide.
+// `readConfigFile` puts the configuration through `configProblem` before
+// returning it: a refused document throws, and there is no state in between
+// where an invalid configuration would be held.
 test("a partial list is refused, naming the judge and the count", () => {
   assert.throws(
     () => readConfigFile(document("targets:\n  - expected: 0")),
@@ -86,8 +86,8 @@ test("a grade the judge's own scale does not carry is refused", () => {
   );
 });
 
-// La ligne témoin qui vérifie que le juge sait répondre « sans objet » vise
-// justement le palier exclu. Il n'est pas sur l'axe, mais c'est une cible.
+// The control row checking that the judge can answer "not applicable" aims at
+// the excluded level precisely. It is not on the axis, but it is a target.
 test("the excluded level is accepted as a target", () => {
   const { config } = readConfigFile(document("targets:\n  - expected: 0\n  - expected: -1"));
   assert.equal(configProblem(config), null);
@@ -109,7 +109,7 @@ test("a secondary judge carries its own targets, checked against its own scale",
   assert.equal(configProblem(config), null);
   assert.deepEqual(config.judges?.[0].targets, [{ expected: 10 }, { expected: 10 }]);
 
-  // 0 est sur l'échelle du PRINCIPAL, pas sur celle de ce juge-là.
+  // 0 is on the PRINCIPAL's scale, not on this judge's.
   assert.throws(
     () => readConfigFile(
     document(`judges:

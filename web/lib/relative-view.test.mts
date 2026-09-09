@@ -1,5 +1,5 @@
-// La lecture en écart : une case ne montre plus sa note, mais la distance à ce
-// qu'un bon modèle aurait dû obtenir sur CETTE ligne.
+// The deviation reading: a cell no longer shows its grade, but the distance
+// from what a good model should have scored on THAT row.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cellsOf, overallMean, type MatrixSample } from "./matrix.ts";
@@ -38,7 +38,7 @@ function sample(
   };
 }
 
-// --- la vue elle-même --------------------------------------------------------
+// --- the view itself ---------------------------------------------------------
 
 test("l'écart et la correspondance ne coexistent jamais", () => {
   const remapped = withRemap(PLAIN_VIEW, { 0: 0, 2: 1, 4: 1 });
@@ -72,11 +72,11 @@ test("l'écart voyage par l'adresse, et gagne sur une correspondance bricolée",
   assert.deepEqual(relu.remap, {});
 });
 
-// --- les cases ---------------------------------------------------------------
+// --- the cells ----------------------------------------------------------------
 
 test("une case montre la distance à la cible de sa ligne", () => {
-  // Ligne 0 vise 0, ligne 1 vise 4. Les deux modèles obtiennent 2 : l'un est à
-  // mi-chemin au-dessus, l'autre à mi-chemin en dessous.
+  // Row 0 aims at 0, row 1 at 4. Both models score 2: one is halfway above,
+  // the other halfway below.
   const targets: JudgeTarget[] = [{ expected: 0 }, { expected: 4 }];
   const cells = cellsOf(
     [sample(0, 2), sample(1, 2)],
@@ -107,8 +107,8 @@ test("deux échelles sans rapport se lisent sur le même axe", () => {
 });
 
 test("une ligne sans cible ne montre rien plutôt qu'un zéro inventé", () => {
-  // Le cas d'une extension dont les cibles n'ont pas suivi : la ligne existe,
-  // le juge l'a notée, mais personne n'a dit ce qu'on en attendait.
+  // The case of an extension whose targets did not follow: the row exists, the
+  // judge graded it, but nobody said what was expected of it.
   const cells = cellsOf([sample(1, 2)], 2, RUBRIC, RELATIVE, [{ expected: 0 }]);
   assert.equal(cells[1].gpt.mean, null);
   assert.equal(cells[1].gpt.excluded, 1);
@@ -119,8 +119,8 @@ test("sans cibles du tout, la lecture en écart ne montre aucune case", () => {
   assert.equal(cells[0].gpt.mean, null);
 });
 
-// La moyenne des écarts s'annule : c'est le piège propre à cette lecture, et
-// il vaut mieux qu'un test le tienne que personne.
+// The mean of the deviations cancels: that is the trap specific to this
+// reading, and a test had better hold it than nobody.
 test("deux écarts opposés font zéro, ce qui n'est pas « sur la cible »", () => {
   const cells = cellsOf(
     [sample(0, 0), sample(0, 4)],
@@ -130,19 +130,19 @@ test("deux écarts opposés font zéro, ce qui n'est pas « sur la cible »", ()
     [{ expected: 2 }],
   );
   assert.equal(cells[0].gpt.mean, 0);
-  // La distribution, elle, dit la vérité — d'où la consigne de la lire avant
-  // la moyenne sur cette vue.
+  // The distribution, on the other hand, tells the truth — hence the rule to
+  // read it before the mean on this view.
   assert.deepEqual(cells[0].gpt.grades, { "-1": 1, "1": 1 });
 });
 
-// --- les lignes de contrôle --------------------------------------------------
+// --- the control rows ---------------------------------------------------------
 
 test("une ligne de contrôle sort du chiffre d'ensemble", () => {
   const targets: JudgeTarget[] = [{ expected: 0 }, { expected: 4, check: true }];
   const samples = [sample(0, 0), sample(1, 4)];
-  // Sans les cibles, la ligne de faisabilité tire la moyenne vers le haut.
+  // Without the targets, the feasibility row pulls the mean upwards.
   assert.equal(overallMean(samples, RUBRIC, PLAIN_VIEW), 2);
-  // Avec, elle n'entre plus dedans : elle est bizarre exprès.
+  // With them, it no longer enters it: it is odd on purpose.
   assert.equal(overallMean(samples, RUBRIC, PLAIN_VIEW, targets), 0);
 });
 

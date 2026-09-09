@@ -93,18 +93,18 @@ export async function updateScenarioAdvice(
   return updateAdvice(email, "scenario", advice);
 }
 
-/** Écrit la surcharge d'UN document de conseil, depuis la page qui les édite.
+/** Writes the override of ONE advice document, from the page that edits them.
  *
- * Écrire exactement le défaut vaut le remettre à `null` : le geste voulu est
- * « je n'ai rien à moi ici », et recopier le défaut dans la ligne priverait
- * cette personne de toute amélioration ultérieure sans qu'elle l'ait demandé.
- * Une chaîne blanche fait la même chose, et c'est le geste « remets le défaut »
- * à l'écran.
+ * Writing exactly the default is worth putting it back to `null`: the intended
+ * gesture is "I have nothing of my own here", and copying the default into the
+ * row would deprive this person of every later improvement without their having
+ * asked. A blank string does the same, and that is the "put the default back"
+ * gesture on screen.
  *
- * Le sujet `scenario` écrit les DEUX colonnes : la neuve, et l'ancienne
- * `scenario_advice`, pour qu'un déploiement revenu en arrière ne perde pas le
- * texte. C'est la seule raison de garder l'ancienne à jour ; `overridesOf`
- * (`advice.ts`) la lit toujours en second. */
+ * The `scenario` topic writes BOTH columns: the new one, and the older
+ * `scenario_advice`, so that a deployment rolled back does not lose the text.
+ * That is the only reason to keep the old one up to date; `overridesOf`
+ * (`advice.ts`) always reads it second. */
 export async function updateAdvice(
   email: string,
   topic: AdviceTopic,
@@ -120,8 +120,9 @@ export async function updateAdvice(
   else overrides[topic] = own;
 
   const patch: Record<string, unknown> = {
-    // Un objet vide plutôt que `null` serait une surcharge qui ne surcharge
-    // rien : `overridesOf` le lirait pareil, mais `null` dit ce qu'on veut dire.
+    // An empty object rather than `null` would be an override that overrides
+    // nothing: `overridesOf` would read it the same, but `null` says what we
+    // mean.
     advice_overrides: Object.keys(overrides).length > 0 ? overrides : null,
   };
   if (topic === "scenario") patch.scenario_advice = own;

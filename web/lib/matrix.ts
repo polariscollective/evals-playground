@@ -218,14 +218,14 @@ export function overallMean(
   view: MatrixView = PLAIN_VIEW,
   targets?: JudgeTarget[] | null,
 ): number | null {
-  // Les lignes de contrôle sortent du chiffre d'ensemble. Elles sont bizarres
-  // exprès — une ligne de faisabilité vise le HAUT de l'échelle, un modèle
-  // coopératif étant censé y aller — et les mêler aux autres ferait dire à ce
-  // nombre quelque chose que personne n'a demandé.
+  // Control rows leave the overall figure. They are odd on purpose — a
+  // feasibility row aims at the TOP of the scale, a cooperative model being
+  // meant to go there — and mixing them in would make that number say something
+  // nobody asked for.
   //
-  // Suit le juge dont on affiche les cibles, comme tout le reste de la
-  // matrice : la même ligne peut être un contrôle chez le principal et une
-  // ligne ordinaire chez un autre juge.
+  // Follows the judge whose targets are displayed, like everything else in the
+  // matrix: the same row can be a control for the principal and an ordinary row
+  // for another judge.
   const controls = controlRows(targets);
   const notes = samples
     .filter((sample) => !controls.has(sample.scenario_index))

@@ -50,9 +50,9 @@ export async function PATCH(request: Request) {
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
     scenario_advice?: unknown;
-    /** Lequel des quatre documents `scenario_advice` porte. Absent vaut
-     *  `"scenario"` — la forme d'avant que le conseil ne se coupe en quatre,
-     *  qu'un client déjà déployé envoie encore. */
+    /** Which of the four documents `scenario_advice` carries. Absent means
+     *  `"scenario"` — the shape from before the advice was split in four, which
+     *  an already-deployed client still sends. */
     advice_topic?: unknown;
     favorite_models?: unknown;
   };

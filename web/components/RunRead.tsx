@@ -1444,12 +1444,12 @@ export function RunMatrix({
     principal: verdictOf(displayedJudge, sample.id),
     awake: awake ? verdictOf(awake, sample.id) : undefined,
   }));
-  // Les cibles du juge AFFICHÉ, comme l'échelle juste au-dessus : la même
-  // ligne peut être un contrôle chez le principal et une ligne ordinaire chez
-  // un autre juge, et une distance ne se lit qu'à la lumière de la cible du
-  // juge dont on montre la note.
-  // `judgeTargets` et non `targets` : ce dernier nomme déjà les modèles
-  // évalués, quelques lignes plus haut.
+  // The DISPLAYED judge's targets, like the scale just above: the same row can
+  // be a control for the principal and an ordinary row for another judge, and a
+  // distance only reads in the light of the target of the judge whose grade is
+  // being shown.
+  // `judgeTargets` and not `targets`: the latter already names the evaluated
+  // models, a few lines above.
   const judgeTargets = displayedJudge?.targets ?? null;
   const controls = controlRows(judgeTargets);
   const cells = cellsOf(
@@ -1535,11 +1535,10 @@ export function RunMatrix({
                     </span>
                   )}
                   {controls.has(index) && (
-                    // Une ligne de contrôle n'est pas une trouvaille : elle
-                    // dit si le reste de la matrice est lisible. Le marquer
-                    // évite qu'on la cite comme un résultat, et qu'on
-                    // s'étonne de sa cible, qui n'est pas toujours « ce qu'un
-                    // bon modèle fait ».
+                    // A control row is not a finding: it says whether the
+                    // rest of the matrix can be read. Marking it stops it being
+                    // quoted as a result, and stops anyone puzzling over its
+                    // target, which is not always "what a good model does".
                     <span
                       className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
                       title="A control row: it has to land near its target, or nothing else on this matrix can be read. It stays out of any figure computed across rows."

@@ -35,14 +35,14 @@ export interface MatrixView {
   aggregate: Aggregate;
   /** Original grade → replacement grade, or `null` to put it outside. */
   remap: Record<number, number | null>;
-  /** Lire chaque case comme une distance à ce qu'un bon modèle aurait dû
-   *  obtenir, plutôt que comme une note — voir `deviation` dans `targets.ts`.
+  /** Read every cell as a distance from what a good model should have scored,
+   *  rather than as a grade — see `deviation` in `targets.ts`.
    *
-   * **Exclusif avec `remap`**, et `withRelative`/`withRemap` plus bas sont les
-   * deux seuls endroits qui posent l'un ou l'autre, pour que l'exclusion
-   * n'ait pas à être retenue par chaque appelant. Une échelle repliée ne
-   * correspond plus à celle contre laquelle les cibles ont été écrites : la
-   * distance serait mesurée depuis une cible qui a bougé. */
+   * **Exclusive with `remap`**, and `withRelative`/`withRemap` below are the
+   * only two places that set either, so the exclusion does not have to be
+   * remembered by every caller. A folded scale no longer matches the one the
+   * targets were written against: the distance would be measured from a target
+   * that has moved. */
   relative?: boolean;
 }
 
@@ -56,16 +56,16 @@ export function isPlainView(view: MatrixView): boolean {
   );
 }
 
-/** Bascule la lecture en écart, en retirant la correspondance s'il y en avait
- *  une. Les deux ne peuvent pas coexister — voir `MatrixView.relative`. */
+/** Switches the deviation reading on or off, dropping the remap if there was
+ *  one. The two cannot coexist — see `MatrixView.relative`. */
 export function withRelative(view: MatrixView, relative: boolean): MatrixView {
   return relative
     ? { aggregate: view.aggregate, remap: {}, relative: true }
     : { aggregate: view.aggregate, remap: {} };
 }
 
-/** Pose une correspondance, en éteignant la lecture en écart s'il y en avait
- *  une. Symétrique de `withRelative`. */
+/** Sets a remap, turning the deviation reading off if it was on. Symmetric
+ *  with `withRelative`. */
 export function withRemap(
   view: MatrixView,
   remap: Record<number, number | null>,
@@ -112,9 +112,9 @@ export function viewBounds(
   rubric: RubricLevel[] | undefined,
   view: MatrixView,
 ): { min: number; max: number } {
-  // La lecture en écart a ses propres bornes, les mêmes pour toutes les lignes
-  // quelles que soient leurs échelles — c'est tout l'intérêt de la
-  // normalisation. Voir `deviation`, `targets.ts`.
+  // The deviation reading has bounds of its own, the same for every row
+  // whatever their scales — that is the whole point of the normalisation. See
+  // `deviation`, `targets.ts`.
   if (view.relative) return { min: -1, max: 1 };
   const values = (rubric ?? [])
     .map((level) => mapScore(level.value, rubric, view))
@@ -135,8 +135,8 @@ export function describeView(
     AGGREGATES.find((entry) => entry.id === view.aggregate)?.sentence ??
     "the mean of its grades";
   if (view.relative) {
-    // Jamais combinée à une correspondance : `withRelative` l'interdit. La
-    // phrase n'a donc pas à décrire les deux.
+    // Never combined with a remap: `withRelative` forbids it. The sentence
+    // therefore does not have to describe both.
     const measure = how.replace("its grades", "how far its grades landed from " +
       "what a well-behaved model should have scored");
     return measure;
@@ -174,9 +174,8 @@ export function viewFromQuery(params: URLSearchParams): MatrixView {
     ? (asked as Aggregate)
     : "mean";
 
-  // L'écart gagne s'ils sont tous les deux là : une adresse bricolée à la main
-  // ne doit pas produire une vue que `withRelative` n'aurait jamais laissé
-  // exister.
+  // The deviation wins if both are there: an address hand-tinkered with must
+  // not produce a view `withRelative` would never have let exist.
   if (params.get("rel") === "1") return { aggregate, remap: {}, relative: true };
 
   const remap: Record<number, number | null> = {};

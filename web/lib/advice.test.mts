@@ -16,8 +16,8 @@ test("an absent override falls back to the default", () => {
   assert.equal(adviceFor("analysis", {}), DEFAULT_ADVICE.analysis);
 });
 
-// Vider le champ à l'écran veut dire « remets le défaut », jamais « n'envoie
-// plus rien à mon agent ».
+// Emptying the field on screen means "put the default back", never "send my
+// agent nothing any more".
 test("a blank override falls back rather than serving nothing", () => {
   assert.equal(adviceFor("judge", { judge: "   " }), DEFAULT_ADVICE.judge);
   assert.equal(adviceFor("judge", { judge: "" }), DEFAULT_ADVICE.judge);
@@ -39,7 +39,7 @@ test("every topic has a default, a summary, and is recognised", () => {
   assert.equal(isAdviceTopic(undefined), false);
 });
 
-// --- la compatibilité avec l'ancienne colonne --------------------------------
+// --- compatibility with the older column ---------------------------------------
 
 test("a scenario_advice written before the split is still served", () => {
   const overrides = overridesOf({ scenario_advice: "written long ago" });
@@ -69,11 +69,11 @@ test("junk in the JSON column is ignored rather than served", () => {
   );
 });
 
-// --- l'alias -----------------------------------------------------------------
+// --- the alias -----------------------------------------------------------------
 //
-// `read_scenario_advice` est nommé dans les instructions du serveur MCP et
-// interpolé dans `agent-prompt.ts`. Le casser casserait tous les agents déjà
-// écrits.
+// `read_scenario_advice` is named in the MCP server's instructions and
+// interpolated into `agent-prompt.ts`. Breaking it would break every agent
+// already written.
 
 test("the old entry point still serves the scenario document", () => {
   assert.equal(DEFAULT_SCENARIO_ADVICE, DEFAULT_ADVICE.scenario);
@@ -82,10 +82,10 @@ test("the old entry point still serves the scenario document", () => {
   assert.equal(scenarioAdvice("  "), DEFAULT_ADVICE.scenario);
 });
 
-// --- ce que chaque document doit couvrir -------------------------------------
+// --- what each document has to cover -------------------------------------------
 //
-// Pas une relecture du style : la garantie qu'une section n'a pas disparu en
-// déplaçant du texte d'un fichier à l'autre.
+// Not a review of the style: the guarantee that a section did not vanish while
+// moving text from one file to another.
 
 test("the scenario document keeps what it always carried", () => {
   for (const marker of [
@@ -106,8 +106,8 @@ test("the batch half really left the scenario document", () => {
 });
 
 test("the sentence that was withdrawn is gone", () => {
-  // Elle était autorisée, et c'est elle-même une affirmation sur le degré
-  // d'observation d'un déploiement.
+  // It was permitted, and it is itself a claim about how much a deployment
+  // observes.
   assert.ok(
     !DEFAULT_ADVICE.scenario.includes("your reasoning will not be shown to the user"),
   );

@@ -251,9 +251,9 @@ function judgeIdentity(view: {
   return {
     judge_id: view.judge.id,
     // L'identifiant de la LIAISON, distinct de `judge_id` : c'est lui que
-    // `submit_draft_extension` attend dans `new_targets`, un même juge pouvant
-    // être lié à plusieurs runs. Absent quand l'appelant ne le tient pas — le
-    // verdict d'un juge sur une seule conversation, où il n'a rien à adresser.
+    // `submit_draft_extension` expects in `new_targets`, one judge being able to
+    // be linked to several runs. Absent when the caller does not hold it — a
+    // judge's verdict on a single conversation, where it has nothing to address.
     ...(view.run_judge_id ? { run_judge_id: view.run_judge_id } : {}),
     is_principal: view.is_principal,
     system_type: view.system_type,
@@ -263,16 +263,16 @@ function judgeIdentity(view: {
     // `null` for an ordinary judge: its scale is `rubric`, above, never this
     // field — so the two are never both filled in.
     scale: isSystem ? AWAKE_SCALE : null,
-    // Ce que ce juge attendait de chaque scénario, dans l'ordre des lignes.
-    // `null` veut dire qu'il n'en déclare aucune : le run a été écrit comme une
-    // exploration, et sa matrice n'est pas faite pour être citée. Jamais rendu
-    // au modèle évalué ni au juge — lui donner la cible serait lui donner la
-    // réponse ; ici, l'appelant est un agent qui LIT des résultats.
+    // What this judge expected of each scenario, in row order. `null` means it
+    // declares none: the run was written as an exploration, and its matrix is
+    // not meant to be quoted. Never returned to the evaluated model nor to the
+    // judge — giving it the target would be giving it the answer; here, the
+    // caller is an agent READING results.
     //
-    // La CLÉ est omise quand l'appelant ne tient pas cette information — le
-    // verdict d'un juge sur une seule conversation ne la porte pas. Sans cette
-    // distinction, `get_run_trajectory` rendrait `targets: null` partout et
-    // ferait passer une étude pour une exploration.
+    // The KEY is omitted when the caller does not hold that information — a
+    // judge's verdict on a single conversation does not carry it. Without that
+    // distinction, `get_run_trajectory` would return `targets: null` everywhere
+    // and make a study look like an exploration.
     ...("targets" in view ? { targets: view.targets ?? null } : {}),
   };
 }
@@ -377,17 +377,17 @@ const handler = createMcpHandler((server) => {
       }),
     },
     async ({ topics }, ctx) => {
-      // Le conseil est personnel : c'est celui que cette personne a réécrit,
-      // pas un texte global. D'où la lecture du profil plutôt qu'une constante
-      // — et `ensureProfile` le fait exister au passage, comme partout
-      // ailleurs sur ce serveur.
+      // The advice is personal: it is the one this person rewrote, not a global
+      // text. Hence reading the profile rather than a constant — and
+      // `ensureProfile` makes it exist along the way, as everywhere else on
+      // this server.
       const caller = await callerEmail(ctx);
       const profile = await ensureProfile(caller);
       const overrides = overridesOf(profile);
       const wanted = topics && topics.length > 0 ? topics : ADVICE_TOPICS;
-      // Un seul bloc de texte plutôt qu'un contenu par sujet : l'agent lit
-      // l'ensemble d'affilée, et quatre blocs séparés lui demanderaient de
-      // recoller les titres pour savoir lequel parle de quoi.
+      // One block of text rather than one content per topic: the agent reads the
+      // lot in one go, and four separate blocks would make it stitch the titles
+      // back together to know which speaks of what.
       const text = wanted
         .map((topic) => adviceFor(topic, overrides))
         .join("\n\n---\n\n");
@@ -1203,9 +1203,8 @@ const handler = createMcpHandler((server) => {
           run.config.models.world ?? null,
         );
         if (problem) return toolError(problem);
-        // À côté de `extendProblem`, jamais à sa place : cette règle regarde
-        // les juges VIVANTS du run, qui vivent dans `run_judges` et non dans
-        // `config`.
+        // Beside `extendProblem`, never in its place: this rule looks at the
+        // run's LIVE judges, which live in `run_judges` and not in `config`.
         const targetsProblem = extendTargetsProblem(
           request,
           judgesForTargets(target.run.judges),
@@ -1702,9 +1701,9 @@ const handler = createMcpHandler((server) => {
             ? run.config.scenarios.map((_, index) => index)
             : input.scenario_indices,
         new_scenarios: input.new_scenarios,
-        // Absent reste absent : `extendTargetsProblem` distingue « pas de
-        // cibles à donner » de « une liste vide », et un objet vide posé ici
-        // ferait passer le second pour le premier.
+        // Absent stays absent: `extendTargetsProblem` tells "no targets to give"
+        // apart from "an empty list", and an empty object laid here would make
+        // the second pass for the first.
         ...(input.new_targets === undefined ? {} : { new_targets: input.new_targets }),
         targets: input.targets ?? [],
         repetitions: input.repetitions ?? 0,
@@ -1748,7 +1747,7 @@ const handler = createMcpHandler((server) => {
       if (problem) {
         return { content: [{ type: "text", text: problem }], isError: true };
       }
-      // À côté de `extendProblem`, jamais à sa place — voir sa docstring.
+      // Beside `extendProblem`, never in its place — see its docstring.
       const targetsProblem = extendTargetsProblem(
         request,
         judgesForTargets(found.run.judges),

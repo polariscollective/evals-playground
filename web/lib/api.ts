@@ -416,11 +416,11 @@ export const updateProfileCaps = (caps: {
 export const updateScenarioAdvice = (advice: string | null) =>
   updateAdvice("scenario", advice);
 
-/** Écrit la surcharge d'UN document de conseil. `null` remet le défaut.
+/** Writes the override of ONE advice document. `null` puts the default back.
  *
- * `topic` voyage à côté du texte plutôt que d'être quatre routes : c'est le
- * même geste sur le même profil, et la route applique un réglage à la fois de
- * toute façon — voir `profilePatchProblem`. */
+ * `topic` travels beside the text rather than being four routes: it is the same
+ * gesture on the same profile, and the route applies one setting at a time
+ * anyway — see `profilePatchProblem`. */
 export const updateAdvice = (topic: AdviceTopic, advice: string | null) =>
   request<{ profile: Profile }>("/api/profile", {
     method: "PATCH",

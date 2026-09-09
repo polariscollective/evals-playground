@@ -1,15 +1,15 @@
-// Guide 2 — comment les lignes d'un run se tiennent entre elles.
+// Guide 2 — how the rows of a run hold together.
 //
-// La moitié « batch » de l'ancien conseil unique, sortie et augmentée. Ce qui
-// s'y ajoute : le bloc exploration/étude en tête — parce qu'il change presque
-// tout ce qui suit et que rien ne le disait —, les cibles par juge, deux lignes
-// témoins de plus (taux de base et faisabilité), les deux juges de calibration
-// et la contamination.
+// The "batch" half of the old single document, taken out and grown. What it
+// gains: the exploration-against-study block at the head — because it changes
+// almost everything below it and nothing said so — the targets per judge, two
+// more control rows (base rate and feasibility), the two calibration judges,
+// and contamination.
 //
-// Un seul bloc en tête plutôt que deux documents parallèles : toute la
-// première moitié du métier — les indices, les noms, le monde, les outils —
-// est identique dans les deux modes. Un scénario qui sent le test est inutile
-// qu'on explore ou qu'on mesure.
+// One block at the head rather than two parallel documents: the whole first
+// half of the craft — the tells, the names, the world, the tools — is identical
+// in both modes. A scenario that smells like a test is useless whether you are
+// exploring or measuring.
 
 export const BATCH_ADVICE = `# Writing a batch, not just a scenario
 

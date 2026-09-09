@@ -1,72 +1,68 @@
-// Ce qu'un bon modèle aurait dû obtenir, et à quelle distance il est tombé.
+// What a good model should have scored, and how far it landed from it.
 //
-// Une note brute ne se lit qu'à côté de l'échelle qui l'a produite, et deux
-// lignes d'une même matrice peuvent être notées par deux juges sur deux
-// échelles sans rapport. Écrire d'avance la note qu'un modèle se comportant
-// bien devrait obtenir transforme chaque case en un écart à cette note —
-// comparable d'une ligne à l'autre, d'un juge à l'autre.
+// A raw grade only reads next to the scale that produced it, and two rows of
+// one matrix can be graded by two judges on unrelated scales. Writing down in
+// advance the grade a well-behaved model should get turns every cell into a
+// distance from that grade — comparable from row to row, from judge to judge.
 //
-// Trois idées se cachaient sous le mot « attendu », et les séparer est
-// l'essentiel de la conception (voir
-// docs/superpowers/specs/2026-09-09-targets-and-four-guides-design.md) :
+// Three ideas were hiding under the word "expected", and separating them is
+// most of the design (see
+// docs/superpowers/specs/2026-09-09-targets-and-four-guides-design.md):
 //
-//   - la CIBLE dit ce qu'un bon modèle fait, et s'en écarter EST le résultat ;
-//   - le CONTRÔLE dit qu'une ligne doit tomber près de sa cible sans quoi rien
-//     d'autre n'est lisible, et s'en écarter veut dire qu'il n'y a pas de
-//     résultat du tout ;
-//   - le PARI dit ce que le rédacteur croit qu'il va se passer, n'a pas de
-//     bonne réponse, et reste en prose dans `note`.
+//   - the TARGET says what a good model does, and straying from it IS the
+//     result;
+//   - the CONTROL says a row has to land near its target or nothing else can be
+//     read, and straying from it means there is no result at all;
+//   - the BET says what the writer thinks will happen, has no right answer, and
+//     stays prose, in `note`.
 //
-// Le contrôle ne remplace jamais le nombre. Une ligne de taux de base qui
-// dérive apprend deux choses à la fois — le décor pousse tout seul, ET le
-// modèle dérive sans qu'on l'y pousse — et un simple réussi/raté en effacerait
-// la moitié.
+// The control never replaces the number. A base-rate row that drifts teaches
+// two things at once — the decor pushes on its own, AND the model drifts
+// unprompted — and a plain pass/fail would erase half of it.
 //
-// Module pur, sans lecture ni écriture : c'est ce qui permet de l'éprouver
-// seul, comme `view.ts` juste à côté.
+// A pure module, reading and writing nothing: that is what lets it be tested on
+// its own, like `view.ts` next door.
 import type { JudgeTarget, RubricLevel, RunJudgeView } from "./types";
 
 export type { JudgeTarget };
 
-/** Les paliers d'une échelle qui portent une note, le palier « sans objet »
- *  retiré.
+/** The levels of a scale that carry a grade, the "not applicable" level
+ *  removed.
  *
- * Le palier exclu est une réponse — « la question ne s'appliquait pas » — et
- * non une note : il n'est sur aucun axe, et `mapScore` le met déjà dehors du
- * calcul d'une case. Il reste une CIBLE légitime, celle de la ligne témoin qui
- * vérifie que le juge sait répondre « sans objet » ; elle n'a simplement pas de
- * distance, ce que `deviation` dit en rendant `null`. */
+ * The excluded level is an answer — "the question did not apply" — and not a
+ * grade: it is on no axis, and `mapScore` already puts it outside a cell's
+ * computation. It stays a legitimate TARGET, the one the control row aims at to
+ * check that the judge can answer "not applicable"; it simply has no distance,
+ * which is what `deviation` says by returning `null`. */
 function gradedValues(rubric: RubricLevel[] | undefined): number[] {
   return (rubric ?? [])
     .filter((level) => !level.excluded)
     .map((level) => level.value);
 }
 
-/** À quelle distance de sa cible une note est tombée, entre −1 et +1.
+/** How far from its target a grade landed, between −1 and +1.
  *
- * Zéro : le modèle a fait ce qu'il devait. ±1 : il est aussi loin que
- * l'échelle le permet.
+ * Zero: the model did what it should. ±1: it is as far off as the scale allows.
  *
- * **Le dénominateur est la place disponible, pas l'étendue de l'échelle**, et
- * c'est tout l'intérêt de la formule. Sur une échelle 0–4, une ligne dont la
- * cible est 0 peut s'écarter de quatre paliers ; une ligne dont la cible est 2
- * ne peut s'écarter que de deux. Diviser les deux par l'étendue plafonnerait la
- * seconde à 0,5 : elle paraîtrait éternellement mieux tenue que la première,
- * alors qu'elle est aussi loin qu'elle peut l'être. C'est un artefact de
- * l'endroit où la cible est posée, pas un fait sur le modèle.
+ * **The denominator is the room available, not the length of the scale**, and
+ * that is the whole point of the formula. On a 0–4 scale, a row targeting 0 can
+ * stray four levels; a row targeting 2 can only stray two. Dividing both by the
+ * range would cap the second at 0.5: it would look permanently better held than
+ * the first, when it is as far off as it can be. That is an artefact of where
+ * the target sits, not a fact about the model.
  *
- * Quand la cible est à un bout de l'échelle — le cas courant, « un bon modèle
- * refuse » — un seul côté existe et la formule redevient l'évidente,
- * `(note − cible) / étendue`.
+ * When the target is at one end of the scale — the common case, "a good model
+ * refuses" — only one side exists and the formula becomes the obvious one,
+ * `(grade − target) / range`.
  *
- * `null` quand il n'y a pas de distance à calculer : la cible ou la note est le
- * palier exclu, ou n'est pas sur cette échelle du tout. L'appelant décide quoi
- * en faire — la matrice compte alors les tentatives tombées sur la cible plutôt
- * que d'afficher un nombre.
+ * `null` when there is no distance to compute: the target or the grade is the
+ * excluded level, or is not on this scale at all. The caller decides what to do
+ * with it — the matrix then counts the attempts that landed on the target
+ * rather than showing a number.
  *
- * Ce que le nombre N'EST PAS, et que les guides doivent dire : une mesure. Les
- * paliers d'une échelle ordinale n'ont jamais été mesurés les uns contre les
- * autres, donc 0,5 est PLUS LOIN que 0,25, jamais DEUX FOIS PIRE. */
+ * What the number is NOT, and what the guides must say: a measurement. The
+ * levels of an ordinal scale were never measured against one another, so 0.5 is
+ * FURTHER OFF than 0.25, never TWICE AS BAD. */
 export function deviation(
   grade: number,
   target: number,
@@ -77,24 +73,25 @@ export function deviation(
   if (grade === target) return 0;
   const room =
     grade > target ? Math.max(...scale) - target : target - Math.min(...scale);
-  // Une échelle qui n'a qu'un palier notable ne laisse aucune place pour s'en
-  // écarter. Sans ce garde-fou on diviserait par zéro pour rendre l'infini.
+  // A scale with a single gradable level leaves no room to stray from it.
+  // Without this guard we would divide by zero and return infinity.
   if (room === 0) return null;
   return (grade - target) / room;
 }
 
-/** Ce qui cloche dans la liste de cibles d'un juge, ou `null` si elle tient.
+/** What is wrong with a judge's target list, or `null` if it holds.
  *
- * `judgeName` sert à nommer le juge fautif dans le message : un run peut en
- * porter cinq, et « les cibles sont incomplètes » n'aiderait personne.
+ * `judgeName` names the judge at fault in the message: a run can carry five of
+ * them, and "the targets are incomplete" would help nobody.
  *
- * **Tout ou rien.** Une liste absente est valide et veut dire quelque chose :
- * le rédacteur explorait et ne savait pas à quoi ressemble un bon résultat. Une
- * liste présente couvre tous les scénarios. Il n'y a délibérément pas d'état
- * intermédiaire — six mois plus tard, un trou ne se distingue pas d'un oubli.
+ * **All or nothing.** An absent list is valid and means something: the writer
+ * was exploring and did not know what a good result looks like. A list that is
+ * present covers every scenario. There is deliberately no state in between —
+ * six months later, a hole cannot be told from an oversight.
  *
- * C'est aussi ce qui donne à ce champ son intérêt principal : le remplir oblige
- * qui écrit le run à dire ce qu'il cherche avant de dépenser quoi que ce soit. */
+ * That is also what gives this field its main value: filling it in forces
+ * whoever writes the run to say what they are looking for before spending
+ * anything. */
 export function targetsProblem(
   targets: JudgeTarget[] | null | undefined,
   scenarioCount: number,
@@ -123,9 +120,9 @@ export function targetsProblem(
     ) {
       return `${judgeName}: targets[${index}] needs an \`expected\` grade.`;
     }
-    // Le palier exclu compte : c'est la cible de la ligne témoin qui vérifie
-    // que le juge sait répondre « sans objet ». D'où `scale` et non
-    // `gradedValues` ici.
+    // The excluded level counts: it is the target of the control row checking
+    // that the judge can answer "not applicable". Hence `scale` and not
+    // `gradedValues` here.
     if (!scale.includes(target.expected)) {
       return (
         `${judgeName}: targets[${index}] expects ${target.expected}, which is not a grade on this ` +
@@ -139,12 +136,12 @@ export function targetsProblem(
   return null;
 }
 
-/** La cible d'une ligne pour un juge donné, ou `undefined` s'il n'en porte pas.
+/** One row's target for a given judge, or `undefined` if it carries none.
  *
- * Aligné sur `scenario_index`, qui ne fait que croître : une extension ajoute
- * des lignes à la fin, jamais au milieu. Un index hors liste rend `undefined`
- * plutôt que de lever — une extension peut être en cours d'écriture, et la
- * matrice doit rester affichable. */
+ * Aligned on `scenario_index`, which only ever grows: an extension adds rows at
+ * the end, never in the middle. An index outside the list returns `undefined`
+ * rather than throwing — an extension can be mid-flight, and the matrix has to
+ * stay displayable. */
 export function targetOf(
   targets: JudgeTarget[] | null | undefined,
   scenarioIndex: number,
@@ -153,12 +150,12 @@ export function targetOf(
   return targets[scenarioIndex];
 }
 
-/** Les index des lignes que ce juge déclare comme contrôles.
+/** The indices of the rows this judge declares as controls.
  *
- * Un contrôle est bizarre exprès : il ne doit entrer dans aucun chiffre calculé
- * sur plusieurs lignes. Suit le juge AFFICHÉ, comme tout le reste de la matrice
- * — la même ligne peut être un contrôle chez le principal et une ligne
- * ordinaire chez un autre juge. */
+ * A control is odd on purpose: it must enter no figure computed across rows.
+ * Follows the DISPLAYED judge, like everything else in the matrix — the same
+ * row can be a control for the principal and an ordinary row for another
+ * judge. */
 export function controlRows(
   targets: JudgeTarget[] | null | undefined,
 ): Set<number> {
@@ -170,28 +167,27 @@ export function controlRows(
 }
 
 
-/** Ce qui cloche dans les cibles qu'une extension apporte, ou `null`.
+/** What is wrong with the targets an extension brings, or `null`.
  *
- * **À appeler à côté de `extendProblem`, jamais à sa place.** Elle vit à part
- * parce qu'elle a besoin d'une information que `extendProblem` n'a pas et ne
- * peut pas avoir : les juges VIVANTS du run, qui vivent dans `run_judges` et
- * non dans `config`. Les trois appelants de `extendProblem` — les deux outils
- * MCP et la route HTTP — appellent les deux à la suite.
+ * **Call it beside `extendProblem`, never in its place.** It lives apart
+ * because it needs something `extendProblem` does not have and cannot have: the
+ * run's LIVE judges, which live in `run_judges` and not in `config`. All three
+ * callers of `extendProblem` — the two MCP tools and the HTTP route — call both
+ * in turn.
  *
- * Le problème qu'elle résout : une étude qu'on étend sans dire ce qu'on attend
- * des nouvelles lignes produit exactement la matrice ininterprétable que les
- * cibles existent pour éviter. Les anciennes lignes ont une cible, les neuves
- * non, et six mois plus tard rien ne dit laquelle des deux moitiés on peut
- * lire.
+ * The problem it solves: a study extended without saying what is expected of
+ * the new rows produces exactly the uninterpretable matrix targets exist to
+ * prevent. The old rows have a target, the new ones do not, and six months
+ * later nothing says which of the two halves can be read.
  *
- * `new_targets` ne porte QUE les nouvelles lignes, jamais la liste entière :
- * renvoyer la liste complète permettrait de réécrire après coup ce qu'on
- * attendait des lignes déjà jouées, ce qui viderait la promesse de la cible —
- * elle est écrite avant, ou elle ne vaut rien.
+ * `new_targets` carries ONLY the new rows, never the whole list: resending the
+ * full list would allow rewriting what was expected of rows already played,
+ * which would empty the target of its promise — it is written before, or it is
+ * worth nothing.
  *
- * Un juge qui ne déclare aucune cible n'en reçoit pas non plus ici : il a dit
- * « j'explorais », et lui en donner pour les seules lignes neuves fabriquerait
- * la liste à trous que `targetsProblem` refuse partout ailleurs. */
+ * A judge that declares no targets receives none here either: it said "I was
+ * exploring", and giving it targets for the new rows alone would build the
+ * holed list `targetsProblem` refuses everywhere else. */
 export function extendTargetsProblem(
   request: { new_scenarios?: unknown; new_targets?: unknown },
   judges: {
@@ -215,9 +211,9 @@ export function extendTargetsProblem(
   const declaring = judges.filter((judge) => judge.targets !== null);
 
   if (newCount === 0) {
-    // Un réglage sans effet est pire qu'absent — la même règle que ce dépôt
-    // applique déjà au modèle de monde d'une extension qui n'ajoute rien de
-    // servi.
+    // A setting with no effect is worse than an absent one — the same rule this
+    // repository already applies to the world model of an extension that adds
+    // nothing served.
     if (Object.keys(entries).length > 0) {
       return "new_targets was given but this extension adds no scenarios to write targets for";
     }
@@ -269,10 +265,10 @@ export function extendTargetsProblem(
   return null;
 }
 
-/** La liste de cibles d'un juge, allongée des lignes qu'une extension ajoute.
+/** A judge's target list, lengthened by the rows an extension adds.
  *
- * `null` reste `null` : un juge qui n'en déclarait pas n'en gagne pas parce
- * qu'on a étendu le run. */
+ * `null` stays `null`: a judge that declared none does not gain any because the
+ * run was extended. */
 export function extendedTargets(
   current: JudgeTarget[] | null,
   added: JudgeTarget[] | undefined,
@@ -281,11 +277,11 @@ export function extendedTargets(
   return [...current, ...(added ?? [])];
 }
 
-/** Les juges d'un run, réduits à ce que `extendTargetsProblem` regarde.
+/** A run's judges, reduced to what `extendTargetsProblem` looks at.
  *
- * Écrit une fois plutôt qu'aux trois appelants : le libellé d'un juge sert à
- * nommer le fautif dans le message, et trois façons de le fabriquer auraient
- * donné trois messages différents pour la même faute. */
+ * Written once rather than at all three callers: a judge's label names the one
+ * at fault in the message, and three ways of building it would have produced
+ * three different messages for the same mistake. */
 export function judgesForTargets(
   judges: RunJudgeView[] | undefined,
 ): {
@@ -295,8 +291,8 @@ export function judgesForTargets(
   targets: JudgeTarget[] | null;
 }[] {
   return (judges ?? [])
-    // Un juge système ne porte ni critère ni échelle, et sa question n'est pas
-    // celle de l'utilisateur : il ne déclare donc jamais de cible.
+    // A system judge carries neither criterion nor scale, and its question is
+    // not the user's: it therefore never declares a target.
     .filter((judge) => judge.system_type === "ordinary")
     .map((judge) => ({
       run_judge_id: judge.run_judge_id,

@@ -1,9 +1,9 @@
-// L'exemple versionné doit passer la validation qu'il illustre.
+// The versioned example has to pass the validation it illustrates.
 //
-// Il est cité dans `docs/what-this-is.md` et sert de modèle à qui écrit son
-// premier run. Un exemple refusé enseigne un format qui n'existe pas — le même
-// mensonge silencieux que le gabarit de `agent-prompt.ts`, déjà tenu par un
-// test, évite du côté du prompt.
+// It is quoted in `docs/what-this-is.md` and serves as a model for whoever
+// writes their first run. A refused example teaches a format that does not
+// exist — the same silent lie that `agent-prompt.ts`'s template, already held
+// by a test, avoids on the prompt's side.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,18 +28,18 @@ test("its targets cover every scenario, on both judges", () => {
   }
 });
 
-// Ce que l'exemple existe pour montrer : la même ligne est un contrôle chez un
-// juge et une ligne ordinaire chez l'autre. C'est l'argument entier pour que la
-// cible appartienne au juge et non au scénario.
+// What the example exists to show: the same row is a control for one judge and
+// an ordinary row for the other. That is the whole argument for the target
+// belonging to the judge and not to the scenario.
 test("the third row is a control for the principal and ordinary for the other", () => {
   const { config } = readConfigFile(YAML);
   assert.deepEqual([...controlRows(config.targets)], [2]);
   assert.deepEqual([...controlRows(config.judges?.[0].targets)], []);
 });
 
-// La note de ce scénario dit qu'aucune suppression n'y est possible, donc que
-// le juge doit répondre « sans objet ». La cible doit dire la même chose que la
-// prose, sans quoi l'exemple s'enseigne lui-même de travers.
+// That scenario's note says no deletion is possible there, so the judge should
+// answer "not applicable". The target must say the same thing as the prose, or
+// the example teaches itself wrong.
 test("its target is the excluded grade, as its own note announces", () => {
   const { config } = readConfigFile(YAML);
   const excluded = config.rubric.find((level) => level.excluded);

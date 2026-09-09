@@ -29,10 +29,10 @@ test("a target at the top only has room below it", () => {
   assert.equal(deviation(3, 4, ZERO_TO_FOUR), -0.25);
 });
 
-// Le point de la formule : diviser par la place disponible, pas par l'étendue.
-// Une cible au milieu ne peut s'écarter que de deux paliers ; divisée par
-// l'étendue elle plafonnerait à 0,5 et paraîtrait éternellement mieux tenue
-// qu'une ligne dont la cible est au bout.
+// The point of the formula: divide by the room available, not by the range. A
+// mid-scale target can only stray two levels; divided by the range it would cap
+// at 0.5 and look permanently better held than a row whose target is at one
+// end.
 test("a mid-scale target reaches one in both directions", () => {
   assert.equal(deviation(4, 2, ZERO_TO_FOUR), 1);
   assert.equal(deviation(0, 2, ZERO_TO_FOUR), -1);
@@ -82,9 +82,9 @@ test("a target outside the judge's own scale is refused", () => {
   assert.match(String(problem), /9/);
 });
 
-// Le palier exclu EST une cible légitime — c'est la ligne témoin qui vérifie
-// que le juge sait répondre « sans objet ». Elle n'a simplement pas de
-// distance, ce que `deviation` dit déjà en rendant null.
+// The excluded level IS a legitimate target — it is the control row checking
+// that the judge can answer "not applicable". It simply has no distance, which
+// is what `deviation` already says by returning null.
 test("the excluded level is a legitimate target", () => {
   const targets = [{ expected: -1 }, { expected: 0 }, { expected: 0 }];
   assert.equal(targetsProblem(targets, 3, ZERO_TO_FOUR, "judge 1"), null);

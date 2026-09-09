@@ -1,13 +1,12 @@
-// Guide 3 — lire une matrice.
+// Guide 3 — reading a matrix.
 //
-// Neuf : rien ne couvrait ce moment. `agent-prompt.ts` accompagne l'écriture
-// d'un run de bout en bout et s'arrête au lancement, et l'agent qui appelle
-// ensuite `get_run_results` n'avait aucune règle de lecture.
+// New: nothing covered this moment. `agent-prompt.ts` walks an agent through
+// writing a run from end to end and stops at launch, and the agent that then
+// calls `get_run_results` had no rule for reading it.
 //
-// Sa colonne vertébrale est le tri des trois causes d'une case mélangée, parce
-// que c'est la décision qui coûte de l'argent : plus de répétitions, une
-// réécriture, ou des variantes, et deux de ces trois réponses sont fausses
-// selon le cas.
+// Its backbone is sorting the three causes of a mixed cell, because that is the
+// decision that costs money: more repetitions, a rewrite, or variants, and two
+// of those three answers are wrong in any given case.
 
 export const ANALYSIS_ADVICE = `# Reading a run
 
