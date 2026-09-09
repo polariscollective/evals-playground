@@ -49,6 +49,16 @@ export const ADVICE_SUMMARY: Record<AdviceTopic, string> = {
     "the scenario's system prompt, and how to find out whether it agrees with you.",
 };
 
+/** The name each document goes by on screen. Here rather than in the two pages
+ *  that show it: written twice, the tabs would have ended up disagreeing about
+ *  what a document is called. */
+export const ADVICE_LABEL: Record<AdviceTopic, string> = {
+  scenario: "Writing a scenario",
+  batch: "Putting a batch together",
+  analysis: "Reading the results",
+  judge: "Writing a judge",
+};
+
 export const DEFAULT_ADVICE: Record<AdviceTopic, string> = {
   scenario: SCENARIO_ADVICE,
   batch: BATCH_ADVICE,

@@ -14,8 +14,8 @@ import type { ProviderInfo } from "@/lib/types";
 export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  // The prompt sends the agent to `/validate`, and a copy-pasted prompt reaches
-  // an agent with no host context at all: it needs the whole address, which only
+  // The document points at `/advice.txt`, and a copy-pasted document reaches an
+  // agent with no host context at all: it needs the whole address, which only
   // the browser knows.
   //
   // Hence the computation on opening and not at render: the server always renders

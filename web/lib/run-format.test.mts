@@ -92,17 +92,20 @@ test("an empty catalogue says so rather than leaving a gap", () => {
   assert.match(mcpRunFormat([], CAPS), /ask me for the model identifiers/);
 });
 
-test("the pasted prompt carries the origin it is given", () => {
-  // It arrives at an agent with no host context: relative, it leads nowhere.
+test("the pasted document carries the origin it is given", () => {
+  // It arrives at an agent with no host context: relative, the advice leads
+  // nowhere.
   const prompt = runFormat(MODELS, "https://evals.example");
-  assert.ok(prompt.includes("https://evals.example/validate"));
+  assert.ok(prompt.includes("https://evals.example/advice.txt"));
 });
 
-test("the MCP prompt never sends the agent to /validate", () => {
-  // It holds the tool: showing it the HTTP door means watching it take it.
-  const prompt = mcpRunFormat(MODELS, CAPS);
-  assert.ok(!prompt.includes("/validate"));
-  assert.ok(prompt.includes("submit_draft_run"));
+test("neither channel names a validator any more", () => {
+  // `/validate` is gone. The pasted channel says the document comes back to a
+  // human; the MCP one names `submit_draft_run`, which does strictly more.
+  for (const prompt of [runFormat(MODELS, "https://evals.example"), mcpRunFormat(MODELS, CAPS)]) {
+    assert.ok(!prompt.includes("/validate"));
+  }
+  assert.ok(mcpRunFormat(MODELS, CAPS).includes("submit_draft_run"));
 });
 
 test("the MCP prompt promises nothing gets launched", () => {
