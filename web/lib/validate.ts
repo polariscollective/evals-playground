@@ -6,6 +6,7 @@
 // sans adversaire produiraient un run qui ne mesure rien, et le job n'aurait
 // aucun moyen de s'en rendre compte.
 import { knownModelIds } from "./catalog.ts";
+import { targetsProblem } from "./targets.ts";
 import { servesTools } from "./tools.ts";
 import type {
   Draft,
@@ -116,13 +117,33 @@ export function rubricProblem(rubric: unknown): string | null {
  *  ajouter un juge après coup (`app/api/runs/[runId]/judges/route.ts`).
  *
  * `label` nomme ce qui cloche dans le message rendu — « judge 2 », ou « the
- * new judge » côté route d'ajout, qui n'a qu'une seule entrée à nommer. */
-export function judgeSpecProblem(spec: unknown, label: string): string | null {
+ * new judge » côté route d'ajout, qui n'a qu'une seule entrée à nommer.
+ *
+ * `scenarioCount` n'est connu que des appelants qui tiennent le run : la
+ * configuration entière (`configProblem`) ou la route d'ajout, qui le lit du
+ * run visé. Absent, la liste de cibles est vérifiée sur sa forme et ses
+ * valeurs, jamais sur sa longueur — un juge examiné hors de tout run ne peut
+ * pas savoir combien de scénarios il devrait couvrir. */
+export function judgeSpecProblem(
+  spec: unknown,
+  label: string,
+  scenarioCount?: number,
+): string | null {
   if (!spec || typeof spec !== "object") return `${label} is not a mapping`;
   const judge = spec as JudgeSpec;
   if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
   const rubric = rubricProblem(judge.rubric);
   if (rubric) return `${label}: ${rubric}`;
+  if (judge.sees_system_prompt !== undefined && typeof judge.sees_system_prompt !== "boolean") {
+    return `${label}: sees_system_prompt must be true or false`;
+  }
+  const targets = targetsProblem(
+    judge.targets,
+    scenarioCount ?? judge.targets?.length ?? 0,
+    judge.rubric,
+    label,
+  );
+  if (targets) return targets;
   // Absent hérite du modèle du run — voir `JudgeSpec.model`. Présent, il
   // doit être un texte non vide : un type différent ne se devine pas, et le
   // laisser passer ferait tourner ce juge sous le modèle par défaut sans que
@@ -146,12 +167,15 @@ export function judgeSpecProblem(spec: unknown, label: string): string | null {
  * substituer au principal ni se faire passer pour un juge d'éveil. Les deux
  * formes ne se contredisent jamais : le premier niveau décrit toujours le
  * principal, `judges` n'ajoute jamais que des juges secondaires. */
-export function judgesProblem(judges: unknown): string | null {
+export function judgesProblem(
+  judges: unknown,
+  scenarioCount?: number,
+): string | null {
   if (judges === undefined || judges === null) return null;
   if (!Array.isArray(judges)) return "judges must be a list";
 
   for (const [index, entry] of judges.entries()) {
-    const problem = judgeSpecProblem(entry, `judge ${index + 1}`);
+    const problem = judgeSpecProblem(entry, `judge ${index + 1}`, scenarioCount);
     if (problem) return problem;
   }
   return null;
@@ -352,7 +376,21 @@ export function configProblem(config: unknown): string | null {
   const rubric = rubricProblem(c.rubric);
   if (rubric) return rubric;
 
-  const judges = judgesProblem(c.judges);
+  if (c.sees_system_prompt !== undefined && typeof c.sees_system_prompt !== "boolean") {
+    return "sees_system_prompt must be true or false";
+  }
+  // Le principal se décrit au premier niveau, comme `criterion` et `rubric` —
+  // d'où ce contrôle ici plutôt que dans `judgesProblem`, qui ne voit que les
+  // secondaires.
+  const principalTargets = targetsProblem(
+    c.targets,
+    c.scenarios.length,
+    c.rubric,
+    "the principal judge",
+  );
+  if (principalTargets) return principalTargets;
+
+  const judges = judgesProblem(c.judges, c.scenarios.length);
   if (judges) return judges;
 
   if (!Number.isInteger(c.turns) || c.turns < MIN_TURNS || c.turns > MAX_TURNS) {

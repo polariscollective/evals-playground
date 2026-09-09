@@ -17,6 +17,7 @@ import type {
   EvalScenario,
   ExpectedCsv,
   JudgeSpec,
+  JudgeTarget,
   RubricLevel,
   SeededTurn,
   ToolParamType,
@@ -276,8 +277,61 @@ function readJudges(value: unknown): JudgeSpec[] {
       criterion: asString(row.criterion),
       rubric: readRubric(row.rubric, `judge ${position + 1}: rubric`),
       ...(typeof model === "string" ? { model } : {}),
+      ...readTargets(row.targets, `judge ${position + 1}`),
+      ...(typeof row.sees_system_prompt === "boolean"
+        ? { sees_system_prompt: row.sees_system_prompt }
+        : {}),
     };
   });
+}
+
+/** Les cibles d'un juge, telles qu'elles sont écrites dans le document.
+ *
+ * Rend un objet à étaler plutôt qu'une valeur : absent doit rester ABSENT et
+ * non `null`, sans quoi une configuration relue puis réécrite gagnerait une
+ * clé que personne n'a posée.
+ *
+ * La forme seulement — la longueur de la liste et l'appartenance de chaque
+ * note à l'échelle sont l'affaire de `targetsProblem` (`lib/targets.ts`),
+ * appelé par `configProblem`. Ici comme partout dans ce fichier, on donne une
+ * forme, jamais un jugement : deux copies de la même règle finiraient par
+ * diverger, et c'est la validation qui fait foi. */
+function readTargets(
+  value: unknown,
+  where: string,
+): { targets?: JudgeTarget[] } {
+  if (value === undefined || value === null) return {};
+  if (!Array.isArray(value)) {
+    throw new ConfigFileError(`${where}: targets must be a list.`);
+  }
+  return {
+    targets: value.map((entry, position) => {
+      if (!entry || typeof entry !== "object") {
+        throw new ConfigFileError(
+          `${where}: targets ${position + 1} is not a mapping.`,
+        );
+      }
+      const row = entry as Record<string, unknown>;
+      if (typeof row.expected !== "number") {
+        throw new ConfigFileError(
+          `${where}: targets ${position + 1} needs an \`expected\` grade.`,
+        );
+      }
+      return {
+        expected: row.expected,
+        // `check: false` n'est jamais écrit : c'est le défaut, et un document
+        // qui le pose sur cent lignes enseigne un champ là où il ne sert pas.
+        ...(row.check === true ? { check: true } : {}),
+      };
+    }),
+  };
+}
+
+/** Les cibles, telles qu'elles repartent dans le document. */
+function targetsDocument(targets: JudgeTarget[]): unknown[] {
+  return targets.map((target) =>
+    target.check ? { expected: target.expected, check: true } : { expected: target.expected },
+  );
 }
 
 /** Retire la clôture Markdown, quand elle est venue avec le texte.
@@ -320,6 +374,12 @@ export function readConfigFile(text: string): ImportedConfig {
     scenarios,
     criterion: asString(file.criterion),
     rubric: readRubric(file.rubric),
+    // Les cibles du PRINCIPAL, au premier niveau comme son critère et son
+    // échelle. Celles des secondaires voyagent dans `judges`.
+    ...readTargets(file.targets, "the principal judge"),
+    ...(typeof file.sees_system_prompt === "boolean"
+      ? { sees_system_prompt: file.sees_system_prompt }
+      : {}),
     // Les juges secondaires, en plus du principal ci-dessus — voir
     // `readJudges`. Absent ou vide, c'est la forme ancienne : un seul juge.
     judges: readJudges(file.judges),
@@ -419,6 +479,8 @@ export function writeConfigFile(config: EvalRunConfig): string {
     // lecteur, et un fichier qui l'écrit partout enseigne un champ là où il ne
     // sert pas.
     rubric: rubricDocument(config.rubric),
+    ...(config.targets ? { targets: targetsDocument(config.targets) } : {}),
+    ...(config.sees_system_prompt === false ? { sees_system_prompt: false } : {}),
     // Un bloc à soi, conditionné sur lui seul — jamais partagé avec celui d'un
     // autre champ. C'est exactement ce piège-là (une clé posée à l'intérieur du
     // bloc conditionnel d'une autre) qui a déjà fait perdre `max_tool_calls_per_turn`
@@ -430,6 +492,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
             criterion: judge.criterion,
             rubric: rubricDocument(judge.rubric),
             ...(judge.model ? { model: judge.model } : {}),
+            ...(judge.targets ? { targets: targetsDocument(judge.targets) } : {}),
+            // Écrit seulement quand il diffère du défaut : une clé posée
+            // partout enseignerait un réglage là où il n'y a rien à décider.
+            ...(judge.sees_system_prompt === false
+              ? { sees_system_prompt: false }
+              : {}),
           })),
         }
       : {}),
