@@ -1,10 +1,10 @@
 "use client";
 
-// Relire un run autrement, sans le rejouer.
+// Reread a run differently, without replaying it.
 //
-// Les notes du juge ne bougent pas : c'est leur lecture qu'on change, et rien
-// n'est écrit en base. Poser une autre question à des résultats déjà payés ne
-// devrait pas coûter un second run.
+// The judge's grades do not move: it is their reading that changes, and nothing
+// is written to the database. Putting another question to results already paid
+// for should not cost a second run.
 import {
   AGGREGATES,
   PLAIN_VIEW,
@@ -18,7 +18,7 @@ import type { RubricLevel } from "@/lib/types";
 
 export function ViewControls({
   rubric,
-  /** Toutes les notes rendues par le juge sur ce run. */
+  /** Every grade the judge returned on this run. */
   scores,
   view,
   onChange,
@@ -28,18 +28,18 @@ export function ViewControls({
   view: MatrixView;
   onChange: (view: MatrixView) => void;
 }) {
-  const combien = new Map<number, number>();
+  const counts = new Map<number, number>();
   for (const score of scores) {
-    combien.set(score, (combien.get(score) ?? 0) + 1);
+    counts.set(score, (counts.get(score) ?? 0) + 1);
   }
-  const comptees = scores.filter(
+  const counted = scores.filter(
     (score) => mapScore(score, rubric, view) !== null,
   ).length;
   const setRemap = (from: number, to: number | null | undefined) => {
     const remap = { ...view.remap };
-    // `undefined` remet le palier à sa valeur d'origine, ce qui n'est pas la
-    // même chose que de le remplacer par lui-même : l'absence de la clé garde
-    // l'échelle du run visible dans l'URL comme à l'écran.
+    // `undefined` puts the grade back to its original value, which is not the
+    // same thing as replacing it by itself: the key's absence keeps the run's
+    // scale visible in the URL as on the screen.
     if (to === undefined) delete remap[from];
     else remap[from] = to;
     onChange({ ...view, remap });
@@ -83,20 +83,20 @@ export function ViewControls({
             scale to 0 and 1 and taking the mean gives the share of conversations
             that reached the level you care about.
           </p>
-          {/* Ce qu'un lecteur ne peut pas deviner : le palier « sans objet » est
-              déjà dehors avant qu'il ouvre ce panneau, et c'est l'échelle qui l'a
-              décidé — pas lui. */}
+          {/* What a reader cannot guess: the "not applicable" grade is already out
+              before they open this panel, and it is the scale that decided it —
+              not them. */}
           <p className="text-xs text-zinc-500">
             A grade your scale marks as not applicable already counts for
             nothing: that was decided when the scale was written, and the judge
             could pick it knowing so. Everything you change here is a reading —
             the judge&rsquo;s grades are untouched.
           </p>
-          {/* Une ligne, une affirmation. La version précédente posait une case
-              à cocher à côté d'une case de valeur : « -1 » y désignait tantôt un
-              palier mis hors moyenne par l'échelle, tantôt un nombre qui compte,
-              et rien ne distinguait les deux. Ici chaque palier dit soit « vaut
-              tel nombre », soit « ne compte pas », jamais les deux à la fois. */}
+          {/* One row, one statement. The previous version put a checkbox beside a
+              value box: "-1" there meant sometimes a grade the scale had put out of
+              the average, sometimes a number that counts, and nothing told the two
+              apart. Here each grade says either "counts as such a number" or "does
+              not count", never both at once. */}
           <table className="text-sm">
             <thead>
               <tr className="text-left text-xs text-zinc-500">
@@ -119,10 +119,10 @@ export function ViewControls({
                     <td className="max-w-md truncate py-1.5 pr-3 text-zinc-700">
                       {level.meaning}
                     </td>
-                    {/* Combien de fois le juge a réellement choisi ce palier :
-                        c'est ce qui dit si le toucher change quelque chose. */}
+                    {/* How many times the judge really picked this grade: that is
+                        what says whether touching it changes anything. */}
                     <td className="py-1.5 pr-3 text-right text-xs whitespace-nowrap text-zinc-500">
-                      {combien.get(level.value) ?? 0}×
+                      {counts.get(level.value) ?? 0}×
                     </td>
                     <td className="py-1.5">
                       {ignored ? (
@@ -172,16 +172,16 @@ export function ViewControls({
         </div>
 
         <p className="text-sm">
-          <strong className="font-medium">{comptees}</strong> of {scores.length}{" "}
+          <strong className="font-medium">{counted}</strong> of {scores.length}{" "}
           grade{scores.length === 1 ? "" : "s"} counted
-          {scores.length - comptees > 0 &&
-            `, ${scores.length - comptees} left out`}
+          {scores.length - counted > 0 &&
+            `, ${scores.length - counted} left out`}
           .
         </p>
 
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs text-zinc-500">
-            {/* Le point qui fait qu'on ose toucher à ces réglages. */}
+            {/* The point that makes one dare touch these settings. */}
             Nothing is written: the judge&rsquo;s grades stay as they are, and
             reloading the page brings back the plain reading.
           </p>

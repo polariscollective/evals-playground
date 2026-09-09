@@ -7,10 +7,9 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     rules: {
-      // `const { x, ...rest } = obj` pour retirer un champ laisse `x` sans
-      // usage après coup — c'est le but, pas un oubli. Sans ce réglage, la
-      // règle le signale comme mort alors qu'il sert précisément à ne pas
-      // être dans `rest`.
+      // `const { x, ...rest } = obj` to take a field out leaves `x` unused
+      // afterwards — that is the point, not an oversight. Without this setting the
+      // rule reports it as dead when it serves precisely to stay out of `rest`.
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { ignoreRestSiblings: true },

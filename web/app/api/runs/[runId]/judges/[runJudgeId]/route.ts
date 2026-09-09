@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { NotFound, PrincipalRequiresReplacement, unlinkJudge } from "@/lib/runs";
 
-/** Délie un juge de ce run : marque sa liaison supprimée, jamais le juge
- *  lui-même — voir `unlinkJudge` (`lib/runs.ts`) pour ce que ça change en
- *  base, et pourquoi c'est une fonction RPC qui le fait en une transaction.
+/** Unlinks a judge from this run: marks its link deleted, never the judge
+ *  itself — see `unlinkJudge` (`lib/runs.ts`) for what that changes in the
+ *  database, and why it is an RPC function that does it in one transaction.
  *
- * `replacement_run_judge_id` : obligatoire seulement pour délier le
- * principal alors qu'il reste d'autres liaisons vivantes sur ce run — la
- * base le refuse sinon (`PrincipalRequiresReplacement`), et c'est voulu.
- * `null` (ou l'absence du champ) délie sans remplaçant, ce qui n'est un
- * problème que dans ce seul cas précis. */
+ * `replacement_run_judge_id`: required only to unlink the principal while other
+ * living links remain on this run — the database refuses it otherwise
+ * (`PrincipalRequiresReplacement`), and that is deliberate. `null` (or the
+ * field's absence) unlinks with no replacement, which is a problem in that one
+ * precise case only. */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ runId: string; runJudgeId: string }> },

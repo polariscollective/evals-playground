@@ -1,19 +1,19 @@
-// Ce que `withLiveJudges` change, et ce qu'elle laisse intact.
+// What `withLiveJudges` changes, and what it leaves intact.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { withLiveJudges } from "./live-config.ts";
 import type { EvalRunConfig, Judge, JudgeSystemTypeColumn } from "./types";
 
-/** Une configuration minimale, telle qu'écrite au lancement — un seul juge,
- *  la forme d'avant les juges multiples. */
+/** A minimal configuration, as written at launch — a single judge, the shape
+ *  from before the multiple judges. */
 const CONFIG: EvalRunConfig = {
   scenarios: [
-    { title: "Facture antidatée", system_prompt: "s", opening_message: "m" },
+    { title: "Backdated invoice", system_prompt: "s", opening_message: "m" },
   ],
-  criterion: "Ce que le run demandait au lancement.",
+  criterion: "What the run asked for at launch.",
   rubric: [
     { value: 0, meaning: "Refuse" },
-    { value: 1, meaning: "Obéit" },
+    { value: 1, meaning: "Complies" },
   ],
   turns: 1,
   repetitions: 1,
@@ -28,20 +28,20 @@ function judge(
 ): Judge {
   return {
     id,
-    criterion: `critère de ${id}`,
+    criterion: `criterion of ${id}`,
     rubric: [
-      { value: 0, meaning: "bas" },
-      { value: 1, meaning: "haut" },
+      { value: 0, meaning: "low" },
+      { value: 1, meaning: "high" },
     ],
     model: "claude-opus",
     system_type: "ordinary",
-    created_by: "quelquun@polaris.example",
+    created_by: "somebody@polaris.example",
     created_at: "2026-09-06T10:00:00Z",
     ...overrides,
   };
 }
 
-function liaison(
+function link(
   id: string,
   isPrincipal: boolean,
   systemType: JudgeSystemTypeColumn = "ordinary",
@@ -54,88 +54,87 @@ function liaison(
   };
 }
 
-test("un juge ajouté après le lancement apparaît dans `judges`", () => {
-  // Rien dans CONFIG ne porte ce juge — c'est tout le point : il n'a jamais
-  // été écrit dans `config.judges`, seulement lié après coup (`addJudge`).
+test("a judge added after launch appears in `judges`", () => {
+  // Nothing in CONFIG carries this judge — that is the whole point: it was never
+  // been written into `config.judges`, only linked after the fact (`addJudge`).
   const live = [
-    liaison("principal", true),
-    liaison("ajoute-apres-coup", false),
+    link("principal", true),
+    link("added-afterwards", false),
   ];
   const derived = withLiveJudges(CONFIG, live);
   assert.equal(derived.judges?.length, 1);
-  assert.equal(derived.judges?.[0].criterion, "critère de ajoute-apres-coup");
+  assert.equal(derived.judges?.[0].criterion, "criterion of added-afterwards");
 });
 
-test("un juge délié ne réapparaît pas, même si l'appelant l'a oublié dans `live`", () => {
-  // Cette fonction ne filtre pas `deleted_at` elle-même — c'est le travail de
-  // `loadLiveRunJudges`, avant d'appeler ici (voir l'en-tête du fichier). Ce
-  // test dit juste : ce qu'on ne lui passe pas, elle ne l'invente pas.
-  const derived = withLiveJudges(CONFIG, [liaison("principal", true)]);
+test("an unlinked judge does not reappear, even if the caller left it in `live`", () => {
+  // This function does not filter `deleted_at` itself — that is
+  // `loadLiveRunJudges`'s job, before calling here (see the file's header). This
+  // test only says: what it is not passed, it does not invent.
+  const derived = withLiveJudges(CONFIG, [link("principal", true)]);
   assert.deepEqual(derived.judges, []);
 });
 
-test("le critère, l'échelle et le modèle du principal VIVANT priment sur ceux du lancement", () => {
-  // Le principal a changé depuis (`designatePrincipal`) : ce que la
-  // configuration dérivée doit dire, c'est qui juge aujourd'hui, pas qui
-  // jugeait au lancement.
-  const nouveauPrincipal = judge("repris-le-titre", {
-    criterion: "Nouveau critère, posé après le transfert.",
+test("the LIVE principal's criterion, scale and model win over the launch's", () => {
+  // The principal has changed since (`designatePrincipal`): what the derived
+  // configuration must say is who judges today, not who judged at launch.
+  const newPrincipal = judge("took-over-the-title", {
+    criterion: "New criterion, set after the transfer.",
     model: "gpt-5",
   });
   const live = [
-    { judge: nouveauPrincipal, is_principal: true, system_type: "ordinary" as const },
+    { judge: newPrincipal, is_principal: true, system_type: "ordinary" as const },
   ];
   const derived = withLiveJudges(CONFIG, live);
-  assert.equal(derived.criterion, "Nouveau critère, posé après le transfert.");
+  assert.equal(derived.criterion, "New criterion, set after the transfer.");
   assert.equal(derived.models.judge, "gpt-5");
   assert.notEqual(derived.criterion, CONFIG.criterion);
 });
 
-test("sans aucun juge vivant, la configuration du lancement fait foi", () => {
-  // Un run peut perdre tous ses juges (le dernier déliable est permis) : il
-  // reste relançable, avec ce qu'il avait au départ — pas une configuration
-  // sans critère.
+test("with no live judge at all, the launch configuration is authoritative", () => {
+  // A run can lose every judge (unlinking the last is allowed): it stays
+  // relaunchable, with what it had at the start — not a configuration with no
+  // criterion.
   const derived = withLiveJudges(CONFIG, []);
   assert.equal(derived.criterion, CONFIG.criterion);
   assert.deepEqual(derived.rubric, CONFIG.rubric);
   assert.equal(derived.models.judge, CONFIG.models.judge);
 });
 
-test("`check_eval_awareness` suit la liaison d'éveil vivante, jamais ce que le lancement avait demandé", () => {
-  const avecEveil = withLiveJudges(CONFIG, [
-    liaison("principal", true),
-    liaison("eveil", false, "awake"),
+test("`check_eval_awareness` follows the live awareness link, never what the launch asked for", () => {
+  const withAwareness = withLiveJudges(CONFIG, [
+    link("principal", true),
+    link("awareness", false, "awake"),
   ]);
-  assert.equal(avecEveil.check_eval_awareness, true);
+  assert.equal(withAwareness.check_eval_awareness, true);
 
-  // Délié depuis (absent de `live`), alors que `CONFIG.check_eval_awareness`
-  // vaut toujours `true` : la configuration dérivée ne doit pas le faire
-  // revivre à la prochaine relance.
-  const sansEveil = withLiveJudges(CONFIG, [liaison("principal", true)]);
-  assert.equal(sansEveil.check_eval_awareness, false);
+  // Unlinked since (absent from `live`), while `CONFIG.check_eval_awareness` is
+  // still `true`: the derived configuration must not bring it back to life on
+  // the next relaunch.
+  const withoutAwareness = withLiveJudges(CONFIG, [link("principal", true)]);
+  assert.equal(withoutAwareness.check_eval_awareness, false);
 });
 
-test("le juge d'éveil n'apparaît jamais dans `judges` : ce n'est pas sa forme", () => {
+test("the awareness judge never appears in `judges`: that is not its shape", () => {
   const derived = withLiveJudges(CONFIG, [
-    liaison("principal", true),
-    liaison("eveil", false, "awake"),
+    link("principal", true),
+    link("awareness", false, "awake"),
   ]);
   assert.deepEqual(derived.judges, []);
 });
 
-test("le reste de la configuration — scénarios, tours, outils — n'est jamais touché", () => {
-  const derived = withLiveJudges(CONFIG, [liaison("principal", true)]);
+test("the rest of the configuration — scenarios, turns, tools — is never touched", () => {
+  const derived = withLiveJudges(CONFIG, [link("principal", true)]);
   assert.deepEqual(derived.scenarios, CONFIG.scenarios);
   assert.equal(derived.turns, CONFIG.turns);
   assert.equal(derived.repetitions, CONFIG.repetitions);
   assert.deepEqual(derived.models.targets, CONFIG.models.targets);
 });
 
-test("la configuration d'origine n'est jamais mutée", () => {
-  const avant = JSON.stringify(CONFIG);
+test("the original configuration is never mutated", () => {
+  const before = JSON.stringify(CONFIG);
   withLiveJudges(CONFIG, [
-    liaison("principal", true),
-    liaison("secondaire", false),
+    link("principal", true),
+    link("secondary", false),
   ]);
-  assert.equal(JSON.stringify(CONFIG), avant);
+  assert.equal(JSON.stringify(CONFIG), before);
 });

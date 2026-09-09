@@ -1,8 +1,8 @@
 import { getPublicOrigin } from "mcp-handler";
 
-/** Les métadonnées RFC 8414 de ce serveur d'autorisation minimal — pas de
- *  `registration_endpoint` : `client_id` est fixe, saisi à la main dans
- *  claude.ai plutôt qu'enregistré dynamiquement. */
+/** The RFC 8414 metadata of this minimal authorisation server — no
+ *  `registration_endpoint`: `client_id` is fixed, typed in by hand in claude.ai
+ *  rather than registered dynamically. */
 export async function GET(request: Request) {
   const origin = getPublicOrigin(request);
   return Response.json(
@@ -14,8 +14,8 @@ export async function GET(request: Request) {
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      // offline_access : sans lui ici, Claude ne le demande jamais et aucun
-      // jeton de rafraîchissement ne sort du premier échange.
+        // offline_access: without it here, Claude never asks for it and no refresh
+        // token comes out of the first exchange.
       scopes_supported: ["evals", "offline_access"],
     },
     { headers: { "cache-control": "public, max-age=300" } },

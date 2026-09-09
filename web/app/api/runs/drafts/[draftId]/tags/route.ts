@@ -3,7 +3,7 @@ import { requireUser } from "@/auth";
 import { DraftNotFound, loadDraft } from "@/lib/drafts";
 import { setDraftTags, tagsOfDraft } from "@/lib/tags";
 
-/** Les tags de ce brouillon — ce que `TagField` charge à l'affichage. */
+/** This draft's tags — what `TagField` loads on display. */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -15,7 +15,7 @@ export async function GET(
   return NextResponse.json(await tagsOfDraft(draftId));
 }
 
-/** Pose la liste des tags d'un brouillon, telle quelle. */
+/** Lays down a draft's list of tags, as it stands. */
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ draftId: string }> },
@@ -31,8 +31,8 @@ export async function PUT(
   }
 
   try {
-    // Vérifier l'existence d'abord : sans ça, poser des tags sur un
-    // identifiant inconnu écrirait des liens que rien ne rattache.
+      // Check existence first: without it, laying tags on an unknown identifier
+      // would write links that nothing attaches to.
     await loadDraft(draftId);
   } catch (error) {
     if (error instanceof DraftNotFound) {

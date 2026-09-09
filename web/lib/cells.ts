@@ -1,13 +1,13 @@
-// Quelles cases écrire en base, et avec quelle température.
+// Which cells to write to the database, and at what temperature.
 //
-// Séparé de `runs.ts` parce que c'est la seule partie qui mérite d'être
-// éprouvée seule : le reste n'est que des écritures. C'est aussi le code qui
-// portait autrefois la construction de la matrice côté Python — il a déménagé
-// ici le jour où le job a cessé de la reconstruire depuis la configuration.
+// Separated from `runs.ts` because it is the only part that deserves testing on
+// its own: the rest is only writes. It is also the code that once carried the
+// building of the matrix on the Python side — it moved here the day the job
+// stopped rebuilding it from the configuration.
 import { temperaturesFor } from "./temperature.ts";
 import type { EvalRunConfig, EvalScenario, TemperatureSpec } from "./types";
 
-/** Une ligne d'`eval_samples` telle qu'elle naît : en attente, sans résultat. */
+/** An `eval_samples` row as it is born: pending, with no result. */
 export interface NewCell {
   scenario_index: number;
   scenario_title: string;
@@ -16,16 +16,16 @@ export interface NewCell {
   temperature: number | null;
 }
 
-/** La clé d'un couple scénario × modèle, la colonne d'une case de matrice. */
+/** The key of a scenario × model pair, a matrix cell's column. */
 export function coupleKey(scenarioIndex: number, target: string): string {
   return `${scenarioIndex} ${target}`;
 }
 
-/** La matrice complète d'un run neuf : un triplet scénario × modèle × répétition.
+/** The full matrix of a fresh run: a scenario × model × repetition triple.
  *
- * Les températures recommencent pour chaque couple : sans ça, les scénarios
- * suivants hériteraient de températures décalées et la comparaison porterait sur
- * des réglages différents d'une ligne à l'autre. */
+ * The temperatures start over for each pair: without that, the following
+ * scenarios would inherit shifted temperatures and the comparison would rest on
+ * different settings from one row to the next. */
 export function cellsForRun(config: EvalRunConfig): NewCell[] {
   const temperatures = temperaturesFor(config.temperature, config.repetitions);
   const cells: NewCell[] = [];
@@ -45,16 +45,16 @@ export function cellsForRun(config: EvalRunConfig): NewCell[] {
   return cells;
 }
 
-/** Les cases à ajouter à un run existant.
+/** The cells to add to an existing run.
  *
- * Les répétitions continuent la numérotation de leur couple plutôt que de
- * repartir de zéro : c'est ce qui distingue « ajouter trois essais » de
- * « refaire les trois premiers », et ce qui empêche la contrainte d'unicité de
- * refuser l'insertion. Un couple encore jamais couvert — un scénario neuf, un
- * modèle neuf — commence bien à zéro.
+ * The repetitions continue their pair's numbering rather than starting over
+ * from zero: that is what tells "add three attempts" from "redo the first
+ * three", and what stops the uniqueness constraint refusing the insert. A pair
+ * never covered yet — a new scenario, a new model — does start at zero.
  *
- * @param scenarios La liste complète, anciens et nouveaux à la suite.
- * @param lastRepetition La dernière répétition de chaque couple déjà en base. */
+ * @param scenarios The complete list, old and new one after the other.
+ * @param lastRepetition The last repetition of each pair already in the
+ *   database. */
 export function cellsForExtension(
   scenarios: EvalScenario[],
   indices: number[],
@@ -63,8 +63,8 @@ export function cellsForExtension(
   temperature: TemperatureSpec | null | undefined,
   lastRepetition: Map<string, number>,
 ): NewCell[] {
-  // L'étalement porte sur les répétitions *ajoutées*, pas sur le total : les
-  // anciennes gardent la température qu'elles ont eue, inscrite sur leur ligne.
+  // The spread applies to the *added* repetitions, not to the total: the old
+  // ones keep the temperature they had, written on their own row.
   const temperatures = temperaturesFor(temperature, repetitions);
   const cells: NewCell[] = [];
   for (const index of indices) {

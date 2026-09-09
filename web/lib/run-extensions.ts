@@ -1,38 +1,37 @@
-// L'historique des extensions d'un run, avec le coût réel de chacune déduit.
+// The history of a run's extensions, with each one's real cost derived.
 //
-// `eval_runs.extensions` ne porte que ce qui était su au moment de chaque
-// extension : la demande, son devis, et le coût du run juste avant qu'elle ne
-// s'applique. Rien n'y est jamais réécrit après coup — voir la migration
-// `evals/supabase/migrations/20260905203414_run_extensions_log.sql`. Le coût
-// réel de chaque extension est donc calculable, jamais stocké : c'est l'écart
-// entre son `cost_before_usd` et celui de l'extension suivante, ou le coût
-// actuel du run pour la dernière.
+// `eval_runs.extensions` carries only what was known at the time of each
+// extension: the request, its quote, and the run's cost just before it applied.
+// Nothing in it is ever rewritten after the fact — see the migration
+// `evals/supabase/migrations/20260905203414_run_extensions_log.sql`. Each
+// extension's real cost is therefore computable, never stored: it is the gap
+// between its `cost_before_usd` and the next extension's, or the run's current
+// cost for the last.
 //
-// Pure et calculable, comme `matrix.ts` : la page et un test la lisent pareil.
+// Pure and computable, like `matrix.ts`: the page and a test read it alike.
 import type { EvalRun, RunExtensionLogEntry } from "./types";
 
-/** Une entrée de l'historique, augmentée de ce qu'elle a réellement coûté. */
+/** A history entry, augmented with what it actually cost. */
 export interface RunExtension extends RunExtensionLogEntry {
-  /** `after - cost_before_usd`, `after` étant le `cost_before_usd` de
-   *  l'extension suivante ou, pour la dernière, `run.cost_usd`.
+  /** `after - cost_before_usd`, `after` being the next extension's
+   *  `cost_before_usd` or, for the last, `run.cost_usd`.
    *
-   * `null` dès que l'un des deux bouts manque — jamais 0, qui affirmerait à
-   * tort une extension gratuite alors que son coût est simplement inconnu :
-   * run qui n'a pas encore fini de tourner depuis, ou dont un modèle employé
-   * n'a pas de tarif. */
+   * `null` as soon as either end is missing — never 0, which would wrongly
+   * claim a free extension when its cost is simply unknown: a run that has not
+ * finished playing since, or one of whose models has no price. */
   actual_cost_usd: number | null;
 }
 
-/** L'écart entre deux coûts consolidés, ou `null` si l'un des deux manque. */
+/** The gap between two consolidated costs, or `null` if either is missing. */
 function deduct(before: number | null, after: number | null): number | null {
   if (before === null || after === null) return null;
   return after - before;
 }
 
-/** Les extensions d'un run, dans l'ordre où elles ont été demandées, chacune
- *  avec son coût réel déduit.
+/** A run's extensions, in the order they were asked for, each with its real
+ *  cost derived.
  *
- * Vide sur un run qui n'a jamais été étendu. */
+ * Empty on a run that has never been extended. */
 export function extensionsOf(run: EvalRun): RunExtension[] {
   return run.extensions.map((entry, index) => {
     const next = run.extensions[index + 1];

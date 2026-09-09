@@ -1,56 +1,55 @@
-// Accès à Supabase, côté serveur uniquement.
+// Access to Supabase, server side only.
 //
-// Un client PostgREST minimal plutôt que `@supabase/supabase-js` : les routes
-// ne font qu'une poignée d'opérations sur deux tables, et ce module est le
-// miroir exact de `backend/playground/supabase_store.py`. Deux clients aux
-// comportements subtilement différents sur la même base seraient une source de
-// surprise permanente.
+// A minimal PostgREST client rather than `@supabase/supabase-js`: the routes
+// perform only a handful of operations on two tables, and this module is the
+// exact mirror of `backend/playground/supabase_store.py`. Two clients behaving
+// subtly differently against the same database would be a permanent source of
+// surprise.
 //
-// La clé de service contourne RLS, actif sans aucune politique sur ce projet.
-// Elle ne doit jamais atteindre un navigateur : rien de ce fichier ne doit être
-// importé depuis un composant client.
+// The service key bypasses RLS, which is on with no policy at all on this
+// project. It must never reach a browser: nothing in this file may be imported
+// from a client component.
 import "server-only";
 
 export const RUNS = "eval_runs";
 export const SAMPLES = "eval_samples";
-/** La vue d'agrégation de la liste : une ligne par run, quel que soit le
- *  nombre de cases. Voir la migration `20260907140037_eval_run_list_view.sql`
- *  (dépôt polaris-supabase). */
+/** The list's aggregation view: one row per run, whatever the number of
+ *  cells. See the migration `20260907140037_eval_run_list_view.sql`
+ *  (polaris-supabase repository). */
 export const RUN_LIST = "eval_run_list";
 export const DRAFTS = "eval_run_drafts";
 export const TAGS = "tags";
 export const RUN_TAGS = "eval_run_tags";
 export const DRAFT_TAGS = "eval_run_draft_tags";
-// Une ligne par lancement réussi par MCP, `run` comme `extend` — voir
-// `mcpSpendLastHour` et `recordLaunch` dans `runs.ts`. Migrée et poussée dans
-// `polaris-supabase`, jamais ici.
+// One row per launch that succeeded through MCP, `run` as much as `extend` —
+// see `mcpSpendLastHour` and `recordLaunch` in `runs.ts`. Migrated and pushed
+// in `polaris-supabase`, never here.
 export const MCP_LAUNCHES = "mcp_launches";
-// Une ligne par personne, ses deux plafonds de dépense par agent — voir
-// `ensureProfile` dans `profiles.ts`. Migrée et poussée dans
-// `polaris-supabase`, jamais ici.
+// One row per person, their two spending caps per agent — see `ensureProfile`
+// in `profiles.ts`. Migrated and pushed in `polaris-supabase`, never here.
 export const PROFILES = "profiles";
-// Les trois tables des juges multiples — voir `Judge`, `RunJudge` et
-// `JudgeScore` dans `types.ts`, et la migration
+// The three tables of the multiple judges — see `Judge`, `RunJudge` and
+// `JudgeScore` in `types.ts`, and the migration
 // `evals/supabase/migrations/20260906092100_create_judges_tables.sql`.
-// Migrées et poussées dans `polaris-supabase`, jamais ici.
+// Migrated and pushed in `polaris-supabase`, never here.
 export const JUDGES = "judges";
 export const RUN_JUDGES = "run_judges";
 export const JUDGE_SCORES = "judge_scores";
 export const TOOL_RESULTS = "tool_results";
 
-/** Horodatage confié à la base plutôt qu'à l'horloge de la machine.
+/** A timestamp entrusted to the database rather than to the machine's clock.
  *
- * PostgREST transmet la valeur telle quelle et PostgreSQL la reconnaît en
- * entrée d'un `timestamptz`. Toutes les horodates viennent ainsi de la même
- * horloge que `updated_at`, posé par déclencheur côté serveur — c'est cette
- * cohérence qui rend comparable l'écart sur lequel repose la détection des runs
- * abandonnés. */
+ * PostgREST passes the value through as it stands and PostgreSQL recognises it
+ * as input to a `timestamptz`. Every timestamp therefore comes from the same
+ * clock as `updated_at`, laid down by a server-side trigger — and it is that
+ * consistency which makes comparable the gap on which the detection of
+ * abandoned runs rests. */
 export const NOW = "now()";
 
 export class SupabaseError extends Error {}
 
-/** L'URL et la clé de service, partagées avec `storage.ts` : Storage et
- *  PostgREST sont deux services de la même base, derrière la même clé. */
+/** The URL and the service key, shared with `storage.ts`: Storage and
+ *  PostgREST are two services of the same database, behind the same key. */
 export function credentials(): { url: string; key: string } {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -85,19 +84,19 @@ async function request(
       ...(options.prefer ? { Prefer: options.prefer } : {}),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    // Next.js remplace `fetch` par une version qui met en cache : sans ça, une
-    // lecture peut renvoyer des lignes que la base ne contient plus. Le
-    // `dynamic = "force-dynamic"` d'une route ne couvre pas ce cache-là — il
-    // sort la *route* du rendu statique, pas le fetch en dessous. Aucune
-    // lecture ici ne veut d'une réponse en cache : l'écran est censé refléter
-    // la base telle qu'elle est maintenant.
+    // Next.js replaces `fetch` with a version that caches: without this, a
+    // read can return rows the database no longer holds. A route's
+    // `dynamic = "force-dynamic"` does not cover that cache — it takes the
+    // *route* out of static rendering, not the fetch underneath. No read here
+    // wants a cached response: the screen is meant to reflect the database as
+    // it stands now.
     cache: "no-store",
   });
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    // PostgREST met dans le corps le nom de la contrainte violée ou la colonne
-    // fautive, qui sont la seule chose utile pour comprendre.
+    // PostgREST puts in the body the name of the violated constraint or the
+    // offending column, which are the only useful thing to understand it.
     throw new SupabaseError(
       `${method} ${table} → ${response.status}: ${text.slice(0, 500)}`,
     );
@@ -139,12 +138,12 @@ export async function remove(table: string, filters: Params): Promise<void> {
   await request("DELETE", table, { params: filters });
 }
 
-/** Supprime, et rend les lignes effacées — contrairement à `remove`, qui n'en
- *  garde pas trace. `Prefer: return=representation` fait porter par PostgREST
- *  la même distinction que `insert({ returning: true })` : sans elle, un
- *  filtre qui ne touche aucune ligne et un filtre qui en efface une se
- *  répondent tous les deux par un succès muet. Un appelant à qui cette
- *  différence importe — révoquer, par exemple — doit pouvoir la lire. */
+/** Deletes, and returns the erased rows — unlike `remove`, which keeps no
+ *  trace of them. `Prefer: return=representation` makes PostgREST carry the
+ *  same distinction as `insert({ returning: true })`: without it, a filter that
+ *  touches no row and a filter that erases one both answer with a silent
+ *  success. A caller to whom that difference matters — revoking, for example —
+ *  must be able to read it. */
 export async function removeReturning<T = Record<string, unknown>>(
   table: string,
   filters: Params,
@@ -166,18 +165,18 @@ export async function rpc<T = unknown>(
 
 let lastSweep = 0;
 
-/** Termine les runs dont le job a disparu, avant toute lecture.
+/** Ends the runs whose job has vanished, before any read.
  *
- * L'appeler ici plutôt que de dépendre d'une tâche planifiée évite `pg_cron`,
- * qui n'est pas activé sur ce projet.
+ * Calling it here rather than depending on a scheduled task avoids `pg_cron`,
+ * which is not enabled on this project.
  *
- * Espacé de trente secondes : la page d'un run en cours interroge toutes les
- * trois secondes, et un aller-retour de plus à chaque fois allongeait la
- * réponse d'un tiers pour chercher un abandon qui, par définition, met deux
- * heures à se produire.
+ * Spaced thirty seconds apart: the page of a running run polls every three
+ * seconds, and one more round trip each time was lengthening the response by a
+ * third to look for an abandonment which, by definition, takes two hours to
+ * happen.
  *
- * Un échec n'interrompt pas la lecture qui suit : ne pas avoir pu corriger un
- * run abandonné est moins grave que de ne rien afficher du tout. */
+ * A failure does not interrupt the read that follows: not having been able to
+ * fix an abandoned run matters less than showing nothing at all. */
 export async function failStaleRuns(): Promise<void> {
   const now = Date.now();
   if (now - lastSweep < 30_000) return;

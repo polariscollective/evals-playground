@@ -1,6 +1,6 @@
-// Un run soumis en YAML par l'outil MCP submit_draft_run, sauvegardé sans
-// être lancé — le geste de lancer reste un clic humain, sur la page que
-// createDraft rend adressable.
+// A run submitted in YAML by the MCP tool submit_draft_run, saved without
+// being launched — the gesture of launching stays a human click, on the page
+// createDraft makes addressable.
 import "server-only";
 import { DRAFTS, DRAFT_TAGS, NOW, insert, remove, rpc, select, update } from "./supabase";
 import type { Draft, EvalRunConfig, ExtendRequest } from "./types";
@@ -9,18 +9,18 @@ export class DraftNotFound extends Error {}
 
 export type { Draft };
 
-/** Enregistrer un brouillon.
+/** Recording a draft.
  *
- * `origin` est demandé plutôt que deviné : c'est ce qui dit, en le rouvrant,
- * si une configuration incomplète est une anomalie ou l'état normal du
- * travail. L'outil MCP ne dépose que du valide — il valide avant — quand le
- * formulaire dépose ce qu'il a sous la main. */
-/** Proposer d'agrandir un run, sans y toucher.
+ * `origin` is asked for rather than guessed: it is what says, on reopening it,
+ * whether an incomplete configuration is an anomaly or the normal state of the
+ * work. The MCP tool only deposits the valid — it validates first — where the
+ * form deposits what it has to hand. */
+/** Proposing to enlarge a run, without touching it.
  *
- * Rien n'est appliqué au run : ni les modèles, ni les scénarios, ni les outils
- * que la demande propose d'ajouter. Le brouillon ne porte qu'une intention, et
- * c'est le panneau d'extension qui l'exécute après confirmation — un brouillon
- * qu'on jette doit laisser le run exactement comme il était. */
+ * Nothing is applied to the run: neither the models, nor the scenarios, nor the
+ * tools the request proposes to add. The draft carries only an intention, and
+ * it is the extension panel that carries it out after confirmation — a draft
+ * one throws away must leave the run exactly as it was. */
 export async function createExtendDraft(
   runId: string,
   request: ExtendRequest,
@@ -58,9 +58,9 @@ export async function createDraft(
 
 let lastSweep = 0;
 
-/** Efface les brouillons oubliés avant toute lecture — même patron que
- *  `failStaleRuns`, avec un intervalle plus large : un brouillon abandonné
- *  n'est pas urgent à ramasser. */
+/** Erases the forgotten drafts before any read — same pattern as
+ *  `failStaleRuns`, with a wider interval: an abandoned draft is not urgent to
+ *  pick up. */
 async function sweepStaleDrafts(): Promise<void> {
   const now = Date.now();
   if (now - lastSweep < 5 * 60 * 1000) return;
@@ -72,11 +72,11 @@ async function sweepStaleDrafts(): Promise<void> {
   }
 }
 
-/** Throws: DraftNotFound si aucun brouillon ne porte cet identifiant. */
+/** Throws: DraftNotFound if no draft carries this identifier. */
 export async function loadDraft(id: string): Promise<Draft> {
   await sweepStaleDrafts();
-  // Un brouillon lancé reste ouvrable — on peut vouloir relancer la même
-  // chose. Un brouillon jeté, non : lui seul disparaît de cette lecture.
+  // A launched draft stays openable — one may want to relaunch the same thing.
+  // A discarded draft does not: it alone disappears from this read.
   const rows = await select<Draft>(DRAFTS, {
     id: `eq.${id}`,
     select: "*",
@@ -88,15 +88,15 @@ export async function loadDraft(id: string): Promise<Draft> {
   return draft;
 }
 
-/** Tous les brouillons en attente, du plus récent au plus ancien.
+/** Every waiting draft, from the most recent to the oldest.
  *
- * Sans filtre sur l'auteur : un brouillon est une proposition faite à
- * l'équipe, comme un run l'est une fois lancé — tout le monde voit tout.
+ * With no filter on the author: a draft is a proposal made to the team, as a
+ * run is once launched — everyone sees everything.
  *
- * `withLaunched` rouvre la liste à ceux qui ont déjà servi. Ils en sortent par
- * défaut parce que la liste d'attente est faite pour ce qui attend ; mais ils
- * gardent leur adresse, et relancer la même chose est un geste prévu — encore
- * faut-il pouvoir les retrouver. Les jetés, eux, ne reviennent jamais. */
+ * `withLaunched` reopens the list to those that have already served. They leave
+ * it by default because the waiting list is made for what is waiting; but they
+ * keep their address, and relaunching the same thing is an expected gesture —
+ * provided one can find them again. The discarded ones never come back. */
 export async function loadDrafts(
   options: { withLaunched?: boolean } = {},
 ): Promise<Draft[]> {
@@ -109,28 +109,29 @@ export async function loadDrafts(
   });
 }
 
-/** Réécrire un brouillon en place, depuis le formulaire.
+/** Rewriting a draft in place, from the form.
  *
- * Rouvrir un brouillon, le corriger et l'enregistrer doit le remplacer, pas en
- * semer un second : la liste d'attente ne veut pas de doublons dont on ne
- * saurait plus lequel est le bon.
+ * Reopening a draft, correcting it and saving it must replace it, not sow a
+ * second one: the waiting list does not want duplicates among which nobody
+ * could tell which is the right one.
  *
- * Il repasse `manual`, même s'il venait d'un agent. La pastille ne dit pas qui
- * l'a créé mais si son contenu a été validé : `submit_draft_run` ne dépose que
- * du valide, et cette garantie tombe dès qu'une main réécrit la configuration
- * sans repasser par là. Garder `mcp` ferait mentir la pastille précisément où
- * elle sert — devant un brouillon incomplet, à décider si c'est une anomalie
- * ou le travail en cours. La provenance d'origine se perd ; c'est le prix, et
- * elle disait moins que la garantie.
+ * It goes back to `manual`, even if it came from an agent. The pill does not
+ * say who created it but whether its content has been validated:
+ * `submit_draft_run` deposits only the valid, and that guarantee falls as soon
+ * as a hand rewrites the configuration without going through it. Keeping `mcp`
+ * would make the pill lie precisely where it is useful — in front of an
+ * incomplete draft, deciding whether it is an anomaly or work under way. The
+ * original provenance is lost; that is the price, and it said less than the
+ * guarantee.
  *
- * D'où le paramètre plutôt qu'une constante : `update_draft_run` valide avant
- * d'écrire, exactement comme `submit_draft_run`, et la garantie tient donc
- * encore après son passage. Le défaut reste `manual` — c'est le formulaire qui
- * appelle le plus souvent, et c'est lui qui ne garantit rien.
+ * Hence the parameter rather than a constant: `update_draft_run` validates
+ * before writing, exactly like `submit_draft_run`, and the guarantee therefore
+ * still holds after it has passed. The default stays `manual` — it is the form
+ * that calls most often, and it is the form that guarantees nothing.
  *
- * `config` porte une `EvalRunConfig` pour un brouillon de run, une
- * `ExtendRequest` pour un brouillon d'extension — la même colonne en base
- * accueille les deux, et c'est l'appelant qui sait lequel il réécrit. */
+ * `config` carries an `EvalRunConfig` for a run draft, an `ExtendRequest` for
+ * an extension draft — the same column in the database takes both, and it is
+ * the caller that knows which one it is rewriting. */
 export async function updateDraft(
   id: string,
   config: EvalRunConfig | ExtendRequest,
@@ -144,29 +145,29 @@ export async function updateDraft(
   );
 }
 
-/** Ce qu'a fait une écriture qui respecte la propriété d'un brouillon :
- *  réécrit en place, ou posé à part. */
+/** What a write that respects a draft's ownership did: rewritten in place, or
+ *  laid down separately. */
 export interface DraftWriteResult {
-  /** `true` si l'écriture a créé un nouveau brouillon plutôt que de réécrire
-   *  celui visé — parce que qui écrit n'en est pas l'auteur. */
+  /** `true` if the write created a new draft rather than rewriting the one
+   *  aimed at — because whoever writes is not its author. */
   forked: boolean;
-  /** L'adresse à lire ensuite : celle qu'on a passée si `forked` est faux,
-   *  une nouvelle sinon. */
+  /** The address to read next: the one that was passed if `forked` is false, a
+   *  new one otherwise. */
   draftId: string;
 }
 
-/** Réécrire un brouillon en respectant sa propriété — la même règle que
- *  l'outil MCP `update_draft_run` applique, faite pour être appelée par les
- *  deux plutôt que réécrite une seconde fois d'une autre façon.
+/** Rewriting a draft while respecting its ownership — the same rule the MCP
+ *  tool `update_draft_run` applies, made to be called by both rather than
+ *  rewritten a second time in another way.
  *
- * Son auteur le voit réécrit en place, remplacer plutôt qu'en semer un
- * second. Quiconque d'autre reçoit un nouveau brouillon portant sa
- * proposition, à son nom ; l'original n'est pas touché. `forked` le dit,
- * pour que l'appelant sache où renvoyer qui l'a demandé — une redirection
- * silencieuse laisserait croire qu'on éditait encore l'original.
+ * Its author sees it rewritten in place, replacing rather than sowing a second
+ * one. Anyone else receives a new draft carrying their proposal, in their name;
+ * the original is untouched. `forked` says so, so that the caller knows where
+ * to send whoever asked — a silent redirection would let them believe they were
+ * still editing the original.
  *
- * `csvText` ne vaut que pour un brouillon de run : une extension n'en porte
- * jamais, quoi que l'appelant passe ici. */
+ * `csvText` is worth something only for a run draft: an extension never carries
+ * one, whatever the caller passes here. */
 export async function updateDraftOwned(
   draft: Draft,
   config: EvalRunConfig | ExtendRequest,
@@ -193,32 +194,31 @@ export async function updateDraftOwned(
   return { forked: true, draftId };
 }
 
-/** Jeter un brouillon : il sort de la liste, et son adresse ne répond plus.
+/** Discarding a draft: it leaves the list, and its address no longer answers.
  *
- * Ses liens de tags sont retirés à la suite : un tag ne survit que porté par
- * quelque chose de vivant, et un brouillon jeté ne l'est plus. C'est ce qui
- * fait tenir « détaché partout = supprimé » même pour ce qui part à la
- * corbeille — le déclencheur `delete_orphan_tag` supprime le tag si ce lien
- * était le dernier.
+ * Its tag links are withdrawn afterwards: a tag survives only carried by
+ * something alive, and a discarded draft no longer is. That is what keeps
+ * "detached everywhere = deleted" true even for what goes to the bin — the
+ * `delete_orphan_tag` trigger deletes the tag if that link was the last one.
  *
- * `deleted_at` d'abord, le retrait ensuite : si celui-ci échoue, le brouillon
- * reste jeté avec ses tags encore accrochés, sans conséquence — l'inverse
- * détacherait les tags d'un brouillon qui, si la suppression suivante
- * échouait, ne serait même pas jeté. */
+ * `deleted_at` first, the withdrawal afterwards: if the latter fails, the draft
+ * stays discarded with its tags still attached, with no consequence — the
+ * reverse would detach the tags of a draft which, if the following deletion
+ * failed, would not even be discarded. */
 export async function discardDraft(id: string): Promise<void> {
   await update(DRAFTS, { deleted_at: NOW }, { id: `eq.${id}` });
   await remove(DRAFT_TAGS, { draft_id: `eq.${id}` });
 }
 
-/** Marquer un brouillon comme lancé.
+/** Marking a draft as launched.
  *
- * Il sort de la liste d'attente — il a servi — mais son adresse reste
- * ouverte : rouvrir un brouillon lancé pour relancer la même chose est un
- * geste légitime, et `launched_at` dit donc le *dernier* lancement.
+ * It leaves the waiting list — it has served — but its address stays open:
+ * reopening a launched draft to relaunch the same thing is a legitimate
+ * gesture, and `launched_at` therefore says the *last* launch.
  *
- * Ce qu'il a produit ne se note plus ici. Une case unique ne peut pas tenir
- * plusieurs runs, et le second lancement effaçait le premier : c'est
- * `eval_runs.draft_id` qui porte le lien, autant de fois qu'il le faut. */
+ * What it produced is no longer recorded here. A single cell cannot hold
+ * several runs, and the second launch was erasing the first: it is
+ * `eval_runs.draft_id` that carries the link, as many times as needed. */
 export async function markDraftLaunched(id: string): Promise<void> {
   await update(DRAFTS, { launched_at: NOW }, { id: `eq.${id}` });
 }

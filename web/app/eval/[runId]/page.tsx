@@ -66,8 +66,8 @@ import type {
   Tag,
 } from "@/lib/types";
 
-/** Deux décimales tant qu'elles disent quelque chose, quatre en dessous du
- *  dollar — même repère que la ligne de coût du run, juste au-dessus. */
+/** Two decimals as long as they say something, four below the dollar — the same
+ *  reference point as the run's cost line, just above. */
 function money(usd: number): string {
   return `$${usd.toFixed(usd < 1 ? 4 : 2)}`;
 }
@@ -85,14 +85,13 @@ function formatDate(iso: string): string {
       });
 }
 
-/** Ce qu'une extension a fait, sous sa ligne du tableau.
+/** What an extension did, under its row of the table.
  *
- * La phrase répond à « qu'est-ce qu'elle a fait », et la demande brute est
- * juste en dessous, repliée d'un cran de plus : c'est elle qui garantit que la
- * phrase n'invente rien. En YAML plutôt qu'en JSON parce que les scénarios et
- * les barèmes imbriqués s'y lisent, et par la dépendance `yaml` plutôt que par
- * un sérialiseur maison, qui divergerait le jour où `ExtendRequest` gagnerait
- * un champ. */
+ * The sentence answers "what did it do", and the raw request is just below it,
+ * folded one notch further: it is what guarantees the sentence invents nothing.
+ * In YAML rather than JSON because the nested scenarios and scales read there,
+ * and through the `yaml` dependency rather than a home-made serialiser, which
+ * would diverge the day `ExtendRequest` gained a field. */
 function ExtensionDetail({
   extension,
   scenarios,
@@ -125,7 +124,7 @@ function ExtensionDetail({
       )}
       <details>
         <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800">
-          La demande, telle qu&apos;elle a été faite
+          The request, as it was made
         </summary>
         <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-zinc-700">
           {stringify(extension.request)}
@@ -135,16 +134,16 @@ function ExtensionDetail({
   );
 }
 
-/** Ce qu'un run a subi depuis sa création : une ligne par extension, avec son
- *  coût réel déduit — voir `extensionsOf`. N'apparaît que si le run a été
- *  étendu au moins une fois ; sinon la page n'a rien à en dire.
+/** What a run has undergone since its creation: one row per extension, with its
+ *  real cost deduced — see `extensionsOf`. Appears only if the run has been
+ *  extended at least once; otherwise the page has nothing to say about it.
  *
- * Une note de bas de page, pas un tableau de bord : six colonnes, pour
- * répondre à « d'où vient ce chiffre » plutôt que pour l'analyser. */
+ * A footnote, not a dashboard: six columns, to answer "where does this figure
+ * come from" rather than to analyse it. */
 function ExtensionsHistory({ run }: { run: EvalRun }) {
   const extensions = extensionsOf(run);
-  // Une seule ligne ouverte à la fois : deux détails dépliés côte à côte se
-  // lisent mal, et on vient ici comparer une ligne au reste du tableau.
+  // One row open at a time: two details unfolded side by side read badly, and
+  // one comes here to compare a row to the rest of the table.
   const [open, setOpen] = useState<number | null>(null);
   if (extensions.length === 0) return null;
 
@@ -213,12 +212,11 @@ function ExtensionsHistory({ run }: { run: EvalRun }) {
   );
 }
 
-/** Ajoute un juge de plus à ce run, en plus du principal — jamais un
- *  remplacement. Ce que « rejuger » est devenu depuis les juges multiples :
- *  on n'écrase plus le verdict d'un juge, on en ajoute un, et l'ancien reste
- *  pour comparer. Ses lignes de score naissent en attente sur toutes les
- *  conversations déjà posées ; « Catch up », plus bas sur cette page, est ce
- *  qui les remplit. */
+/** Adds one more judge to this run, on top of the principal — never a
+ *  replacement. What "re-judging" has become since the multiple judges: a
+ *  judge's verdict is no longer overwritten, one is added, and the old one stays
+ *  to compare. Its score rows are born pending on every conversation already
+ *  laid down; "Catch up", further down this page, is what fills them. */
 function AddJudgePanel({
   detail,
   onAdded,
@@ -229,35 +227,35 @@ function AddJudgePanel({
   onClose: () => void;
 }) {
   const { config } = detail.run;
-  // Un point de départ, pas une contrainte : ce juge peut regarder toute
-  // autre chose que le principal, et son échelle n'a pas à lui ressembler.
-  // Reprendre celles du run évite juste un formulaire vide au premier clic.
+  // A starting point, not a constraint: this judge may look at something
+  // entirely other than the principal, and its scale need not resemble the
+  // principal's. Taking the run's just avoids an empty form at the first click.
   const [criterion, setCriterion] = useState("");
   const [rubric, setRubric] = useState<RubricLevel[]>(config.rubric);
   const [model, setModel] = useState(config.models.judge);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  // Le catalogue, pour ne pas enfermer un juge dans les modèles du run : on
-  // ajoute un juge précisément pour regarder autrement, et le meilleur
-  // modèle pour ça n'est pas forcément une des colonnes déjà jouées.
+  // The catalogue, so as not to lock a judge into the run's models: one adds a
+  // judge precisely to look differently, and the best model for that is not
+  // necessarily one of the columns already played.
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   useEffect(() => {
     getCatalog().then(setProviders).catch(() => setProviders([]));
   }, []);
 
-  // Les favoris, plus les modèles du run : ceux-ci restent proposables même
-  // s'ils ont quitté les favoris depuis, sans quoi on ne pourrait plus
-  // ajouter un juge tournant sur le même modèle que le principal. Les juges
-  // secondaires déjà posés en font partie aussi : chacun peut porter son
-  // propre modèle (absent, il suit celui du run, déjà dans l'ensemble) —
-  // même raison que `chosen` dans `app/page.tsx` (commit 1a991da).
+  // The favourites, plus the run's models: the latter stay offerable even if
+  // they have left the favourites since, without which one could no longer add a
+  // judge running on the same model as the principal. The secondary judges
+  // already laid down are part of it too: each can carry its own model (absent,
+  // it follows the run's, already in the set) — same reason as `chosen` in
+  // `app/page.tsx` (commit 1a991da).
   //
-  // Dérivé des juges VIVANTS (`detail.judges`), jamais de `config.judges` —
-  // la photo du lancement : voir `withLiveJudges` (`lib/live-config.ts`) et
-  // son en-tête. Sans ça, un juge ajouté depuis ce panneau lui-même dont le
-  // modèle a quitté les favoris depuis ne serait plus proposable, tandis
-  // qu'un juge délié y resterait.
+  // Derived from the LIVING judges (`detail.judges`), never from `config.judges` —
+  // the photograph of the launch: see `withLiveJudges` (`lib/live-config.ts`) and
+  // its header. Without that, a judge added from this very panel whose model has
+  // left the favourites since would no longer be offerable, while an unlinked
+  // judge would stay there.
   const liveConfig = withLiveJudges(config, detail.judges ?? []);
   const models = [
     ...new Set([
@@ -276,10 +274,10 @@ function AddJudgePanel({
     ) &&
     new Set(values).size === values.length;
 
-  // Ce que catcher ce juge coûterait, jamais ce qu'ajouter lui-même coûte —
-  // ajouter ne fait rien tourner, voir le paragraphe ci-dessous. Compté sur
-  // les conversations déjà terminées : ce sont les seules qu'un rattrapage
-  // remplira réellement, voir `catchupCandidateCount` (`lib/catchup.ts`).
+  // What catching this judge up would cost, never what adding it costs — adding
+  // runs nothing, see the paragraph below. Counted on the conversations already
+  // finished: they are the only ones a catch-up will really fill, see
+  // `catchupCandidateCount` (`lib/catchup.ts`).
   const doneConversations = detail.samples.filter(
     (sample) => sample.status === "done",
   ).length;
@@ -352,11 +350,10 @@ function AddJudgePanel({
         </select>
       </label>
 
-      {/* Le coût vit ici, au moment où on décide d'ajouter — pas seulement
-          au clic sur Catch up, en bas de page, qui est ce qui appelle
-          vraiment le modèle. C'est le piège que ce dépôt a déjà connu deux
-          fois : un devis qui ne comptait pas les appels, une dépense qu'on
-          ne voyait qu'après coup. */}
+        {/* The cost lives here, at the moment one decides to add — not only on the
+            click on Catch up, at the foot of the page, which is what really calls
+            the model. It is the trap this repository has already met twice: a
+            quote that did not count the calls, a spend one only saw afterwards. */}
       {catchupEstimate && (
         <p className="text-sm text-zinc-700">
           {doneConversations > 0 ? (
@@ -394,13 +391,13 @@ function AddJudgePanel({
   );
 }
 
-/** Remplit les lignes de score en attente de ce run — l'ancien bouton
- *  d'éveil, généralisé à n'importe quel juge : un juge ajouté après coup, un
- *  run étendu, un juge tombé sur quelques cases, un run interrompu s'y
- *  couvrent tous du même geste.
+/** Fills in this run's pending score rows — the old awareness button,
+ *  generalised to any judge: a judge added afterwards, an extended run, a judge
+ *  fallen over on a few cells, an interrupted run — all are covered by the same
+ *  gesture.
  *
- * Un bouton et non un panneau : il n'y a rien à choisir, le job retrouve
- * lui-même ce qui reste à faire. */
+ * A button and not a panel: there is nothing to choose, the job finds what is
+ * left to do on its own. */
 function CatchUpButton({
   detail,
   onLaunched,
@@ -410,10 +407,10 @@ function CatchUpButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  // Compté par le serveur (voir `catchupMissingTotal`, `lib/runs.ts`) :
-  // recompter ici depuis `detail.samples`/`detail.judges` referait le même
-  // calcul, avec le risque d'un jour diverger de celui qui décide vraiment
-  // ce qu'un rattrapage remplit.
+  // Counted by the server (see `catchupMissingTotal`, `lib/runs.ts`): recounting
+  // here from `detail.samples`/`detail.judges` would redo the same computation,
+  // with the risk of one day diverging from the one that really decides what a
+  // catch-up fills.
   const missing = detail.catchup_missing;
 
   const launch = async () => {
@@ -467,54 +464,54 @@ export default function EvalRunPage({
   const [analysis, setAnalysis] = useState("");
   const [addingJudge, setAddingJudge] = useState(false);
   const [extending, setExtending] = useState(false);
-  // Une extension proposée par un agent, ouverte depuis la liste des
-  // brouillons. Elle ne préremplit que le panneau : rien n'est appliqué au run
-  // tant que personne n'a confirmé, outils proposés compris.
+  // An extension proposed by an agent, opened from the drafts list. It only
+  // prefills the panel: nothing is applied to the run until somebody has
+  // confirmed, offered tools included.
   const [proposal, setProposal] = useState<ExtendRequest | null>(null);
   const [proposalId, setProposalId] = useState<string | null>(null);
-  // Si le brouillon ouvert appartient à qui regarde — calculé par la route,
-  // jamais comparé ici : cette page ne connaît pas l'adresse de qui regarde.
-  // Vrai par défaut : sans proposition ouverte, enregistrer en crée toujours
-  // une à soi.
+  // Whether the open draft belongs to whoever is looking — computed by the
+  // route, never compared here: this page does not know the address of whoever
+  // is looking. True by default: with no proposal open, saving always creates
+  // one of one's own.
   const [proposalMine, setProposalMine] = useState(true);
-  // Quand `?extend=` désigne une extension déjà appliquée : sa date, pour le
-  // dire, plutôt qu'un panneau qui laisserait croire qu'elle attend encore.
+  // When `?extend=` designates an extension already applied: its date, to say
+  // so, rather than a panel that would suggest it is still waiting.
   const [appliedAt, setAppliedAt] = useState<string | null>(null);
-  // Comment lire la matrice. Rien n'en sort vers la base : c'est une lecture,
-  // pas un résultat, et un rechargement ramène la lecture ordinaire.
+  // How to read the matrix. Nothing goes out of it to the database: it is a
+  // reading, not a result, and a reload brings back the ordinary reading.
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
-  // À travers quel juge on regarde la matrice — `undefined` veut dire « le
-  // principal ». Un choix d'affichage, pas une écriture : contrairement à
-  // `handleDesignatePrincipal` plus bas, rien ici ne touche la base, et un
-  // rechargement de la page l'oublie. C'est `JudgeBlock` qui porte le
-  // sélecteur ; `RunMatrix`, plus bas sur cette page, le reçoit pour suivre
-  // le même juge que ce que `JudgeBlock` explique.
+  // Through which judge one is looking at the matrix — `undefined` means "the
+  // principal". A display choice, not a write: unlike `handleDesignatePrincipal`
+  // below, nothing here touches the database, and a page reload forgets it. It
+  // is `JudgeBlock` that carries the selector; `RunMatrix`, further down this
+  // page, receives it so as to follow the same judge as what `JudgeBlock`
+  // explains.
   const [displayedRunJudgeId, setDisplayedRunJudgeId] = useState<
     string | undefined
   >(undefined);
   const [openScenario, setOpenScenario] = useState<number | null>(null);
   const [stopping, setStopping] = useState(false);
-  // Quelle action attend d'être confirmée, s'il y en a une.
+  // Which action is waiting to be confirmed, if there is one.
   const [confirming, setConfirming] = useState<null | "stop" | "retry">(
     null,
   );
-  // Le retour d'une action du menu, qui s'est refermé depuis. Séparé de
-  // `error`, qui remplace la page entière : un presse-papier récalcitrant ne
-  // doit pas faire disparaître la matrice.
+  // The outcome of a menu action, which has closed since. Separate from `error`,
+  // which replaces the whole page: a stubborn clipboard must not make the matrix
+  // disappear.
   const [notice, setNotice] = useState("");
-  // Les transcripts pèsent lourd et ne servent qu'à la fenêtre de détail : on
-  // ne les charge qu'à l'ouverture d'une case, pas à chaque rafraîchissement.
+  // The transcripts weigh a lot and serve only the detail window: we load them
+  // only when a cell is opened, not on every refresh.
   const [transcripts, setTranscripts] = useState(false);
   const [open, setOpen] = useState<{ scenario: number; target: string } | null>(
     null,
   );
-  // L'adresse publique quand le run est publié, `null` sinon.
+  // The public address when the run is published, `null` otherwise.
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
-  // Le catalogue et les tags de ce run, pour `TagField` — qui ne les charge
-  // plus lui-même. `tagsLoaded` évite d'afficher « No tags yet. » un instant
-  // avant que la vraie réponse n'arrive.
+  // The catalogue and this run's tags, for `TagField` — which no longer loads
+  // them itself. `tagsLoaded` avoids showing "No tags yet." for an instant before
+  // the real answer arrives.
   const [tagCatalog, setTagCatalog] = useState<Tag[]>([]);
   const [runTags, setRunTagsState] = useState<Tag[]>([]);
   const [tagsLoaded, setTagsLoaded] = useState(false);
@@ -525,16 +522,16 @@ export default function EvalRunPage({
       setTagCatalog(catalog);
       setRunTagsState(current);
     } catch {
-      // Laissés tels quels plutôt que de casser la page : ce ne sont que des
-      // pastilles, pas la matrice.
+      // Left as they are rather than breaking the page: they are only pills, not
+      // the matrix.
     } finally {
       setTagsLoaded(true);
     }
   }, [runId]);
 
   useEffect(() => {
-    // Même raison que pour `load` ci-dessous : un timer plutôt qu'un appel
-    // direct dans le corps de l'effet.
+    // Same reason as for `load` below: a timer rather than a direct call in the
+    // effect's body.
     const timer = setTimeout(() => loadTags(), 0);
     return () => clearTimeout(timer);
   }, [loadTags]);
@@ -542,21 +539,21 @@ export default function EvalRunPage({
   const load = useCallback(
     async (withTranscripts: boolean) => {
       try {
-        // Un juge secondaire affiché a besoin de ses propres verdicts — le
-        // chargement léger ne ramène que ceux du principal et de l'éveil
-        // (voir `withFullJudgeScores` sur `getRun`/`loadRun`). Indépendant de
-        // `withTranscripts` : on ne veut pas payer le poids des conversations
-        // au seul motif d'avoir changé de juge affiché.
+        // A secondary judge shown needs its own verdicts — the light load brings
+        // back only the principal's and awareness's (see `withFullJudgeScores` on
+        // `getRun`/`loadRun`). Independent of `withTranscripts`: we do not want to
+        // pay the conversations' weight for the sole reason of having changed the
+        // judge shown.
         const loaded = await getRun(runId, {
           withTranscripts,
           withFullJudgeScores: displayedRunJudgeId !== undefined,
         });
-        // Même raison que sur la liste : un run terminé qu'on garde ouvert ne
-        // doit pas faire clignoter sa matrice.
+        // Same reason as on the list: a finished run kept open must not make its
+        // matrix flicker.
         setDetail((current) => keepIfUnchanged(current, loaded));
         setPublicUrl(loaded.run.is_public ? `/shared/${loaded.run.id}` : null);
-        // Amorcé une seule fois : le rafraîchissement d'un run en cours ne doit
-        // pas écraser une note en train d'être écrite.
+        // Primed once only: the refresh of a running run must not overwrite a note
+        // being written.
         setNotes((current) => (current === "" ? loaded.run.notes : current));
         setAnalysis((current) =>
           current === "" ? loaded.run.analysis : current,
@@ -568,14 +565,14 @@ export default function EvalRunPage({
     [runId, displayedRunJudgeId],
   );
 
-  // `?extend=<id>` : on vient de la liste des brouillons avec une proposition à
-  // relire. Le panneau s'ouvre dessus plutôt que vide — sauf si elle a déjà
-  // servi, auquel cas il n'y a plus de proposition, seulement une trace.
+  // `?extend=<id>`: one comes from the drafts list with a proposal to reread.
+  // The panel opens on it rather than empty — unless it has already served, in
+  // which case there is no proposal left, only a trace.
   useEffect(() => {
     const draftId = searchParams.get("extend");
     if (!draftId) {
-      // Un timer, pas un appel direct : `react-hooks/set-state-in-effect`
-      // interdit un setState synchrone dans le corps de l'effet.
+      // A timer, not a direct call: `react-hooks/set-state-in-effect` forbids a
+      // synchronous setState in the effect's body.
       const timer = setTimeout(() => setAppliedAt(null), 0);
       return () => clearTimeout(timer);
     }
@@ -587,12 +584,12 @@ export default function EvalRunPage({
           setError("That draft is a run to launch, not an extension.");
           return;
         }
-        // Une adresse se partage et se met en signet : rien ne garantit que
-        // celle-ci soit arrivée par la liste, où le lien a déjà disparu.
+          // An address is shared and bookmarked: nothing guarantees this one
+          // arrived through the list, where the link has already disappeared.
         if (draft.launched_at) {
-          // Le bandeau ferme le panneau qu'une adresse précédente aurait pu
-          // ouvrir : sur une même page, passer d'un `?extend=` à un autre ne
-          // remonte pas le composant, et les deux ne doivent jamais coexister.
+            // The banner closes the panel a previous address could have opened: on
+            // the same page, moving from one `?extend=` to another does not
+            // remount the component, and the two must never coexist.
           setAppliedAt(draft.launched_at);
           setExtending(false);
           setProposal(null);
@@ -614,9 +611,9 @@ export default function EvalRunPage({
   }, [searchParams]);
 
   useEffect(() => {
-    // Passer par un timer plutôt que d'appeler load() dans le corps de
-    // l'effet : celui-ci déclenche un setState synchrone, ce que la règle
-    // react-hooks/set-state-in-effect interdit à juste titre.
+    // Going through a timer rather than calling load() in the effect's body: the
+    // latter triggers a synchronous setState, which the
+    // react-hooks/set-state-in-effect rule rightly forbids.
     const timer = setTimeout(() => load(transcripts), 0);
     return () => clearTimeout(timer);
   }, [load, transcripts]);
@@ -630,26 +627,25 @@ export default function EvalRunPage({
     return () => clearInterval(timer);
   }, [running, load, transcripts]);
 
-  // Pas d'effet ici pour précharger les transcripts au nom du bouton de
-  // rattrapage : `detail.catchup_missing` arrive déjà calculé par `loadRun`,
-  // qui a les transcripts en main sans jamais les envoyer au navigateur (voir
-  // `catchupMissingTotal` dans `lib/runs.ts`). Un tel effet a existé, et son
-  // garde-fou ratait un run juge éteint ou une seule case vide ou en erreur —
-  // une fois déclenché, relancer la passe repassait le run en cours et le
-  // rafraîchissement de trois secondes ci-dessus rechargeait alors tous les
-  // transcripts en boucle pendant toute la passe, exactement ce que
-  // `SAMPLE_COLUMNS` existe pour éviter.
+  // No effect here to preload the transcripts on the catch-up button's behalf:
+  // `detail.catchup_missing` arrives already computed by `loadRun`, which has the
+  // transcripts to hand without ever sending them to the browser (see
+  // `catchupMissingTotal` in `lib/runs.ts`). Such an effect existed, and its
+  // guard missed a run with the judge off, or a single empty or failed cell —
+  // once triggered, relaunching the pass put the run back to running and the
+  // three-second refresh above then reloaded every transcript in a loop for the
+  // whole pass, exactly what `SAMPLE_COLUMNS` exists to avoid.
 
-  // Les journaux ne montent qu'à la toute fin du job — d'où la relecture quand
-  // le run cesse de tourner, et non au seul premier rendu.
+  // The logs only go up at the very end of the job — hence the reread when the
+  // run stops running, and not on the first render alone.
   const [inspectLogs, setInspectLogs] = useState(false);
   useEffect(() => {
-    let vivant = true;
-    void hasInspectLogs(runId).then((présents) => {
-      if (vivant) setInspectLogs(présents);
+    let alive = true;
+    void hasInspectLogs(runId).then((present) => {
+      if (alive) setInspectLogs(present);
     });
     return () => {
-      vivant = false;
+      alive = false;
     };
   }, [runId, running]);
 
@@ -716,8 +712,8 @@ export default function EvalRunPage({
   };
   const openCell = (scenario: number, target: string) => {
     setOpen({ scenario, target });
-    // Une seule fois : une fois les transcripts chargés, les rafraîchissements
-    // suivants les gardent.
+    // Once only: once the transcripts are loaded, the refreshes that follow keep
+    // them.
     if (!transcripts) setTranscripts(true);
   };
 
@@ -734,10 +730,10 @@ export default function EvalRunPage({
     await load(transcripts);
   };
 
-  // Le verdict du principal, joint à chaque case pour le panneau d'extension
-  // (`ExtendPanelSample`, qui approfondit sur celui-là — voir son
-  // commentaire) — même repli que `RunMatrix`/`JudgeBlock` quand
-  // `detail.judges` n'est pas encore fourni.
+  // The principal's verdict, joined to each cell for the extension panel
+  // (`ExtendPanelSample`, which deepens on that one — see its comment) — same
+  // fallback as `RunMatrix`/`JudgeBlock` when `detail.judges` is not yet
+  // supplied.
   const principal = principalJudge(detail.judges);
   const extendPanelSamples: ExtendPanelSample[] = detail.samples.map((sample) => ({
     scenario_index: sample.scenario_index,
@@ -757,16 +753,16 @@ export default function EvalRunPage({
               runId={run.id}
               label={run.label}
               fallback="Evaluation run"
-              // Ici le titre n'est qu'un `<h1>` : le cliquer peut l'ouvrir.
-              // Dans la liste il est un lien vers ce run, et lui voler le clic
-              // rendrait la liste impraticable.
+                // Here the title is only an `<h1>`: clicking it may open it. In
+                // the list it is a link to this run, and stealing its click would
+                // make the list unusable.
               editOnClick
-              // Le champ prend la tête du titre — serif, même corps, pleine
-              // largeur — pour que rien ne saute au moment où il s'ouvre.
+                // The field takes the title's shape — serif, same size, full
+                // width — so that nothing jumps at the moment it opens.
               inputClassName="w-full border border-zinc-300 bg-transparent px-2 py-0.5 font-serif text-2xl font-normal tracking-tight"
-              // Écrit dans l'état déjà chargé plutôt que de tout relire : la
-              // réponse porte le titre enregistré, et recharger le run entier
-              // pour un mot ferait clignoter la matrice au-dessous.
+                // Written into the state already loaded rather than rereading
+                // everything: the response carries the saved title, and reloading
+                // the whole run for one word would make the matrix flicker below.
               onSaved={(next) =>
                 setDetail((current) =>
                   current ? { ...current, run: { ...current.run, label: next } } : current,
@@ -798,9 +794,9 @@ export default function EvalRunPage({
                   ${run.cost_usd.toFixed(run.cost_usd < 1 ? 4 : 2)}
                 </span>
                 {run.estimate && (
-                  // L'écart au devis, à côté du prix : c'est en le voyant run
-                  // après run qu'on saura si l'estimation dérive, et sur quels
-                  // modèles.
+                    // The gap to the quote, beside the price: it is by seeing it
+                    // run after run that one will know whether the estimate drifts,
+                    // and on which models.
                   <span
                     className="text-zinc-500"
                     title={`Estimated $${run.estimate.usd.toFixed(4)} before launching, assuming ${run.estimate.per_model
@@ -823,21 +819,21 @@ export default function EvalRunPage({
               </>
             )}
           </p>
-          {/* Sur sa propre ligne plutôt qu'au bout de la précédente :
-              noyée entre le coût et le devis, l'adresse ne se lisait pas. */}
+            {/* On its own line rather than at the end of the previous one: drowned
+                between the cost and the quote, the address did not read. */}
           {run.user_email && (
             <p className="text-sm text-zinc-500">{run.user_email}</p>
           )}
         </div>
         <div className="flex shrink-0 items-start justify-end gap-2">
-          {/* L'arrêt reste dehors : c'est la seule action qu'on cherche dans
-              l'urgence, et elle ne paraît que pendant qu'un run tourne — donc
-              jamais en même temps que celles du menu. */}
+            {/* Stopping stays outside: it is the one action one looks for in a
+                hurry, and it only appears while a run is going — so never at the
+                same time as those in the menu. */}
           {running && (
             <button
               onClick={() => setConfirming("stop")}
               disabled={stopping}
-              title="Le job lit la demande avant chaque case. Celle en cours ira à son terme."
+                title="The job reads the request before each cell. The one under way will run to its end."
               className="cursor-pointer rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-50"
             >
               {stopping ? "Stopping…" : "Stop"}
@@ -968,10 +964,10 @@ export default function EvalRunPage({
         )}
       </section>
 
-      {/* D'où il sort, quand il sort d'un brouillon. Le lien rouvre le
-          formulaire dessus : c'est là qu'on repart de la même configuration.
-          L'identifiant peut ne plus rien désigner — un brouillon jeté à la
-          main disparaît, et la provenance du run lui survit exprès. */}
+      {/* Where it comes from, when it comes from a draft. The link reopens the
+          form on it: that is where one starts again from the same configuration.
+          The identifier may designate nothing any more — a draft discarded by
+          hand disappears, and the run's provenance deliberately survives it. */}
       {run.draft_id && (
         <p className="text-sm text-zinc-500">
           Launched from{" "}
@@ -986,10 +982,10 @@ export default function EvalRunPage({
         <p className="flex items-center gap-1 text-sm text-zinc-500">
           Published — anyone with this link can read it:{" "}
           <code className="rounded bg-zinc-100 px-1">{publicUrl}</code>
-          {/* Le lien copié est absolu : celui qui le reçoit n'a pas le
-              contexte de cette fenêtre, et une adresse relative ne lui dirait
-              rien. `window.location.origin` n'est lu qu'au clic — jamais
-              pendant le rendu, où il n'existe pas côté serveur. */}
+          {/* The copied link is absolute: whoever receives it has none of this
+              window's context, and a relative address would tell them nothing.
+              `window.location.origin` is read only on click — never during
+              render, where it does not exist server-side. */}
           <CopyButton
             value={() => `${window.location.origin}${publicUrl}`}
             title="Copy the public link"
@@ -1008,10 +1004,10 @@ export default function EvalRunPage({
 
       {running && (
         <p className="rounded border border-zinc-300 p-3 text-sm">
-          {/* `triggered` et `running` ne veulent pas dire la même chose, et les
-              confondre fait passer pour « en cours » un job qui n'a pas encore
-              démarré. Un démarrage à froid de Cloud Run prend une minute : sans
-              cette distinction, on croit à un blocage. */}
+          {/* `triggered` and `running` do not mean the same thing, and confusing
+              them makes a job that has not started yet pass for "running". A cold
+              start on Cloud Run takes a minute: without that distinction, one
+              believes it is stuck. */}
           {run.status === "triggered" ? (
             <>
               <strong>Starting.</strong> The job has been asked to start; no
@@ -1022,8 +1018,8 @@ export default function EvalRunPage({
             <>
               <strong>Running.</strong> {progress.done} graded
               {progress.running > 0 && `, ${progress.running} in flight`}
-              {/* Les cases qui n'ont pas commencé sont ce qui reste à payer :
-                  c'est le chiffre qu'on cherche quand on hésite à arrêter. */}
+                {/* The cells that have not started are what is left to pay for:
+                    it is the figure one looks for when hesitating to stop. */}
               {progress.pending > 0 && `, ${progress.pending} still to run`}
               {progress.errored > 0 && `, ${progress.errored} failed`} — out of{" "}
               {progress.total} cells.
@@ -1067,9 +1063,9 @@ export default function EvalRunPage({
         onConfirm={stop}
         onCancel={() => setConfirming(null)}
       >
-        {/* Les trois issues ne sont pas symétriques, et c'est la source de
-            l'hésitation : ce qui est en vol est déjà payé, ce qui n'a pas
-            commencé ne coûtera rien, ce qui est noté reste. */}
+        {/* The three outcomes are not symmetrical, and that is the source of the
+            hesitation: what is in flight is already paid for, what has not started
+            will cost nothing, what is graded stays. */}
         <ConfirmRows
           rows={[
             {
@@ -1151,15 +1147,15 @@ export default function EvalRunPage({
         </p>
       </ConfirmDialog>
 
-      {/* Le bandeau et le panneau sont mutuellement exclusifs par construction ici :
-          ouvrir le panneau depuis le menu ne vide pas `appliedAt`, donc c'est ce
-          rendu, plutôt que le geste qui ouvre, qui doit empêcher les deux de
-          coexister. */}
+      {/* The banner and the panel are mutually exclusive by construction here:
+          opening the panel from the menu does not clear `appliedAt`, so it is this
+          render, rather than the gesture that opens it, that must stop the two
+          coexisting. */}
       {appliedAt && !extending && (
         <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm text-zinc-700">
-          Cette extension a été appliquée le {formatDate(appliedAt)}.{" "}
+          This extension was applied on {formatDate(appliedAt)}.{" "}
           <a href="#extensions" className="underline">
-            Voir ce qu&apos;elle a fait
+            See what it did
           </a>
           .
         </div>
@@ -1168,8 +1164,8 @@ export default function EvalRunPage({
       {extending && !running && (
         <ExtendPanel
           run={run}
-          // Les juges vivants, jamais `run.config.judges` : voir le
-          // commentaire de `liveJudges` sur `ExtendPanel`.
+          // The living judges, never `run.config.judges`: see the comment on
+          // `liveJudges` on `ExtendPanel`.
           liveJudges={detail.judges ?? []}
           repetitionRange={repetitionRange(detail.samples)}
           samples={extendPanelSamples}
@@ -1178,18 +1174,18 @@ export default function EvalRunPage({
           draftMine={proposalMine}
           onCancel={() => {
             setExtending(false);
-            // L'identifiant du brouillon part maintenant vers le serveur en
-            // `?draft=` : le laisser ici attribuerait l'extension composée à
-            // la main par la suite au brouillon de quelqu'un d'autre.
+              // The draft's identifier now goes to the server as `?draft=`:
+              // leaving it here would attribute an extension composed by hand
+              // afterwards to somebody else's draft.
             setProposal(null);
             setProposalId(null);
             setProposalMine(true);
           }}
           onSubmit={async (request) => {
-            // Le brouillon part avec la demande : c'est la route qui refuse un
-            // brouillon déjà appliqué et qui le marque lancé, dans la requête
-            // même qui étend. Le faire ici après coup, en avalant l'erreur,
-            // laissait un brouillon lancé se croire en attente.
+              // The draft goes with the request: it is the route that refuses a
+              // draft already applied and that marks it launched, in the very
+              // request that extends. Doing it here afterwards, while swallowing
+              // the error, left a launched draft believing itself still waiting.
             await extendRun(run.id, request, proposalId);
             setExtending(false);
             setProposal(null);
@@ -1197,11 +1193,11 @@ export default function EvalRunPage({
             await load(transcripts);
           }}
           onSaveDraft={async (request) => {
-            // En place pour son auteur ; à part pour n'importe qui d'autre,
-            // qui reçoit son propre brouillon sans toucher à l'original —
-            // même règle que le formulaire de composition d'un run.
-            // `updateDraft` sert les deux genres de brouillon, celui-ci
-            // compris : la route lit le genre depuis ce qu'elle a en base.
+              // In place for its author; apart for anyone else, who receives their
+              // own draft without touching the original — the same rule as the run
+              // composition form. `updateDraft` serves both kinds of draft, this
+              // one included: the route reads the kind from what it has in the
+              // database.
             if (proposalId) {
               const result = await updateDraft(proposalId, request, null);
               if (result.forked) {
@@ -1212,8 +1208,8 @@ export default function EvalRunPage({
               return { forked: result.forked };
             }
             const { id } = await saveExtendDraft(run.id, request);
-            // L'adresse dans la barre suit : réenregistrer met à jour
-            // celui-ci au lieu d'en créer un second.
+              // The address in the bar follows: saving again updates this one
+              // instead of creating a second.
             setProposalId(id);
             setProposalMine(true);
             router.replace(`/eval/${run.id}?extend=${id}`);
@@ -1237,15 +1233,15 @@ export default function EvalRunPage({
         <CatchUpButton detail={detail} onLaunched={() => load(transcripts)} />
       )}
 
-      {/* Avant le juge : ce qu'on a écrit sur ce run se lit d'abord, et
-          l'échelle du juge après — l'analyse, elle, reste en bas, parce
-          qu'elle s'écrit une fois la matrice lue. */}
+      {/* Before the judge: what has been written about this run reads first, and
+          the judge's scale after — the analysis, for its part, stays at the
+          bottom, because it is written once the matrix has been read. */}
       <NotesField
-        // La clé force un remontage quand le run change : sans elle, l'état
-        // local du composant survivrait à la navigation d'un run à l'autre.
-        // Distincte de celle du champ Run Analysis, plus bas — deux
-        // instances du même composant, à la même profondeur, ne peuvent pas
-        // partager une clé sans que React confonde leur état local.
+        // The key forces a remount when the run changes: without it, the
+        // component's local state would survive navigation from one run to
+        // another. Distinct from the Run Analysis field's, further down — two
+        // instances of the same component, at the same depth, cannot share a key
+        // without React confusing their local state.
         key={`${run.id}-notes`}
         value={notes}
         onChange={setNotes}

@@ -1,45 +1,46 @@
-// Ce qu'une extension a fait, en toutes lettres.
+// What an extension did, in plain words.
 //
-// `eval_runs.extensions` porte la demande complète de chaque extension et ne
-// l'avait jamais montrée : l'historique disait quand, qui, par quelle porte et
-// combien, jamais quoi.
+// `eval_runs.extensions` carries each extension's complete request and had
+// never shown it: the history said when, who, through which door and how many,
+// never what.
 //
-// Séparé du rendu pour la raison qui sépare `scenario-summary.ts` : c'est la
-// seule partie qui tient une règle, et la seule que `node --test` sache
-// regarder — il ne voit que `lib/`.
+// Separated from the rendering for the reason that separates
+// `scenario-summary.ts`: it is the only part that holds a rule, and the only
+// part `node --test` knows how to look at — it sees only `lib/`.
 //
-// La règle : ne rien affirmer que le registre ne porte. Les comptes viennent de
-// la demande et du devis ; quand le devis manque, la phrase dit la forme et tait
-// le nombre, comme `actual_cost_usd` vaut `null` plutôt que 0. Et deux choses
-// n'y sont pas du tout — quels essais ont été approfondis, et depuis quelle
-// profondeur — donc la phrase dit « poussés à 4 tours », jamais « de 3 à 4 ».
+// The rule: assert nothing the record does not carry. The counts come from the
+// request and the quote; when the quote is missing, the sentence says the shape
+// and keeps quiet about the number, as `actual_cost_usd` is `null` rather than
+// 0. And two things are not in it at all — which attempts were deepened, and
+// from what depth — so the sentence says "pushed to 4 turns", never "from 3 to
+// 4".
 import type { EvalScenario, ExtendRequest, RunExtensionLogEntry } from "./types";
 
-/** Une étiquette et ce qu'elle liste. Jamais produite vide : une ligne sans
- *  valeur n'apprendrait rien, et l'écart au défaut est ce qu'on vient lire. */
+/** A label and what it lists. Never produced empty: a line with no value would
+ *  teach nothing, and the departure from the default is what one comes to
+ *  read. */
 export interface SummaryLine {
   label: string;
   values: string[];
 }
 
 export interface ExtensionSummary {
-  /** Ce que l'extension a fait, une phrase par geste. Deux au plus : on peut
-   *  ajouter des cases ET approfondir, jamais poser un juge en plus —
-   *  `extendProblem` refuse de mêler les deux, le moteur n'ayant qu'une passe
-   *  par lancement. */
+  /** What the extension did, one sentence per gesture. Two at most: one can add
+   *  cells AND deepen, never lay down a judge as well — `extendProblem` refuses
+   *  to mix the two, the engine having only one pass per launch. */
   headlines: string[];
-  /** Ce que les phrases nomment sans le détailler. */
+  /** What the sentences name without detailing. */
   lines: SummaryLine[];
 }
 
 const plural = (n: number, one: string, many = `${one}s`): string =>
   n > 1 ? many : one;
 
-/** Le nombre de cases que cette demande a fait naître.
+/** How many cells this request brought into being.
  *
- * La formule de `cellsForExtension`, à la lettre : les index dédoublonnés plus
- * les scénarios neufs — qui prennent des positions en queue et ne peuvent donc
- * jamais entrer en collision avec les index existants. */
+ * `cellsForExtension`'s formula, to the letter: the deduplicated indices plus
+ * the new scenarios — which take positions at the tail and can therefore never
+ * collide with the existing indices. */
 function scenariosCovered(request: ExtendRequest): number {
   return new Set(request.scenario_indices).size + (request.new_scenarios ?? []).length;
 }
@@ -52,33 +53,30 @@ export function summariseExtension(
   const headlines: string[] = [];
   const lines: SummaryLine[] = [];
 
-  // Poser un juge ne se mêle à rien d'autre. La branche sort donc tout de
-  // suite, plutôt que de composer avec des phrases qui ne peuvent pas coexister
-  // avec la sienne.
+  // Laying down a judge mixes with nothing else. The branch therefore leaves
+  // straight away, rather than composing with sentences that cannot coexist
+  // with its own.
   const judges = request.new_judges ?? [];
   if (judges.length > 0) {
-    const combien = `${judges.length} ${plural(judges.length, "juge")} ${plural(
-      judges.length,
-      "ajouté",
-    )}`;
-    const relectures = entry.estimate?.conversations ?? null;
-    if (relectures === null) {
-      headlines.push(`${combien}.`);
+    const howMany = `${judges.length} ${plural(judges.length, "judge")} added`;
+    const rereads = entry.estimate?.conversations ?? null;
+    if (rereads === null) {
+      headlines.push(`${howMany}.`);
     } else if (judges.length === 1) {
       headlines.push(
-        `${combien} — relu sur ${relectures} ${plural(relectures, "conversation")} ` +
-          `déjà ${plural(relectures, "jouée")}.`,
+        `${howMany} — reread over ${rereads} ${plural(rereads, "conversation")} ` +
+          `already played.`,
       );
     } else {
-      // Chaque juge relit toutes les conversations finies et `addEstimates`
-      // somme les devis : le total vaut « conversations × juges ». L'appeler
-      // des conversations mentirait ; ce sont des relectures.
+      // Every judge rereads all the finished conversations and `addEstimates`
+      // sums the quotes: the total is "conversations × judges". Calling those
+      // conversations would lie; they are rereads.
       headlines.push(
-        `${combien} — ${relectures} relectures sur les conversations déjà jouées.`,
+        `${howMany} — ${rereads} rereads over the conversations already played.`,
       );
     }
     lines.push({
-      label: "Juges",
+      label: "Judges",
       values: judges.map((judge) =>
         judge.model ? `${judge.criterion} (${judge.model})` : judge.criterion,
       ),
@@ -86,98 +84,97 @@ export function summariseExtension(
     return { headlines, lines };
   }
 
-  // `targets` n'est exigé par `extendProblem` que si la demande ajoute une
-  // case ; une extension qui ne fait qu'approfondir peut donc en registrer une
-  // sans lui.
+  // `targets` is required by `extendProblem` only if the request adds a cell;
+  // an extension that merely deepens can therefore be recorded without one.
   const targets = request.targets ?? [];
 
-  // Le produit qui suit n'est exact que parce qu'`extendProblem`
-  // (`web/lib/validate.ts`) refuse un `scenario_indices` hors bornes et refuse
-  // des `targets` dupliqués avant qu'une demande n'atteigne le registre —
-  // c'est ce qui rend ce compte égal à `retenus.length` dans `planExtension`
-  // (`runs.ts:1206`, qui met en garde contre le recalculer à côté de
-  // `cellsForExtension` plutôt que de l'appeler). Ce module ne peut pas
-  // appeler `cellsForExtension`, qui a besoin de l'état vivant des cases du
-  // run — d'où ce produit tenu séparément, à la même formule. Et ça compte :
-  // `cases` est soustrait d'`estimate.conversations` plus bas pour obtenir le
-  // compte de l'approfondissement, donc une dérive ne se contenterait pas de
-  // mal compter les cases — elle mélangerait en silence les conversations
-  // entre les deux phrases, et pourrait même rendre ce compte négatif.
-  const couverts = scenariosCovered(request);
-  const cases = couverts * targets.length * request.repetitions;
-  if (cases > 0) {
+  // The product below is exact only because `extendProblem`
+  // (`web/lib/validate.ts`) refuses a `scenario_indices` out of bounds and
+  // refuses duplicated `targets` before a request reaches the record — that is
+  // what makes this count equal to `retenus.length` in `planExtension`
+  // (`runs.ts:1206`, which warns against recomputing it beside
+  // `cellsForExtension` rather than calling it). This module cannot call
+  // `cellsForExtension`, which needs the live state of the run's cells — hence
+  // this product held separately, to the same formula. And it matters: `cells`
+  // is subtracted from `estimate.conversations` below to obtain the deepening's
+  // count, so a drift would not merely miscount the cells — it would silently
+  // mix the conversations between the two sentences, and could even make this
+  // count negative.
+  const covered = scenariosCovered(request);
+  const cells = covered * targets.length * request.repetitions;
+  if (cells > 0) {
     headlines.push(
-      `${request.repetitions} ${plural(request.repetitions, "essai")} ` +
-        `${plural(request.repetitions, "ajouté")} sur ${couverts} ` +
-        `${plural(couverts, "scénario")} × ${targets.length} ` +
-        `${plural(targets.length, "modèle")} — ${cases} ` +
-        `${plural(cases, "conversation")}.`,
+      `${request.repetitions} ${plural(request.repetitions, "attempt")} ` +
+        `added across ${covered} ` +
+        `${plural(covered, "scenario")} × ${targets.length} ` +
+        `${plural(targets.length, "model")} — ${cells} ` +
+        `${plural(cells, "conversation")}.`,
     );
   }
 
   if (request.deepen !== undefined && request.turns != null) {
-    // Le compte des essais poussés est le reste du devis une fois les cases
-    // neuves retirées : `estimateExtension` additionne exactement ces deux
-    // parts, et rien d'autre n'entre dans le total.
-    const relectures = entry.estimate?.conversations;
-    const poussés = relectures == null ? null : relectures - cases;
-    const paliers =
-      request.deepen === "all" ? null : request.deepen.join(" ou ");
-    const profondeur = `à ${request.turns} ${plural(request.turns, "tour")}`;
+    // The count of pushed attempts is what remains of the quote once the new
+    // cells are taken out: `estimateExtension` adds exactly those two parts,
+    // and nothing else enters the total.
+    const rereads = entry.estimate?.conversations;
+    const pushed = rereads == null ? null : rereads - cells;
+    const levels =
+      request.deepen === "all" ? null : request.deepen.join(" or ");
+    const depth = `to ${request.turns} ${plural(request.turns, "turn")}`;
 
-    if (poussés === null) {
+    if (pushed === null) {
       headlines.push(
-        paliers === null
-          ? `Tous les essais notés poussés ${profondeur}.`
-          : `Essais notés ${paliers} poussés ${profondeur}.`,
+        levels === null
+          ? `All graded attempts pushed ${depth}.`
+          : `Attempts graded ${levels} pushed ${depth}.`,
       );
     } else {
-      const essais = `${poussés} ${plural(poussés, "essai")}`;
+      const attempts = `${pushed} ${plural(pushed, "attempt")}`;
       headlines.push(
-        paliers === null
-          ? `${essais} ${plural(poussés, "poussé")} ${profondeur} — tous ceux qui étaient notés.`
-          : `${essais} ${plural(poussés, "noté")} ${paliers} ${plural(poussés, "poussé")} ${profondeur}.`,
+        levels === null
+          ? `${attempts} pushed ${depth} — all those that were graded.`
+          : `${attempts} graded ${levels} pushed ${depth}.`,
       );
     }
   }
 
   if (request.scenario_indices.length > 0) {
     lines.push({
-      label: "Scénarios",
+      label: "Scenarios",
       values: [...new Set(request.scenario_indices)].map(
-        // Un index qui ne pointe sur rien se nomme par son numéro plutôt que de
-        // disparaître : c'est un fait du registre, pas une case à cacher.
-        (index) => scenarios[index]?.title ?? `scénario ${index}`,
+        // An index that points at nothing is named by its number rather than
+        // disappearing: it is a fact of the record, not a cell to hide.
+        (index) => scenarios[index]?.title ?? `scenario ${index}`,
       ),
     });
   }
   const newScenarios = request.new_scenarios ?? [];
   if (newScenarios.length > 0) {
     lines.push({
-      label: "Nouveaux scénarios",
+      label: "New scenarios",
       values: newScenarios.map((scenario) => scenario.title),
     });
   }
   if (targets.length > 0) {
-    lines.push({ label: "Modèles", values: [...targets] });
+    lines.push({ label: "Models", values: [...targets] });
   }
   const tools = request.new_tools ?? [];
   if (tools.length > 0) {
-    lines.push({ label: "Outils", values: tools.map((tool) => tool.name) });
+    lines.push({ label: "Tools", values: tools.map((tool) => tool.name) });
   }
   if (request.temperature) {
     const { min, max } = request.temperature;
     lines.push({
-      label: "Température",
+      label: "Temperature",
       values: [max == null || max === min ? `${min}` : `${min} – ${max}`],
     });
   }
-  // La profondeur seulement quand aucune phrase ne l'a déjà dite : une extension
-  // peut relever les tours pour ses cases neuves sans approfondir d'existant.
+  // The depth only when no sentence has already said it: an extension may raise
+  // the turns for its new cells without deepening anything existing.
   if (request.turns != null && request.deepen === undefined) {
     lines.push({
-      label: "Profondeur",
-      values: [`${request.turns} ${plural(request.turns, "tour")}`],
+      label: "Depth",
+      values: [`${request.turns} ${plural(request.turns, "turn")}`],
     });
   }
 

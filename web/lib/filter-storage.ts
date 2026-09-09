@@ -1,25 +1,25 @@
 "use client";
 
-/** L'état des filtres, d'une visite à l'autre, et séparément par liste.
+/** The filter state, from one visit to the next, and separately per list.
  *
- * Deux clés, parce que ce sont deux barres : les runs se filtrent par machine,
- * publication, auteur ; les brouillons par ce qui n'appartient qu'à eux. Un
- * seul état pour les deux ferait qu'une réduction posée sur les brouillons
- * survivrait au retour sur les runs, où elle ne veut rien dire.
+ * Two keys, because they are two bars: runs are filtered by machine,
+ * publication, author; drafts by what belongs to them alone. A single state for
+ * both would let a collapse set on the drafts survive the return to the runs,
+ * where it means nothing.
  *
- * `localStorage` et non `sessionStorage` : c'est une préférence, pas un état
- * de navigation. Quelqu'un qui ne veut voir que ses runs d'agent le pense pour
- * de bon. Contrairement aux caches de `store.ts`, qui eux doivent repartir de
- * zéro pour ne jamais montrer des données d'hier.
+ * `localStorage` and not `sessionStorage`: this is a preference, not a browsing
+ * state. Somebody who wants to see only their agent runs means it for good.
+ * Unlike the caches in `store.ts`, which must start again from zero so as never
+ * to show yesterday's data.
  *
- * Les clés portent un suffixe de version : la forme enregistrée est passée
- * d'une liste de libellés éteints à un objet, et relire l'ancienne comme la
- * nouvelle aurait rendu un état vide sans que personne ne comprenne pourquoi.
- * Une clé neuve laisse l'ancienne mourir de sa belle mort.
+ * The keys carry a version suffix: the stored shape went from a list of
+ * switched-off labels to an object, and reading the old one as the new would
+ * have returned an empty state without anyone understanding why. A fresh key
+ * lets the old one die of its own accord.
  *
- * Toute lecture et toute écriture sont gardées : un navigateur en navigation
- * privée, ou réglé pour refuser le stockage de site, fait lever l'accès
- * lui-même. Une préférence perdue ne doit pas casser la page.
+ * Every read and every write is guarded: a browser in private browsing, or set
+ * to refuse site storage, makes the access itself throw. A lost preference must
+ * not break the page.
  */
 
 import { DIMENSION_KEYS, OPEN, type DimensionKey, type FilterState, type Side } from "./run-filters";
@@ -31,13 +31,13 @@ const KEYS: Record<FilterMode, string> = {
   drafts: "evals-playground:drafts-filter-v2",
 };
 
-/** L'état de départ de chaque liste.
+/** The starting state of each list.
  *
- * Côté runs, `author: "b"` — seulement ce qu'un humain a lancé : les runs
- * d'agent sont nombreux et rarement ce qu'on vient chercher. Côté brouillons,
- * `launch: "b"` — seulement ce qui attend, la file étant faite pour ça. Un
- * brouillon d'agent, lui, est justement ce qu'on vient voir : l'auteur reste
- * ouvert de ce côté. */
+ * On the runs side, `author: "b"` — only what a human launched: agent runs are
+ * many and rarely what one comes looking for. On the drafts side,
+ * `launch: "b"` — only what is waiting, the queue being made for that. An
+ * agent's draft, for its part, is precisely what one comes to see: the author
+ * stays open on that side. */
 const DEFAULTS: Record<FilterMode, FilterState> = {
   runs: { dims: { author: "b" }, off: [] },
   drafts: { dims: { launch: "b" }, off: [] },
@@ -47,8 +47,8 @@ export function defaultState(mode: FilterMode): FilterState {
   return DEFAULTS[mode];
 }
 
-/** Relit ce qui a été écrit, en se méfiant de tout : une valeur d'une version
- *  d'avant, ou tapée à la main, ne doit pas faire tomber la liste. */
+/** Reads back what was written, distrusting everything: a value from an
+ *  earlier version, or typed by hand, must not bring the list down. */
 function parse(raw: unknown, mode: FilterMode): FilterState {
   if (!raw || typeof raw !== "object") return DEFAULTS[mode];
   const source = raw as { dims?: unknown; off?: unknown };
@@ -83,7 +83,7 @@ export function writeState(mode: FilterMode, state: FilterState): void {
   try {
     window.localStorage.setItem(KEYS[mode], JSON.stringify(state));
   } catch {
-    // Le réglage ne survivra pas à la visite. C'est tout ce qu'on perd.
+    // The setting will not survive the visit. That is all that is lost.
   }
 }
 

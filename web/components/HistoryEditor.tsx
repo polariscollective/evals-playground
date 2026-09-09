@@ -1,16 +1,16 @@
 "use client";
 
-// L'historique posé d'un scénario : des tours écrits d'avance, que le modèle
-// reçoit comme s'il les avait vécus.
+// A scenario's seeded history: turns written in advance, which the model
+// receives as if it had lived them.
 //
-// Sert à mesurer ce qu'un modèle fait *depuis* un état sans avoir à l'y amener.
-// Dérouler le préambule en vrais tours coûte des appels et, surtout, n'aboutit
-// pas au même endroit à chaque répétition — le modèle accepte l'étape 1 une fois
-// sur trois. Poser l'historique rend le point de départ identique pour toutes
-// les cases, ce sans quoi une colonne ne se compare pas à sa voisine.
+// Used to measure what a model does *from* a state without having to bring it
+// there. Playing the preamble out in real turns costs calls and, above all, does
+// not end in the same place on every repetition — the model accepts step 1 one
+// time in three. Laying the history down makes the starting point identical for
+// every cell, without which a column does not compare to its neighbour.
 import type { SeededTurn } from "@/lib/types";
 
-/** Le rôle qu'attend le prochain tour, l'historique alternant strictement. */
+/** The role the next turn expects, the history alternating strictly. */
 function nextRole(history: SeededTurn[]): "user" | "assistant" {
   return history.length % 2 === 0 ? "user" : "assistant";
 }
@@ -22,7 +22,7 @@ export function HistoryEditor({
   history: SeededTurn[];
   onChange: (history: SeededTurn[]) => void;
 }) {
-  const incomplet = history.length > 0 && history.at(-1)?.role !== "assistant";
+  const incomplete = history.length > 0 && history.at(-1)?.role !== "assistant";
 
   return (
     <div className="space-y-2">
@@ -52,8 +52,9 @@ export function HistoryEditor({
             }
             className="w-full rounded border border-zinc-300 p-2 font-mono text-sm"
           />
-          {/* Seul le dernier tour se retire : ôter celui du milieu casserait
-              l'alternance, et le formulaire refuserait sans qu'on comprenne. */}
+          {/* Only the last turn is removed: taking out one in the middle would
+              break the alternation, and the form would refuse without one
+              understanding. */}
           {index === history.length - 1 && (
             <button
               onClick={() => onChange(history.slice(0, -1))}
@@ -78,7 +79,7 @@ export function HistoryEditor({
         <span className="text-xs text-zinc-500">
           {history.length === 0
             ? "Optional. The conversation starts from nothing unless you seed it."
-            : incomplet
+            : incomplete
               ? "Add the assistant's reply — the opening message is the user turn that follows."
               : `${history.length} turn${history.length > 1 ? "s" : ""} seeded, then the opening message.`}
         </span>

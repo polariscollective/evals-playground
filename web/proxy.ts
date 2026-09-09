@@ -1,36 +1,34 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callbackFor } from "@/lib/signin-callback";
 
-// Ce fichier ne fait **pas** d'authentification. Il aiguille.
+// This file does **not** authenticate. It routes.
 //
-// Nommé `proxy.ts` et non `middleware.ts` : Next 16 a renommé la convention, et
-// le repli de compatibilité qui fonctionne en développement ne suffit pas au
-// déploiement — un `middleware.ts` y produisait un MIDDLEWARE_INVOCATION_FAILED
-// sans autre explication. L'export doit s'appeler `proxy`, et il est nommé,
-// pas par défaut.
+// Named `proxy.ts` and not `middleware.ts`: Next 16 renamed the convention, and
+// the compatibility fallback that works in development is not enough for the
+// deployment — a `middleware.ts` produced a MIDDLEWARE_INVOCATION_FAILED there
+// with no further explanation. The export must be called `proxy`, and it is
+// named, not default.
 //
-// La version précédente appelait `auth()` de NextAuth ici, donc faisait tourner
-// toute la bibliothèque sur le runtime edge. C'est ce qui a produit un
-// MIDDLEWARE_INVOCATION_FAILED opaque au premier déploiement : quand ce
-// code-là échoue, la plateforme rend une erreur 500 sans rien dire de ce qui
-// manquait.
+// The previous version called NextAuth's `auth()` here, and so ran the whole
+// library on the edge runtime. That is what produced an opaque
+// MIDDLEWARE_INVOCATION_FAILED on the first deployment: when that code fails, the
+// platform returns a 500 saying nothing about what was missing.
 //
-// La vraie vérification vit maintenant dans les routes, avec `requireUser()` —
-// côté serveur Node, avec une session réellement validée. Ici on se contente de
-// regarder si un cookie de session existe, pour envoyer un visiteur anonyme
-// vers l'écran de connexion plutôt que de le laisser buter sur un 401. Un
-// cookie forgé passerait cette porte-ci ; il ne passerait aucune route.
+// The real check now lives in the routes, with `requireUser()` — on the Node
+// server side, with a session really validated. Here we only look at whether a
+// session cookie exists, so as to send an anonymous visitor to the sign-in screen
+// rather than let them run into a 401. A forged cookie would pass this door; it
+// would pass no route.
 
 const SESSION_COOKIES = [
   "authjs.session-token",
   "__Secure-authjs.session-token",
 ];
 
-/** Le court-circuit de développement, verrouillé sur `NODE_ENV`.
+/** The development short circuit, locked on `NODE_ENV`.
  *
- * Les mêmes deux conditions que `getSessionEmail` dans auth.ts, pour que
- * l'application n'ait qu'un seul interrupteur plutôt que deux armés
- * indépendamment. */
+ * The same two conditions as `getSessionEmail` in auth.ts, so that the
+ * application has one single switch rather than two armed independently. */
 const skipAuthInDev =
   process.env.NODE_ENV !== "production" &&
   process.env.LOCAL_AUTHENTICATION_NEEDED === "false";
@@ -43,9 +41,9 @@ export function proxy(request: NextRequest) {
   );
   if (signedIn) return NextResponse.next();
 
-  // Une route d'API répond 401 ; une page part vers l'écran de connexion.
-  // Renvoyer une page de connexion à un `fetch` produirait du HTML là où le
-  // code attend du JSON, et l'erreur serait illisible.
+  // An API route answers 401; a page leaves for the sign-in screen. Returning a
+  // sign-in page to a `fetch` would produce HTML where the code expects JSON, and
+  // the error would be unreadable.
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -61,9 +59,9 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(signin);
 }
 
-// Ce littéral doit rester égal à ce que rend `proxyMatcher()` dans
-// `lib/public-paths.ts` : Next exige une constante ici et ignore une valeur
-// calculée. `public-paths.test.mts` tient l'accord des deux.
+// This literal must stay equal to what `proxyMatcher()` in `lib/public-paths.ts`
+// returns: Next demands a constant here and ignores a computed value.
+// `public-paths.test.mts` holds the two in agreement.
 export const config = {
   matcher: [
     "/((?!api/auth(?:/|$)|signin(?:/|$)|prompt(?:/|$)|validate(?:/|$)|scenario-advice(?:/|$)|shared(?:/|$)|inspect-view(?:/|$)|mcp(?:/|$)|\\.well-known(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$|icon\\.svg$).*)",

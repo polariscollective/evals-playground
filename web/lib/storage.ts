@@ -1,12 +1,13 @@
-// Les journaux d'Inspect, lus dans Supabase Storage.
+// Inspect's logs, read from Supabase Storage.
 //
-// Miroir de `backend/playground/log_store.py`, qui les y monte : un dossier par
-// run, un `.eval` par passe, plus le manifeste `listing.json` qu'écrit inspect.
+// A mirror of `backend/playground/log_store.py`, which puts them there: one
+// folder per run, one `.eval` per pass, plus the `listing.json` manifest inspect
+// writes.
 //
-// Le bucket est privé. C'est la moitié du contrôle d'accès — public, son URL
-// suffirait à contourner `is_public` — et l'autre moitié est la route, qui
-// vérifie qui regarde avant d'appeler ce module. Rien ici ne doit être importé
-// depuis un composant client : la clé de service contourne RLS.
+// The bucket is private. That is half the access control — public, its URL
+// would be enough to bypass `is_public` — and the other half is the route,
+// which checks who is looking before calling this module. Nothing here may be
+// imported from a client component: the service key bypasses RLS.
 import "server-only";
 import { credentials } from "./supabase";
 import { bareLogName, isSafeLogName } from "./inspect-view";
@@ -21,12 +22,12 @@ export type LogObject = {
   updatedAt: string | null;
 };
 
-/** Les journaux d'un run, ou une liste vide s'il n'en a pas.
+/** A run's logs, or an empty list if it has none.
  *
- * Un run lancé avant que ce dossier existe, ou un job mort avant qu'inspect
- * n'écrive, n'en a aucun — c'est un état normal, pas une erreur, et c'est ce
- * qui décide de l'affichage du bouton. Une panne de Storage donne le même
- * silence : mieux vaut un bouton absent qu'une page de run en erreur. */
+ * A run launched before this directory existed, or a job that died before
+ * inspect wrote, has none — that is a normal state, not an error, and it is
+ * what decides whether the button shows. A Storage failure gives the same
+ * silence: an absent button beats a run page in error. */
 export async function listRunLogs(runId: string): Promise<LogObject[]> {
   const { url, key } = credentials();
   let rows: Array<Record<string, unknown>>;
@@ -59,14 +60,15 @@ export async function listRunLogs(runId: string): Promise<LogObject[]> {
     .filter((object) => isSafeLogName(object.name));
 }
 
-/** Un objet du dossier d'un run, tel que Storage le rend.
+/** An object from a run's folder, as Storage returns it.
  *
- * La réponse est relayée sans être lue : le viewer demande des tranches d'un
- * ZIP par `Range`, et les relire ici pour les recomposer coûterait la mémoire
- * du serveur sur des fichiers qu'il n'a aucune raison d'ouvrir.
+ * The response is relayed without being read: the viewer asks for slices of a
+ * ZIP by `Range`, and reading them here to recompose them would cost the
+ * server's memory on files it has no reason to open.
  *
- * Le nom est validé avant d'être collé dans l'URL : sans ça, un `..` sortirait
- * du préfixe du run et donnerait le journal d'un autre — y compris non publié.
+ * The name is validated before being pasted into the URL: without that, a `..`
+ * would escape the run's prefix and give another's log — an unpublished one
+ * included.
  */
 export async function fetchRunLog(
   runId: string,

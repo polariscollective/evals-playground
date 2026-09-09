@@ -1,21 +1,21 @@
 "use client";
 
-// Les outils d'un run : ce que le modèle évalué peut décider d'appeler.
+// A run's tools: what the evaluated model can decide to call.
 //
-// Rien n'est jamais exécuté. Un outil répond de l'une de deux façons, et la
-// présence de `retrieval_rules` décide laquelle : vide, l'appel rend le
-// `result` écrit ici — la même chaîne à chaque fois, sans qu'aucun modèle ne
-// soit appelé ; renseigné, l'outil est servi depuis le monde du run par un
-// petit modèle, et sa réponse dépend des arguments reçus.
+// Nothing is ever executed. A tool answers in one of two ways, and the presence
+// of `retrieval_rules` decides which: empty, the call returns the `result`
+// written here — the same string every time, with no model called at all; filled
+// in, the tool is served from the run's world by a small model, and its answer
+// depends on the arguments received.
 //
-// Le fixe reste le défaut, et il faut le tenir : il ne coûte pas un appel et ne
-// varie pas. Servir n'a de sens que lorsque la sortie dépend légitimement de
-// l'entrée — une recherche qui rendrait une liste sans rapport avec ce qu'on a
-// cherché est ce qu'aucun vrai système ne fait, et c'est un tell.
+// The fixed form stays the default, and it must be held to: it costs no call and
+// does not vary. Serving only makes sense when the output legitimately depends on
+// the input — a search returning a list unrelated to what was searched for is
+// what no real system does, and it is a tell.
 //
-// Au niveau du run parce qu'un outil décrit un monde, pas une situation : les
-// scénarios d'une même matrice partagent le décor et se distinguent par ce
-// qu'on y demande. Voir
+// At the run's level because a tool describes a world, not a situation: the
+// scenarios of one matrix share the setting and are told apart by what is asked
+// within it. See
 // docs/superpowers/specs/2026-09-07-le-monde-des-outils.md.
 import { fixed, served } from "@/lib/tools";
 import type { ToolParam, ToolParamType, ToolSpec } from "@/lib/types";
@@ -74,8 +74,8 @@ export function ToolsEditor({
 
           <label className="block space-y-1">
             <span className="text-xs text-zinc-500">
-              {/* Le champ qui décide de tout : c'est le seul texte que le
-                  modèle lit avant de choisir. */}
+              {/* The field that decides everything: it is the only text the model
+                  reads before choosing. */}
               Description — what the model reads before deciding to call
             </span>
             <textarea
@@ -164,12 +164,12 @@ export function ToolsEditor({
             </button>
           </div>
 
-          {/* Les deux formes s'excluent, et l'écran le montre plutôt que de
-              laisser écrire les deux puis refuser au lancement : le champ
-              inutile disparaît dès que l'autre porte du texte.
-              `served(tool)`, pas `tool.retrieval_rules` brut : une espace
-              seule y était truthy et cachait ce champ sans qu'il soit
-              possible de le rouvrir — voir C4. */}
+          {/* The two forms exclude each other, and the screen shows it rather than
+              letting both be written and then refusing at launch: the useless field
+              disappears as soon as the other carries text.
+              `served(tool)`, not raw `tool.retrieval_rules`: a lone space was
+              truthy there and hid this field with no way of reopening it — see
+              C4. */}
           {!served(tool) && (
             <label className="block space-y-1">
               <span className="text-xs text-zinc-500">
@@ -185,16 +185,15 @@ export function ToolsEditor({
             </label>
           )}
 
-          {/* `fixed(tool)`, pas `tool.result.trim()` brut (IMPORTANT 3) :
-              détouré comme `served` au-dessus, et pour la même raison — une
-              espace seule dans `result` cachait ce champ-ci sans qu'il soit
-              possible de le rouvrir. Null-safe en plus : `toolsProblem`
-              n'exige jamais `result`, et un outil servi posé par une requête
-              directe peut en arriver dépourvu, ce que `.trim()` brut ferait
-              tomber au rendu plutôt que de simplement cacher le mauvais
-              champ. Les deux moitiés d'une exclusion doivent lire leur champ
-              de la même façon, sans quoi il existe un état où ni l'une ni
-              l'autre ne s'affiche. */}
+          {/* `fixed(tool)`, not raw `tool.result.trim()` (IMPORTANT 3): traced
+              around like `served` above, and for the same reason — a lone space in
+              `result` hid this very field with no way of reopening it. Null-safe
+              besides: `toolsProblem` never demands `result`, and a served tool laid
+              down by a direct request can arrive without one, which a raw `.trim()`
+              would make fall over at render rather than merely hiding the wrong
+              field. The two halves of an exclusion must read their field the same
+              way, without which there is a state where neither one nor the other
+              shows. */}
           {!fixed(tool) && (
             <label className="block space-y-1">
               <span className="text-xs text-zinc-500">
@@ -216,11 +215,10 @@ export function ToolsEditor({
             </label>
           )}
 
-          {/* Le second axe, et il ne s'exclut de rien : un outil fixe peut
-              écrire, et c'est même la forme courante. Toujours visible, donc,
-              là où les deux champs au-dessus se cachent l'un l'autre — les
-              masquer selon la forme de réponse ferait croire à une troisième
-              branche de l'exclusion. */}
+          {/* The second axis, and it excludes nothing: a fixed tool can write, and
+              that is even the ordinary form. Always visible, therefore, where the
+              two fields above hide each other — masking them according to the
+              answer's form would suggest a third branch of the exclusion. */}
           <label className="block space-y-1">
             <span className="text-xs text-zinc-500">
               What calling it changes in the world — leave empty if it only
@@ -256,7 +254,7 @@ export function ToolsEditor({
   );
 }
 
-/** Les outils qu'un scénario reçoit : tous, certains, ou aucun. */
+/** The tools a scenario receives: all, some, or none. */
 export function ScenarioTools({
   tools,
   selected,

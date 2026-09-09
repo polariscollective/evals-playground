@@ -1,5 +1,5 @@
-// L'écran de consentement d'un serveur d'autorisation qui ne vérifie
-// l'identité de personne lui-même : il renvoie vers Google, déjà en place.
+// The consent screen of an authorisation server that verifies nobody's identity
+// itself: it hands over to Google, already in place.
 import { NextResponse } from "next/server";
 import { getPublicOrigin } from "mcp-handler";
 import { getSessionEmail } from "@/auth";
@@ -43,13 +43,12 @@ function paramsOf(url: URL): Params {
   };
 }
 
-/** L'écran de consentement, et le renvoi vers Google s'il manque une
- *  session.
+/** The consent screen, and the redirect to Google if a session is missing.
  *
- * Le client et l'adresse de retour sont vérifiés en premier, et sans
- * redirection : eux seuls ne peuvent pas suivre un renvoi d'erreur, sous
- * peine de faire de cette route un redirecteur ouvert. Les autres erreurs
- * reviennent chez l'appelant, qui sait quoi en faire. */
+ * The client and the return address are checked first, and with no redirect:
+ * they alone cannot follow an error redirect, on pain of making this route an
+ * open redirector. The other errors go back to the caller, which knows what to
+ * do with them. */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const params = paramsOf(url);
@@ -70,11 +69,11 @@ export async function GET(request: Request) {
 
   const email = await getSessionEmail();
   if (!email) {
-    // Pas `url.origin` : derrière le proxy de Vercel, `request.url` porte
-    // l'hôte interne, et le `callbackUrl` désignerait alors une origine que
-    // NextAuth juge étrangère et réécrit en `/`. L'utilisateur se connecterait
-    // à Google pour atterrir sur l'accueil, pendant que claude.ai attend un
-    // code qui n'arriverait jamais. Même raison que `originOf` dans `/prompt`.
+      // Not `url.origin`: behind Vercel's proxy, `request.url` carries the
+      // internal host, and the `callbackUrl` would then designate an origin
+      // NextAuth judges foreign and rewrites to `/`. The user would sign in to
+      // Google only to land on the home page, while claude.ai waited for a code
+      // that would never arrive. Same reason as `originOf` in `/prompt`.
     const origin = getPublicOrigin(request);
     const signin = new URL("/signin", origin);
     signin.searchParams.set("callbackUrl", `${origin}${url.pathname}${url.search}`);
@@ -109,7 +108,7 @@ export async function GET(request: Request) {
   );
 }
 
-/** Le clic « Allow » : mine le code, renvoie vers `redirect_uri`. */
+/** The "Allow" click: mints the code, redirects to `redirect_uri`. */
 export async function POST(request: Request) {
   const form = await request.formData();
   const receivedClientId = String(form.get("client_id") ?? "");
@@ -129,9 +128,9 @@ export async function POST(request: Request) {
   const back = new URL(redirectUri);
   back.searchParams.set("code", code);
   if (state) back.searchParams.set("state", state);
-  // 303, et surtout pas le 307 que `NextResponse.redirect` pose par défaut :
-  // un 307 conserve la méthode, si bien que le navigateur rejouait ce renvoi
-  // en POST sur l'adresse de retour de claude.ai, qui répond « Method Not
-  // Allowed » — une réponse d'autorisation OAuth se livre en GET.
+  // 303, and above all not the 307 `NextResponse.redirect` lays down by default:
+  // a 307 preserves the method, so that the browser replayed this redirect as a
+  // POST on claude.ai's return address, which answers "Method Not Allowed" — an
+  // OAuth authorisation response is delivered by GET.
   return NextResponse.redirect(back, 303);
 }

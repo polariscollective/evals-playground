@@ -1,16 +1,15 @@
-// Chercher un run parmi ceux déjà chargés — aucune requête neuve.
+// Searching for a run among those already loaded — no new request.
 //
-// `search_runs` (le connecteur MCP) répond à « as-tu déjà vu un run qui
-// parlait de ça ? ». Le filtrage se fait ici, en TypeScript, sur ce que
-// `loadRuns` a déjà ramené : le mot-clé de l'agent ne touche jamais une
-// expression de filtre PostgREST, et cette fonction reste pure — donc l'une
-// des rares parties du connecteur que `node --test` couvre vraiment. Pas de
-// `server-only` ici : `route.ts` charge les runs, cette fonction ne fait que
-// les trier et les découper.
+// `search_runs` (the MCP connector) answers "have you already seen a run about
+// this?". The filtering happens here, in TypeScript, on what `loadRuns` has
+// already brought back: the agent's keyword never touches a PostgREST filter
+// expression, and this function stays pure — and so one of the rare parts of the
+// connector `node --test` really covers. No `server-only` here: `route.ts` loads
+// the runs, this function does nothing but sort them and slice them.
 import type { EvalRun, RunStatus, RunSummary, Tag } from "./types";
 
-/** Une fiche courte — jamais les notes entières ni la matrice. L'agent
- *  rappelle `get_run_metadata` ou `get_run_results` sur ce qu'il retient. */
+/** A short card — never the whole notes nor the matrix. The agent calls
+ *  `get_run_metadata` or `get_run_results` back on what it keeps. */
 export interface SearchHit {
   id: string;
   label: string | null;
@@ -22,13 +21,13 @@ export interface SearchHit {
   total_samples: number;
   mean: number | null;
   cost_usd: number | null;
-  /** Les libellés des tags du run, dans l'ordre où `tagsByRun` les porte —
-   *  jamais la couleur : un agent ne peint rien. Vide si le run n'en a pas. */
+  /** The labels of the run's tags, in the order `tagsByRun` carries them — never
+   *  the colour: an agent paints nothing. Empty if the run has none. */
   tags: string[];
-  /** Seulement si une requête a été donnée : les champs qui la portent. */
+  /** Only if a query was given: the fields that carry it. */
   matched_in?: MatchedField[];
-  /** Seulement si une requête a été donnée : le texte autour de la première
-   *  occurrence, dans le premier champ de `FIELDS` qui correspond. */
+  /** Only if a query was given: the text around the first occurrence, in the
+   *  first field of `FIELDS` that matches. */
   snippet?: string;
 }
 
@@ -36,16 +35,15 @@ export interface SearchOptions {
   query?: string;
   limit?: number;
   status?: string;
-  /** Ne garder que les runs qui portent ce libellé de tag, sans casse, en
-   *  égalité exacte — jamais en sous-chaîne : `api` ne doit pas remonter un
-   *  tag `rapide`. */
+  /** Keep only the runs carrying this tag label, case-insensitively, on exact
+   *  equality — never as a substring: `api` must not bring back a `rapide`
+   *  tag. */
   tag?: string;
 }
 
-/** Les tags d'un run, par identifiant de run — la forme que rend
- *  `tagsByRun()` (`lib/tags.ts`). Passée en argument plutôt qu'importée : ce
- *  module reste pur, chargeable par `node --test`, et `lib/tags.ts` est
- *  `server-only`. */
+/** A run's tags, by run identifier — the shape `tagsByRun()` (`lib/tags.ts`)
+ *  returns. Passed as an argument rather than imported: this module stays pure,
+ *  loadable by `node --test`, and `lib/tags.ts` is `server-only`. */
 export type RunTags = Map<string, Tag[]>;
 
 type MatchedField = "label" | "notes" | "analysis" | "criterion";
@@ -53,8 +51,8 @@ type MatchedField = "label" | "notes" | "analysis" | "criterion";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
-/** Où chercher, et dans quel ordre : c'est aussi l'ordre de priorité du
- *  snippet — le premier champ qui correspond fournit l'extrait. */
+/** Where to search, and in what order: it is also the priority order of the
+ *  snippet — the first field that matches supplies the excerpt. */
 const FIELDS: { field: MatchedField; text: (run: EvalRun) => string }[] = [
   { field: "label", text: (run) => run.label ?? "" },
   { field: "criterion", text: (run) => run.config.criterion ?? "" },
@@ -66,23 +64,22 @@ const SNIPPET_BEFORE = 80;
 const SNIPPET_AFTER = 120;
 const SNIPPET_MAX = 250;
 
-/** Les runs récents, ou ceux dont le texte porte `query`.
+/** The recent runs, or those whose text carries `query`.
  *
- * Sans `query` : les `limit` runs les plus récents. Compte sur `summaries`
- * déjà trié du plus récent au plus ancien — comme le rend `loadRuns` — sans
- * le retrier ; un appelant qui passerait un ordre différent obtiendrait ses
- * runs dans cet ordre-là, pas par date.
+ * With no `query`: the `limit` most recent runs. Relies on `summaries` already
+ * being sorted from newest to oldest — as `loadRuns` returns it — without
+ * re-sorting; a caller passing a different order would get their runs in that
+ * order, not by date.
  *
- * Avec `query` : les runs dont `label`, `notes`, `analysis` ou
- * `config.criterion` la porte, insensible à la casse, en sous-chaîne — jamais
- * en expression régulière, pour qu'un `(` ou un `*` dans la requête d'un
- * agent ne fasse jamais planter ni sur-matcher. L'ordre d'entrée est
- * préservé.
+ * With `query`: the runs whose `label`, `notes`, `analysis` or
+ * `config.criterion` carries it, case-insensitively, as a substring — never as
+ * a regular expression, so that a `(` or a `*` in an agent's query never
+ * crashes nor over-matches. The input order is preserved.
  *
- * `status`, dans tous les cas, filtre en égalité stricte sur `run.status`, et
- * `tag` sur le libellé exact d'un tag du run (sans casse) — les tags eux-mêmes
- * viennent de `tagsByRun`, pas de `summaries`, et par défaut aucun run n'en
- * porte. */
+ * `status`, in every case, filters on strict equality against `run.status`, and
+ * `tag` on the exact label of one of the run's tags (case-insensitively) — the
+ * tags themselves come from `tagsByRun`, not from `summaries`, and by default no
+ * run carries any. */
 export function searchRuns(
   summaries: RunSummary[],
   options: SearchOptions = {},
@@ -92,9 +89,9 @@ export function searchRuns(
   return hitsOf(summaries, tagsByRun, options).slice(0, limit);
 }
 
-/** Combien de runs correspondent — avant que `limit` n'en coupe l'affichage.
- *  Sert à l'appelant à dire « tu vois 10 sur 34 », ce que la liste bornée par
- *  `searchRuns` ne permet plus de savoir une fois coupée. */
+/** How many runs match — before `limit` cuts what is shown.
+ *  Lets the caller say "you see 10 of 34", which the list bounded by
+ *  `searchRuns` no longer allows once cut. */
 export function countMatches(
   summaries: RunSummary[],
   options: Omit<SearchOptions, "limit"> = {},
@@ -103,9 +100,9 @@ export function countMatches(
   return hitsOf(summaries, tagsByRun, options).length;
 }
 
-/** Toutes les fiches qui correspondent, dans l'ordre d'entrée, sans encore
- *  appliquer `limit` : la seule fonction qui filtre et note, partagée par
- *  `searchRuns` et `countMatches` pour qu'elles ne divergent jamais. */
+/** Every matching card, in input order, without applying `limit` yet: the only
+ *  function that filters and scores, shared by `searchRuns` and `countMatches`
+ *  so that the two never drift apart. */
 function hitsOf(
   summaries: RunSummary[],
   tagsByRun: RunTags,
@@ -157,8 +154,8 @@ function cardOf(summary: RunSummary, tagsByRun: RunTags): SearchHit {
   };
 }
 
-/** Les champs qui portent `needle` (déjà en minuscules), et l'extrait du
- *  premier d'entre eux dans l'ordre de `FIELDS` — ou `null` si aucun. */
+/** The fields carrying `needle` (already lower-cased), and the excerpt of the
+ *  first of them in `FIELDS` order — or `null` if none. */
 function matchOf(
   run: EvalRun,
   needle: string,
@@ -174,10 +171,9 @@ function matchOf(
   return matched.length === 0 ? null : { matched_in: matched, snippet };
 }
 
-/** Le texte autour de la première occurrence de `needle` (déjà en
- *  minuscules) dans `text` : ~80 caractères avant, ~120 après, les suites
- *  d'espaces réduites à une seule, et un `…` à chaque bout coupé. Jamais plus
- *  de `SNIPPET_MAX` caractères. */
+/** The text around the first occurrence of `needle` (already lower-cased) in
+ *  `text`: ~80 characters before, ~120 after, runs of spaces reduced to one,
+ *  and an `…` at each cut end. Never more than `SNIPPET_MAX` characters. */
 function snippetAround(text: string, needle: string): string {
   const index = text.toLowerCase().indexOf(needle);
   if (index === -1) return "";

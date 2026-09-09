@@ -1,4 +1,4 @@
-# notes de travail personnelles
+# personal working notes
 to_do.md
 
 # secrets
@@ -17,14 +17,11 @@ node_modules/
 .next/
 next-env.d.ts
 
-# données et logs produits par les runs
-data/runs/
-data/eval-runs/
-data/selected/
-# Ancré à la racine : sans la barre de tête, `logs/` avale tout dossier de
-# ce nom à n'importe quelle profondeur — il a tenu hors du dépôt, donc hors
-# du déploiement, la route `web/app/inspect-view/[runId]/logs/` qui sert les
-# journaux au viewer. Le bouton ne s'affichait alors sur aucun run.
+# data and logs produced by the runs
+# Anchored at the root: without the leading slash, `logs/` swallows any folder of
+# that name at any depth — it kept the `web/app/inspect-view/[runId]/logs/`
+# route, which serves the logs to the viewer, out of the repository and therefore
+# out of the deployment. The button then showed on no run at all.
 /logs/
 /local/*
 /backend/logs/
@@ -33,9 +30,9 @@ data/selected/
 .DS_Store
 *.tsbuildinfo
 
-# Espaces de travail des agents. Les deux vivent DANS le dépôt : un worktree
-# créé sous `.claude/worktrees/` est une copie complète de l'arbre, et sans
-# cette ligne `git status` la propose à l'ajout depuis la racine. Le journal
-# d'avancement est du brouillon de session, pas de l'histoire.
+# The agents' workspaces. Both live INSIDE the repository: a worktree created
+# under `.claude/worktrees/` is a whole copy of the tree, and without this line
+# `git status` offers it for adding from the root. The progress log is session
+# scratch, not history.
 /.claude/worktrees/
 /.superpowers/

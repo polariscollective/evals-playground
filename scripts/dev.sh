@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Lance l'application. Un seul serveur : les routes /api de Next portent tout
-# le service, et le moteur d'évaluation ne tourne que dans un job, déclenché à
-# la demande.
+# Runs the application. One single server: Next's /api routes carry the whole
+# service, and the evaluation engine only runs in a job, triggered on demand.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ ! -f .env ]; then
-  echo "Pas de .env — copie .env.example et remplis tes clés." >&2
+  echo "No .env — copy .env.example and fill in your keys." >&2
   exit 1
 fi
 
-# Next lit ses variables depuis web/, pas depuis la racine.
+# Next reads its variables from web/, not from the root.
 ln -sf ../.env web/.env.local
 
 npm --prefix web run dev

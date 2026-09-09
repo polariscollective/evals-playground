@@ -1,15 +1,14 @@
-// Ce qui mérite d'être dit sans être refusé.
+// What deserves to be said without being refused.
 //
-// Servir un outil depuis un monde vide est presque toujours une faute : le
-// modèle improvise, et improviser est exactement ce que l'outil servi existe
-// pour éviter. Presque — un outil purement calculatoire, dont les
-// `retrieval_rules` suffisent à tout produire, n'a aucun monde à lire.
-// Refuser interdirait cet usage-là pour attraper la faute probable ; on
-// nomme la faute et on laisse passer.
+// Serving a tool from an empty world is almost always a mistake: the model
+// improvises, and improvising is exactly what the served tool exists to avoid.
+// Almost — a purely computational tool, whose `retrieval_rules` are enough to
+// produce everything, has no world to read. Refusing would forbid that use to
+// catch the likely mistake; we name the mistake and let it through.
 //
-// Hors de `validate.ts`, délibérément : ces fonctions-là ne rendent que des
-// refus. Un refus arrête, un avertissement informe, et les mélanger ferait
-// qu'un jour l'un se comporterait comme l'autre.
+// Outside `validate.ts`, deliberately: those functions return refusals only. A
+// refusal stops, a warning informs, and mixing them would mean that one day one
+// of them behaves like the other.
 import { servesTools, toolsFor, writesWorld } from "./tools.ts";
 import type { EvalRunConfig, EvalScenario, ExtendRequest } from "./types";
 
@@ -17,16 +16,15 @@ function isFilled(value: string | undefined | null): boolean {
   return typeof value === "string" && value.trim() !== "";
 }
 
-/** Un scénario par avertissement, pour chaque scénario servi sans aucun monde
- *  à lire.
+/** One warning per scenario, for each scenario served with no world at all to
+ *  read.
  *
- * Le monde qu'une case lit est `run.world + scenario.world` — voir
- * `EvalScenario.world` — donc la question ne se pose jamais si le run en
- * porte un : tout est couvert d'office, quel que soit ce qu'un scénario y
- * ajoute. Sinon elle se pose par scénario, et seulement pour celui à qui
- * `toolsFor` offre au moins un outil servi : un scénario sans outil servi n'a
- * rien à lire nulle part, et l'avertir serait du bruit — la raison même pour
- * laquelle un avertissement cesse d'être lu. */
+ * The world a cell reads is `run.world + scenario.world` — see
+ * `EvalScenario.world` — so the question never arises if the run carries one:
+ * everything is covered outright, whatever a scenario adds to it. Otherwise it
+ * arises per scenario, and only for the one to which `toolsFor` offers at least
+ * one served tool: a scenario with no served tool has nothing to read anywhere,
+ * and warning it would be noise — the very reason a warning stops being read. */
 export function worldWarnings(config: EvalRunConfig): string[] {
   if (isFilled(config.world)) return [];
 
@@ -43,27 +41,27 @@ export function worldWarnings(config: EvalRunConfig): string[] {
   return warnings;
 }
 
-/** Un scénario qui écrit dans un monde que rien ne lit.
+/** A scenario that writes into a world nothing reads.
  *
- * `world_effect` n'a qu'un lecteur : le modèle d'environnement, quand il sert
- * un appel qui vient après. Un scénario dont aucun outil ne porte de
- * `retrieval_rules` journalise donc dans le vide — les entrées s'écrivent,
- * elles ne sont jamais relues, et l'expérimentateur croit avoir posé un monde
- * qui bouge alors qu'il a posé une phrase morte.
+ * `world_effect` has one reader only: the environment model, when it serves a
+ * call that comes afterwards. A scenario in which no tool carries
+ * `retrieval_rules` therefore logs into the void — the entries are written,
+ * they are never read back, and the experimenter believes they have laid down a
+ * world that moves when they have laid down a dead sentence.
  *
- * Nommé plutôt que refusé, comme le monde vide au-dessus : la combinaison
- * reste licite — on peut vouloir déclarer l'effet d'avance, avant d'ajouter
- * l'outil qui le lira par extension — et refuser interdirait cet ordre-là
- * pour attraper la faute probable.
+ * Named rather than refused, like the empty world above: the combination stays
+ * lawful — one may want to declare the effect in advance, before adding the
+ * tool that will read it by extension — and refusing would forbid that order to
+ * catch the likely mistake.
  *
- * Un avertissement par scénario concerné, par son titre : contrairement au
- * monde gelé d'une extension, celui-ci se répare scénario par scénario. */
+ * One warning per scenario concerned, by its title: unlike an extension's
+ * frozen world, this one is repaired scenario by scenario. */
 export function writeWithoutReadWarnings(config: EvalRunConfig): string[] {
   const warnings: string[] = [];
   for (const scenario of config.scenarios) {
-    const offerts = toolsFor(config, scenario);
-    if (!offerts.some(writesWorld)) continue;
-    if (servesTools(offerts)) continue;
+    const offered = toolsFor(config, scenario);
+    if (!offered.some(writesWorld)) continue;
+    if (servesTools(offered)) continue;
     warnings.push(
       `\`${scenario.title}\`: a tool here declares a world_effect, but no tool ` +
         "in this scenario reads the world. The effect would be recorded and " +
@@ -73,47 +71,46 @@ export function writeWithoutReadWarnings(config: EvalRunConfig): string[] {
   return warnings;
 }
 
-/** Le même risque, à l'extension — et un second qui s'y ajoute, plus dur à
- *  réparer : le monde d'un run est gelé au lancement (voir
- *  `EvalRunConfig.world`), et rien dans une extension ne peut lui en donner un
- *  après coup.
+/** The same risk, at extension time — and a second one on top, harder to
+ *  repair: a run's world is frozen at launch (see `EvalRunConfig.world`), and
+ *  nothing in an extension can give it one afterwards.
  *
- * `new_tools_for_existing` fait hériter des outils neufs les scénarios déjà
- * joués qui n'en nommaient aucun — voir sa docstring dans `types.ts`. Si l'un
- * d'eux reçoit ainsi un outil servi alors que ni le run ni lui ne portent de
- * monde, il ne pourra jamais en lire un : le monde du run est gelé, et une
- * extension ne réécrit pas le monde d'un scénario déjà joué.
+ * `new_tools_for_existing` makes the already played scenarios that named none
+ * inherit the new tools — see its docstring in `types.ts`. If one of them thus
+ * receives a served tool while neither the run nor itself carries a world, it
+ * will never be able to read one: the run's world is frozen, and an extension
+ * does not rewrite the world of a scenario already played.
  *
- * **Un scénario qui porte déjà le sien n'est donc pas concerné** : il a de
- * quoi lire, et rien ne lui manque. L'avertir serait un faux positif, et un
- * avertissement qui crie pour rien cesse d'être lu — c'est la seule façon de
- * le rendre inutile.
+ * **A scenario that already carries its own is therefore not concerned**: it
+ * has something to read, and nothing is missing for it. Warning it would be a
+ * false positive, and a warning that shouts for nothing stops being read —
+ * which is the only way to make it useless.
  *
- * Un seul texte suffit pour tous les scénarios réellement concernés : ce n'est
- * réparable pour aucun d'eux, les nommer un par un n'ajouterait rien. */
+ * One text is enough for every scenario really concerned: it is repairable for
+ * none of them, and naming them one by one would add nothing. */
 export function extendWorldWarnings(
   request: Pick<ExtendRequest, "new_tools" | "new_tools_for_existing">,
   runConfig: Pick<EvalRunConfig, "world"> & {
     scenarios: Pick<EvalScenario, "title" | "tools" | "world">[];
   },
 ): string[] {
-  const ajoutés = request.new_tools ?? [];
-  if (!servesTools(ajoutés)) return [];
-  // `false` gèle explicitement la liste des scénarios déjà joués sur les
-  // outils qu'ils avaient : personne n'hérite, donc rien à avertir.
+  const added = request.new_tools ?? [];
+  if (!servesTools(added)) return [];
+  // `false` explicitly freezes the list of already played scenarios on the
+  // tools they had: nobody inherits, so there is nothing to warn about.
   if (request.new_tools_for_existing === false) return [];
   if (isFilled(runConfig.world)) return [];
 
-  // Seul un scénario qui n'avait nommé aucun outil peut hériter des nouveaux :
-  // `extendProblem` interdit de redéfinir un nom déjà pris, donc un scénario
-  // qui liste les siens explicitement ne peut pas se retrouver, par
-  // coïncidence, à nommer un outil qui vient de naître.
-  const affecte = runConfig.scenarios.some(
+  // Only a scenario that had named no tool can inherit the new ones:
+  // `extendProblem` forbids redefining a name already taken, so a scenario that
+  // lists its own explicitly cannot find itself, by coincidence, naming a tool
+  // that has just been born.
+  const affects = runConfig.scenarios.some(
     (scenario) =>
       !isFilled(scenario.world) &&
-      toolsFor({ tools: ajoutés }, scenario).length > 0,
+      toolsFor({ tools: added }, scenario).length > 0,
   );
-  if (!affecte) return [];
+  if (!affects) return [];
 
   return [
     "This extension serves tools on scenarios the run has already played, " +

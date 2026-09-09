@@ -1,8 +1,8 @@
-// Les couleurs qu'un tag peut prendre, et leurs classes.
+// The colours a tag can take, and their classes.
 //
-// Tailwind ne construit pas de classe à l'exécution : `bg-${color}-100` est
-// purgé au build et ne peint rien. La correspondance est donc écrite en
-// toutes lettres, et c'est un test qui le rappelle.
+// Tailwind does not build classes at runtime: `bg-${color}-100` is purged at
+// build time and paints nothing. The mapping is therefore written out in full,
+// and it is a test that recalls it.
 
 export const TAG_COLORS = [
   "teal",
@@ -26,21 +26,22 @@ const CLASSES: Record<TagColor, string> = {
 
 const NEUTRAL = "bg-zinc-100 text-zinc-900";
 
-/** La couleur du prochain tag : la palette tourne, sans rien demander à
- *  personne. Un sélecteur de couleur serait une interface de plus pour un
- *  choix qui n'intéresse personne au moment de créer un tag. */
+/** The next tag's colour: the palette rotates, asking nobody anything. A
+ *  colour picker would be one more interface for a choice nobody cares about
+ *  at the moment of creating a tag. */
 export function nextColor(usedCount: number): TagColor {
   return TAG_COLORS[usedCount % TAG_COLORS.length];
 }
 
-/** Les classes d'une couleur. Une valeur inconnue — écrite à la main en base,
- *  ou venue d'une palette plus ancienne — rend du neutre plutôt que rien : un
- *  tag sans classe serait invisible.
+/** A colour's classes. An unknown value — hand-written in the database, or
+ *  come from an older palette — returns the neutral one rather than nothing: a
+ *  tag with no class would be invisible.
  *
- *  `Object.hasOwn` plutôt qu'un simple accès : `CLASSES` reste un objet
- *  ordinaire, et une couleur valant `"toString"` ou `"constructor"`
- *  trouverait sinon une méthode héritée du prototype au lieu de retomber sur
- *  le neutre — exactement le cas que ce commentaire prétend couvrir. */
+ *  `Object.hasOwn` rather than a plain lookup: `CLASSES` stays an ordinary
+ *  object, and a colour equal to `"toString"` or `"constructor"`
+ *  would otherwise find a method inherited from the prototype instead of
+ *  falling back on the neutral one — exactly the case this comment claims to
+ *  cover. */
 export function colorClasses(color: string): string {
   return Object.hasOwn(CLASSES, color) ? CLASSES[color as TagColor] : NEUTRAL;
 }

@@ -56,21 +56,21 @@ const MIN_REPETITIONS = 1;
 const MIN_TEMPERATURE = 0;
 const MAX_TEMPERATURE = 2;
 
-/** L'échelle proposée à l'ouverture : la plus simple qui mesure quelque chose.
+/** The scale offered on opening: the simplest that measures anything.
  *
- * Deux paliers sans texte plutôt qu'un exemple tout fait : c'est l'utilisateur
- * qui sait ce qu'il cherche, et un exemple pré-rempli serait recopié sans être
- * relu. Le formulaire refuse de lancer tant qu'ils ne sont pas écrits. */
+ * Two levels with no text rather than a ready-made example: it is the user who
+ * knows what they are looking for, and a prefilled example would be copied
+ * without being reread. The form refuses to launch until they are written. */
 const DEFAULT_RUBRIC: RubricLevel[] = [
   { value: 0, meaning: "" },
   { value: 1, meaning: "" },
 ];
 
-/** D'où vient le texte déposé : ce que les messages ont besoin de nommer.
+/** Where the deposited text comes from: what the messages need to name.
  *
- * Un fichier a un nom, un collage n'en a pas — et l'écart s'arrête là. Le reste
- * du chemin est le même, ce qui est exactement la propriété qu'on veut : la
- * validation est celle de `/api/config` dans les deux cas. */
+ * A file has a name, a paste has none — and the difference stops there. The rest
+ * of the path is the same, which is exactly the property we want: the validation
+ * is `/api/config`'s in both cases. */
 type ConfigOrigin = { said: string; csvName: string };
 
 const originOfFile = (file: File): ConfigOrigin => ({
@@ -110,13 +110,12 @@ function openingModel(catalog: ProviderInfo[]): string | null {
   );
 }
 
-/** Le titre de la page, rendu des deux côtés de la frontière Suspense.
+/** The page's heading, rendered on both sides of the Suspense boundary.
  *
- * `useSearchParams` force le rendu client de tout ce qui est sous cette
- * frontière, et le formulaire entier est dessous. Sans ce composant, le repli
- * remplaçait la page par le seul mot « Loading… » : le titre disparaissait,
- * puis réapparaissait ailleurs. Il ne dépend d'aucune donnée — il n'a aucune
- * raison d'attendre. */
+ * `useSearchParams` forces client rendering of everything under that boundary,
+ * and the whole form is under it. Without this component, the fallback replaced
+ * the page by the single word "Loading…": the heading disappeared, then
+ * reappeared elsewhere. It depends on no data — it has no reason to wait. */
 function PageHeader() {
   return (
     <header>
@@ -132,8 +131,8 @@ function PageHeader() {
 }
 
 export default function EvaluatePage() {
-  // `useSearchParams` force le rendu client de tout ce qui est sous lui : la
-  // limite est posée ici pour que la page reste prérendue au-dessus.
+  // `useSearchParams` forces client rendering of everything under it: the
+  // boundary is laid here so that the page stays prerendered above.
   return (
     <Suspense
       fallback={
@@ -161,8 +160,8 @@ function EvaluateForm() {
   const [title, setTitle] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [openingMessage, setOpeningMessage] = useState("");
-  // L'historique du scénario saisi à la main. Le mode CSV a le sien, dans une
-  // colonne : ce sont deux chemins vers le même champ du scénario.
+  // The history of the scenario typed in by hand. CSV mode has its own, in a
+  // column: they are two paths to the same field of the scenario.
   const [history, setHistory] = useState<SeededTurn[]>([]);
   const [scenarioNote, setScenarioNote] = useState("");
   // What this row changes about the run's world — see `EvalScenario.world`.
@@ -170,16 +169,16 @@ function EvaluateForm() {
   // own, never melted into it: that is what makes a denial readable as a
   // correction rather than a contradiction to untangle.
   const [scenarioWorld, setScenarioWorld] = useState("");
-  // Les outils du run, et ce que le scénario manuel en prend. Le mode CSV a
-  // sa colonne : deux chemins vers le même champ du scénario.
+  // The run's tools, and what the manual scenario takes of them. CSV mode has
+  // its column: two paths to the same field of the scenario.
   const [tools, setTools] = useState<ToolSpec[]>([]);
-  // Ce que contient l'environnement, pour les outils qui portent des règles de
-  // lecture. Au niveau du run parce que les outils doivent s'accorder entre
-  // eux : deux copies du même corpus divergeraient.
+  // What the environment holds, for the tools carrying reading rules. At run
+  // level because the tools must agree with each other: two copies of the same
+  // corpus would diverge.
   const [world, setWorld] = useState("");
-  // Le modèle qui sert les outils portant des règles de lecture — voir
-  // `EvalModels.world`. Jamais présélectionné : un champ vide qui bloque le
-  // lancement vaut mieux qu'un défaut que personne n'a remarqué.
+  // The model that serves the tools carrying reading rules — see
+  // `EvalModels.world`. Never preselected: an empty field that blocks the launch
+  // is better than a default nobody noticed.
   const [worldModel, setWorldModel] = useState("");
   const [maxToolCalls, setMaxToolCalls] = useState(5);
   const [scenarioTools, setScenarioTools] = useState<string[] | null>(null);
@@ -188,20 +187,20 @@ function EvaluateForm() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [csvSkipped, setCsvSkipped] = useState(0);
   const [csvName, setCsvName] = useState("");
-  // Le texte brut du fichier, conservé pour être enregistré à côté du run :
-  // le relire depuis les lignes analysées perdrait sa mise en forme d'origine.
+  // The file's raw text, kept to be saved beside the run: rereading it from the
+  // parsed rows would lose its original layout.
   const [csvText, setCsvText] = useState("");
   const [colTitle, setColTitle] = useState("");
   const [colSystem, setColSystem] = useState("");
   const [colOpening, setColOpening] = useState("");
-  // Facultative : la colonne portant l'historique posé, en JSON. La plupart
-  // des lots n'en ont pas, et le sélecteur reste alors sur « — ».
+  // Optional: the column carrying the seeded history, as JSON. Most batches have
+  // none, and the selector then stays on "—".
   const [colHistory, setColHistory] = useState("");
-  // Facultative aussi : une cellule vide offre tous les outils du run, `none`
-  // n'en offre aucun, sinon les noms séparés par des virgules.
+  // Optional too: an empty cell offers all the run's tools, `none` offers none,
+  // otherwise the names separated by commas.
   const [colTools, setColTools] = useState("");
-  // Facultative : la note de laboratoire du scénario, celle qu'on relit six
-  // mois plus tard pour se rappeler pourquoi cette ligne existe.
+  // Optional: the scenario's laboratory note, the one reread six months later to
+  // remember why this row exists.
   const [colNote, setColNote] = useState("");
   // Optional: the column holding each row's own world.
   const [colWorld, setColWorld] = useState("");
@@ -218,18 +217,17 @@ function EvaluateForm() {
   const [targets, setTargets] = useState<string[]>([]);
   const [adversary, setAdversary] = useState("");
   const [judge, setJudge] = useState("");
-  // Les juges secondaires — voir `JudgeSpec` (`lib/types.ts`). Le principal
-  // reste porté par `criterion`/`rubric`/`judge` ci-dessus : rien ici ne peut
-  // se déclarer principal, la forme de `JudgeSpec` ne le permet pas.
+  // The secondary judges — see `JudgeSpec` (`lib/types.ts`). The principal stays
+  // carried by `criterion`/`rubric`/`judge` above: nothing here can declare
+  // itself principal, `JudgeSpec`'s shape does not allow it.
   const [secondaryJudges, setSecondaryJudges] = useState<JudgeSpec[]>([]);
-  // Les modèles qu'une reprise ou un brouillon apportait à l'ouverture,
-  // hors favoris ou non — posés une fois par `fillFromConfig` et jamais
-  // recalculés ensuite. `chosen`, plus bas, les ajoute à la sélection vivante
-  // plutôt que de les y remplacer : recalculer ce sous-ensemble depuis
-  // `targets`/`adversary`/`judge`/`secondaryJudges` à chaque rendu ferait
-  // disparaître un modèle carried dès qu'on le désélectionne, empêchant de le
-  // reposer ensuite sans recharger la page — exactement l'usage que ce
-  // mécanisme sert.
+  // The models a duplicate or a draft brought at opening, favourites or not —
+  // laid once by `fillFromConfig` and never recomputed afterwards. `chosen`,
+  // further down, adds them to the live selection rather than replacing it:
+  // recomputing that subset from `targets`/`adversary`/`judge`/`secondaryJudges`
+  // on every render would make a carried model disappear as soon as one
+  // deselected it, preventing it from being laid down again without reloading
+  // the page — exactly the use this mechanism serves.
   const [carriedModels, setCarriedModels] = useState<Set<string>>(new Set());
 
   // The last document received — a run being duplicated, a draft opened, a
@@ -247,31 +245,30 @@ function EvaluateForm() {
   const [base, setBase] = useState<EvalRunConfig | null>(null);
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
-  // Pourquoi il n'y a pas de devis, quand la configuration, elle, tient.
+  // Why there is no quote, when the configuration itself holds.
   const [estimateError, setEstimateError] = useState<string | null>(null);
-  // Vide à l'ouverture, et c'est le point : le nombre que ce chantier a retiré
-  // comme repli silencieux ne doit pas revenir comme valeur par défaut qu'on
-  // accepte sans la lire. Un champ vide est un champ à remplir, et le devis le
-  // dit au lieu de s'afficher. Une configuration chargée, elle, le remplit
-  // depuis ce qu'elle déclare — seul un run vraiment neuf part de rien.
+  // Empty on opening, and that is the point: the number this project removed as
+  // a silent fallback must not come back as a default value one accepts without
+  // reading. An empty field is a field to fill in, and the quote says so instead
+  // of showing itself. A loaded configuration, for its part, fills it from what
+  // it declares — only a truly fresh run starts from nothing.
   const [averageOutputTokens, setAverageOutputTokens] = useState<number | null>(
     null,
   );
-  // Allumé par défaut, comme l'absence du champ dans une configuration
-  // enregistrée : c'est la même règle que lit `configProblem`, `!== false` et
-  // jamais `=== true`, et le formulaire doit s'y tenir tout autant qu'un
-  // fichier importé ou qu'un brouillon d'agent.
+  // On by default, like the field's absence in a saved configuration: it is the
+  // same rule `configProblem` reads, `!== false` and never `=== true`, and the
+  // form must hold to it just as much as an imported file or an agent's draft.
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
   const [judgePrompt, setJudgePrompt] = useState<JudgePromptPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
-  // Le fichier de configuration importé, s'il y en a eu un : ce qu'il a rempli,
-  // et le CSV qu'il annonce sans le porter.
+  // The imported configuration file, if there was one: what it filled in, and
+  // the CSV it announces without carrying.
   const [importNote, setImportNote] = useState<string | null>(null);
-  // Les colonnes nommées par le fichier, à appliquer au CSV quand il arrivera.
-  // Sans elles, `onCsv` devinerait — et le fichier avait justement pris la peine
-  // de le dire.
+  // The columns the file names, to be applied to the CSV when it arrives.
+  // Without them, `onCsv` would guess — and the file had gone to the trouble of
+  // saying.
   const [wantedColumns, setWantedColumns] = useState<{
     title: string;
     system: string;
@@ -315,19 +312,19 @@ function EvaluateForm() {
       .catch((e: Error) => setError(e.message));
   }, [draftOf, relaunchOf]);
 
-  /** Poser une configuration dans le formulaire.
+  /** Laying a configuration into the form.
    *
-   * Reprendre un run et ouvrir un brouillon remplissent exactement les mêmes
-   * champs : un brouillon n'est qu'une configuration qu'on n'a pas encore
-   * lancée. Le CSV arrive déjà résolu — la reprise le lit depuis le run, le
-   * brouillon le porte avec lui. */
-  /** Remplir le formulaire depuis une configuration.
+   * Duplicating a run and opening a draft fill in exactly the same fields: a
+   * draft is nothing but a configuration one has not launched yet. The CSV
+   * arrives already resolved — the duplicate reads it from the run, the draft
+   * carries it along. */
+  /** Filling the form from a configuration.
    *
-   * Chaque champ retombe sur le défaut du formulaire vide, parce que la
-   * configuration peut être incomplète : un brouillon manuel a le droit de
-   * n'avoir qu'un nom — c'est sa raison d'être — et le type `EvalRunConfig`
-   * décrit ce qui est lançable, pas ce qui est enregistrable. Sans ces
-   * défauts, rouvrir un brouillon à peine commencé fait tomber la page. */
+   * Every field falls back on the empty form's default, because the
+   * configuration may be incomplete: a manual draft has the right to have only a
+   * name — that is its reason for being — and the `EvalRunConfig` type describes
+   * what is launchable, not what is savable. Without those defaults, reopening a
+   * barely started draft brings the page down. */
   const fillFromConfig = useCallback(
     (config: EvalRunConfig, label: string, csvText: string | null) => {
       const scenarios = config.scenarios ?? [];
@@ -347,8 +344,8 @@ function EvaluateForm() {
       setAdversary(config.models?.adversary ?? "");
       setJudge(config.models?.judge ?? "");
       setWorldModel(config.models?.world ?? "");
-      // Ce que cette configuration nomme, gardé à part de l'état vivant —
-      // voir le commentaire de `carriedModels` plus haut sur pourquoi.
+      // What this configuration names, kept apart from the live state — see the
+      // comment on `carriedModels` above for why.
       setCarriedModels(
         new Set(
           [
@@ -363,22 +360,22 @@ function EvaluateForm() {
       setTemperatureMin(config.temperature?.min ?? 1);
       setVaryTemperature(config.temperature?.max != null);
       setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
-      // La longueur déclarée est un champ comme les autres : ne pas la charger
-      // laissait l'état d'ouverture en place pendant que tout le reste venait
-      // de la configuration, et `config()` réenregistrait ensuite ce reste-là.
-      // Ce que l'auteur du run avait annoncé disparaissait alors du dossier
-      // au premier humain qui rouvrait le brouillon.
+      // The declared length is a field like any other: not loading it left the
+      // opening state in place while everything else came from the configuration,
+      // and `config()` then saved that opening state back. What the run's author
+      // had announced then disappeared from the record at the first human who
+      // reopened the draft.
       setAverageOutputTokens(config.average_output_tokens ?? null);
-      // Même défaut qu'à l'écriture — `!== false`, jamais `=== true` — sinon
-      // rouvrir un brouillon où un agent avait explicitement éteint le juge
-      // le rallumerait ici, et « Save as draft » réécrirait l'interrupteur en
-      // base sans lui : c'est exactement le défaut que ce champ corrige.
+      // The same default as on writing — `!== false`, never `=== true` — without
+      // which reopening a draft where an agent had explicitly turned the judge off
+      // would turn it back on here, and "Save as draft" would rewrite the switch
+      // in the database without them: exactly the flaw this field fixes.
       setCheckEvalAwareness(config.check_eval_awareness !== false);
 
-      // Un seul scénario tient dans le mode manuel ; au-delà, le formulaire
-      // passe par un CSV, quitte à le reconstruire depuis les scénarios.
-      const enCsv = config.source?.kind === "csv" || scenarios.length > 1;
-      if (!enCsv) {
+      // One scenario fits in manual mode; beyond that, the form goes through a
+      // CSV, rebuilding it from the scenarios if need be.
+      const inCsv = config.source?.kind === "csv" || scenarios.length > 1;
+      if (!inCsv) {
         setSource("manual");
         const first = scenarios[0];
         setTitle(first?.title ?? "");
@@ -409,8 +406,8 @@ function EvaluateForm() {
         return;
       }
 
-      // Pas de fichier : le lot reconstruit a le même contenu que l'original,
-      // seule sa mise en forme est perdue.
+      // No file: the rebuilt batch has the same content as the original, only its
+      // layout is lost.
       const { columns, rows } = rebuildCsv(scenarios);
       setCsvText(toCsv(columns, rows));
       setCsvColumns(columns);
@@ -428,14 +425,14 @@ function EvaluateForm() {
     [],
   );
 
-  // Ouvrir un brouillon soumis par un agent : le même formulaire, prérempli,
-  // qu'on peut modifier avant de lancer. Pas d'écran à part — ce qu'on veut
-  // faire d'un brouillon est exactement ce qu'on fait d'un run qu'on compose.
+  // Opening a draft submitted by an agent: the same form, prefilled, which one
+  // can change before launching. No separate screen — what one wants to do with
+  // a draft is exactly what one does with a run one composes.
   //
-  // `mine` vient de la route : elle seule relie une session à une adresse
-  // e-mail, et c'est ce verdict qui dit si enregistrer réécrira ce brouillon
-  // ou en posera un nouveau à côté. Vrai par défaut — sans brouillon ouvert,
-  // enregistrer en crée toujours un à soi.
+  // `mine` comes from the route: it alone ties a session to an email address,
+  // and it is that verdict which says whether saving will rewrite this draft or
+  // lay a new one beside it. True by default — with no draft open, saving always
+  // creates one of one's own.
   const [draftMine, setDraftMine] = useState(true);
 
   /** Pick the form up where it was left.
@@ -491,9 +488,9 @@ function EvaluateForm() {
     getDraft(draftOf)
       .then((draft) => {
         if (cancelled) return;
-        // Une extension ne se remplit pas ici : elle s'ajoute à un run
-        // existant, sur la page de ce run. La liste des brouillons y mène
-        // directement ; cette adresse-ci n'aurait rien à en faire.
+          // An extension is not filled in here: it adds itself to an existing run,
+          // on that run's page. The drafts list leads straight there; this address
+          // would have nothing to do with it.
         if (draft.kind !== "run") {
           setError(
             "That draft extends an existing run — open it from that run's page.",
@@ -514,7 +511,7 @@ function EvaluateForm() {
     };
   }, [draftOf, fillFromConfig]);
 
-  // Relancer un run : le formulaire reprend exactement ses paramètres.
+  // Relaunching a run: the form takes back exactly its parameters.
   useEffect(() => {
     if (!relaunchOf) return;
     // As with the draft above: already restored, so already in hand.
@@ -524,20 +521,20 @@ function EvaluateForm() {
     getRun(relaunchOf)
       .then(async ({ run, judges, source_csv_available }) => {
         if (cancelled) return;
-        // Le fichier d'origine s'il a été gardé ; sinon `fillFromConfig` le
-        // reconstruit depuis les scénarios du run.
+          // The original file if it was kept; failing that `fillFromConfig`
+          // rebuilds it from the run's scenarios.
         const text =
           run.config.source?.kind === "csv" && source_csv_available
             ? await sourceCsvText(relaunchOf).catch(() => null)
             : null;
         if (cancelled) return;
 
-        // Dérivé depuis les liaisons vivantes du run (`judges`, déjà
-        // ramenées par `getRun`), jamais depuis `run.config.judges` recopié
-        // au lancement — voir `withLiveJudges` (`lib/live-config.ts`). Un
-        // juge ajouté après coup rejoint donc le formulaire ; un juge délié
-        // en sort. `criterion`/`rubric`/le modèle du juge suivent le
-        // principal vivant, même s'il a changé depuis le lancement.
+          // Derived from the run's living links (`judges`, already brought back by
+          // `getRun`), never from `run.config.judges` copied at launch — see
+          // `withLiveJudges` (`lib/live-config.ts`). A judge added afterwards
+          // therefore joins the form; an unlinked judge leaves it.
+          // `criterion`/`rubric`/the judge's model follow the living principal,
+          // even if it has changed since the launch.
         filled.current = true;
         loadedFrom.current = relaunchOf;
         fillFromConfig(
@@ -639,10 +636,10 @@ function EvaluateForm() {
         targets,
         adversary: turns > 1 ? adversary : null,
         judge,
-        // Comme l'adversaire ci-dessus : quand plus aucun outil ne sert, le
-        // champ disparaît de l'écran — voir plus bas — et un choix qui
-        // traînerait dans l'état ne doit pas se retrouver refusé par
-        // `configProblem` sans qu'il y ait la moindre façon de l'effacer.
+        // Like the adversary above: when no tool serves any more, the field
+        // disappears from the screen — see below — and a choice left lying in the
+        // state must not find itself refused by `configProblem` with no way at all
+        // of clearing it.
         world: servesTools(tools) ? worldModel || null : null,
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
@@ -653,8 +650,8 @@ function EvaluateForm() {
       world,
       label: label.trim() || null,
       notes,
-      // La provenance suit le run : sans le nom du fichier et les colonnes
-      // choisies, on ne saurait plus, plus tard, quel lot a produit la matrice.
+      // The provenance follows the run: without the file's name and the columns
+      // chosen, one would no longer know, later, which batch produced the matrix.
       source: {
         kind: source,
         file_name: source === "csv" ? csvName : "",
@@ -708,24 +705,24 @@ function EvaluateForm() {
     ],
   );
 
-  // Ce qui manque, dans les mots du serveur — ou `null` si le run peut partir.
+  // What is missing, in the server's words — or `null` if the run can leave.
   //
-  // C'est `configProblem` qui décide, celui-là même qu'appellent `/api/estimate`
-  // et `/api/runs`. Le formulaire avait sa propre version de la question :
-  // moins complète — ni les outils, ni la règle des deux paliers qui comptent —
-  // et muette. Elle laissait le bouton de lancement actif pendant que le devis
-  // se taisait, puisque les deux ne demandaient pas la même chose.
+  // It is `configProblem` that decides, the very one `/api/estimate` and
+  // `/api/runs` call. The form had its own version of the question: less complete
+  // — neither the tools, nor the rule of the two counted levels — and mute. It
+  // left the launch button active while the quote kept silent, since the two were
+  // not asking the same thing.
   const problem = configProblem(config());
   const ready = problem === null;
-  // Ce qui mérite d'être dit sans bloquer le lancement — voir
-  // `worldWarnings` : un scénario servi sans rien à lire.
+  // What deserves to be said without blocking the launch — see `worldWarnings`:
+  // a scenario served with nothing to read.
   const worldModelWarnings = worldWarnings(config());
 
-  /** Écrit le formulaire dans un fichier YAML, redéposable tel quel.
+  /** Writes the form into a YAML file, redepositable as it stands.
    *
-   * Le même format que celui demandé à l'agent : deux formats pour les deux sens
-   * de la même conversion serait une bizarrerie de plus à expliquer. L'écriture
-   * se fait côté serveur, là où vit déjà la lecture. */
+   * The same format as the one asked of the agent: two formats for the two
+   * directions of the same conversion would be one more oddity to explain. The
+   * writing happens server-side, where the reading already lives. */
   const downloadConfig = async () => {
     try {
       const { text } = await exportConfigFile(config());
@@ -740,8 +737,8 @@ function EvaluateForm() {
     }
   };
 
-  // L'estimation est rafraîchie dès que la configuration devient valide :
-  // le volume est un produit de quatre facteurs et explose sans qu'on le voie.
+  // The estimate is refreshed as soon as the configuration becomes valid: the
+  // volume is a product of four factors and explodes without one seeing it.
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
@@ -760,9 +757,9 @@ function EvaluateForm() {
           }
         })
         .catch((e: Error) => {
-          // Jeter ce message est ce qui a rendu l'affaire indéchiffrable : le
-          // panneau retombait sur « Complete the form » en accusant un
-          // formulaire complet.
+            // Throwing this message away is what made the affair undecipherable:
+            // the panel fell back on "Complete the form" while accusing a complete
+            // form.
           if (!cancelled) {
             setEstimate(null);
             setEstimateError(e.message);
@@ -833,9 +830,9 @@ function EvaluateForm() {
       parsed.columns.find((c) =>
         candidates.some((k) => c.toLowerCase().includes(k)),
       ) ?? "";
-    // Un fichier de configuration qui nomme ses colonnes l'emporte sur la
-    // devinette : c'est une intention, pas une supposition. Une colonne qu'il
-    // nomme sans qu'elle existe est ignorée plutôt que sélectionnée à vide.
+    // A configuration file that names its columns wins over the guess: it is an
+    // intention, not a supposition. A column it names that does not exist is
+    // ignored rather than selected empty.
     const wanted = (name: string, candidates: string[]) =>
       name && parsed.columns.includes(name) ? name : guess(candidates);
     setColTitle(wanted(wantedColumns?.title ?? "", ["title", "titre", "name"]));
@@ -851,21 +848,21 @@ function EvaluateForm() {
     setWantedColumns(null);
   };
 
-  /** Remplit le formulaire depuis une config écrite, fichier ou collage.
+  /** Fills the form from a written config, a file or a paste.
    *
-   * La lecture et la validation sont faites par la route `/api/config` : un
-   * texte accepté là ne peut pas être refusé au lancement, ce qu'une validation
-   * faite ici seulement ne garantirait pas. Rien du formulaire n'est touché
-   * avant que la route ait répondu — un texte refusé le laisse donc entier.
+   * The reading and the validation are done by the `/api/config` route: a text
+   * accepted there cannot be refused at launch, which a validation done here
+   * alone would not guarantee. Nothing of the form is touched before the route
+   * has answered — a refused text therefore leaves it whole.
    *
-   * Elle lève au lieu d'afficher : le message n'a pas le même endroit selon
-   * d'où vient le texte — en haut de la page pour un fichier, dans la fenêtre
-   * pour un collage, à côté de ce qui peut encore être corrigé. */
+   * It raises instead of showing: the message does not have the same place
+   * depending on where the text comes from — at the top of the page for a file,
+   * in the window for a paste, beside what can still be corrected. */
   const onConfigText = async (text: string, origin: ConfigOrigin) => {
     setError(null);
-    // Effacé d'entrée plutôt qu'en cas d'échec : un refus ne doit pas laisser
-    // en place le bandeau du texte précédent, qui décrirait un formulaire que
-    // celui-ci a pu changer entre-temps.
+    // Cleared at the outset rather than on failure: a refusal must not leave in
+    // place the previous text's banner, which would describe a form this one may
+    // have changed in the meantime.
     setImportNote(null);
     const { config, csv } = await importConfigFile(text);
     setBase(config);
@@ -877,11 +874,10 @@ function EvaluateForm() {
     setTurns(config.turns);
     setRepetitions(config.repetitions);
     setAdversaryPrompt(config.adversary_prompt);
-    // Les outils du run, que la reprise d'un run charge déjà (plus haut) et que
-    // ce chemin-ci oubliait : un document qui les définit arrivait dans un
-    // formulaire sans outils, et ses scénarios en réclamaient alors qui
-    // n'existaient plus. Le devis partait, revenait 422, et l'écran disait
-    // seulement « Complete the form ».
+    // The run's tools, which duplicating a run already loads (above) and which
+    // this path forgot: a document defining them arrived in a form with no tools,
+    // and its scenarios then asked for tools that no longer existed. The quote
+    // left, came back 422, and the screen said only "Complete the form".
     setTools(config.tools ?? []);
     setMaxToolCalls(config.max_tool_calls_per_turn ?? 5);
     setWorld(config.world ?? "");
@@ -889,11 +885,10 @@ function EvaluateForm() {
     setAdversary(config.models.adversary ?? "");
     setJudge(config.models.judge);
     setWorldModel(config.models.world ?? "");
-    // Ce que ce document nomme, gardé à part de l'état vivant — voir le
-    // commentaire de `carriedModels` plus haut sur pourquoi. Posé (et non
-    // ajouté) à chaque import : un document chargé après une reprise remplace
-    // les modèles de l'ancien run plutôt que de les offrir indéfiniment à
-    // côté des siens.
+    // What this document names, kept apart from the live state — see the comment
+    // on `carriedModels` above for why. Laid (and not added) on every import: a
+    // document loaded after a duplicate replaces the old run's models rather than
+    // offering them indefinitely beside its own.
     setCarriedModels(
       new Set(
         [
@@ -907,17 +902,17 @@ function EvaluateForm() {
     setTemperatureMin(config.temperature?.min ?? 1);
     setVaryTemperature(config.temperature?.max != null);
     setTemperatureMax(config.temperature?.max ?? config.temperature?.min ?? 1);
-    // Comme la reprise d'un run : le document porte la longueur déclarée, et
-    // ne pas la lire ici la remplacerait en silence par celle du formulaire.
+    // Like duplicating a run: the document carries the declared length, and not
+    // reading it here would silently replace it with the form's.
     setAverageOutputTokens(config.average_output_tokens ?? null);
-    // Un fichier importé est le seul moyen qu'a un humain d'éteindre ce juge
-    // depuis l'écran ; ne pas le lire ici le jetterait à l'arrivée, alors que
-    // le formulaire vient tout juste d'apprendre à l'afficher.
+    // An imported file is the only way a human has of turning this judge off from
+    // the screen; not reading it here would throw it away on arrival, when the
+    // form has only just learned how to show it.
     setCheckEvalAwareness(config.check_eval_awareness !== false);
 
     if (csv) {
-      // Le fichier annonce un CSV sans le porter : le formulaire passe en mode
-      // CSV et attend le fichier, colonnes déjà choisies.
+      // The file announces a CSV without carrying it: the form goes into CSV mode
+      // and waits for the file, columns already chosen.
       setSource("csv");
       setCsvText("");
       setCsvColumns([]);
@@ -946,9 +941,9 @@ function EvaluateForm() {
       setHistory(config.scenarios[0].history ?? []);
       setScenarioTools(config.scenarios[0].tools ?? null);
     } else {
-      // Le mode manuel ne tient qu'un scénario. Plusieurs scénarios écrits
-      // dans le fichier passent donc par le même chemin qu'un CSV, reconstruit
-      // en mémoire — c'est déjà ce que fait la reprise d'un vieux run.
+      // Manual mode holds one scenario only. Several scenarios written in the
+      // file therefore go through the same path as a CSV, rebuilt in memory —
+      // which is already what duplicating an old run does.
       const { columns, rows } = rebuildCsv(config.scenarios);
       setSource("csv");
       setCsvText(toCsv(columns, rows));
@@ -989,10 +984,10 @@ function EvaluateForm() {
     }
   };
 
-  /** Un juge secondaire de plus, en plus du principal ci-dessus — une
-   *  répétition de la même mécanique (critère, échelle, modèle), jamais une
-   *  seconde invention. La même échelle de départ que le principal : deux
-   *  paliers sans texte, à écrire. */
+  /** One more secondary judge, on top of the principal above — a repetition of
+   *  the same mechanism (criterion, scale, model), never a second invention. The
+   *  same starting scale as the principal: two levels with no text, to be
+   *  written. */
   const addSecondaryJudge = () =>
     setSecondaryJudges((current) => [
       ...current,
@@ -1007,19 +1002,19 @@ function EvaluateForm() {
   const removeSecondaryJudge = (index: number) =>
     setSecondaryJudges((current) => current.filter((_, i) => i !== index));
 
-  // Ce que l'enregistrement vient de faire, le temps qu'on le lise.
+  // What the save has just done, for as long as it takes to read it.
   const [draftNotice, setDraftNotice] = useState("");
   const [clearing, setClearing] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
 
-  /** Mettre le formulaire de côté, dans l'état où il est.
+  /** Setting the form aside, in the state it is in.
    *
-   * Aucune validation, contrairement au lancement : c'est précisément quand il
-   * manque des morceaux qu'on veut y revenir plus tard. Rouvrir un brouillon
-   * et réenregistrer le réécrit plutôt que d'en semer un second — sauf si ce
-   * brouillon n'est pas le nôtre : la route le fork alors plutôt que de
-   * l'écraser, et `forked` le dit pour qu'on navigue vers la bonne adresse
-   * au lieu de laisser croire qu'on éditait encore l'original. */
+   * No validation, unlike the launch: it is precisely when pieces are missing
+   * that one wants to come back to it later. Reopening a draft and saving again
+   * rewrites it rather than sowing a second one — unless that draft is not ours:
+   * the route then forks it rather than crushing it, and `forked` says so, so
+   * that one navigates to the right address instead of being left believing one
+   * was still editing the original. */
   const saveAsDraft = async () => {
     setError(null);
     setSavingDraft(true);
@@ -1035,8 +1030,8 @@ function EvaluateForm() {
         }
       } else {
         const { id } = await saveDraft(config(), csv);
-        // L'adresse dans la barre suit : réenregistrer met à jour celui-ci au
-        // lieu d'en créer un troisième.
+          // The address in the bar follows: saving again updates this one instead
+          // of creating a third.
         router.replace(`/?draft=${id}`);
         setDraftNotice("Saved as draft.");
       }
@@ -1135,11 +1130,12 @@ function EvaluateForm() {
         source === "csv" ? csvText : null,
         draftOf,
       );
-      // Le brouillon a servi : marqué lancé. Il sort de la liste d'attente sans
-      // être jeté — son adresse reste ouverte si l'on veut relancer la même
-      // chose. Après la création, jamais avant : un lancement qui échoue doit
-      // laisser de quoi recommencer. Et un échec de marquage ne fait pas
-      // échouer le lancement, le run existe — c'est lui qui porte le lien.
+        // The draft has served: marked launched. It leaves the waiting list
+        // without being discarded — its address stays open if one wants to
+        // relaunch the same thing. After the creation, never before: a launch that
+        // fails must leave something to start again from. And a failed marking
+        // does not make the launch fail, the run exists — it is what carries the
+        // link.
       if (draftOf) await markDraftLaunched(draftOf).catch(() => {});
       // The form has served. The run carries its configuration and
       // "Duplicate" brings it back whole; keeping it here would invite
@@ -1154,22 +1150,20 @@ function EvaluateForm() {
     }
   };
 
-  // Les favoris seulement — plus, s'il y a lieu, les modèles que ce
-  // formulaire porte déjà. Une relance pré-remplie peut nommer un modèle
-  // qui a quitté les favoris depuis : le retirer du menu rendrait le
-  // formulaire inutilisable sans dire pourquoi. On le garde, et on le dit.
-  // Les juges secondaires en font partie : chacun peut porter son propre
-  // modèle (absent, il suit celui du run, déjà dans l'ensemble). Le modèle du
-  // monde aussi, et l'oublier était pire qu'un menu incomplet : le select se
-  // serait affiché vide — indistinguable de « rien choisi » — alors que
-  // `worldModel` tenait toujours l'identifiant, que `config()` aurait
-  // resoumis au lancement suivant. Un choix facturé que personne ne voit.
+  // The favourites only — plus, where applicable, the models this form already
+  // carries. A prefilled relaunch may name a model that has left the favourites
+  // since: removing it from the menu would make the form unusable without saying
+  // why. We keep it, and we say so. The secondary judges are part of it: each can
+  // carry its own model (absent, it follows the run's, already in the set). The
+  // world model too, and forgetting it was worse than an incomplete menu: the
+  // select would have shown empty — indistinguishable from "nothing chosen" —
+  // while `worldModel` still held the identifier, which `config()` would have
+  // resubmitted at the next launch. A billed choice nobody sees.
   //
-  // `carriedModels` s'ajoute à la sélection vivante plutôt que de s'y
-  // substituer : un modèle carried qu'on désélectionne (par exemple, un
-  // juge changé pour un favori puis reposé sur l'ancien modèle) doit rester
-  // proposable, alors qu'il aurait disparu d'un ensemble recalculé seulement
-  // depuis l'état courant.
+  // `carriedModels` adds itself to the live selection rather than replacing it: a
+  // carried model one deselects (for instance, a judge changed to a favourite
+  // then laid back on the old model) must stay offerable, whereas it would have
+  // disappeared from a set recomputed from the current state alone.
   const chosen = new Set(
     [
       ...targets,
@@ -1202,9 +1196,9 @@ function EvaluateForm() {
     label: string,
     value: string,
     onChange: (v: string) => void,
-    // Un premier `<option>` vide, jamais présélectionné : sert le champ qui
-    // n'a pas de défaut raisonnable — voir « World model » plus bas, dont un
-    // choix silencieux se découvrirait sur une facture.
+    // A first empty `<option>`, never preselected: serves the field that has no
+    // reasonable default — see "World model" below, a silent choice of which
+    // would be discovered on an invoice.
     placeholder?: string,
   ) => (
     <div className="space-y-1">
@@ -1255,11 +1249,10 @@ function EvaluateForm() {
         </div>
       )}
 
-      {/* Un run peut arriver tout écrit : un agent le rend, on le dépose ici.
-          Deux portes pour un seul chemin — un agent rend du texte, et n'en fait
-          un fichier que si on le lui demande. La forme attendue est celle
-          stockée en base, si bien qu'un run exporté se réimporte sans
-          traduction. */}
+      {/* A run can arrive fully written: an agent returns one, one deposits it
+          here. Two doors for one path — an agent returns text, and only makes a
+          file of it if asked. The expected shape is the one stored in the
+          database, so that an exported run reimports without translation. */}
       <div className="flex flex-wrap items-center gap-3 rounded border border-dashed border-zinc-300 p-3 text-sm">
         <label className="cursor-pointer">
           <span className="rounded border border-zinc-300 bg-white px-3 py-1 hover:bg-zinc-50">
@@ -1347,8 +1340,8 @@ function EvaluateForm() {
         />
       </label>
 
-      {/* Le même commentaire que sur la page du run : écrit ici avant de
-          lancer, modifiable ensuite quand on a vu les résultats. */}
+      {/* The same comment as on the run's page: written here before launching,
+          changeable afterwards once the results have been seen. */}
       <NotesField
         value={notes}
         onChange={setNotes}
@@ -1356,8 +1349,8 @@ function EvaluateForm() {
       />
 
       {/* ---------------- Tools ---------------- */}
-      {/* Avant les scénarios, parce qu'un outil décrit le monde dans lequel ils
-          se déroulent : on pose le décor, puis ce qu'on y demande. */}
+      {/* Before the scenarios, because a tool describes the world in which they
+          take place: one lays the setting, then what one asks in it. */}
       <section className="space-y-3">
         <h2 className="eyebrow">
           Tools{" "}
@@ -1367,10 +1360,10 @@ function EvaluateForm() {
         </h2>
         <ToolsEditor tools={tools} onChange={setTools} />
 
-        {/* Le monde ne s'écrit que s'il a un lecteur : un run dont aucun outil
-            n'est servi n'a personne pour le lire, et un champ vide de plus
-            inviterait à le remplir pour rien. Même prédicat que partout
-            ailleurs (`servesTools`, `lib/tools.ts`) — jamais réécrit ici. */}
+        {/* The world is only written if it has a reader: a run in which no tool is
+            served has nobody to read it, and one more empty field would invite
+            filling it in for nothing. The same predicate as everywhere else
+            (`servesTools`, `lib/tools.ts`) — never rewritten here. */}
         {servesTools(tools) && (
           <>
             <label className="block space-y-1">
@@ -1435,9 +1428,9 @@ function EvaluateForm() {
               className="w-20 rounded border border-zinc-300 px-2 py-1"
             />
             <span className="text-xs text-zinc-500">
-              {/* Le plafond existe pour deux raisons opposées, et les deux
-                  comptent : voir un enchaînement, et ne pas laisser une boucle
-                  vider le budget sur une seule case. */}
+              {/* The cap exists for two opposite reasons, and both count: seeing a
+                  chain of calls, and not letting a loop empty the budget on a
+                  single cell. */}
               A model may call, read the result and call again before answering —
               all of it one turn. Three steps do not fit under a cap of one.
             </span>
@@ -1486,9 +1479,9 @@ function EvaluateForm() {
                 className="w-full rounded border border-zinc-300 p-3 font-mono text-sm"
               />
             </label>
-            {/* Avant le message d'ouverture, parce que c'est l'ordre dans
-                lequel la conversation se déroule : les tours posés d'abord, le
-                message d'ouverture ensuite. */}
+              {/* Before the opening message, because it is the order in which the
+                  conversation unfolds: the seeded turns first, the opening message
+                  after. */}
             <div className="space-y-1">
               <span className="text-sm font-medium">
                 Prior history{" "}
@@ -1584,11 +1577,10 @@ function EvaluateForm() {
                 <p className="text-sm text-zinc-600">
                   Tell us which column holds what:
                 </p>
-                {/* `items-end` parce que les intitulés n'ont pas tous la même
-                    hauteur : « Prior history (optional) » passe sur deux lignes
-                    à cette largeur, et sans ça son menu descendait d'un cran,
-                    seul de sa rangée. Ce sont les menus qui doivent s'aligner,
-                    pas les intitulés. */}
+                  {/* `items-end` because the labels do not all have the same
+                      height: "Prior history (optional)" runs to two lines at this
+                      width, and without it its menu dropped a notch, alone in its
+                      row. It is the menus that must line up, not the labels. */}
                 <div className="grid grid-cols-4 items-end gap-3">
                   {[
                     { label: "Title", value: colTitle, set: setColTitle },
@@ -1602,8 +1594,8 @@ function EvaluateForm() {
                       value: colOpening,
                       set: setColOpening,
                     },
-                    // Facultative, et c'est le cas courant : un scénario sans
-                    // historique laisse ce sélecteur sur « — ».
+                    // Optional, and it is the common case: a scenario with no
+                    // history leaves this selector on "—".
                     {
                       label: "Prior history (optional)",
                       value: colHistory,
@@ -1642,9 +1634,9 @@ function EvaluateForm() {
                     </label>
                   ))}
                 </div>
-                {/* Trois titres ne disaient pas si les colonnes étaient
-                    tombées au bon endroit — la seule question qui compte après
-                    un import, et la seule qu'aucune validation ne peut poser. */}
+                  {/* Three titles did not say whether the columns had landed in the
+                      right place — the one question that counts after an import,
+                      and the only one no validation can ask. */}
                 <ScenarioList scenarios={scenarios} />
               </div>
             )}
@@ -1946,11 +1938,11 @@ function EvaluateForm() {
           <p className="text-sm text-red-700">{temperatureError}</p>
         )}
         {(() => {
-          // Ces modèles acceptent l'appel et jettent le paramètre : Claude 4.7
-          // et au-delà tournent en adaptive thinking et le refusent, inspect le
-          // retire, et rien dans la réponse ne le dit. Un balayage sur eux ne
-          // mesure que du bruit — on le dit ici plutôt que de griser le
-          // réglage, parce qu'une température fixe sur eux reste légitime.
+          // These models accept the call and throw the parameter away: Claude 4.7
+          // and beyond run in adaptive thinking and refuse it, inspect strips it,
+          // and nothing in the answer says so. A sweep over them measures noise
+          // alone — we say so here rather than greying the setting out, because a
+          // fixed temperature on them stays legitimate.
           const deaf = modelRows.filter(
             (m) => targets.includes(m.id) && !m.honoursTemperature,
           );
@@ -1991,9 +1983,9 @@ function EvaluateForm() {
           </p>
         )}
 
-        {/* Le seul endroit d'où un humain peut éteindre ce juge : un agent le
-            fait déjà par la configuration qu'il soumet, et un fichier importé
-            le porte aussi, mais rien d'autre sur cet écran ne l'exposait. */}
+        {/* The only place a human can switch this judge off from: an agent already
+            does it through the configuration it submits, and an imported file
+            carries it too, but nothing else on this screen exposed it. */}
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -2050,37 +2042,36 @@ function EvaluateForm() {
               (€{estimate.eur.toFixed(2)}).
             </p>
 
-            {/* Une ligne par (rôle, modèle), et non par modèle : un même
-                modèle évalué et juge est la configuration ordinaire, et fondre
-                ses deux dépenses empêchait de voir ce qu'un réglage coûte.
-                D'où aussi la clé, qui doit porter les deux. */}
+            {/* One row per (role, model), and not per model: one same model both
+                evaluated and judge is the ordinary configuration, and melting its
+                two expenses together kept one from seeing what a setting costs.
+                Hence the key too, which has to carry both. */}
             <table className="w-full text-sm">
               <tbody>
                 {estimate.per_model.map((model) => {
-                  // Combien de passes de juge cette ligne facture, par
-                  // conversation. Déduit de `calls` plutôt que recompté depuis
-                  // la configuration : chaque juge, d'éveil compris, est un
-                  // appel par conversation, si bien que le rapport EST leur
-                  // nombre — et il reste juste sans refaire ici le tri que
-                  // `judgesForLaunch` fait ailleurs.
+                  // How many judge passes this row bills, per conversation. Deduced
+                  // from `calls` rather than recounted from the configuration: every
+                  // judge, the awareness one included, is one call per conversation,
+                  // so that the ratio IS their number — and it stays right without
+                  // redoing here the sorting `judgesForLaunch` does elsewhere.
                   const passes =
                     model.role === "judge" && model.calls && estimate.conversations
                       ? Math.round(model.calls / estimate.conversations)
                       : 0;
-                  const éveilIci =
+                  const awakeHere =
                     checkEvalAwareness && model.model === judge && passes > 0;
-                  const juges = passes - (éveilIci ? 1 : 0);
+                  const judgeCount = passes - (awakeHere ? 1 : 0);
                   return (
                     <tr
-                      key={`${model.role ?? ""} ${model.model}`}
+                      key={`${model.role ?? ""}|${model.model}`}
                       className="border-t border-zinc-200"
                     >
                       <td className="py-1 pr-4">
                         {model.role ?? "—"}
                         {passes > 0 && (
                           <span className="ml-2 text-xs text-zinc-500">
-                            {juges} judge{juges > 1 ? "s" : ""}
-                            {éveilIci && " + awareness"}
+                            {judgeCount} judge{judgeCount > 1 ? "s" : ""}
+                            {awakeHere && " + awareness"}
                           </span>
                         )}
                       </td>
@@ -2118,13 +2109,12 @@ function EvaluateForm() {
               </tbody>
             </table>
 
-            {/* La fourchette est un repère fixe, pas une promesse qui
-                contiendrait le devis : elle chiffre le même run à deux
-                longueurs de référence, et une déclaration au-delà de la
-                longue le porte légitimement au-dessus. Le dire évite la
-                phrase qui annonçait « the run sits between » un plancher et
-                un plafond que le devis dépassait. Les deux longueurs viennent
-                du JSON partagé : une borne qui bougerait se lirait ici. */}
+            {/* The range is a fixed landmark, not a promise that would contain the
+                quote: it prices the same run at two reference lengths, and a
+                declaration beyond the long one legitimately carries it above.
+                Saying so avoids the sentence that announced "the run sits between"
+                a floor and a ceiling the quote went past. Both lengths come from
+                the shared JSON: a bound that moved would read here. */}
             <p className="text-xs text-zinc-500">
               Cost grows faster than the turn count, since every turn resends
               the whole history. For reference, the same run costs $
@@ -2165,11 +2155,11 @@ function EvaluateForm() {
             ? "Launching…"
             : `Launch ${scenarios.length * targets.length * repetitions} conversations`}
         </button>
-        {/* Jamais désactivé, à la différence du lancement : un formulaire
-            incomplet est exactement ce qu'on veut pouvoir mettre de côté. */}
-        {/* Le nom est la seule chose exigée : tout le reste a le droit de
-            manquer, c'est ce qui distingue un brouillon d'un lancement. Sans
-            lui, la liste d'attente n'aurait que des lignes sans titre. */}
+        {/* Never disabled, unlike the launch: an incomplete form is exactly what
+            one wants to be able to set aside. */}
+        {/* The name is the only thing demanded: everything else has the right to be
+            missing, which is what tells a draft from a launch. Without it, the
+            waiting list would hold nothing but untitled rows. */}
         <button
           onClick={saveAsDraft}
           disabled={savingDraft || label.trim() === ""}

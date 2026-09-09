@@ -7,13 +7,12 @@ import {
 } from "@/lib/config-file";
 import type { EvalRunConfig } from "@/lib/types";
 
-/** Lit un run décrit dans un fichier JSON ou YAML, et le rend prêt à remplir le
- * formulaire.
+/** Reads a run described in a JSON or YAML file, and returns it ready to fill
+ * in the form.
  *
- * Côté serveur pour deux raisons : l'analyseur YAML reste hors du paquet envoyé
- * au navigateur, et la validation qui s'applique ici est exactement celle du
- * lancement — un fichier accepté ici ne peut pas être refusé au moment de
- * lancer. */
+ * On the server side for two reasons: the YAML parser stays out of the bundle
+ * sent to the browser, and the validation that applies here is exactly the
+ * launch's — a file accepted here cannot be refused at launch time. */
 export async function POST(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -36,11 +35,11 @@ export async function POST(request: Request) {
   }
 }
 
-/** Le chemin inverse : la configuration du formulaire, écrite en YAML.
+/** The reverse path: the form's configuration, written in YAML.
  *
- * Ici plutôt que dans la page pour deux raisons : l'écrivain YAML reste hors du
- * paquet du navigateur, et les deux sens de la même conversion vivent côte à
- * côte — c'est ce qui rend visible qu'ils doivent rester d'accord. */
+ * Here rather than in the page for two reasons: the YAML writer stays out of the
+ * browser bundle, and the two directions of the same conversion live side by
+ * side — which is what makes it visible that they must stay in agreement. */
 export async function PUT(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;

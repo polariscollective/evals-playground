@@ -1,4 +1,4 @@
-// Ce qu'une ligne de brouillon affiche, et où mène sa fusée.
+// What a draft row shows, and where its rocket leads.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { draftDestination, draftShape } from "./draft-row.ts";
@@ -33,30 +33,30 @@ const extendDraft = (over: object = {}): Draft =>
     ...over,
   }) as unknown as Draft;
 
-test("la forme d'un brouillon de run se lit scénarios × modèles × répétitions", () => {
+test("a run draft's shape reads scenarios × models × repetitions", () => {
   assert.equal(draftShape(runDraft()), "2 × 1 × 3");
 });
 
-test("un brouillon incomplet affiche des zéros plutôt que de tomber", () => {
+test("an incomplete draft shows zeros rather than falling over", () => {
   assert.equal(draftShape(runDraft({ config: {} })), "0 × 0 × 0");
 });
 
-test("une extension montre ce qu'elle AJOUTE, marqué d'un plus", () => {
-  // Sans le « + », on lirait la taille finale du run, qu'on n'a pas ici.
+test("an extension shows what it ADDS, marked with a plus", () => {
+  // Without the "+", one would read the run's final size, which we do not have here.
   assert.equal(draftShape(extendDraft()), "+2 × 1 × 1");
 });
 
-test("la fusée d'un brouillon de run mène au formulaire pré-rempli", () => {
+test("a run draft's rocket leads to the pre-filled form", () => {
   assert.equal(draftDestination(runDraft()), "/?draft=d1");
 });
 
-test("celle d'une extension mène à la page de son run, panneau ouvert", () => {
-  // Une extension ne se lance pas depuis le formulaire : elle s'ajoute à un
-  // run, et c'est sur ce run qu'elle se relit.
+test("an extension's leads to its run's page, panel open", () => {
+  // An extension is not launched from the form: it is added to a run, and it is
+  // on that run that it reads back.
   assert.equal(draftDestination(extendDraft()), "/eval/r1?extend=d1");
 });
 
-test("un brouillon déjà lancé mène au run qu'il a produit", () => {
+test("a draft already launched leads to the run it produced", () => {
   assert.equal(
     draftDestination(runDraft({ launched_at: "2026-09-07", launched_run_id: "r9" })),
     "/eval/r9",
@@ -67,20 +67,20 @@ test("un brouillon déjà lancé mène au run qu'il a produit", () => {
   );
 });
 
-test("une extension déjà appliquée mène à l'historique du run, pas à son panneau", () => {
-  // Réappliquer n'est pas idempotent : les répétitions s'empilent. Une
-  // extension lancée est donc une trace, plus une proposition à rouvrir — et
-  // `launched_run_id` n'est jamais écrit, si bien que `launched_at` est le
-  // seul témoin qu'elle a servi.
+test("an extension already applied leads to the run's history, not its panel", () => {
+  // Reapplying is not idempotent: the repetitions stack. A launched extension
+  // is therefore a trace, no longer a proposal to reopen — and
+  // `launched_run_id` is never written, so `launched_at` is the only witness
+  // that it was used.
   assert.equal(
     draftDestination(extendDraft({ launched_at: "2026-09-06T16:33:42.873Z" })),
     "/eval/r1#extensions",
   );
 });
 
-test("une extension en attente mène toujours à son panneau", () => {
-  // Duplique l'assertion du test ci-dessus à dessein : c'est le cas qui ne
-  // doit pas bouger, celui que l'ajout du bandeau (tâche « une extension
-  // déjà appliquée ») n'avait pas le droit de casser.
+test("a pending extension still leads to its panel", () => {
+  // Duplicates the assertion of the test above deliberately: this is the case
+  // that must not move, the one adding the banner (task "an extension already
+  // applied") had no right to break.
   assert.equal(draftDestination(extendDraft()), "/eval/r1?extend=d1");
 });

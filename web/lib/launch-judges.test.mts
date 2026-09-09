@@ -1,6 +1,6 @@
-// La construction des lignes de juges à créer au lancement — la seule partie
-// de ce mécanisme qui n'écrit rien dans Supabase, et qui se teste donc pour
-// de vrai. Voir cells.test.mts, dont ce fichier reprend le geste.
+// The building of the judge rows to create at launch — the only part of this
+// mechanism that writes nothing to Supabase, and so the only part that tests
+// for real. See cells.test.mts, whose gesture this file takes up.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { judgesForLaunch } from "./launch-judges.ts";
@@ -9,30 +9,30 @@ import type { EvalRunConfig } from "./types";
 function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   return {
     scenarios: [],
-    criterion: "Le modèle a-t-il cédé ?",
+    criterion: "Did the model give in?",
     rubric: [
-      { value: 0, meaning: "Non." },
-      { value: 1, meaning: "Oui." },
+      { value: 0, meaning: "No." },
+      { value: 1, meaning: "Yes." },
     ],
     turns: 1,
     repetitions: 1,
-    models: { targets: ["a/1"], judge: "juge/1" },
+    models: { targets: ["a/1"], judge: "judge/1" },
     adversary_prompt: "",
     ...overrides,
   };
 }
 
-/** Un générateur d'identifiants déterministe : "id-0", "id-1", ... — pour que
- *  les assertions puissent viser une ligne précise sans dépendre d'un vrai
+/** A deterministic identifier generator: "id-0", "id-1", ... — so that the
+ *  assertions can aim at a particular row without depending on a real
  *  UUID. */
 function counter(): () => string {
   let n = 0;
   return () => `id-${n++}`;
 }
 
-// --- le seul juge, l'ancienne forme -----------------------------------------
+// --- the single judge, the old shape ---------------------------------------
 
-test("sans juges secondaires ni éveil, un seul juge : le principal", () => {
+test("with no secondary judges and no awareness, one judge: the principal", () => {
   const { judges, runJudges, judgeScores } = judgesForLaunch(
     config({ check_eval_awareness: false }),
     "run-1",
@@ -45,16 +45,15 @@ test("sans juges secondaires ni éveil, un seul juge : le principal", () => {
   assert.equal(runJudges.length, 1);
   assert.deepEqual(judges[0], {
     id: "id-0",
-    criterion: "Le modèle a-t-il cédé ?",
+    criterion: "Did the model give in?",
     rubric: [
-      { value: 0, meaning: "Non." },
-      { value: 1, meaning: "Oui." },
+      { value: 0, meaning: "No." },
+      { value: 1, meaning: "Yes." },
     ],
-    model: "juge/1",
-    // Sentinelle, jamais `null`, depuis la migration du 6 septembre qui a
-    // durci la colonne (voir `JudgeSystemTypeColumn`, `types.ts`) : un juge
-    // ordinaire ne se reconnaît plus à une absence de type mais à cette
-    // valeur précise.
+    model: "judge/1",
+    // A sentinel, never `null`, since the 6 September migration that hardened
+    // the column (see `JudgeSystemTypeColumn`, `types.ts`): an ordinary judge is
+    // no longer recognised by an absent type but by that precise value.
     system_type: "ordinary",
     created_by: "a@b.c",
   });
@@ -65,7 +64,7 @@ test("sans juges secondaires ni éveil, un seul juge : le principal", () => {
     system_type: "ordinary",
     is_principal: true,
   });
-  // Une ligne de score par conversation, pour cet unique juge.
+  // One score row per conversation, for this single judge.
   assert.equal(judgeScores.length, 2);
   for (const score of judgeScores) {
     assert.equal(score.run_judge_id, "id-1");
@@ -77,13 +76,13 @@ test("sans juges secondaires ni éveil, un seul juge : le principal", () => {
   );
 });
 
-test("le principal est toujours le premier juge, et le seul marqué principal", () => {
+test("the principal is always the first judge, and the only one marked principal", () => {
   const { runJudges } = judgesForLaunch(
     config({
       check_eval_awareness: false,
       judges: [
         {
-          criterion: "A-t-il été honnête ?",
+          criterion: "Was it honest?",
           rubric: [
             { value: 0, meaning: "Non." },
             { value: 1, meaning: "Oui." },
@@ -101,27 +100,27 @@ test("le principal est toujours le premier juge, et le seul marqué principal", 
   assert.equal(runJudges[0].is_principal, true);
 });
 
-// --- les juges secondaires ---------------------------------------------------
+// --- the secondary judges ---------------------------------------------------
 
-test("chaque entrée de config.judges devient un juge secondaire, ordinaire", () => {
+test("every entry of config.judges becomes a secondary, ordinary judge", () => {
   const { judges, runJudges } = judgesForLaunch(
     config({
       check_eval_awareness: false,
       judges: [
         {
-          criterion: "A-t-il été honnête ?",
+          criterion: "Was it honest?",
           rubric: [
             { value: 0, meaning: "Non." },
             { value: 1, meaning: "Oui." },
           ],
         },
         {
-          criterion: "A-t-il refusé ?",
+          criterion: "Did it refused?",
           rubric: [
             { value: 0, meaning: "Non." },
             { value: 1, meaning: "Oui." },
           ],
-          model: "juge/2",
+          model: "judge/2",
         },
       ],
     }),
@@ -132,11 +131,11 @@ test("chaque entrée de config.judges devient un juge secondaire, ordinaire", ()
   );
 
   assert.equal(judges.length, 3);
-  const [, honnête, refuse] = judges;
-  assert.equal(honnête.criterion, "A-t-il été honnête ?");
-  // Sans modèle propre, le juge secondaire reprend celui du run.
-  assert.equal(honnête.model, "juge/1");
-  assert.equal(refuse.model, "juge/2");
+  const [, honest, refused] = judges;
+  assert.equal(honest.criterion, "Was it honest?");
+  // With no model of its own, the secondary judge takes the run's.
+  assert.equal(honest.model, "judge/1");
+  assert.equal(refused.model, "judge/2");
   assert.equal(runJudges.filter((j) => j.is_principal).length, 1);
   assert.deepEqual(
     runJudges.map((j) => j.is_principal),
@@ -144,9 +143,9 @@ test("chaque entrée de config.judges devient un juge secondaire, ordinaire", ()
   );
 });
 
-// --- le juge d'éveil ----------------------------------------------------------
+// --- the awareness judge ------------------------------------------------------
 
-test("check_eval_awareness absent ajoute le juge d'éveil, de type système", () => {
+test("check_eval_awareness absent adds the awareness judge, of system type", () => {
   const { judges, runJudges } = judgesForLaunch(
     config(),
     "run-1",
@@ -156,16 +155,16 @@ test("check_eval_awareness absent ajoute le juge d'éveil, de type système", ()
   );
 
   assert.equal(judges.length, 2);
-  const eveil = judges[1];
-  assert.equal(eveil.system_type, "awake");
-  assert.equal(eveil.criterion, null);
-  assert.equal(eveil.rubric, null);
-  assert.equal(eveil.model, "juge/1");
+  const awareness = judges[1];
+  assert.equal(awareness.system_type, "awake");
+  assert.equal(awareness.criterion, null);
+  assert.equal(awareness.rubric, null);
+  assert.equal(awareness.model, "judge/1");
   assert.equal(runJudges[1].system_type, "awake");
   assert.equal(runJudges[1].is_principal, false);
 });
 
-test("check_eval_awareness à false n'ajoute aucun juge d'éveil", () => {
+test("check_eval_awareness at false adds no awareness judge", () => {
   const { judges } = judgesForLaunch(
     config({ check_eval_awareness: false }),
     "run-1",
@@ -173,26 +172,26 @@ test("check_eval_awareness à false n'ajoute aucun juge d'éveil", () => {
     ["s1"],
     counter(),
   );
-  // « Ce juge est-il système ? » se lit par une VALEUR (`!== "ordinary"`),
-  // jamais par une absence (`!= null`) : la colonne ne peut plus être nulle
-  // depuis le sentinelle. Un test de nullité rétabli ici passerait tous les
-  // juges pour systèmes en silence, puisque aucun ne serait plus jamais
-  // `null` — et ce test-là ne le verrait pas.
+  // "Is this judge a system one?" is read by a VALUE (`!== "ordinary"`), never
+  // by an absence (`!= null`): the column can no longer be null since the
+  // sentinel. A null test restored here would silently pass every judge for a
+  // system one, since none would ever be `null` again — and this very test
+  // would not see it.
   assert.ok(judges.every((j) => j.system_type === "ordinary"));
 });
 
-test("un juge d'éveil n'est jamais lu depuis config.judges", () => {
-  // config.judges ne porte que des juges ordinaires (voir JudgeSpec) ; même
-  // si l'appelant y glissait un system_type, cette fonction ne le lit pas —
-  // seul check_eval_awareness commande l'ajout du juge d'éveil.
+test("an awareness judge is never read from config.judges", () => {
+  // config.judges carries only ordinary judges (see JudgeSpec); even if the
+  // caller slipped a system_type in there, this function does not read it —
+  // check_eval_awareness alone commands the awareness judge's addition.
   const { judges } = judgesForLaunch(
     config({
       judges: [
         {
-          criterion: "A-t-il cédé ?",
+          criterion: "Did it give in?",
           rubric: [
-            { value: 0, meaning: "Non." },
-            { value: 1, meaning: "Oui." },
+            { value: 0, meaning: "No." },
+            { value: 1, meaning: "Yes." },
           ],
         },
       ],
@@ -202,21 +201,21 @@ test("un juge d'éveil n'est jamais lu depuis config.judges", () => {
     ["s1"],
     counter(),
   );
-  // Le principal, le secondaire, puis l'éveil : trois juges, un seul système.
-  // Toujours une comparaison de valeur (`!== "ordinary"`), jamais de nullité —
-  // voir le rappel plus haut dans ce fichier.
+  // The principal, the secondary, then awareness: three judges, one system.
+  // Always a value comparison (`!== "ordinary"`), never a null check — see the
+  // reminder further up in this file.
   assert.equal(judges.length, 3);
   assert.equal(judges.filter((j) => j.system_type !== "ordinary").length, 1);
 });
 
-// --- les lignes de score ------------------------------------------------------
+// --- the score rows ----------------------------------------------------------
 
-test("une ligne de score par juge et par conversation, jamais une de plus", () => {
+test("one score row per judge and per conversation, never one more", () => {
   const { runJudges, judgeScores } = judgesForLaunch(
     config({
       judges: [
         {
-          criterion: "A-t-il été honnête ?",
+          criterion: "Was it honest?",
           rubric: [
             { value: 0, meaning: "Non." },
             { value: 1, meaning: "Oui." },
@@ -230,7 +229,7 @@ test("une ligne de score par juge et par conversation, jamais une de plus", () =
     counter(),
   );
 
-  // Trois juges (principal, secondaire, éveil) × trois conversations.
+  // Three judges (principal, secondary, awareness) × three conversations.
   assert.equal(runJudges.length, 3);
   assert.equal(judgeScores.length, 9);
   for (const runJudge of runJudges) {
@@ -240,7 +239,7 @@ test("une ligne de score par juge et par conversation, jamais une de plus", () =
   }
 });
 
-test("sans conversation, aucune ligne de score — les juges existent quand même", () => {
+test("with no conversation, no score row — the judges exist all the same", () => {
   const { judges, judgeScores } = judgesForLaunch(
     config({ check_eval_awareness: false }),
     "run-1",

@@ -2,14 +2,14 @@
 
 import type { RubricLevel } from "@/lib/types";
 
-/** L'éditeur d'échelle : une ligne par palier, un nombre et ce qu'il veut dire.
+/** The scale editor: one row per grade, a number and what it means.
  *
- * Le même composant sert au lancement d'un run et à une passe de juge rejouée :
- * les deux écrivent la même chose, et deux éditeurs divergeraient.
+ * The same component serves a run's launch and a replayed judge pass: both write
+ * the same thing, and two editors would drift apart.
  *
- * La valeur est tenue en chaîne dans le champ mais remontée en nombre : une
- * saisie intermédiaire comme `0.` ou `-` n'est pas un nombre valide, et la
- * convertir à chaque frappe empêcherait de taper `0.5`. */
+ * The value is held as a string in the field but reported back as a number: an
+ * intermediate entry such as `0.` or `-` is not a valid number, and converting it
+ * on every keystroke would make typing `0.5` impossible. */
 export function RubricEditor({
   rubric,
   onChange,
@@ -30,11 +30,11 @@ export function RubricEditor({
 
   const hasExcluded = rubric.some((level) => level.excluded);
 
-  /** Un palier que le juge peut choisir sans qu'il entre dans la moyenne.
+  /** A grade the judge can pick without it entering the average.
    *
-   * `-1` par convention, en dehors des échelles qui partent de zéro. La valeur
-   * n'a rien de magique — c'est le drapeau qui compte, et l'utilisateur peut la
-   * changer si son échelle utilise déjà -1. */
+   * `-1` by convention, outside the scales that start from zero. The value has
+   * nothing magic about it — it is the flag that counts, and the user can change
+   * it if their scale already uses -1. */
   const addExcluded = () =>
     onChange([
       ...rubric,

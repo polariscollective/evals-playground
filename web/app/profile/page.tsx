@@ -12,20 +12,21 @@ import type { ProviderInfo } from "@/lib/types";
 const FIELD = "mt-1 w-full rounded border border-zinc-300 p-2 text-sm";
 
 export default function ProfilePage() {
-  // Le profil vient du cache partagé, préchargé par « Evaluate » et lu aussi
-  // par la page « Scenarios » : arriver ici montre ce qu'on avait déjà.
+  // The profile comes from the shared cache, preloaded by "Evaluate" and read
+  // also by the "Scenarios" page: arriving here shows what one already had.
   const { data, loading, error: loadError } = useProfile();
   const profile = data?.profile ?? null;
   const activity = data?.activity ?? null;
 
-  // Tenus en nombre plutôt qu'en chaîne, comme `RubricEditor` : une saisie
-  // intermédiaire (`0.`, champ vidé) devient `NaN`, affiché comme un champ
-  // vide plutôt que forcé à une valeur — `capProblem` la refuse telle quelle.
+  // Held as numbers rather than strings, like `RubricEditor`: an intermediate
+  // entry (`0.`, an emptied field) becomes `NaN`, shown as an empty field rather
+  // than forced to a value — `capProblem` refuses it as it stands.
   //
-  // `null` veut dire « pas encore touché », et se distingue de `NaN`, qui est
-  // une saisie réelle mais vide. Tant que personne n'a écrit, le champ suit ce
-  // que porte le profil ; dès qu'on écrit, la saisie prime — sans effet de
-  // recopie, qui aurait rendu deux fois et pu écraser la frappe en cours.
+  // `null` means "not touched yet", and is distinct from `NaN`, which is a real
+  // but empty entry. As long as nobody has typed, the field follows what the
+  // profile carries; as soon as one types, the entry wins — with no copying
+  // effect, which would have rendered twice and could have crushed the typing in
+  // progress.
   const [perRunEdit, setPerRunEdit] = useState<number | null>(null);
   const [perHourEdit, setPerHourEdit] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -36,8 +37,8 @@ export default function ProfilePage() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [savingFavorites, setSavingFavorites] = useState(false);
   const [savedFavorites, setSavedFavorites] = useState(false);
-  // Son propre message d'erreur, et pas `loadError` : celui-là appartient au
-  // cache du profil, qui n'est pas au courant de cette lecture-ci.
+  // Its own error message, and not `loadError`: that one belongs to the
+  // profile's cache, which knows nothing of this read.
   const [favoritesError, setFavoritesError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,10 +49,10 @@ export default function ProfilePage() {
     getCatalog()
       .then((catalog) => {
         setProviders(catalog);
-        // Les favoris viennent du catalogue marqué, pas de `profile` :
-        // `favorite_models` peut être `null` (le défaut du code) ou porter un
-        // modèle retiré du catalogue depuis, et c'est la route qui a déjà
-        // résolu les deux. Deux résolutions divergeraient un jour.
+          // The favourites come from the marked catalogue, not from `profile`:
+          // `favorite_models` can be `null` (the code's default) or carry a model
+          // withdrawn from the catalogue since, and it is the route that has
+          // already resolved both. Two resolutions would diverge one day.
         setFavorites(
           catalog.flatMap((p) => p.models.filter((m) => m.favorite).map((m) => m.id)),
         );
@@ -73,13 +74,13 @@ export default function ProfilePage() {
     setSaveError(null);
     updateProfileCaps({ max_usd_per_run: perRun, max_usd_per_hour: perHour })
       .then(({ profile }) => {
-        // Le profil sauvé va dans le cache, pas dans un état local : c'est ce
-        // que « Scenarios » lira aussi, et le relire coûterait un aller-retour
-        // pour une réponse qu'on tient déjà.
+          // The saved profile goes into the cache, not into a local state: it is
+          // what "Scenarios" will read too, and rereading it would cost a round
+          // trip for an answer already in hand.
         if (data) putProfile({ ...data, profile });
-        // La saisie repasse la main au profil : ce qui est enregistré est
-        // désormais ce qu'on voit, et garder une valeur « touchée » ferait
-        // diverger le champ du serveur au prochain rafraîchissement.
+          // The entry hands back to the profile: what is saved is now what one
+          // sees, and keeping a "touched" value would make the field diverge from
+          // the server at the next refresh.
         setPerRunEdit(null);
         setPerHourEdit(null);
         setSaved(true);
@@ -101,10 +102,9 @@ export default function ProfilePage() {
     setFavoritesError(null);
     updateProfileFavorites(favorites)
       .then(({ profile }) => {
-        // Dans le cache, jamais dans un état local — exactement ce que fait
-        // `save()` juste au-dessus pour les plafonds : « Scenarios » lit le
-        // même profil, et le laisser périmé la ferait afficher l'ancienne
-        // version au prochain clic.
+          // Into the cache, never into a local state — exactly what `save()` does
+          // just above for the caps: "Scenarios" reads the same profile, and
+          // leaving it stale would make it show the old version at the next click.
         if (data) putProfile({ ...data, profile });
         setSavedFavorites(true);
       })
@@ -112,12 +112,12 @@ export default function ProfilePage() {
       .finally(() => setSavingFavorites(false));
   }
 
-  // La même règle que la route, pour dire ce qui cloche plutôt que d'éteindre
-  // « Save » sans raison — voir `capProblem` juste au-dessus, même patron.
+  // The same rule as the route, to say what is wrong rather than turning "Save"
+  // off for no reason — see `capProblem` just above, same pattern.
   const favoritesProblemText = favoritesProblem(favorites);
 
-  // Ce qui cloche dans chaque champ, pour le dire plutôt que de se contenter
-  // d'un bouton grisé : « Save » éteint sans raison laisse chercher.
+  // What is wrong in each field, to say it rather than settling for a greyed-out
+  // button: a "Save" turned off for no reason leaves one searching.
   const perRunProblem = capProblem(perRun);
   const perHourProblem = capProblem(perHour);
   const disabled = perRunProblem !== null || perHourProblem !== null;
@@ -135,8 +135,8 @@ export default function ProfilePage() {
 
       {loadError && <p className="text-sm text-red-600">{loadError}</p>}
 
-      {/* Tient la place du contenu tant qu'il n'est pas là, au même bord que
-          ce qui s'y écrira. */}
+      {/* Holds the content's place while it is not there, at the same edge as
+          what will be written in it. */}
       {profile === null && loadError === null && <Loading label="Loading profile" />}
 
       {profile && (
@@ -213,8 +213,8 @@ export default function ProfilePage() {
             to spend more.
           </p>
 
-          {/* Ce qui a été dépensé se lit contre le plafond qui le borne :
-              les séparer d'un carré à l'autre faisait chercher. */}
+        {/* What has been spent reads against the cap that bounds it: separating
+            them from one box to the next made one search. */}
           {activity && (
             <div className="space-y-1 border-t border-zinc-200 pt-3">
               <h3 className="text-sm font-medium">Last hour</h3>
@@ -244,8 +244,8 @@ export default function ProfilePage() {
           </div>
 
           {providers.map((provider) => {
-            // Les favoris en tête, derrière un filet : la liste sert d'abord
-            // à retrouver ce qu'on s'est choisi, et à le décocher.
+              // The favourites at the top, behind a rule: the list serves first to
+              // find again what one chose, and to untick it.
             const preferred = provider.models.filter((m) => favorites.includes(m.id));
             const rest = provider.models.filter((m) => !favorites.includes(m.id));
             const row = (model: (typeof provider.models)[number]) => (

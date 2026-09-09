@@ -1,11 +1,11 @@
 "use client";
 
-// Le titre d'un run, et le pinceau qui le renomme.
+// A run's title, and the brush that renames it.
 //
-// Le même composant sert la liste et la page d'un run : le geste est le même,
-// et deux implémentations dériveraient — l'une saurait vider un titre, l'autre
-// pas. Ce qui change entre les deux, c'est l'habillage du titre au repos, d'où
-// `className` et le rendu passé en enfant.
+// The same component serves the list and a run's page: the gesture is the same,
+// and two implementations would drift apart — one would know how to empty a
+// title, the other not. What changes between the two is the title's guise at
+// rest, hence `className` and the rendering passed as a child.
 import { useEffect, useRef, useState } from "react";
 import { saveRunLabel } from "@/lib/api";
 
@@ -20,25 +20,25 @@ export function RunTitle({
   children,
 }: {
   runId: string;
-  /** Le titre enregistré, ou `null` quand le run n'en a pas. C'est LUI qu'on
-   *  édite — jamais le repli, qu'on ne ferait qu'écrire en dur. */
+  /** The saved title, or `null` when the run has none. That is what one edits —
+   *  never the fallback, which one would only write in hard. */
   label: string | null;
-  /** Ce qui s'affiche à défaut : le titre du premier scénario, puis l'id. */
+  /** What shows for want of one: the first scenario's title, then the id. */
   fallback: string;
-  /** Prévenir la page que le titre a changé, pour qu'elle relise. */
+  /** Warn the page the title has changed, so that it rereads. */
   onSaved: (next: string | null) => void;
   className?: string;
-  /** Cliquer le titre l'ouvre en édition. Vrai sur la page d'un run, où le
-   *  titre n'est qu'un `<h1>` ; faux dans la liste, où c'est un lien vers ce
-   *  run — un clic y doit naviguer, et voler ce geste rendrait la liste
-   *  impraticable. */
+  /** Clicking the title opens it for editing. True on a run's page, where the
+   *  title is only an `<h1>`; false in the list, where it is a link to that run —
+   *  a click there must navigate, and stealing that gesture would make the list
+   *  unusable. */
   editOnClick?: boolean;
-  /** Comment le champ se présente. Par défaut un petit champ de liste ; sur la
-   *  page d'un run, on lui passe la tête du titre — serif, deux fois plus gros,
-   *  pleine largeur — pour que rien ne saute au moment où il s'ouvre. */
+  /** How the field presents itself. By default a small list field; on a run's
+   *  page it is given the title's own look — serif, twice as large, full width —
+   *  so that nothing jumps at the moment it opens. */
   inputClassName?: string;
-  /** Le titre au repos, rendu par l'appelant : un lien dans la liste, un
-   *  `<h1>` sur la page du run. */
+  /** The title at rest, rendered by the caller: a link in the list, an `<h1>` on
+   *  the run's page. */
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
@@ -47,16 +47,16 @@ export function RunTitle({
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
-  // Le curseur va dans le champ à l'ouverture : sans ça, il faut un second
-  // clic pour écrire ce qu'on vient de demander à écrire.
+  // The cursor goes into the field on opening: without that, it takes a second
+  // click to write what one has just asked to write.
   useEffect(() => {
     if (editing) input.current?.select();
   }, [editing]);
 
   const open = () => {
-    // Le brouillon part du titre enregistré, pas du repli : reprendre le titre
-    // du premier scénario l'écrirait en dur au premier enregistrement, et le
-    // run cesserait de suivre son scénario s'il était renommé.
+    // The draft starts from the saved title, not from the fallback: taking up the
+    // first scenario's title would write it in hard on the first save, and the run
+    // would stop following its scenario if that were renamed.
     setDraft(label ?? "");
     setError(null);
     setEditing(true);
@@ -118,9 +118,9 @@ export function RunTitle({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          // Entrée enregistre, Échap renonce : les deux réflexes d'un champ
-          // qui s'ouvre sur place. Sans eux, il faut viser un bouton pour
-          // sortir d'un geste qu'on a ouvert d'un clic.
+          // Enter saves, Escape gives up: the two reflexes of a field that opens
+          // in place. Without them, one has to aim at a button to get out of a
+          // gesture one opened with a click.
           if (e.key === "Enter") void save();
           if (e.key === "Escape") setEditing(false);
         }}
@@ -145,9 +145,9 @@ export function RunTitle({
       >
         Cancel
       </button>
-      {/* Vider le champ n'efface pas le run : ça lui retire son nom, et le
-          repli reprend la main. Le dire, parce qu'un champ vide devant un
-          bouton « Save » n'inspire pas confiance. */}
+      {/* Emptying the field does not erase the run: it takes its name away, and
+          the fallback takes over. Saying so, because an empty field in front of a
+          "Save" button does not inspire confidence. */}
       <span className="text-xs text-zinc-500">
         {draft.trim() === "" ? `Empty — will show “${fallback}”` : ""}
       </span>

@@ -4,15 +4,15 @@ import { NotFound, addJudge, loadRun } from "@/lib/runs";
 import { judgeSpecProblem } from "@/lib/validate";
 import type { JudgeSpec } from "@/lib/types";
 
-/** Ajoute un juge secondaire à ce run — jamais principal, voir
- *  `designatePrincipal` (`.../judges/[runJudgeId]/principal/route.ts`) pour
- *  ce second geste, séparé et explicite.
+/** Adds a secondary judge to this run — never a principal, see
+ *  `designatePrincipal` (`.../judges/[runJudgeId]/principal/route.ts`) for that
+ *  second, separate and explicit gesture.
  *
- * C'est ce que « rejuger » est devenu depuis les juges multiples : on
- * n'écrase plus le verdict du principal, on ajoute un juge de plus, et
- * l'ancien reste pour comparer. Ses lignes de score naissent en attente sur
- * toutes les conversations déjà posées ; `.../catchup` est ce qui les
- * remplit ensuite — voir `.superpowers/sdd/task-9-report.md`. */
+ * This is what "re-judging" has become since the multiple judges: the
+ * principal's verdict is no longer overwritten, one more judge is added, and the
+ * old one stays to compare. Its score rows are born pending on every
+ * conversation already laid down; `.../catchup` is what fills them in
+ * afterwards — see `.superpowers/sdd/task-9-report.md`. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ runId: string }> },
@@ -35,11 +35,11 @@ export async function POST(
     throw error;
   }
   if (detail.run.status === "triggered" || detail.run.status === "running") {
-    // Même garde qu'`extendRun` (`.../extend/route.ts`), et pour la même
-    // raison : un job en cours a déjà lu ses juges vivants à son démarrage
-    // (voir `juges_vivants` dans `batch_job.py`) et ne verrait jamais celui
-    // qu'on vient d'ajouter. Le rattrapage, une fois le run terminé,
-    // comblera ce qu'il a manqué.
+      // Same guard as `extendRun` (`.../extend/route.ts`), and for the same
+      // reason: a running job has already read its living judges at its start
+      // (see `living_judges` in `batch_job.py`) and would never see the one just
+      // added. The catch-up, once the run has finished, will fill in what it
+      // missed.
     return NextResponse.json(
       { error: "This run is still going. Wait for it to finish." },
       { status: 409 },

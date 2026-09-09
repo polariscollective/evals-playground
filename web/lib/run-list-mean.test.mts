@@ -1,38 +1,38 @@
-// La moyenne tirée de l'histogramme rendu par la vue.
+// The mean drawn from the histogram the view returns.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { meanFromHistogram } from "./run-list-mean.ts";
 
-test("aucun histogramme : aucune moyenne", () => {
-  // Distinct d'un histogramme vide : personne n'a encore noté.
+test("no histogram: no mean", () => {
+  // Distinct from an empty histogram: nobody has graded yet.
   assert.equal(meanFromHistogram(null, []), null);
 });
 
-test("la moyenne pondère par le nombre de fois qu'une note est tombée", () => {
-  // 0 trois fois, 2 cinq fois → (0×3 + 2×5) / 8
+test("the mean weights by how many times a grade came up", () => {
+  // 0 three times, 2 five times → (0×3 + 2×5) / 8
   assert.equal(meanFromHistogram({ "0": 3, "2": 5 }, []), 10 / 8);
 });
 
-test("les clés flottantes de Postgres se lisent", () => {
-  // `jsonb_object_agg` sur un `double precision` rend « 0.0 », pas « 0 ».
+test("Postgres float keys can be read", () => {
+  // `jsonb_object_agg` on a `double precision` returns "0.0", not "0".
   assert.equal(meanFromHistogram({ "0.0": 2, "1.0": 2 }, []), 0.5);
 });
 
-test("un palier exclu sort de la moyenne, il ne compte pas comme zéro", () => {
-  // C'est toute la raison pour laquelle le calcul n'est pas en SQL.
+test("an excluded level leaves the mean, it does not count as zero", () => {
+  // That is the whole reason the computation is not in SQL.
   const rubric = [
-    { value: 0, meaning: "non" },
-    { value: 2, meaning: "oui" },
-    { value: 9, meaning: "sans objet", excluded: true },
+    { value: 0, meaning: "no" },
+    { value: 2, meaning: "yes" },
+    { value: 9, meaning: "not applicable", excluded: true },
   ];
   assert.equal(meanFromHistogram({ "0": 1, "2": 1, "9": 10 }, rubric), 1);
 });
 
-test("tout exclu : aucune moyenne, et non zéro", () => {
-  const rubric = [{ value: 9, meaning: "sans objet", excluded: true }];
+test("everything excluded: no mean, and not zero", () => {
+  const rubric = [{ value: 9, meaning: "not applicable", excluded: true }];
   assert.equal(meanFromHistogram({ "9": 4 }, rubric), null);
 });
 
-test("une clé illisible est ignorée plutôt que de produire NaN", () => {
-  assert.equal(meanFromHistogram({ "2": 1, "n'importe quoi": 5 }, []), 2);
+test("an unreadable key is ignored rather than producing NaN", () => {
+  assert.equal(meanFromHistogram({ "2": 1, "anything at all": 5 }, []), 2);
 });

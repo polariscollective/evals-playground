@@ -1,7 +1,7 @@
-/** Un CSV que le navigateur enregistre au lieu de l'afficher.
+/** A CSV the browser saves instead of displaying.
  *
- * Le BOM UTF-8 est là pour Excel, qui sans lui lit les accents en latin-1 et
- * affiche « Accès données » en mojibake. */
+ * The UTF-8 BOM is there for Excel, which without it reads accents as latin-1
+ * and shows "Accès données" as mojibake. */
 export function csvResponse(body: string, filename: string): Response {
   return new Response(`﻿${body}`, {
     headers: {

@@ -1,22 +1,21 @@
-// Combien d'essais d'un run portent chaque palier de l'échelle — ce que le
-// panneau d'extension affiche à côté de chaque note qu'on peut choisir
-// d'approfondir.
+// How many attempts of a run carry each level of the scale — what the extension
+// panel shows beside each grade one can choose to deepen.
 //
-// Compté depuis les essais que la page a déjà en mémoire, jamais depuis une
-// requête à part : les tenir à jour serait le travail de la page, pas d'un
-// aller-retour supplémentaire pour une question que ses données répondent
-// déjà. Un palier que personne ne porte doit ressortir à zéro — sans quoi le
-// cocher enverrait une demande qui n'approfondirait rien.
+// Counted from the attempts the page already has in memory, never from a
+// separate request: keeping them up to date would be the page's work, not that
+// of one more round trip for a question its data already answers. A level
+// nobody carries must come out at zero — without which ticking it would send a
+// request that would deepen nothing.
 //
-// Depuis les juges multiples, la note d'un essai n'est plus la colonne
-// `eval_samples.score` (supprimée par la migration
-// `20260906093000_drop_eval_samples_score_columns.sql`, dépôt
-// polaris-supabase) : c'est la ligne de `judge_scores` du juge PRINCIPAL sur
-// cet essai — le seul que ce panneau approfondit, exactement comme la
-// matrice qu'il prolonge (voir « La matrice suit le principal »,
-// docs/superpowers/specs/2026-09-06-juges-multiples.md). L'appelant joint
-// `EvalSample` et `judge_scores` avant d'arriver ici ; ce module ne lit ni
-// l'une ni l'autre table.
+// Since the multiple judges, an attempt's grade is no longer the
+// `eval_samples.score` column (dropped by the migration
+// `20260906093000_drop_eval_samples_score_columns.sql`, polaris-supabase
+// repository): it is the `judge_scores` row of the PRINCIPAL judge on that
+// attempt — the only one this panel deepens, exactly like the matrix it
+// prolongs (see « La matrice suit le principal »,
+// docs/superpowers/specs/2026-09-06-juges-multiples.md). The caller joins
+// `EvalSample` and `judge_scores` before arriving here; this module reads
+// neither table.
 import { addEstimates, estimateDeepening } from "./pricing.ts";
 import type {
   CostEstimate,
@@ -27,37 +26,37 @@ import type {
   SampleStatus,
 } from "./types";
 
-/** Le statut et la note du juge principal sur un essai, réduits à ce que ce
- *  module en utilise — même dessin que `JudgeVerdict` dans `awareness.ts`,
- *  redéfini ici plutôt qu'importé : ce fichier n'a rien à voir avec l'éveil,
- *  et n'a pas à en dépendre pour une forme aussi petite. */
+/** The status and the grade of the principal judge on an attempt, reduced to
+ *  what this module uses of them — same drawing as `JudgeVerdict` in
+ *  `awareness.ts`, redefined here rather than imported: this file has nothing to
+ *  do with awareness, and has no business depending on it for so small a
+ *  shape. */
 export type PrincipalVerdict = Pick<JudgeScore, "status" | "score">;
 
-/** Un essai tel que ces comptes le voient : le modèle qui l'a joué, le statut
- *  de son exécution, et le verdict du juge principal — jamais un autre juge
- *  non supprimé. */
+/** An attempt as these counts see it: the model that played it, the status of
+ *  its execution, and the principal judge's verdict — never another judge that
+ *  has not been deleted. */
 export interface DeepenSample {
   target_model: string;
   status: SampleStatus;
   principal: PrincipalVerdict;
 }
 
-/** `DeepenSample`, plus ce qu'il faut pour grouper ensuite par modèle et par
- *  profondeur de départ (voir `groupByModelAndDepth`) — un compte n'a pas
- *  besoin de connaître `turns_done`, mais `samplesForSelection` doit le faire
- *  voyager avec l'essai pour que `extendRun` puisse regrouper ce qu'il vient
- *  de lire en base de la même façon que le panneau regroupe ce qu'il a déjà
- *  en mémoire. */
+/** `DeepenSample`, plus what is needed to group afterwards by model and by
+ *  starting depth (see `groupByModelAndDepth`) — a count has no need to know
+ *  `turns_done`, but `samplesForSelection` must make it travel with the attempt
+ *  so that `extendRun` can group what it has just read from the database the
+ *  same way the panel groups what it already has in memory. */
 export interface DeepenSampleWithDepth extends DeepenSample {
   turns_done: number | null;
 }
 
-/** Combien d'essais, au total et répartis par modèle cible.
+/** How many attempts, in total and split by target model.
  *
- * La répartition par modèle sert le devis : `estimateDeepening` ne rend un
- * prix juste que pour un seul tarif à la fois (voir son commentaire dans
- * `pricing.ts`), et un choix d'essais à cheval sur plusieurs modèles se
- * chiffre en l'appelant une fois par modèle, avec son propre compte. */
+ * The split by model serves the quote: `estimateDeepening` returns a fair price
+ * only for one tariff at a time (see its comment in `pricing.ts`), and a choice
+ * of attempts straddling several models is costed by calling it once per model,
+ * with its own count. */
 export interface DeepenCount {
   total: number;
   byModel: Record<string, number>;
@@ -72,21 +71,21 @@ function record(count: DeepenCount, model: string): void {
   count.byModel[model] = (count.byModel[model] ?? 0) + 1;
 }
 
-/** Un essai est-il noté par le principal : sa conversation est jouée, et il
- *  lui a donné une note — peu importe laquelle, `excluded` compris (voir
- *  `countsByLevel`). Peu importe aussi *pourquoi* il n'y en a pas : en
- *  attente, tombé, conversation vide ou note hors échelle se lisent tous
- *  comme « pas encore d'essai à reprendre à ce palier », exactement comme
- *  avant que la note ne vive dans sa propre table. */
+/** Is an attempt graded by the principal: its conversation is played, and the
+ *  principal gave it a grade — whichever one, `excluded` included (see
+ *  `countsByLevel`). It equally matters little *why* there is none: pending,
+ *  fallen over, empty conversation or grade off the scale all read as "no
+ *  attempt to pick up at this level yet", exactly as before the grade came to
+ *  live in its own table. */
 function isGraded(sample: DeepenSample): boolean {
   return sample.status === "done" && sample.principal.score !== null;
 }
 
-/** Un compte par palier, dans l'ordre où `rubric` les donne.
+/** One count per level, in the order `rubric` gives them.
  *
- * Un essai compte pour son palier même si celui-ci est `excluded` : approfondir
- * un essai jugé « sans objet » a le même sens que pour n'importe quel autre —
- * seule la moyenne l'écarte, pas la liste des essais qu'on peut reprendre. */
+ * An attempt counts for its level even if that level is `excluded`: deepening an
+ * attempt judged "not applicable" means the same as for any other — only the
+ * mean sets it aside, not the list of attempts one can pick up. */
 export function countsByLevel(
   samples: DeepenSample[],
   rubric: RubricLevel[],
@@ -102,8 +101,8 @@ export function countsByLevel(
   });
 }
 
-/** Tous les essais notés du run par le principal, quel que soit leur palier —
- *  ce que couvre `deepen: "all"`. */
+/** Every attempt of the run graded by the principal, whatever its level — what
+ *  `deepen: "all"` covers. */
 export function countAllGraded(samples: DeepenSample[]): DeepenCount {
   const count = emptyCount();
   for (const sample of samples) {
@@ -112,9 +111,9 @@ export function countAllGraded(samples: DeepenSample[]): DeepenCount {
   return count;
 }
 
-/** Le compte pour une sélection telle que le panneau la construit :
- *  `"all"` pour tous les essais notés, une liste de notes pour ne prendre
- *  que les essais qui les portent, `null` pour n'en approfondir aucun. */
+/** The count for a selection as the panel builds it: `"all"` for every graded
+ *  attempt, a list of grades to take only the attempts carrying them, `null` to
+ *  deepen none. */
 export function countsForSelection(
   samples: DeepenSample[],
   selection: "all" | number[] | null,
@@ -135,11 +134,11 @@ export function countsForSelection(
   return count;
 }
 
-/** Les essais qu'une sélection retient, dans l'ordre où `samples` les donne —
- *  même filtre que `countsForSelection`, mais les essais eux-mêmes plutôt que
- *  leur compte, `turns_done` compris : c'est ce qu'il faut pour les grouper
- *  ensuite par profondeur de départ (voir `groupByModelAndDepth`) — un compte
- *  par modèle ne porte plus cette information. */
+/** The attempts a selection keeps, in the order `samples` gives them — same
+ *  filter as `countsForSelection`, but the attempts themselves rather than
+ *  their count, `turns_done` included: that is what is needed to group them
+ *  afterwards by starting depth (see `groupByModelAndDepth`) — a count per
+ *  model no longer carries that information. */
 export function samplesForSelection(
   samples: DeepenSampleWithDepth[],
   selection: "all" | number[] | null,
@@ -157,88 +156,86 @@ export function samplesForSelection(
   );
 }
 
-/** Un essai à approfondir, réduit aux deux champs qui fixent son prix : le
- *  modèle qui le joue, et la profondeur d'où il repart. Une `EvalSample`
- *  satisfait cette forme sans conversion ; une ligne lue en base — seulement
- *  `target_model` et `turns_done` demandés — aussi. */
+/** An attempt to deepen, reduced to the two fields that fix its price: the
+ *  model that plays it, and the depth it sets off from. An `EvalSample`
+ *  satisfies this shape without conversion; so does a row read from the
+ *  database — only `target_model` and `turns_done` asked for. */
 export interface DeepenCell {
   target_model: string;
   turns_done: number | null;
 }
 
-/** Un groupe d'essais qui partagent le modèle qui les joue et la profondeur
- *  d'où ils repartent — la seule granularité à laquelle `estimateDeepening`
- *  rend un prix juste (voir son commentaire dans `pricing.ts`). */
+/** A group of attempts that share the model playing them and the depth they set
+ *  off from — the only granularity at which `estimateDeepening` returns a fair
+ *  price (see its comment in `pricing.ts`). */
 export interface DeepenGroup {
   target_model: string;
   turns_done: number;
   cells: number;
 }
 
-/** Regroupe des essais à approfondir par couple (modèle cible, profondeur de
- *  départ) — et non par le seul modèle, qui suffisait avant qu'un run puisse
- *  être approfondi plus d'une fois. Depuis, les essais qu'on a déjà poussés
- *  sont plus profonds que ceux qu'on avait laissés, et un `"all"` — ou une
- *  liste de notes qui couvre les deux groupes — les mélangerait dans un même
- *  compte si on ne groupait que sur le modèle.
+/** Groups attempts to deepen by (target model, starting depth) pair — and not
+ *  by the model alone, which was enough before a run could be deepened more than
+ *  once. Since then, the attempts already pushed are deeper than the ones left
+ *  behind, and an `"all"` — or a list of grades covering both groups — would mix
+ *  them into one count if one grouped on the model only.
  *
- *  `fallbackTurnsDone` couvre l'essai sans profondeur enregistrée : ça
- *  n'arrive pas pour un essai `done`, qui écrit toujours la sienne (voir la
- *  migration qui a introduit la colonne), mais son type reste nullable pour
- *  les essais jamais joués. */
+ *  `fallbackTurnsDone` covers the attempt with no recorded depth: that does not
+ *  happen for a `done` attempt, which always writes its own (see the migration
+ *  that introduced the column), but its type stays nullable for the attempts
+ *  never played. */
 export function groupByModelAndDepth(
   cells: DeepenCell[],
   fallbackTurnsDone: number,
 ): DeepenGroup[] {
-  const groupes = new Map<string, DeepenGroup>();
+  const groups = new Map<string, DeepenGroup>();
   for (const cell of cells) {
     const turnsDone = cell.turns_done ?? fallbackTurnsDone;
-    const clé = `${cell.target_model}\0${turnsDone}`;
-    const groupe = groupes.get(clé);
-    if (groupe) {
-      groupe.cells += 1;
+    const key = `${cell.target_model}\0${turnsDone}`;
+    const group = groups.get(key);
+    if (group) {
+      group.cells += 1;
     } else {
-      groupes.set(clé, {
+      groups.set(key, {
         target_model: cell.target_model,
         turns_done: turnsDone,
         cells: 1,
       });
     }
   }
-  return [...groupes.values()];
+  return [...groups.values()];
 }
 
-/** Le devis d'approfondir ces essais jusqu'à `to` tours.
+/** The quote for deepening these attempts up to `to` turns.
  *
- * Un appel à `estimateDeepening` par groupe — voir `groupByModelAndDepth` —
- * sommés avec `addEstimates` : elle ne rend un prix juste que pour un seul
- * modèle et une seule profondeur de départ à la fois. Grouper par modèle seul
- * sous-estimerait le groupe resté en arrière depuis un précédent
- * approfondissement, en le facturant depuis une profondeur qu'il n'a pas
- * atteinte.
+ * One call to `estimateDeepening` per group — see `groupByModelAndDepth` —
+ * summed with `addEstimates`: it returns a fair price only for one model and one
+ * starting depth at a time. Grouping by model alone would underestimate the
+ * group left behind by an earlier deepening, billing it from a depth it has not
+ * reached.
  *
- * Partagée entre le panneau, qui l'appelle sur la sélection qu'il a déjà en
- * mémoire (voir `samplesForSelection`), et `extendRun`, qui l'appelle sur ce
- * qu'il vient de lire en base pour la même extension : aucun des deux ne doit
- * facturer les essais déjà approfondis au tarif de ceux qu'on avait laissés. */
+ * Shared between the panel, which calls it on the selection it already has in
+ * memory (see `samplesForSelection`), and `extendRun`, which calls it on what it
+ * has just read from the database for the same extension: neither must bill the
+ * attempts already deepened at the tariff of the ones left behind. */
 export function estimateDeepeningCost(
   config: EvalRunConfig,
   cells: DeepenCell[],
   to: number,
   fallbackTurnsDone: number,
-  /** Les longueurs supposées, transmises telles quelles à `estimateDeepening`
-   *  — réponses évaluées et adversaire, chacun la sienne. */
+    /** The assumed lengths, passed through as they stand to
+     *  `estimateDeepening` — evaluated answers and adversary, each its own. */
   lengths?: LengthAssumption | number | null,
 ): CostEstimate | null {
   return groupByModelAndDepth(cells, fallbackTurnsDone).reduce<CostEstimate | null>(
-    (total, groupe) =>
+    (total, group) =>
       addEstimates(
         total,
         estimateDeepening(
-          { ...config, models: { ...config.models, targets: [groupe.target_model] } },
-          groupe.turns_done,
+          { ...config, models: { ...config.models, targets: [group.target_model] } },
+          group.turns_done,
           to,
-          groupe.cells,
+          group.cells,
           lengths,
         ),
       ),

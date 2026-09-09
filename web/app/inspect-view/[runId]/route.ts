@@ -1,10 +1,10 @@
-// Le viewer d'Inspect, servi sur le dossier de journaux d'un run.
+// Inspect's viewer, served on a run's logs folder.
 //
-// La coquille est statique — `web/public/inspect-view/`, posée par
-// `scripts/build-inspect-view.sh` — et cette route ne fait que la retoucher :
-// les assets en absolu, et le dossier de journaux injecté. C'est exactement ce
-// que fait `inspect view bundle`, à ceci près que les journaux ne sont pas dans
-// un dossier voisin mais derrière la route d'à côté.
+// The shell is static — `web/public/inspect-view/`, laid down by
+// `scripts/build-inspect-view.sh` — and this route only retouches it: the assets
+// made absolute, and the logs folder injected. It is exactly what
+// `inspect view bundle` does, except that the logs are not in a neighbouring
+// folder but behind the route next door.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isRunId } from "@/lib/run-id";
@@ -27,15 +27,15 @@ export async function GET(
   try {
     dist = await readFile(DIST, "utf8");
   } catch {
-    // Le viewer n'a jamais été posé : `scripts/build-inspect-view.sh`.
+    // The viewer was never laid down: `scripts/build-inspect-view.sh`.
     return new Response("Inspect viewer is not installed.", { status: 500 });
   }
 
   const html = viewerHtml(dist, {
     assetsBase: "/inspect-view/assets",
-    // L'origine vient des en-têtes, pas de `request.url` : voir `originOf`.
-    // Se tromper d'origine rend le dossier de journaux cross-origin, et le
-    // viewer n'affiche plus qu'un « Failed to fetch ».
+    // The origin comes from the headers, not from `request.url`: see `originOf`.
+    // Getting the origin wrong makes the logs folder cross-origin, and the viewer
+    // shows nothing but a "Failed to fetch".
     logDir: logDirUri(
       originOf(request.headers, new URL(request.url).origin),
       runId,
@@ -45,8 +45,8 @@ export async function GET(
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      // Le document porte l'identifiant du run et l'origine : rien à mettre en
-      // cache partagé, et le contrôle d'accès doit être refait à chaque fois.
+      // The document carries the run's identifier and the origin: nothing to put
+      // in a shared cache, and the access control must be redone every time.
       "Cache-Control": "private, no-store",
     },
   });

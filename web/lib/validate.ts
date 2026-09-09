@@ -1,10 +1,10 @@
-// La validation de ce qu'un client envoie, avant que ça n'entre en base ou ne
-// parte dans un job.
+// The validation of what a client sends, before it enters the database or
+// leaves in a job.
 //
-// Ce que pydantic faisait côté Python. Rien de ce qui arrive du navigateur
-// n'est cru : une échelle à un seul palier, un scénario vide ou un multitours
-// sans adversaire produiraient un run qui ne mesure rien, et le job n'aurait
-// aucun moyen de s'en rendre compte.
+// What pydantic used to do on the Python side. Nothing arriving from the
+// browser is believed: a scale with a single level, an empty scenario or a
+// multi-turn run with no adversary would produce a run that measures nothing,
+// and the job would have no way of noticing.
 import { knownModelIds } from "./catalog.ts";
 import { servesTools } from "./tools.ts";
 import type {
@@ -19,25 +19,26 @@ import type {
 } from "./types";
 
 const MIN_TURNS = 1;
-// Exportée : le panneau d'extension la dupliquait faute de mieux (tâche 6),
-// et l'outil MCP en a besoin pour borner `turns` sans la recopier à son tour.
+// Exported: the extension panel used to duplicate it for want of anything
+// better (task 6), and the MCP tool needs it to bound `turns` without copying it
+// in turn.
 export const MAX_TURNS = 100;
 
 function isFilled(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
 }
 
-/** Ce qui cloche dans un identifiant de modèle, ou null.
+/** What is wrong with a model identifier, or null.
  *
- * Vérifié ici pour la raison qui fait vérifier les noms d'outils juste en
- * dessous : sinon l'erreur tombe au premier appel *facturé*, sous la forme
- * illisible que rend le fournisseur. Un identifiant hors catalogue est en
- * plus compté pour zéro jeton par l'estimation — le devis annoncé serait
- * donc trop bas pour un run qui n'a aucune chance d'aboutir.
+ * Checked here for the reason that has the tool names checked just below:
+ * otherwise the error falls at the first *billed* call, in the unreadable form
+ * the provider returns. An identifier outside the catalogue is also counted as
+ * zero tokens by the estimate — so the announced quote would be too low for a
+ * run that has no chance of getting anywhere.
  *
- * Le catalogue est la seule liste qui existe : `/prompt` la publie en disant
- * « Use these identifiers exactly. Anything else fails at the first call. »
- * Ce refus ne fait qu'appliquer ce qui est déjà promis. */
+ * The catalogue is the only list there is: `/prompt` publishes it saying "Use
+ * these identifiers exactly. Anything else fails at the first call." This
+ * refusal only enforces what is already promised. */
 function modelProblem(id: unknown, where: string): string | null {
   if (!isFilled(id)) return null;
   if (knownModelIds().has(id)) return null;
@@ -47,23 +48,22 @@ function modelProblem(id: unknown, where: string): string | null {
   );
 }
 
-/** Ce qui cloche dans une plage de températures, ou null.
+/** What is wrong with a temperature range, or null.
  *
- * Une seule copie pour le lancement et pour l'extension : les deux la
- * dupliquaient, avec la même faute des deux côtés — trois violations
- * distinctes rendues sous le seul message « upper bound is below the lower
- * bound », qui envoyait corriger `min` quand c'était `max` qui sortait de
- * l'échelle. */
+ * One single copy for the launch and for the extension: both used to duplicate
+ * it, with the same fault on both sides — three distinct violations returned
+ * under the one message "upper bound is below the lower bound", which sent
+ * people to fix `min` when it was `max` that was off the scale. */
 function temperatureProblem(temperature: unknown): string | null {
   if (!temperature) return null;
   if (typeof temperature !== "object") return "temperature must be a min, or a min and a max";
   const { min, max } = temperature as { min?: unknown; max?: unknown };
 
-  // `min` porte la température quand il n'y a pas de plage — voir le gabarit
-  // de `/prompt`, « omit max to use one fixed temperature ». L'exiger plutôt
-  // que de lui donner une valeur par défaut évite le piège d'un défaut caché :
-  // un fichier qui n'écrivait que `max` recevait « upper bound is below the
-  // lower bound » à propos d'une borne basse qu'il n'avait jamais écrite.
+  // `min` carries the temperature when there is no range — see the `/prompt`
+  // template, "omit max to use one fixed temperature". Requiring it rather than
+  // giving it a default value avoids the trap of a hidden default: a file that
+  // wrote only `max` received "upper bound is below the lower bound" about a
+  // lower bound it had never written.
   if (typeof min !== "number" || !Number.isFinite(min)) {
     return "temperature needs a min: the fixed temperature, or the bottom of the range";
   }
@@ -78,10 +78,10 @@ function temperatureProblem(temperature: unknown): string | null {
   return null;
 }
 
-/** Ce qui cloche dans une échelle, ou null si elle tient. */
+/** What is wrong with a scale, or null if it holds. */
 export function rubricProblem(rubric: unknown): string | null {
   if (!Array.isArray(rubric) || rubric.length < 2) {
-    // Avec un seul palier il n'y a pas de choix à faire, donc rien à mesurer.
+    // With a single level there is no choice to make, hence nothing to measure.
     return "rubric must have at least two grades";
   }
   const values: number[] = [];
@@ -90,44 +90,43 @@ export function rubricProblem(rubric: unknown): string | null {
       return "every grade needs a numeric value";
     }
     if (!isFilled(level?.meaning)) {
-      // Une note sans son sens ne se relit pas, et le juge ne saurait pas quand
-      // la choisir.
+        // A grade without its meaning cannot be read back, and the judge would
+        // not know when to choose it.
       return "every grade needs a description";
     }
     values.push(level.value);
   }
   if (new Set(values).size !== values.length) {
-    // Le juge choisit une valeur, et c'est par elle qu'on retrouve le sens
-    // qu'on lui avait donné.
+      // The judge chooses a value, and it is by that value that we find the
+      // meaning that was given to it.
     return "two grades cannot share the same value";
   }
-  // Un « sans objet » ne mesure rien : une échelle qui n'aurait que lui et un
-  // seul vrai palier ne laisserait aucun choix à faire.
-  const comptes = (rubric as RubricLevel[]).filter((level) => !level.excluded);
-  if (comptes.length < 2) {
+  // A "not applicable" measures nothing: a scale that held only it and one real
+  // level would leave no choice to make.
+  const counted = (rubric as RubricLevel[]).filter((level) => !level.excluded);
+  if (counted.length < 2) {
     return "at least two grades must count towards the average";
   }
   return null;
 }
 
-/** Ce qui cloche dans UN `JudgeSpec`, ou null si elle tient — que ce soit une
- *  entrée de `config.judges` au lancement (voir `judgesProblem`, juste en
- *  dessous, qui l'appelle pour chacune) ou le corps posté à `.../judges` pour
- *  ajouter un juge après coup (`app/api/runs/[runId]/judges/route.ts`).
+/** What is wrong with ONE `JudgeSpec`, or null if it holds — whether it is an
+ *  entry of `config.judges` at launch (see `judgesProblem`, just below, which
+ *  calls it for each) or the body posted to `.../judges` to add a judge
+ *  afterwards (`app/api/runs/[runId]/judges/route.ts`).
  *
- * `label` nomme ce qui cloche dans le message rendu — « judge 2 », ou « the
- * new judge » côté route d'ajout, qui n'a qu'une seule entrée à nommer. */
+ * `label` names what is wrong in the returned message — "judge 2", or "the new
+ * judge" on the adding route's side, which has only one entry to name. */
 export function judgeSpecProblem(spec: unknown, label: string): string | null {
   if (!spec || typeof spec !== "object") return `${label} is not a mapping`;
   const judge = spec as JudgeSpec;
   if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
   const rubric = rubricProblem(judge.rubric);
   if (rubric) return `${label}: ${rubric}`;
-  // Absent hérite du modèle du run — voir `JudgeSpec.model`. Présent, il
-  // doit être un texte non vide : un type différent ne se devine pas, et le
-  // laisser passer ferait tourner ce juge sous le modèle par défaut sans que
-  // personne ne l'ait demandé, exactement le piège déjà rencontré sur
-  // `check_eval_awareness`.
+  // Absent inherits the run's model — see `JudgeSpec.model`. Present, it must
+  // be a non-empty text: a different type is not guessed, and letting it through
+  // would run this judge under the default model without anyone having asked
+  // for it, exactly the trap already met on `check_eval_awareness`.
   if (judge.model !== undefined && judge.model !== null && !isFilled(judge.model)) {
     return `${label}: model must be a non-empty string`;
   }
@@ -136,16 +135,16 @@ export function judgeSpecProblem(spec: unknown, label: string): string | null {
   return null;
 }
 
-/** Ce qui cloche dans les juges secondaires d'un run, ou null.
+/** What is wrong with a run's secondary judges, or null.
  *
- * `judges` est optionnel : absent ou vide, c'est l'ancienne forme — un seul
- * juge, le principal, décrit par `criterion` et `rubric` au premier niveau
- * de la configuration. Chaque entrée ici en ajoute un de plus, toujours
- * ordinaire — voir la docstring de `JudgeSpec` dans `types.ts` : cette forme
- * ne porte ni type système ni marque de principal, donc rien ici ne peut se
- * substituer au principal ni se faire passer pour un juge d'éveil. Les deux
- * formes ne se contredisent jamais : le premier niveau décrit toujours le
- * principal, `judges` n'ajoute jamais que des juges secondaires. */
+ * `judges` is optional: absent or empty, this is the old shape — a single judge,
+ * the principal, described by `criterion` and `rubric` at the top level of the
+ * configuration. Each entry here adds one more, always ordinary — see the
+ * docstring of `JudgeSpec` in `types.ts`: this shape carries neither a system
+ * type nor a mark of principal, so nothing here can stand in for the principal
+ * or pass itself off as an awareness judge. The two shapes never contradict each
+ * other: the top level always describes the principal, `judges` only ever adds
+ * secondary judges. */
 export function judgesProblem(judges: unknown): string | null {
   if (judges === undefined || judges === null) return null;
   if (!Array.isArray(judges)) return "judges must be a list";
@@ -157,16 +156,16 @@ export function judgesProblem(judges: unknown): string | null {
   return null;
 }
 
-/** Les fournisseurs n'acceptent pas d'autre forme de nom. */
+/** The providers accept no other form of name. */
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
 const TOOL_PARAM_TYPES = ["string", "number", "integer", "boolean"];
 
-/** Ce qui cloche dans les outils d'un run, ou null.
+/** What is wrong with a run's tools, or null.
  *
- * Le nom est vérifié ici parce que l'erreur, sinon, tombe au premier appel
- * facturé et sous une forme illisible : les fournisseurs refusent la requête
- * entière sans dire quel outil est en cause. */
+ * The name is checked here because otherwise the error falls at the first billed
+ * call and in an unreadable form: the providers refuse the whole request without
+ * saying which tool is at fault. */
 export function toolsProblem(tools: unknown): string | null {
   if (tools === undefined || tools === null) return null;
   if (!Array.isArray(tools)) return "tools must be a list";
@@ -180,10 +179,11 @@ export function toolsProblem(tools: unknown): string | null {
     if (seen.has(tool.name)) return `two tools are both named "${tool.name}"`;
     seen.add(tool.name);
 
-    // Un outil est fixe ou servi depuis le monde, jamais les deux. Ni l'un ni
-    // l'autre reste licite et décrit un outil fixe au résultat vide : `result`
-    // vaut `""` par défaut depuis toujours, et casser la relecture des runs
-    // déjà en base pour une règle qui n'ajoute rien serait cher payé.
+      // A tool is fixed or served from the world, never both. Neither one nor
+      // the other stays lawful and describes a fixed tool with an empty result:
+      // `result` has defaulted to `""` from the start, and breaking the reading
+      // back of the runs already in the database for a rule that adds nothing
+      // would be dearly bought.
     if (isFilled(tool.result) && isFilled(tool.retrieval_rules)) {
       return (
         `tool "${tool.name}" carries both result and retrieval_rules: ` +
@@ -191,21 +191,21 @@ export function toolsProblem(tools: unknown): string | null {
       );
     }
     if (!isFilled(tool.description)) {
-      // Un outil sans description est un outil que le modèle n'appellera
-      // jamais, ou appellera au hasard : dans les deux cas la case ne mesure
-      // pas ce qu'on croit.
+        // A tool with no description is a tool the model will never call, or
+        // will call at random: in both cases the cell does not measure what one
+        // thinks.
       return `tool "${tool.name}" needs a description — it is what the model reads to decide`;
     }
 
     const params = tool.parameters ?? [];
     if (!Array.isArray(params)) return `tool "${tool.name}": parameters must be a list`;
-    const noms = new Set<string>();
+    const names = new Set<string>();
     for (const param of params) {
       if (!isFilled(param?.name)) return `tool "${tool.name}": a parameter has no name`;
-      if (noms.has(param.name)) {
+      if (names.has(param.name)) {
         return `tool "${tool.name}": two parameters are both named "${param.name}"`;
       }
-      noms.add(param.name);
+      names.add(param.name);
       if (!TOOL_PARAM_TYPES.includes(param.type)) {
         return `tool "${tool.name}", parameter "${param.name}": type must be one of ${TOOL_PARAM_TYPES.join(", ")}`;
       }
@@ -214,7 +214,7 @@ export function toolsProblem(tools: unknown): string | null {
   return null;
 }
 
-/** Ce qui cloche dans les outils demandés par un scénario, ou null. */
+/** What is wrong with the tools a scenario asks for, or null. */
 export function scenarioToolsProblem(
   asked: unknown,
   available: ToolSpec[],
@@ -231,15 +231,15 @@ export function scenarioToolsProblem(
   return null;
 }
 
-/** Ce qui cloche dans un historique posé, ou null.
+/** What is wrong with a seeded history, or null.
  *
- * Il s'ouvre sur l'utilisateur et se ferme sur l'assistant, parce que le message
- * d'ouverture est le tour utilisateur qui suit : deux tours utilisateur
- * d'affilée, certains fournisseurs les refusent et les autres les interprètent
- * chacun à leur façon. Le dire ici plutôt qu'au premier appel facturé.
+ * It opens on the user and closes on the assistant, because the opening message
+ * is the user turn that follows: two user turns in a row, some providers refuse
+ * and the others each interpret their own way. Saying so here rather than at the
+ * first billed call.
  *
- * L'historique ne consomme aucun tour : `turns` compte les réponses réellement
- * demandées au modèle évalué, à partir du message d'ouverture. */
+ * The history consumes no turn: `turns` counts the answers really asked of the
+ * evaluated model, starting from the opening message. */
 export function historyProblem(history: unknown, where: string): string | null {
   if (history === undefined || history === null) return null;
   if (!Array.isArray(history)) return `${where}: history must be a list`;
@@ -247,11 +247,11 @@ export function historyProblem(history: unknown, where: string): string | null {
 
   for (const [index, turn] of history.entries()) {
     const role = (turn as SeededTurn)?.role;
-    const attendu = index % 2 === 0 ? "user" : "assistant";
-    if (role !== attendu) {
+    const expected = index % 2 === 0 ? "user" : "assistant";
+    if (role !== expected) {
       return `${where}: history must alternate user/assistant — turn ${
         index + 1
-      } is ${role ?? "empty"} where ${attendu} was expected`;
+      } is ${role ?? "empty"} where ${expected} was expected`;
     }
     if (!isFilled((turn as SeededTurn)?.content)) {
       return `${where}: history turn ${index + 1} is empty`;
@@ -263,35 +263,34 @@ export function historyProblem(history: unknown, where: string): string | null {
   return null;
 }
 
-/** Ce qui cloche dans l'équivalence outil-servi / `models.world`, ou null si
- *  elle tient.
+/** What is wrong with the served-tool / `models.world` equivalence, or null if
+ *  it holds.
  *
- * Servir sans modèle ne répondrait à rien ; nommer un modèle sans rien à
- * servir est un réglage sans effet, et un réglage sans effet est pire
- * qu'absent — on le relit plus tard en se demandant s'il a compté. Miroir du
- * refus Python dans `_monde_et_service_equivalents`, voir
+ * Serving with no model would answer nothing; naming a model with nothing to
+ * serve is a setting with no effect, and a setting with no effect is worse than
+ * an absent one — it is read back later wondering whether it counted. Mirror of
+ * the Python refusal in `_world_and_serving_equivalent`, see
  * `backend/playground/eval_schemas.py`.
  *
- * Extraite de `configProblem` (CRITICAL 1) : `retry` et `catchup` doivent
- * refuser exactement ce que le job refuserait au même titre — cette
- * équivalence-là, et rien de plus — plutôt que la validation de lancement
- * entière, bien plus stricte (`average_output_tokens`, notamment, que le job
- * accepte absent sur un run enregistré avant ce champ). `configProblem` reste
- * l'unique appelant qui doit tout vérifier ; `retry` et `catchup` n'ont besoin
- * que de celle-ci, et l'appellent désormais directement — une définition,
- * trois appelants. */
+ * Extracted from `configProblem` (CRITICAL 1): `retry` and `catchup` must refuse
+ * exactly what the job would refuse on the same footing — that equivalence, and
+ * nothing more — rather than the whole launch validation, far stricter
+ * (`average_output_tokens`, notably, which the job accepts absent on a run
+ * recorded before that field). `configProblem` stays the one caller that must
+ * check everything; `retry` and `catchup` need only this one, and now call it
+ * directly — one definition, three callers. */
 export function worldEquivalenceProblem(
   config: Pick<EvalRunConfig, "tools" | "models">,
 ): string | null {
-  const sert = servesTools(config.tools ?? []);
-  const monde = isFilled(config.models?.world);
-  if (sert && !monde) {
+  const serves = servesTools(config.tools ?? []);
+  const world = isFilled(config.models?.world);
+  if (serves && !world) {
     return (
       "models.world: this run serves at least one tool, so it needs a model to " +
       "answer those calls. Pick one from the models listed in /prompt."
     );
   }
-  if (!sert && monde) {
+  if (!serves && world) {
     return (
       "models.world: no tool in this run has retrieval_rules, so nothing is " +
       "served and this model would never be called. Remove it, or give a tool " +
@@ -301,7 +300,7 @@ export function worldEquivalenceProblem(
   return null;
 }
 
-/** Ce qui cloche dans une configuration de run, ou null si elle tient. */
+/** What is wrong with a run's configuration, or null if it holds. */
 export function configProblem(config: unknown): string | null {
   if (!config || typeof config !== "object") return "config must be an object";
   const c = config as EvalRunConfig;
@@ -328,13 +327,13 @@ export function configProblem(config: unknown): string | null {
     return "consecutive tool calls per turn must be a whole number between 1 and 20";
   }
 
-  // Un booléen ou rien, jamais autre chose. Une chaîne "false" écrite par
-  // mégarde entre guillemets n'est pas égale au booléen `false` : la laisser
-  // passer ici la ferait lire plus loin comme l'interrupteur resté allumé,
-  // sans que personne ne le sache — un juge qu'on a explicitement demandé
-  // d'éteindre continuerait de tourner et d'être facturé.
-  const eveil = c.check_eval_awareness;
-  if (eveil !== undefined && typeof eveil !== "boolean") {
+  // A boolean or nothing, never anything else. A string "false" written in
+  // quotes by mistake is not equal to the boolean `false`: letting it through
+  // here would have it read further on as the switch left on, without anyone
+  // knowing — a judge one has explicitly asked to turn off would keep running
+  // and being billed.
+  const awareness = c.check_eval_awareness;
+  if (awareness !== undefined && typeof awareness !== "boolean") {
     return "check_eval_awareness must be true or false";
   }
 
@@ -362,14 +361,14 @@ export function configProblem(config: unknown): string | null {
     return "repetitions must be at least 1";
   }
 
-  const sortie = c.average_output_tokens;
-  if (sortie === undefined || sortie === null) {
+  const output = c.average_output_tokens;
+  if (output === undefined || output === null) {
     return (
       "average_output_tokens is required: roughly how many output tokens one " +
       "model answer costs, reasoning included, not just the visible reply"
     );
   }
-  if (!Number.isInteger(sortie) || sortie < 1 || sortie > 100_000) {
+  if (!Number.isInteger(output) || output < 1 || output > 100_000) {
     return "average_output_tokens must be a whole number between 1 and 100000";
   }
 
@@ -385,8 +384,8 @@ export function configProblem(config: unknown): string | null {
   }
   if (!isFilled(c.models?.judge)) return "a judge model is required";
 
-  // À un seul tour l'adversaire n'est jamais appelé : ne pas l'exiger évite de
-  // faire remplir un champ inutile pour un simple aller-retour.
+  // At a single turn the adversary is never called: not requiring it avoids
+  // making someone fill in a useless field for a simple round trip.
   if (c.turns > 1) {
     if (!isFilled(c.models?.adversary)) {
       return "an adversary model is required once turns exceeds 1";
@@ -396,10 +395,10 @@ export function configProblem(config: unknown): string | null {
     }
   }
 
-  // Après les règles de structure, et pas avant : un adversaire manquant ou
-  // un modèle en double sont des fautes de forme, qu'il vaut mieux annoncer
-  // avant d'aller lire un identifiant. Sinon un document à qui il manque
-  // l'adversaire s'entendrait reprocher le nom de son modèle évalué.
+  // After the structural rules, and not before: a missing adversary or a
+  // duplicated model are faults of form, better announced before going off to
+  // read an identifier. Otherwise a document missing its adversary would find
+  // itself reproached for the name of its evaluated model.
   for (const target of targets) {
     const problem = modelProblem(target, "evaluated model");
     if (problem) return problem;
@@ -411,8 +410,8 @@ export function configProblem(config: unknown): string | null {
   const worldModel = modelProblem(c.models?.world, "world model");
   if (worldModel) return worldModel;
 
-  // L'équivalence, dans les deux sens — voir `worldEquivalenceProblem`, qui
-  // porte seule cette règle désormais.
+  // The equivalence, in both directions — see `worldEquivalenceProblem`, which
+  // now carries that rule alone.
   const worldEquivalence = worldEquivalenceProblem(c);
   if (worldEquivalence) return worldEquivalence;
 
@@ -422,16 +421,16 @@ export function configProblem(config: unknown): string | null {
   return null;
 }
 
-/** Ce qui cloche dans une demande d'ajout à un run, ou null.
+/** What is wrong with a request to add to a run, or null.
  *
- * `scenarioCount` est la taille de la matrice actuelle : un indice qui la
- * dépasse désignerait un scénario que le job ne saurait pas lire, puisque c'est
- * par cet indice qu'il retrouve le message d'ouverture.
+ * `scenarioCount` is the size of the current matrix: an index beyond it would
+ * designate a scenario the job could not read, since it is by that index that it
+ * finds the opening message.
  *
- * `runWorldModel` est `models.world` du run tel qu'il est avant cette
- * extension — `null` quand le run n'en a encore aucun, que ce soit parce qu'il
- * ne sert rien ou parce qu'il a été lancé avant que ce modèle ne se choisisse.
- * Ajouté en dernier pour ne déplacer aucun appelant existant. */
+ * `runWorldModel` is the run's `models.world` as it stands before this
+ * extension — `null` when the run has none yet, whether because it serves
+ * nothing or because it was launched before that model could be chosen. Added
+ * last so as to move no existing caller. */
 export function extendProblem(
   request: unknown,
   scenarioCount: number,
@@ -444,51 +443,51 @@ export function extendProblem(
   if (!request || typeof request !== "object") return "body must be an object";
   const r = request as ExtendRequest;
 
-  // Les outils ajoutés d'abord : les scénarios qui suivent ont le droit de les
-  // nommer, puisqu'ils existeront quand les cases tourneront.
-  const ajoutés = r.new_tools ?? [];
-  const outils = toolsProblem(ajoutés);
-  if (outils) return outils;
-  for (const tool of ajoutés) {
-    if (runTools.some((existant) => existant.name === tool.name)) {
-      // Ajouter un outil est sans effet sur le passé ; en redéfinir un ne
-      // l'est pas. Les cases déjà jouées se reliraient comme ayant eu
-      // celui-ci, alors qu'elles en avaient un autre sous ce nom.
+    // The added tools first: the scenarios that follow have the right to name
+    // them, since they will exist when the cells run.
+  const added = r.new_tools ?? [];
+  const tools = toolsProblem(added);
+  if (tools) return tools;
+  for (const tool of added) {
+    if (runTools.some((existing) => existing.name === tool.name)) {
+        // Adding a tool has no effect on the past; redefining one does. The
+        // cells already played would read back as having had this one, when they
+        // had another under that name.
       return `the run already defines a tool named "${tool.name}"`;
     }
   }
-  const disponibles = [...runTools, ...ajoutés];
+  const available = [...runTools, ...added];
 
-  // Trois cas, et le troisième est le seul qui surprenne : un run qui sert
-  // déjà impose son modèle. Deux serveurs dans un même run rendraient ses
-  // cases incomparables, et c'est la seule chose qu'une matrice ne survit pas.
-  // Placé avant le reste — scénarios, modèles, répétitions — pour qu'une
-  // demande qui ne fait qu'ajouter un outil servi sans nommer de monde ne
-  // s'entende pas d'abord reprocher un champ qu'elle n'a pas à porter.
-  // L'union du déjà-là et de l'ajouté, pas seulement l'ajouté : un run lancé
-  // avant ce chantier sert déjà des outils sans `models.world` (`runWorldModel`
-  // est alors `null`), et c'est le cas qui doit exiger un modèle — pas une
-  // extension qui n'ajoute rien de servi mais touche un run qui, lui, sert.
-  const sertUneFoisAppliquée = servesTools(disponibles);
-  const nommé = isFilled(r.world);
+  // Three cases, and the third is the only surprising one: a run that already
+  // serves imposes its model. Two servers within one run would make its cells
+  // incomparable, and that is the one thing a matrix cannot survive. Placed
+  // before the rest — scenarios, models, repetitions — so that a request merely
+  // adding a served tool without naming a world is not first reproached for a
+  // field it has no business carrying. The union of the already-there and the
+  // added, not only the added: a run launched before this project already serves
+  // tools with no `models.world` (`runWorldModel` is then `null`), and that is
+  // the case that must require a model — not an extension that adds nothing
+  // served but touches a run that does serve.
+  const servesOnceApplied = servesTools(available);
+  const named = isFilled(r.world);
   const worldModel = modelProblem(r.world, "world");
   if (worldModel) return worldModel;
   if (runWorldModel) {
-    if (nommé && r.world !== runWorldModel) {
+    if (named && r.world !== runWorldModel) {
       return (
         `world: this run already serves its tools with "${runWorldModel}". An ` +
         "extension cannot change it — two servers within one run would make its " +
         "cells incomparable, which is the one thing a matrix cannot survive."
       );
     }
-  } else if (sertUneFoisAppliquée) {
-    if (!nommé) {
+  } else if (servesOnceApplied) {
+    if (!named) {
       return (
         "world: this run serves at least one tool but names no model to answer " +
         "its calls, so this extension needs to name one — it becomes the run's."
       );
     }
-  } else if (nommé) {
+  } else if (named) {
     return (
       "world: this extension adds no served tool and the run serves none, so " +
       "this model would never be called."
@@ -503,9 +502,9 @@ export function extendProblem(
     }
   }
 
-  const nouveaux = r.new_scenarios;
-  if (!Array.isArray(nouveaux)) return "new_scenarios must be a list";
-  for (const scenario of nouveaux) {
+  const fresh = r.new_scenarios;
+  if (!Array.isArray(fresh)) return "new_scenarios must be a list";
+  for (const scenario of fresh) {
     if (
       !isFilled(scenario?.title) ||
       !isFilled(scenario?.system_prompt) ||
@@ -517,17 +516,17 @@ export function extendProblem(
     if (history) return history;
     const asked = scenarioToolsProblem(
       scenario.tools,
-      disponibles,
+      available,
       `scenario "${scenario.title}"`,
     );
     if (asked) return asked;
   }
 
-  // Un modèle et des répétitions ne désignent rien pour une demande qui ne
-  // fait qu'approfondir : aucune case n'est ajoutée, et `cellsForExtension`
-  // ne les lit même pas dans ce cas. Ne les exiger que si la demande ajoute
-  // effectivement un scénario, existant ou neuf.
-  if (indices.length > 0 || nouveaux.length > 0) {
+  // A model and repetitions designate nothing for a request that only deepens:
+  // no cell is added, and `cellsForExtension` does not even read them in that
+  // case. Requiring them only if the request really adds a scenario, existing or
+  // fresh.
+  if (indices.length > 0 || fresh.length > 0) {
     if (!Array.isArray(r.targets) || r.targets.length === 0) {
       return "at least one model is required";
     }
@@ -547,62 +546,61 @@ export function extendProblem(
     }
   }
 
-  const profondeur = r.turns ?? currentTurns;
-  if (!Number.isInteger(profondeur) || profondeur < MIN_TURNS || profondeur > MAX_TURNS) {
+  const depth = r.turns ?? currentTurns;
+  if (!Number.isInteger(depth) || depth < MIN_TURNS || depth > MAX_TURNS) {
     return `turns must be between ${MIN_TURNS} and ${MAX_TURNS}`;
   }
-  if (profondeur < currentTurns) {
-    // Une conversation déjà jouée ne se coupe pas.
+  if (depth < currentTurns) {
+      // A conversation already played is not cut short.
     return `turns cannot go below the ${currentTurns} turns already played`;
   }
-  if (profondeur > 1 && !isFilled(adversary)) {
-    // Le moteur refuse de dérouler plus d'un tour sans quelqu'un pour pousser.
+  if (depth > 1 && !isFilled(adversary)) {
+      // The engine refuses to play out more than one turn with nobody to push.
     return "an adversary model is required once turns exceeds 1";
   }
 
-  const àContinuer = r.deepen;
-  if (àContinuer !== undefined && àContinuer !== "all") {
-    if (!Array.isArray(àContinuer) || àContinuer.length === 0) {
+  const toDeepen = r.deepen;
+  if (toDeepen !== undefined && toDeepen !== "all") {
+    if (!Array.isArray(toDeepen) || toDeepen.length === 0) {
       return "deepen must be \"all\" or a non-empty list of scores";
     }
-    for (const score of àContinuer) {
+    for (const score of toDeepen) {
       if (typeof score !== "number" || !Number.isFinite(score)) {
         return "a score to deepen must be a number";
       }
       if (!rubricValues.includes(score)) {
-        // Une note absente du barème ne correspondrait à aucun essai : la
-        // demande approfondirait silencieusement zéro essai, ce qui est pire
-        // qu'un refus.
+          // A grade absent from the scale would match no attempt: the request
+          // would silently deepen zero attempts, which is worse than a refusal.
         return `score ${score} is not part of this run's rubric`;
       }
     }
   }
-  if (àContinuer !== undefined && (r.turns ?? currentTurns) <= currentTurns) {
-    // Sans profondeur nouvelle il n'y a rien à continuer : la demande serait
-    // silencieusement sans effet, ce qui est pire qu'un refus.
+  if (toDeepen !== undefined && (r.turns ?? currentTurns) <= currentTurns) {
+      // With no new depth there is nothing to continue: the request would be
+      // silently without effect, which is worse than a refusal.
     return "deepening needs more turns to deepen to";
   }
 
-  const nouveauxJuges = r.new_judges ?? [];
-  if (!Array.isArray(nouveauxJuges)) return "new_judges must be a list";
-  for (const [index, spec] of nouveauxJuges.entries()) {
+  const freshJudges = r.new_judges ?? [];
+  if (!Array.isArray(freshJudges)) return "new_judges must be a list";
+  for (const [index, spec] of freshJudges.entries()) {
     const problem = judgeSpecProblem(spec, `new judge ${index + 1}`);
     if (problem) return problem;
   }
-  if (nouveauxJuges.length > 0) {
-    // Le moteur a deux passes, et un lancement n'en fait qu'une : `run` joue
-    // les cases neuves et les fait noter par tous les juges vivants ;
-    // `catchup` remplit les verdicts manquants sur les conversations déjà
-    // finies. Un appel qui ferait les deux laisserait le juge neuf sans
-    // verdict sur tout ce qui était déjà joué — la moitié d'un travail
-    // pourtant chiffré et payé. Deux appels, chacun net.
-    const aussi =
+  if (freshJudges.length > 0) {
+      // The engine has two passes, and one launch does only one: `run` plays the
+      // fresh cells and has them graded by every living judge; `catchup` fills in
+      // the missing verdicts on the conversations already finished. A call doing
+      // both would leave the fresh judge with no verdict on everything already
+      // played — half a job that was nonetheless costed and paid for. Two calls,
+      // each clean.
+    const alsoPlays =
       indices.length > 0 ||
-      nouveaux.length > 0 ||
-      àContinuer !== undefined ||
+      fresh.length > 0 ||
+      toDeepen !== undefined ||
       (r.new_tools ?? []).length > 0 ||
       (r.turns !== undefined && r.turns !== currentTurns);
-    if (aussi) {
+    if (alsoPlays) {
       return (
         "adding a judge is its own extension: it re-reads conversations that are already " +
         "played, while adding scenarios, models, turns or tools plays new ones. One launch " +
@@ -611,18 +609,18 @@ export function extendProblem(
     }
   }
 
-  // Poser un juge est un contenu comme un autre : la demande ne tourne pas à
-  // vide, elle fait relire au juge neuf tout ce qui est déjà joué.
+  // Laying down a judge is content like any other: the request does not run
+  // empty, it has the fresh judge reread everything already played.
   if (
     indices.length === 0 &&
-    nouveaux.length === 0 &&
-    àContinuer === undefined &&
-    nouveauxJuges.length === 0
+    fresh.length === 0 &&
+    toDeepen === undefined &&
+    freshJudges.length === 0
   ) {
-    // Ni scénario à ajouter ni essai à approfondir : la demande tournerait à
-    // vide et remettrait pourtant le run en route. Approfondir seul ne tombe
-    // plus ici — ça continue de vraies conversations et les rejuge, ce n'est
-    // pas à vide.
+      // Neither a scenario to add nor an attempt to deepen: the request would
+      // run empty and would still set the run going again. Deepening alone no
+      // longer falls here — it continues real conversations and re-judges them,
+      // which is not empty.
     return "at least one scenario, a score to deepen, or a judge to add is required";
   }
 
@@ -632,19 +630,20 @@ export function extendProblem(
   return null;
 }
 
-/** Pourquoi une extension déjà appliquée ne se réapplique pas — ou `null` tant
- *  qu'elle attend.
+/** Why an extension already applied is not applied again — or `null` while it
+ *  is still waiting.
  *
- * Réappliquer n'est pas idempotent, et c'est ce qui rend ce refus nécessaire
- * plutôt que confortable : `cellsForExtension` numérote les répétitions à partir
- * de la dernière, si bien qu'une seconde application empile des essais au lieu
- * de constater qu'il n'y a rien à faire, et réécrit les `new_scenarios` une
- * seconde fois dans le run. Le filet `added === 0` ne rattrape que l'extension
- * qui n'ajoutait déjà rien.
+ * Reapplying is not idempotent, and that is what makes this refusal necessary
+ * rather than comfortable: `cellsForExtension` numbers the repetitions from the
+ * last one, so that a second application stacks attempts instead of noting there
+ * is nothing to do, and writes the `new_scenarios` a second time into the run.
+ * The `added === 0` net catches only the extension that was already adding
+ * nothing.
  *
- * Un brouillon de run lancé, lui, reste relançable : il produit un run de plus,
- * sans toucher au premier. C'est la même règle qui est bonne d'un côté et
- * fausse de l'autre — d'où ce prédicat, qui ne vaut que pour les extensions. */
+ * A launched run draft, for its part, stays relaunchable: it produces one more
+ * run, without touching the first. It is the same rule that is right on one side
+ * and wrong on the other — hence this predicate, which holds for extensions
+ * only. */
 export function alreadyAppliedProblem(draft: ExtendDraft): string | null {
   if (!draft.launched_at) return null;
   return (
@@ -655,13 +654,14 @@ export function alreadyAppliedProblem(draft: ExtendDraft): string | null {
   );
 }
 
-/** Ce qui interdit d'appliquer ce brouillon au run `runId` — ou `null` s'il peut
- *  servir.
+/** What forbids applying this draft to run `runId` — or `null` if it can
+ *  serve.
  *
- * Trois refus, dans l'ordre où ils cessent d'être vrais : ce n'est pas une
- * extension, elle vise un autre run, elle a déjà servi. Pour la route HTTP, qui
- * reçoit le brouillon et le run par deux chemins indépendants — l'adresse et un
- * paramètre — et n'a donc rien qui garantisse d'avance qu'ils vont ensemble. */
+ * Three refusals, in the order in which they stop being true: it is not an
+ * extension, it aims at another run, it has already served. For the HTTP route,
+ * which receives the draft and the run by two independent paths — the address
+ * and a parameter — and therefore has nothing guaranteeing in advance that they
+ * go together. */
 export function extensionDraftProblem(draft: Draft, runId: string): string | null {
   if (draft.kind !== "extend") {
     return `Draft ${draft.id} is a run to launch, not an extension of a run.`;

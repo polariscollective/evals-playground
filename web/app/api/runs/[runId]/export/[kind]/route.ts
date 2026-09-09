@@ -19,45 +19,45 @@ export async function GET(
   }
 
   try {
-    // Le détail recopie les transcripts ; la matrice ne s'en sert pas, mais
-    // une seule lecture évite deux chemins à tenir alignés. `withJudges`,
-    // combiné à `withTranscripts`, ramène le verdict de CHAQUE juge vivant
-    // (`attachJudges`, `lib/runs.ts`, `fullScores`) — sans lui, `exports.ts`
-    // n'aurait que les cases, plus aucune note ne vivant sur `EvalSample`
-    // depuis les juges multiples.
+      // The details copy the transcripts; the matrix does not use them, but a
+      // single read avoids two paths to keep aligned. `withJudges`, combined with
+      // `withTranscripts`, brings back EVERY living judge's verdict
+      // (`attachJudges`, `lib/runs.ts`, `fullScores`) — without it, `exports.ts`
+      // would have only the cells, no grade living on `EvalSample` any more since
+      // the multiple judges.
     const { run, samples, judges } = await loadRun(runId, {
       withTranscripts: true,
       withJudges: true,
     });
-    // La vue vient de la requête : le serveur ne voit pas l'écran, et un CSV
-    // qui dirait autre chose que la matrice affichée serait pire qu'inutile.
-    // Le détail, lui, porte les notes brutes du juge et n'a rien à en faire.
+      // The view comes from the request: the server does not see the screen, and a
+      // CSV that said something other than the displayed matrix would be worse
+      // than useless. The details, for their part, carry the judge's raw grades
+      // and have nothing to do with it.
     const view = viewFromQuery(new URL(request.url).searchParams);
 
     if (kind === "details") {
-      // Deux fichiers, parce qu'ils ne se mélangent pas : une ligne par case
-      // d'un côté, ce qui vaut pour tout le run de l'autre. Les notes et les
-      // descriptions d'outils recopiées sur chaque ligne d'un CSV n'étaient
-      // lues par personne.
-      const nom = `run-${runId}`;
+      // Two files, because they do not mix: one row per cell on one side, what
+      // holds for the whole run on the other. The notes and the tool
+      // descriptions copied onto every row of a CSV were read by nobody.
+      const name = `run-${runId}`;
       const archive = zip([
-        { name: `${nom}/results.csv`, content: detailsCsv(run, samples, judges ?? []) },
-        { name: `${nom}/run.md`, content: runMarkdown(run, samples, judges ?? []) },
+        { name: `${name}/results.csv`, content: detailsCsv(run, samples, judges ?? []) },
+        { name: `${name}/run.md`, content: runMarkdown(run, samples, judges ?? []) },
       ]);
       return new Response(new Uint8Array(archive), {
         headers: {
           "content-type": "application/zip",
-          "content-disposition": `attachment; filename="${nom}.zip"`,
+          "content-disposition": `attachment; filename="${name}.zip"`,
           "cache-control": "no-store",
         },
       });
     }
 
     const body = matrixCsv(run, samples, judges ?? [], view);
-    // Le nom du fichier porte la vue : deux exports du même run, lus
-    // différemment, ne doivent pas s'écraser dans le dossier des
-    // téléchargements. Le repli de l'échelle y figure aussi, sans quoi une
-    // moyenne sur échelle repliée porterait le même nom qu'une moyenne nue.
+      // The file's name carries the view: two exports of the same run, read
+      // differently, must not overwrite each other in the downloads folder. The
+      // scale's remapping figures there too, without which a mean on a folded
+      // scale would bear the same name as a plain mean.
     const suffix =
       kind === "matrix" && !isPlainView(view)
         ? `-${view.aggregate}${Object.keys(view.remap).length > 0 ? "-remapped" : ""}`

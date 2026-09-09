@@ -1,29 +1,29 @@
 import { DEFAULT_SCENARIO_ADVICE } from "@/lib/scenario-advice";
 
-/** Le conseil d'écriture de scénario, en texte brut et sans connexion.
+/** The scenario writing advice, in plain text and with no sign-in.
  *
- * Le pendant de `/prompt`, hors de la porte pour la même raison : le but est
- * de donner cette adresse à un agent qui n'a pas de session et ne saurait pas
- * en obtenir une. `{{ORIGIN}}/scenarios` — la page qui affiche ce même texte
- * pour qu'un humain le copie — ne convenait pas à cet usage : elle exige une
- * session, et son contenu n'arrive qu'après coup, par un appel client, jamais
- * dans le HTML initial qu'un agent sans navigateur lirait.
+ * The counterpart of `/prompt`, outside the door for the same reason: the point
+ * is to give this address to an agent that has no session and would not know how
+ * to get one. `{{ORIGIN}}/scenarios` — the page that shows this same text for a
+ * human to copy — did not suit that use: it demands a session, and its content
+ * only arrives afterwards, through a client call, never in the initial HTML an
+ * agent with no browser would read.
  *
- * Sert toujours `DEFAULT_SCENARIO_ADVICE`, jamais la surcharge d'un profil.
- * Sans session, on ne sait pas qui demande — rendre à un inconnu la version
- * qu'une personne a réécrite pour ses propres agents serait lui faire fuiter
- * un texte écrit en privé. L'outil MCP `read_scenario_advice`, lui, est
- * authentifié : il connaît l'appelant et continue de rendre sa version à lui.
- * C'est toute la différence entre les deux portes.
+ * Always serves `DEFAULT_SCENARIO_ADVICE`, never a profile's override. With no
+ * session, one does not know who is asking — returning to a stranger the version
+ * a person rewrote for their own agents would be leaking them a text written in
+ * private. The MCP tool `read_scenario_advice`, for its part, is authenticated:
+ * it knows the caller and keeps returning their own version. That is the whole
+ * difference between the two doors.
  *
- * En `text/plain` parce que le lecteur est une machine : du HTML lui ferait
- * traverser une mise en page pour retrouver le texte qu'on lui destine. */
+ * In `text/plain` because the reader is a machine: HTML would make it cross a
+ * layout to find the text meant for it. */
 export async function GET() {
   return new Response(DEFAULT_SCENARIO_ADVICE, {
     headers: {
       "content-type": "text/plain; charset=utf-8",
-      // Le contenu ne bouge qu'avec un déploiement : cinq minutes de cache
-      // épargnent autant de réveils à froid sans jamais servir du périmé.
+        // The content only moves with a deployment: five minutes of cache save as
+        // many cold starts without ever serving anything stale.
       "cache-control": "public, max-age=300",
     },
   });

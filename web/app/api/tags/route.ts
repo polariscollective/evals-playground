@@ -9,7 +9,7 @@ export async function GET() {
   return NextResponse.json(await loadTags());
 }
 
-/** Crée un tag, ou rend celui qui existe déjà sous ce libellé. */
+/** Creates a tag, or returns the one that already exists under that label. */
 export async function POST(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -19,10 +19,10 @@ export async function POST(request: Request) {
   if (!label) {
     return NextResponse.json({ error: "label is required" }, { status: 422 });
   }
-  // `createTag` refuse déjà les libellés réservés — c'est là que vit la règle,
-  // parce que l'outil MCP crée des tags sans passer ici. Le contrôle est
-  // répété pour que CETTE porte réponde 422 avec un message lisible plutôt que
-  // de laisser une exception ressortir en 500.
+  // `createTag` already refuses the reserved labels — that is where the rule
+  // lives, because the MCP tool creates tags without coming through here. The
+  // check is repeated so that THIS door answers 422 with a readable message
+  // rather than letting an exception come back out as a 500.
   if (isReservedTag(label)) {
     return NextResponse.json(
       {

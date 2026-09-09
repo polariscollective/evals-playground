@@ -10,9 +10,9 @@ import {
 } from "@/lib/profiles";
 import { mcpActivityLastHour } from "@/lib/runs";
 
-/** Le profil de qui regarde, et l'heure glissante d'`mcp_launches` pour elle
- *  — les deux ne vivent pas dans la même table, mais la page de profil n'a
- *  besoin que de les lire ensemble. */
+/** The profile of whoever is looking, and the rolling hour of `mcp_launches`
+ *  for them — the two do not live in the same table, but the profile page only
+ *  needs to read them together. */
 export async function GET() {
   const user = await requireUser();
   if ("response" in user) return user.response;
@@ -24,28 +24,27 @@ export async function GET() {
   return NextResponse.json({ profile, activity });
 }
 
-/** Change les plafonds, le conseil d'écriture de scénario, ou les favoris de
- *  modèles — jamais deux de ces trois à la fois.
+/** Changes the caps, the scenario writing advice, or the model favourites —
+ *  never two of those three at once.
  *
- * L'email vient de la session, jamais du corps — comme pour une révocation de
- * connexion MCP : sans quoi n'importe quel compte connecté pourrait modifier
- * le profil d'un autre en devinant son adresse.
+ * The email comes from the session, never from the body — as for an MCP
+ * connection revocation: without which any signed-in account could change
+ * somebody else's profile by guessing their address.
  *
- * Les trois réglages sont indépendants : la page de profil envoie les
- * plafonds ou les favoris, la page des scénarios envoie le conseil, et
- * aucune n'a à connaître les autres. Si une requête en porte deux, elle est
- * refusée plutôt que de dédouaner l'un d'eux en silence. `undefined` veut
- * dire « ne touche pas », et `null` veut dire « remets le défaut » — sauf
- * pour les favoris, qui n'acceptent jamais `null` : voir
- * `updateFavoriteModels`. */
+ * The three settings are independent: the profile page sends the caps or the
+ * favourites, the scenarios page sends the advice, and neither has to know about
+ * the others. If a request carries two of them, it is refused rather than
+ * clearing one of them in silence. `undefined` means "do not touch", and `null`
+ * means "restore the default" — except for the favourites, which never accept
+ * `null`: see `updateFavoriteModels`. */
 export async function PATCH(request: Request) {
   const user = await requireUser();
   if ("response" in user) return user.response;
 
-  // Un corps JSON valant littéralement `null` n'échoue pas à l'analyse — la
-  // lecture réussit et rend `null` — donc `.catch` ne s'en charge pas. Sans le
-  // `?? {}` qui suit, l'accès à un champ plus bas lèverait sur ce `null` et la
-  // route répondrait 500 au lieu de simplement traiter un corps vide.
+  // A JSON body worth literally `null` does not fail parsing — the read succeeds
+  // and returns `null` — so `.catch` does not deal with it. Without the `?? {}`
+  // that follows, accessing a field below would raise on that `null` and the
+  // route would answer 500 instead of simply treating an empty body.
   const body = ((await request.json().catch(() => null)) ?? {}) as {
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
@@ -53,9 +52,9 @@ export async function PATCH(request: Request) {
     favorite_models?: unknown;
   };
 
-  // Refuser une requête qui porte à la fois deux de ces trois réglages —
-  // règle testée séparément dans profile-caps.test.mts, sur le même patron
-  // que capProblem.
+  // Refuse a request that carries two of those three settings at once — a rule
+  // tested separately in profile-caps.test.mts, on the same pattern as
+  // capProblem.
   const patchProblem = profilePatchProblem(body);
   if (patchProblem) {
     return NextResponse.json({ error: patchProblem }, { status: 422 });

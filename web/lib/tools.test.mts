@@ -9,19 +9,19 @@ import {
   writesWorldTools,
 } from "./tools.ts";
 
-test("un outil sans règles de lecture est fixe", () => {
+test("a tool with no reading rules is fixed", () => {
   assert.equal(served({ retrieval_rules: undefined }), false);
   assert.equal(served({ retrieval_rules: "" }), false);
-  // Des blancs ne sont pas des règles : un champ effacé à moitié dans un
-  // formulaire ne doit pas faire basculer l'outil en servi, et donc payer.
+  // Whitespace is not rules: a field half-cleared in a form must not tip the
+  // tool into being served, and so paid for.
   assert.equal(served({ retrieval_rules: "   \n  " }), false);
 });
 
-test("un outil avec des règles de lecture est servi", () => {
+test("a tool with reading rules is served", () => {
   assert.equal(served({ retrieval_rules: "Return at most twenty lines." }), true);
 });
 
-test("un run sert dès qu'un seul de ses outils sert", () => {
+test("a run serves as soon as a single one of its tools serves", () => {
   assert.equal(servesTools([]), false);
   assert.equal(servesTools([{ retrieval_rules: "" }]), false);
   assert.equal(
@@ -32,33 +32,33 @@ test("un run sert dès qu'un seul de ses outils sert", () => {
 
 // --- fixed -------------------------------------------------------------
 //
-// IMPORTANT 3 : l'autre moitié de l'exclusion que `served` nomme déjà, et
-// null-safe comme lui — `toolsProblem` n'exige jamais `result`, donc un outil
-// posé par une requête directe peut en arriver dépourvu, ce que
-// `tool.result.trim()` brut (ToolsEditor.tsx) ne survivait pas.
+// IMPORTANT 3: the other half of the exclusion `served` already names, and
+// null-safe like it — `toolsProblem` never demands `result`, so a tool laid down
+// by a direct request can arrive without one, which a raw `tool.result.trim()`
+// (ToolsEditor.tsx) did not survive.
 
-test("un outil sans result n'est pas fixe — et ne fait pas lever la question", () => {
-  // `result` n'est pas optionnel dans le type, mais `toolsProblem` ne l'exige
-  // jamais : une requête directe peut en poser un sans, exactement le cas
-  // que null-safe protège. `as unknown` pour poser ce que le type interdit
-  // mais que le runtime peut recevoir.
+test("a tool with no result is not fixed — and does not raise the question", () => {
+  // `result` is not optional in the type, but `toolsProblem` never demands it: a
+  // direct request can lay one down without it, exactly the case null-safety
+  // protects. `as unknown` to set what the type forbids but the runtime can
+  // receive.
   assert.equal(fixed({ result: undefined } as unknown as { result: string }), false);
   assert.equal(fixed({ result: "" }), false);
-  // Une espace seule ne fixe rien, symétrique de `served` sur les blancs.
+  // A single space fixes nothing, symmetrical with `served` on whitespace.
   assert.equal(fixed({ result: "   \n  " }), false);
 });
 
-test("un outil avec un résultat écrit est fixe", () => {
+test("a tool with a written result is fixed", () => {
   assert.equal(fixed({ result: "412 records deleted." }), true);
 });
 
 // --- resolvedWorld ----------------------------------------------------------
 //
 // A2 : trois appelants posaient chacun `config.models.world || request.world
-// || null` de son côté — `extendRun` en écrivant, le devis d'une extension en
-// le chiffrant, l'écran en l'affichant. Une seule copie désormais.
+// || null` on its own side — `extendRun` when writing, an extension's quote
+// when pricing it, the screen when showing it. One copy from now on.
 
-test("le modèle du run gagne toujours, même face à un autre nommé par la demande", () => {
+test("the run's model always wins, even against another named by the request", () => {
   assert.equal(
     resolvedWorld(
       { models: { targets: [], judge: "j", world: "openai/gpt-5.6-luna" } },
@@ -68,7 +68,7 @@ test("le modèle du run gagne toujours, même face à un autre nommé par la dem
   );
 });
 
-test("sans modèle de run, celui de la demande comble le vide", () => {
+test("with no run model, the request's fills the gap", () => {
   assert.equal(
     resolvedWorld(
       { models: { targets: [], judge: "j", world: null } },
@@ -78,10 +78,10 @@ test("sans modèle de run, celui de la demande comble le vide", () => {
   );
 });
 
-test("ni l'un ni l'autre : null, jamais une chaîne vide", () => {
-  // C'est précisément ce que `config.models.world ?? ""` dans `pricing.ts`
-  // recevrait sans cette résolution : la part servie du devis retomberait
-  // sur le modèle "", qui n'a pas de prix et compte pour zéro (A2).
+test("neither one nor the other: null, never an empty string", () => {
+  // That is precisely what `config.models.world ?? ""` in `pricing.ts` would
+  // receive without this resolution: the served part of the quote would fall
+  // back on the model "", which has no price and counts as zero (A2).
   assert.equal(
     resolvedWorld({ models: { targets: [], judge: "j", world: null } }, { world: null }),
     null,
@@ -95,10 +95,10 @@ test("ni l'un ni l'autre : null, jamais une chaîne vide", () => {
   );
 });
 
-test("un models.world à une seule espace ne compte pas comme rempli (MINOR)", () => {
-  // `||` brut le rendrait quand même — une chaîne non vide est truthy — et le
-  // devis chiffrerait la part servie sur ce modèle-là, qu'aucun tarif ne
-  // connaît : compté pour zéro, sans que rien ne le dise.
+test("a models.world of a single space does not count as filled (MINOR)", () => {
+  // A raw `||` would return it anyway — a non-empty string is truthy — and the
+  // quote would price the served part on that model, which no price knows:
+  // counted as zero, with nothing saying so.
   assert.equal(
     resolvedWorld(
       { models: { targets: [], judge: "j", world: "   " } },
@@ -115,26 +115,26 @@ test("un models.world à une seule espace ne compte pas comme rempli (MINOR)", (
   );
 });
 
-test("un outil sans effet déclaré ne change rien au monde", () => {
+test("a tool with no declared effect changes nothing in the world", () => {
   assert.equal(writesWorld({ world_effect: undefined }), false);
   assert.equal(writesWorld({ world_effect: "" }), false);
-  // Détouré comme `served`, et pour la même raison — sauf que la divergence
-  // avec le jumeau Python (`ToolSpec.writes`) ne coûterait pas un refus au
-  // démarrage mais un devis qui ne compte pas un journal que le job tiendra.
+  // Set apart like `served`, and for the same reason — except that a divergence
+  // with the Python twin (`ToolSpec.writes`) would cost not a refusal at
+  // start-up but a quote that does not count a journal the job will keep.
   assert.equal(writesWorld({ world_effect: "  \n " }), false);
 });
 
-test("un effet déclaré fait un outil écrivant", () => {
+test("a declared effect makes a writing tool", () => {
   assert.equal(
     writesWorld({ world_effect: "The named file no longer exists." }),
     true,
   );
 });
 
-test("écrire et servir sont deux axes indépendants", () => {
-  // Les quatre combinaisons existent. Celle-ci — fixe et écrivant — est la
-  // forme courante des outils d'écriture d'aujourd'hui, et un dessin réservé
-  // aux outils servis l'aurait ratée.
+test("writing and serving are two independent axes", () => {
+  // All four combinations exist. This one — fixed and writing — is the common
+  // shape of today's writing tools, and a design reserved for served tools
+  // would have missed it.
   const fixeEcrivant = {
     result: "412 records deleted.",
     retrieval_rules: undefined,
@@ -144,16 +144,16 @@ test("écrire et servir sont deux axes indépendants", () => {
   assert.equal(served(fixeEcrivant), false);
   assert.equal(writesWorld(fixeEcrivant), true);
 
-  const serviLecteur = {
+  const servedReader = {
     result: "",
     retrieval_rules: "Return at most twenty lines.",
     world_effect: undefined,
   };
-  assert.equal(served(serviLecteur), true);
-  assert.equal(writesWorld(serviLecteur), false);
+  assert.equal(served(servedReader), true);
+  assert.equal(writesWorld(servedReader), false);
 });
 
-test("un run écrit dès qu'un seul de ses outils écrit", () => {
+test("a run writes as soon as a single one of its tools writes", () => {
   assert.equal(writesWorldTools([]), false);
   assert.equal(
     writesWorldTools([{ world_effect: "" }, { world_effect: "   " }]),

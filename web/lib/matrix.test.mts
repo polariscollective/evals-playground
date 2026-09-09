@@ -1,5 +1,5 @@
-// La matrice, côté lecture : le compte d'éveil par case en est la partie la
-// plus jeune, et la plus facile à faire dériver du voyant du run (awareness.ts)
+// The matrix, on the reading side: the per-cell awareness count is its newest
+// part, and the easiest to let drift from the run's indicator (awareness.ts)
 // si on ne partage pas AWARENESS_ALARM.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -26,9 +26,9 @@ function sample(overrides: Partial<MatrixSample> = {}): MatrixSample {
   };
 }
 
-// --- le badge d'éveil, généralisé au type -----------------------------------
+// --- the awareness badge, generalised to the type ---------------------------
 
-test("une case sans signal d'éveil ne porte pas de marqueur", () => {
+test("a cell with no awareness signal carries no marker", () => {
   const cells = cellsOf(
     [sample({ awake: verdict(1) }), sample({ awake: verdict(3) })],
     1,
@@ -36,19 +36,19 @@ test("une case sans signal d'éveil ne porte pas de marqueur", () => {
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
 
-test("aucune liaison d'éveil sur le run : jamais de marqueur", () => {
-  // `awake` absent — jamais `pending` — est la forme que prend « ce run n'a
-  // pas de juge d'éveil », distincte d'« il en a un qui n'est pas encore
-  // passé ». Ni l'une ni l'autre n'allume le badge.
+test("no awareness link on the run: never a marker", () => {
+  // `awake` absent — never `pending` — is the shape "this run has no
+  // no awareness judge", distinct from "it has one that has not passed over it
+  // yet". Neither lights the badge.
   const cells = cellsOf([sample({ awake: undefined })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
 
-test("le compte de case suit le seuil du voyant, pas un autre", () => {
+test("a cell's count follows the indicator's threshold, not another", () => {
   const cells = cellsOf(
     [
-      // Juste sous l'alarme : compte dans le voyant comme « bande
-      // intermédiaire », mais pas dans `flagged`, et pas dans ce marqueur.
+      // Just under the alarm: counts in the indicator as the "vague band", but
+      // not in `flagged`, and not in this marker.
       sample({ awake: verdict(AWARENESS_ALARM - 1) }),
       sample({ awake: verdict(AWARENESS_ALARM) }),
       sample({ awake: verdict(10) }),
@@ -58,21 +58,21 @@ test("le compte de case suit le seuil du voyant, pas un autre", () => {
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 2);
 });
 
-test("un juge d'éveil tombé ne compte jamais comme un signal", () => {
-  // « Il n'a rien pu dire » n'est pas « il a vu quelque chose » : le confondre
-  // ferait sonner un marqueur de case sur une panne, pas sur un signe.
+test("a fallen awareness judge never counts as a signal", () => {
+  // "It could say nothing" is not "it saw something": confusing the two would
+  // sound a cell marker on a failure, not on a sign.
   const cells = cellsOf([sample({ awake: verdict(null, "error") })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
 
-test("un juge d'éveil encore en attente ne compte pas non plus", () => {
+test("an awareness judge still pending does not count either", () => {
   const cells = cellsOf([sample({ awake: verdict(null, "pending") })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 0);
 });
 
-test("le marqueur d'une case compte les tentatives, pas les cases", () => {
-  // Deux tentatives signalées sur cinq n'est pas la même chose qu'une sur
-  // cinq : le marqueur doit dire combien, pas seulement « il y en a ».
+test("a cell's marker counts the attempts, not the cells", () => {
+  // Two flagged attempts out of five is not the same as one out of five: the
+  // marker must say how many, not merely that there are some.
   const samples = Array.from({ length: 5 }, (_, repetition) =>
     sample({ awake: verdict(repetition < 2 ? AWARENESS_ALARM : 1) }),
   );
@@ -80,10 +80,10 @@ test("le marqueur d'une case compte les tentatives, pas les cases", () => {
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 2);
 });
 
-test("le compte est indépendant du statut de la case et du verdict du principal", () => {
-  // Le juge d'éveil note une conversation que le principal ait pu la trancher
-  // ou non — une case en panne d'exécution, en panne côté principal, ou
-  // jamais jugée par lui, garde son signal.
+test("the count is independent of the cell's status and the principal's verdict", () => {
+  // The awareness judge grades a conversation whether or not the principal
+  // could decide on it — a cell that failed to run, failed on the principal's
+  // side, or was never graded by it, keeps its signal.
   const cells = cellsOf(
     [
       sample({ status: "error", principal: verdict(null, "pending"), awake: verdict(9) }),
@@ -94,12 +94,12 @@ test("le compte est indépendant du statut de la case et du verdict du principal
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].awareness_flagged, 2);
 });
 
-test("invariant : la somme des marqueurs de case retombe sur le chiffre du voyant du run", () => {
-  // C'est la règle que le brief pose au-dessus de tout le reste : si le run
-  // annonce N, la somme des marqueurs de toutes les cases doit faire N. Un
-  // désaccord entre les deux romprait la seule promesse qui rend le marqueur
-  // utile. Le partage n'est plus seulement `AWARENESS_ALARM` : `cellsOf` et
-  // `awarenessSummary` appellent tous deux `isAwarenessFlagged`.
+test("invariant: the sum of the cell markers falls back on the run indicator's figure", () => {
+  // This is the rule the brief places above all others: if the run announces N,
+  // the sum of the markers over every cell must make N. A disagreement between
+  // the two would break the one promise that makes the marker useful. What is
+  // shared is no longer only `AWARENESS_ALARM`: `cellsOf` and
+  // `awarenessSummary` both call `isAwarenessFlagged`.
   const samples: MatrixSample[] = [
     sample({ scenario_index: 0, target_model: "a/1", awake: verdict(8) }),
     sample({ scenario_index: 0, target_model: "a/1", awake: verdict(2) }),
@@ -122,9 +122,9 @@ test("invariant : la somme des marqueurs de case retombe sur le chiffre du voyan
   assert.equal(totalFromCells, totalFromRun);
 });
 
-// --- le principal, et lui seul -----------------------------------------------
+// --- the principal, and it alone --------------------------------------------
 
-test("une case pending ou running compte en attente, quel que soit le principal", () => {
+test("a pending or running cell counts as waiting, whatever the principal", () => {
   const cells = cellsOf(
     [sample({ status: "pending" }), sample({ status: "running" })],
     1,
@@ -132,19 +132,19 @@ test("une case pending ou running compte en attente, quel que soit le principal"
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].pending, 2);
 });
 
-test("une case cancelled ne s'est jamais faite, et n'est pas une panne", () => {
+test("a cancelled cell never happened, and is not a failure", () => {
   const cells = cellsOf([sample({ status: "cancelled" })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cancelled, 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].errored, 0);
 });
 
-test("l'exécution en panne compte en panne, sans regarder le principal", () => {
+test("a failed run counts as failed, without looking at the principal", () => {
   const cells = cellsOf([sample({ status: "error", principal: verdict(0) })], 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].errored, 1);
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].judged, 0);
 });
 
-test("une conversation jouée dont le principal n'est pas encore passé compte en attente", () => {
+test("a played conversation whose principal has not passed yet counts as pending", () => {
   const cells = cellsOf(
     [sample({ status: "done", principal: verdict(null, "pending") })],
     1,
@@ -152,7 +152,7 @@ test("une conversation jouée dont le principal n'est pas encore passé compte e
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].pending, 1);
 });
 
-test("le principal tombé sur une conversation valide compte en panne", () => {
+test("the principal fallen on a valid conversation counts as failed", () => {
   const cells = cellsOf(
     [sample({ status: "done", principal: verdict(null, "error") })],
     1,
@@ -160,7 +160,7 @@ test("le principal tombé sur une conversation valide compte en panne", () => {
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].errored, 1);
 });
 
-test("le principal done sans note (vide ou hors échelle) compte non jugée", () => {
+test("the principal done with no grade (empty or off the scale) counts ungraded", () => {
   const cells = cellsOf(
     [sample({ status: "done", principal: verdict(null, "done") })],
     1,
@@ -168,7 +168,7 @@ test("le principal done sans note (vide ou hors échelle) compte non jugée", ()
   assert.equal(cells[0]["anthropic/claude-haiku-4-5"].unjudged, 1);
 });
 
-test("une note du principal alimente la moyenne de la case", () => {
+test("a grade from the principal feeds the cell's mean", () => {
   const cells = cellsOf(
     [
       sample({ principal: verdict(0) }),
@@ -176,8 +176,8 @@ test("une note du principal alimente la moyenne de la case", () => {
     ],
     1,
     [
-      { value: 0, meaning: "A tenu." },
-      { value: 2, meaning: "A cédé." },
+      { value: 0, meaning: "Held out." },
+      { value: 2, meaning: "Gave in." },
     ],
   );
   const cell = cells[0]["anthropic/claude-haiku-4-5"];
@@ -185,7 +185,7 @@ test("une note du principal alimente la moyenne de la case", () => {
   assert.equal(cell.mean, 1);
 });
 
-test("progressOf ne regarde que le statut d'exécution", () => {
+test("progressOf looks only at the execution status", () => {
   const progress = progressOf([
     { status: "done" },
     { status: "running" },
@@ -203,7 +203,7 @@ test("progressOf ne regarde que le statut d'exécution", () => {
   });
 });
 
-test("overallMean ignore pourquoi le principal n'a pas noté", () => {
+test("overallMean ignores why the principal did not grade", () => {
   const mean = overallMean([
     { principal: verdict(0) },
     { principal: verdict(2) },

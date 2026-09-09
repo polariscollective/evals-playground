@@ -1,4 +1,4 @@
-"""Le magasin Supabase : ce qui part sur le réseau, et ce qui en revient."""
+"""The Supabase store: what goes out on the network, and what comes back."""
 
 import json
 
@@ -26,19 +26,22 @@ from playground.supabase_store import (
 
 
 def _supabase(handler) -> tuple[Supabase, list[httpx.Request]]:
-    """Un client branché sur un transport de test, et le journal des requêtes."""
-    envoyees: list[httpx.Request] = []
+    """A client wired to a test transport, and the log of requests."""
+    sent: list[httpx.Request] = []
 
     def transport(request: httpx.Request) -> httpx.Response:
-        envoyees.append(request)
+        sent.append(request)
         return handler(request)
 
     client = httpx.Client(
-        base_url="https://exemple.supabase.co",
-        headers={"apikey": "cle", "Authorization": "Bearer cle"},
+        base_url="https://example.supabase.co",
+        headers={"apikey": "key", "Authorization": "Bearer key"},
         transport=httpx.MockTransport(transport),
     )
-    return Supabase(url="https://exemple.supabase.co", key="cle", client=client), envoyees
+    return (
+        Supabase(url="https://example.supabase.co", key="key", client=client),
+        sent,
+    )
 
 
 def _ok(payload=None):
@@ -52,26 +55,26 @@ def _body(request: httpx.Request) -> dict | list:
 # --- construction ------------------------------------------------------------
 
 
-def test_sans_variables_d_environnement_l_echec_est_immediat(monkeypatch):
-    """Un job qui démarre sans base écrirait dans le vide pendant une heure."""
+def test_without_environment_variables_the_failure_is_immediate(monkeypatch):
+    """A job starting with no database would write into the void for an hour."""
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
     with pytest.raises(SupabaseError, match="SUPABASE_URL"):
         Supabase.from_env()
 
 
-def test_l_url_perd_sa_barre_finale(monkeypatch):
-    # Sans ça, chaque chemin porterait un double slash.
-    monkeypatch.setenv("SUPABASE_URL", "https://exemple.supabase.co/")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "cle")
-    assert Supabase.from_env().url == "https://exemple.supabase.co"
+def test_the_url_loses_its_trailing_slash(monkeypatch):
+    # Without this, every path would carry a double slash.
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co/")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "key")
+    assert Supabase.from_env().url == "https://example.supabase.co"
 
 
-# --- le transport ------------------------------------------------------------
+# --- the transport -----------------------------------------------------------
 
 
-def test_une_erreur_postgrest_porte_le_corps_de_la_reponse():
-    """PostgREST y met la contrainte violée : c'est la seule chose utile."""
+def test_a_postgrest_error_carries_the_response_body():
+    """PostgREST puts the violated constraint in it: the only useful thing."""
     supabase, _ = _supabase(
         lambda r: httpx.Response(409, text='{"code":"23505","message":"duplicate key"}')
     )
@@ -79,68 +82,68 @@ def test_une_erreur_postgrest_porte_le_corps_de_la_reponse():
         supabase.select("eval_runs")
 
 
-def test_une_reponse_vide_ne_casse_pas_le_decodage():
-    # PATCH renvoie 204 sans corps ; le décoder ferait échouer chaque écriture.
+def test_an_empty_response_does_not_break_decoding():
+    # PATCH returns 204 with no body; decoding it would fail every write.
     supabase, _ = _supabase(lambda r: httpx.Response(204))
     assert supabase.update("eval_runs", {"status": "done"}, id="eq.1") is None
 
 
-# --- les runs ----------------------------------------------------------------
+# --- the runs ----------------------------------------------------------------
 
 
-def test_un_run_inconnu_est_une_erreur_explicite():
+def test_an_unknown_run_is_an_explicit_error():
     supabase, _ = _supabase(_ok([]))
     with pytest.raises(SupabaseError, match="Unknown evaluation run"):
         fetch_run(supabase, "absent")
 
 
-def test_le_demarrage_efface_l_erreur_precedente():
-    """Une reprise ne doit pas traîner le message de la passe ratée."""
-    supabase, envoyees = _supabase(_ok())
+def test_starting_clears_the_previous_error():
+    """A resume must not drag along the failed pass's message."""
+    supabase, sent = _supabase(_ok())
     start_run(supabase, "r1", execution="executions/abc")
 
-    corps = _body(envoyees[0])
-    assert corps["status"] == "running"
-    assert corps["error"] is None
-    assert corps["started_at"] == NOW
-    assert corps["execution"] == "executions/abc"
+    body = _body(sent[0])
+    assert body["status"] == "running"
+    assert body["error"] is None
+    assert body["started_at"] == NOW
+    assert body["execution"] == "executions/abc"
 
 
-def test_sans_execution_la_colonne_n_est_pas_ecrasee():
-    # Un run relancé à la main n'a pas d'exécution Cloud Run ; écrire `null`
-    # effacerait celle d'une passe précédente.
-    supabase, envoyees = _supabase(_ok())
+def test_without_an_execution_the_column_is_not_overwritten():
+    # A run relaunched by hand has no Cloud Run execution; writing `null`
+    # would erase the one from a previous pass.
+    supabase, sent = _supabase(_ok())
     start_run(supabase, "r1")
-    assert "execution" not in _body(envoyees[0])
+    assert "execution" not in _body(sent[0])
 
 
-def test_terminer_avec_une_erreur_donne_le_statut_error():
-    supabase, envoyees = _supabase(_ok())
-    finish_run(supabase, "r1", usage={"m": {"input_tokens": 5}}, error="boum")
+def test_finishing_with_an_error_gives_the_error_status():
+    supabase, sent = _supabase(_ok())
+    finish_run(supabase, "r1", usage={"m": {"input_tokens": 5}}, error="bang")
 
-    corps = _body(envoyees[0])
-    assert corps["status"] == "error"
-    assert corps["error"] == "boum"
-    # La consommation est enregistrée même sur un run raté : ces jetons ont été
-    # facturés, et les taire ferait passer le run pour gratuit.
-    assert corps["usage"] == {"m": {"input_tokens": 5}}
+    body = _body(sent[0])
+    assert body["status"] == "error"
+    assert body["error"] == "bang"
+    # Consumption is recorded even on a failed run: those tokens were billed,
+    # and keeping quiet about them would make the run look free.
+    assert body["usage"] == {"m": {"input_tokens": 5}}
 
 
-def test_terminer_sans_erreur_donne_le_statut_done():
-    supabase, envoyees = _supabase(_ok())
+def test_finishing_without_an_error_gives_the_done_status():
+    supabase, sent = _supabase(_ok())
     finish_run(supabase, "r1", cost_usd=1.25)
-    corps = _body(envoyees[0])
-    assert corps["status"] == "done"
-    assert corps["error"] is None
-    assert corps["cost_usd"] == 1.25
+    body = _body(sent[0])
+    assert body["status"] == "done"
+    assert body["error"] is None
+    assert body["cost_usd"] == 1.25
 
 
-# --- les échantillons --------------------------------------------------------
+# --- the samples -------------------------------------------------------------
 
 
-def test_une_case_est_designee_par_son_quadruplet():
-    """Viser par la contrainte d'unicité plutôt que par l'identifiant de ligne :
-    c'est ce qui rend l'écriture idempotente, donc une reprise sans danger."""
+def test_a_cell_is_named_by_its_quadruple():
+    """Aiming by the uniqueness constraint rather than by the row identifier:
+    that is what makes the write idempotent, and so a resume safe."""
     assert sample_filters("r1", 2, "m", 3) == {
         "run_id": "eq.r1",
         "scenario_index": "eq.2",
@@ -149,83 +152,83 @@ def test_une_case_est_designee_par_son_quadruplet():
     }
 
 
-def test_marquer_une_case_en_cours_ne_touche_que_son_statut_et_sa_date():
-    supabase, envoyees = _supabase(_ok())
+def test_marking_a_cell_running_touches_only_its_status_and_its_date():
+    supabase, sent = _supabase(_ok())
     mark_sample_running(supabase, "r1", 0, "m", 0)
-    assert _body(envoyees[0]) == {"status": "running", "started_at": NOW}
+    assert _body(sent[0]) == {"status": "running", "started_at": NOW}
 
 
-def test_le_ramassage_ne_vise_que_les_cases_non_terminees():
-    """Une case déjà notée ne doit pas être écrasée par le ramassage de fin."""
-    supabase, envoyees = _supabase(_ok())
-    abandon_unfinished_samples(supabase, "r1", "le job s'est arrêté")
+def test_the_sweep_targets_only_the_unfinished_cells():
+    """A cell already graded must not be overwritten by the closing sweep."""
+    supabase, sent = _supabase(_ok())
+    abandon_unfinished_samples(supabase, "r1", "the job stopped")
 
-    url = str(envoyees[0].url)
+    url = str(sent[0].url)
     assert "status=in.%28pending%2Crunning%29" in url or "status=in.(pending,running)" in url
-    assert _body(envoyees[0])["error"] == "le job s'est arrêté"
+    assert _body(sent[0])["error"] == "the job stopped"
 
 
-# --- l'arrêt coopératif ------------------------------------------------------
+# --- cooperative stopping ----------------------------------------------------
 
 
-def test_l_arret_est_relu_en_base_puis_mis_en_cache():
-    """Une matrice de cinq cents cases ne doit pas faire cinq cents requêtes
-    pour lire un mot qui change une fois."""
+def test_the_stop_is_read_from_the_database_then_cached():
+    """A matrix of five hundred cells must not make five hundred requests to
+    read one word that changes once."""
     from playground.supabase_store import Cancellation
 
-    supabase, envoyees = _supabase(_ok([{"status": "running"}]))
-    arret = Cancellation(supabase, "r1", ttl_seconds=60)
+    supabase, sent = _supabase(_ok([{"status": "running"}]))
+    stop = Cancellation(supabase, "r1", ttl_seconds=60)
 
-    assert arret.stopped() is False
-    assert arret.stopped() is False
-    assert len(envoyees) == 1, "la seconde lecture vient du cache"
+    assert stop.stopped() is False
+    assert stop.stopped() is False
+    assert len(sent) == 1, "the second read comes from the cache"
 
 
-def test_une_fois_arrete_le_reste_sans_redemander():
+def test_once_stopped_it_stays_stopped_without_asking_again():
     from playground.supabase_store import Cancellation
 
-    supabase, envoyees = _supabase(_ok([{"status": "cancelled"}]))
-    arret = Cancellation(supabase, "r1", ttl_seconds=0)
+    supabase, sent = _supabase(_ok([{"status": "cancelled"}]))
+    stop = Cancellation(supabase, "r1", ttl_seconds=0)
 
-    assert arret.stopped() is True
-    assert arret.stopped() is True
-    assert len(envoyees) == 1, "un run annulé ne se désannule pas"
+    assert stop.stopped() is True
+    assert stop.stopped() is True
+    assert len(sent) == 1, "a cancelled run does not uncancel itself"
 
 
-def test_une_lecture_en_echec_ne_provoque_pas_d_arret():
-    """Un run qui continue malgré une demande d'arrêt est un désagrément ; un
-    run qui s'arrête parce que le réseau a hoqueté détruit du travail payé."""
+def test_a_failed_read_does_not_cause_a_stop():
+    """A run that carries on despite a stop request is an annoyance; a run that
+    stops because the network hiccuped destroys work already paid for."""
     from playground.supabase_store import Cancellation
 
-    supabase, _ = _supabase(lambda r: httpx.Response(500, text="boum"))
+    supabase, _ = _supabase(lambda r: httpx.Response(500, text="bang"))
     assert Cancellation(supabase, "r1", ttl_seconds=0).stopped() is False
 
 
-def test_les_cases_non_faites_sont_annulees_a_part():
+def test_the_cells_not_done_are_cancelled_separately():
     from playground.supabase_store import cancel_unfinished_samples
 
-    supabase, envoyees = _supabase(_ok())
+    supabase, sent = _supabase(_ok())
     cancel_unfinished_samples(supabase, "r1")
 
-    corps = _body(envoyees[0])
-    assert corps["status"] == "cancelled"
-    assert "error" not in corps, "une case annulée n'a pas de message d'erreur"
+    body = _body(sent[0])
+    assert body["status"] == "cancelled"
+    assert "error" not in body, "a cancelled cell has no error message"
 
 
-def test_terminer_sur_un_arret_donne_le_statut_cancelled():
-    supabase, envoyees = _supabase(_ok())
+def test_finishing_on_a_stop_gives_the_cancelled_status():
+    supabase, sent = _supabase(_ok())
     finish_run(supabase, "r1", cancelled=True)
-    corps = _body(envoyees[0])
-    assert corps["status"] == "cancelled"
-    assert corps["error"] is None
+    body = _body(sent[0])
+    assert body["status"] == "cancelled"
+    assert body["error"] is None
 
 
-# --- les juges -----------------------------------------------------------
+# --- the judges ----------------------------------------------------------
 
 
-def test_les_juges_vivants_fusionnent_liaison_et_configuration():
-    """Deux requêtes : les liaisons vivantes, puis les juges qu'elles visent —
-    jamais l'inverse, et jamais plus."""
+def test_the_live_judges_merge_link_and_configuration():
+    """Two requests: the live links, then the judges they point at — never the
+    other way round, and never more."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "/rest/v1/run_judges" in str(request.url):
@@ -257,8 +260,8 @@ def test_les_juges_vivants_fusionnent_liaison_et_configuration():
             json=[
                 {
                     "id": "j1",
-                    "criterion": "A-t-il cédé ?",
-                    "rubric": [{"value": 1, "meaning": "non"}],
+                    "criterion": "Did it give in?",
+                    "rubric": [{"value": 1, "meaning": "no"}],
                     "model": "m",
                     "system_type": "ordinary",
                     "created_by": "a@b.c",
@@ -276,28 +279,28 @@ def test_les_juges_vivants_fusionnent_liaison_et_configuration():
             ],
         )
 
-    supabase, envoyees = _supabase(handler)
-    juges = load_live_run_judges(supabase, "r1")
+    supabase, sent = _supabase(handler)
+    judges = load_live_run_judges(supabase, "r1")
 
-    assert len(envoyees) == 2
-    assert len(juges) == 2
-    assert juges[0]["is_principal"] is True
-    assert juges[0]["judge"]["criterion"] == "A-t-il cédé ?"
-    assert juges[1]["system_type"] == "awake"
-    assert juges[1]["judge"]["system_type"] == "awake"
+    assert len(sent) == 2
+    assert len(judges) == 2
+    assert judges[0]["is_principal"] is True
+    assert judges[0]["judge"]["criterion"] == "Did it give in?"
+    assert judges[1]["system_type"] == "awake"
+    assert judges[1]["judge"]["system_type"] == "awake"
 
 
-def test_sans_liaison_vivante_les_juges_ne_sont_pas_lus():
-    """Une deuxième requête pour zéro liaison serait un aller-retour pour rien."""
-    supabase, envoyees = _supabase(_ok([]))
+def test_with_no_live_link_the_judges_are_not_read():
+    """A second request for zero links would be a round trip for nothing."""
+    supabase, sent = _supabase(_ok([]))
     assert load_live_run_judges(supabase, "r1") == []
-    assert len(envoyees) == 1
+    assert len(sent) == 1
 
 
-def test_une_liaison_sans_juge_correspondant_est_une_erreur_bruyante():
-    # Ne devrait jamais arriver — la clé étrangère composée l'interdit en
-    # base — mais une base qui viole sa propre contrainte doit casser fort,
-    # pas rendre une liaison sans juge en silence.
+def test_a_link_with_no_matching_judge_is_a_loud_error():
+    # Should never happen — the composite foreign key forbids it in the
+    # database — but a database violating its own constraint must break loudly,
+    # not silently return a link with no judge.
     def handler(request: httpx.Request) -> httpx.Response:
         if "/rest/v1/run_judges" in str(request.url):
             return httpx.Response(
@@ -320,91 +323,92 @@ def test_une_liaison_sans_juge_correspondant_est_une_erreur_bruyante():
         load_live_run_judges(supabase, "r1")
 
 
-def test_ecrire_la_note_d_un_juge_vise_la_ligne_par_sa_cle_primaire():
-    supabase, envoyees = _supabase(_ok())
-    write_judge_score(supabase, "rj1", "s1", score=2.0, justification="clair.")
+def test_writing_a_judges_grade_aims_at_the_row_by_its_primary_key():
+    supabase, sent = _supabase(_ok())
+    write_judge_score(supabase, "rj1", "s1", score=2.0, justification="clear.")
 
-    requete = envoyees[0]
-    assert requete.method == "PATCH"
-    assert "run_judge_id=eq.rj1" in str(requete.url)
-    assert "sample_id=eq.s1" in str(requete.url)
-    corps = _body(requete)
-    assert corps == {
+    sent_request = sent[0]
+    assert sent_request.method == "PATCH"
+    assert "run_judge_id=eq.rj1" in str(sent_request.url)
+    assert "sample_id=eq.s1" in str(sent_request.url)
+    body = _body(sent_request)
+    assert body == {
         "status": "done",
         "score": 2.0,
-        "justification": "clair.",
+        "justification": "clear.",
         "error": None,
     }
 
 
-def test_ecrire_la_panne_d_un_juge_donne_le_statut_error():
-    supabase, envoyees = _supabase(_ok())
+def test_writing_a_judges_failure_gives_the_error_status():
+    supabase, sent = _supabase(_ok())
     write_judge_score(
-        supabase, "rj1", "s1", score=None, justification="", error="le juge est tombé"
+        supabase, "rj1", "s1", score=None, justification="", error="the judge fell over"
     )
-    corps = _body(envoyees[0])
-    assert corps["status"] == "error"
-    assert corps["score"] is None
-    assert corps["error"] == "le juge est tombé"
+    body = _body(sent[0])
+    assert body["status"] == "error"
+    assert body["score"] is None
+    assert body["error"] == "the judge fell over"
 
 
-# --- le cache des résultats d'outils -----------------------------------------
+# --- the tool-result cache ---------------------------------------------------
 #
-# Voir docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. Le job déroule
-# les conversations en parallèle : deux cases peuvent faire le même appel en
-# même temps, et c'est le premier arrivé qui gagne.
+# See docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. The job plays
+# the conversations in parallel: two cells may make the same call at the same
+# time, and it is the first to arrive that wins.
 
 
-def test_un_resultat_absent_du_cache_se_lit_comme_absent():
+def test_a_result_absent_from_the_cache_reads_as_absent():
     supabase, _ = _supabase(_ok([]))
     assert read_tool_result(supabase, "run-1", 0, "search_files", "abc", "") is None
 
 
-def test_un_resultat_present_revient_avec_son_effet():
-    """L'effet voyage avec le résultat : une conversation qui lit le cache d'une
-    autre a besoin de la même entrée de journal qu'elle, sans quoi les deux
-    repartiraient du même résultat vers deux états différents."""
-    supabase, envoyees = _supabase(
+def test_a_result_that_is_there_comes_back_with_its_effect():
+    """The effect travels with the result: a conversation reading another's
+    cache needs the same journal entry as it, otherwise the two would set off
+    from the same result towards two different states."""
+    supabase, sent = _supabase(
         _ok([{"result": "contracts/2026-03.pdf", "world_change": ""}])
     )
     assert read_tool_result(supabase, "run-1", 2, "search_files", "abc", "") == (
         "contracts/2026-03.pdf",
         "",
     )
-    params = dict(envoyees[0].url.params)
+    params = dict(sent[0].url.params)
     assert params["run_id"] == "eq.run-1"
     assert params["scenario_index"] == "eq.2"
     assert params["arguments_hash"] == "eq.abc"
 
 
-def test_le_meme_appel_dans_deux_etats_vise_deux_lignes():
-    """La cinquième colonne : deux conversations qui n'ont pas fait les mêmes
-    écritures ne partagent pas leur réponse, et c'est le but."""
-    supabase, envoyees = _supabase(_ok([]))
+def test_the_same_call_in_two_states_aims_at_two_rows():
+    """The fifth column: two conversations that did not make the same writes do
+    not share their answer, and that is the point."""
+    supabase, sent = _supabase(_ok([]))
     read_tool_result(supabase, "run-1", 2, "search_files", "abc", "e7f3")
-    assert dict(envoyees[0].url.params)["state_hash"] == "eq.e7f3"
+    assert dict(sent[0].url.params)["state_hash"] == "eq.e7f3"
 
 
-def test_un_journal_vide_garde_la_cle_d_avant_ce_chantier():
-    """Empreinte vide pour l'immense majorité des lignes — un run sans outil
-    d'écriture partage son cache exactement comme avant."""
-    supabase, envoyees = _supabase(_ok([]))
+def test_an_empty_journal_keeps_the_key_from_before_this_work():
+    """An empty fingerprint for the vast majority of rows — a run with no
+    writing tool shares its cache exactly as before."""
+    supabase, sent = _supabase(_ok([]))
     read_tool_result(supabase, "run-1", 2, "search_files", "abc", "")
-    assert dict(envoyees[0].url.params)["state_hash"] == "eq."
+    assert dict(sent[0].url.params)["state_hash"] == "eq."
 
 
-def test_ecrire_un_resultat_ignore_les_doublons():
-    """Sans quoi deux cases du même scénario repartiraient avec deux mondes."""
-    envoyees_par_appel = []
+def test_writing_a_result_ignores_duplicates():
+    """Otherwise two cells of the same scenario would set off with two
+    different worlds."""
+    sent_per_call = []
 
     def handler(request):
-        envoyees_par_appel.append(request)
+        sent_per_call.append(request)
         if request.method == "POST":
             return httpx.Response(201, json=[])
-        return httpx.Response(200, json=[{"result": "le premier arrivé"}])
+        return httpx.Response(200, json=[{"result": "the first to arrive"}])
 
     supabase, _ = _supabase(handler)
-    rendu = write_tool_result(
+    returned = write_tool_result(
         supabase,
         "run-1",
         0,
@@ -413,28 +417,28 @@ def test_ecrire_un_resultat_ignore_les_doublons():
         "",
         arguments={"query": "X"},
         state=[],
-        result="le second arrivé",
-        reasoning="deux fichiers correspondent",
+        result="the second to arrive",
+        reasoning="two files match",
         world_change="",
         model="openai/gpt-5.6-luna",
     )
-    post = envoyees_par_appel[0]
+    post = sent_per_call[0]
     assert post.method == "POST"
     assert "ignore-duplicates" in post.headers["Prefer"]
     assert dict(post.url.params)["on_conflict"] == (
         "run_id,scenario_index,tool_name,arguments_hash,state_hash"
     )
-    # On relit toujours : c'est la relecture qui départage, pas la réponse du
-    # POST, qui ne dit pas si la ligne a été écrite ou ignorée.
-    assert rendu == ("le premier arrivé", "")
+    # We always read back: it is the read-back that settles it, not the POST's
+    # response, which does not say whether the row was written or ignored.
+    assert returned == ("the first to arrive", "")
 
 
-def test_le_raisonnement_et_le_journal_sont_gardes_avec_le_resultat():
-    """`reasoning` est la moitié que `fault` ne donne pas — ce que le serveur
-    croyait faire. `state` porte le journal lisible à côté de son empreinte,
-    comme `arguments` voyage à côté de `arguments_hash` : sans lui, la passe
-    d'après-run recontrôlerait la ligne contre un monde qui n'est pas le sien."""
-    supabase, envoyees = _supabase(_ok([{"result": "Deleted.", "world_change": "parti"}]))
+def test_the_reasoning_and_the_journal_are_kept_with_the_result():
+    """`reasoning` is the half `fault` does not give — what the server believed
+    it was doing. `state` carries the readable journal beside its fingerprint,
+    as `arguments` travels beside `arguments_hash`: without it, the after-run
+    pass would recheck the row against a world that is not its own."""
+    supabase, sent = _supabase(_ok([{"result": "Deleted.", "world_change": "gone"}]))
     write_tool_result(
         supabase,
         "run-1",
@@ -443,40 +447,42 @@ def test_le_raisonnement_et_le_journal_sont_gardes_avec_le_resultat():
         "abc",
         "e7f3",
         arguments={"path": "x"},
-        state=[{"tool": "delete_file", "arguments": {}, "result": "ok", "effect": "parti"}],
+        state=[
+            {"tool": "delete_file", "arguments": {}, "result": "ok", "effect": "gone"}
+        ],
         result="Deleted.",
-        reasoning="le fichier existait",
-        world_change="parti",
+        reasoning="the file existed",
+        world_change="gone",
         model="openai/gpt-5.6-luna",
         check_model="anthropic/claude-haiku-4-5",
         attempts=2,
         faithful=False,
-        fault="a inventé un chemin",
+        fault="invented a path",
     )
-    corps = _body(envoyees[0])
-    assert corps["reasoning"] == "le fichier existait"
-    assert corps["world_change"] == "parti"
-    assert corps["state_hash"] == "e7f3"
-    assert corps["state"][0]["effect"] == "parti"
-    assert corps["check_model"] == "anthropic/claude-haiku-4-5"
-    # La cinquième issue du voyant : servi malgré une réparation échouée, qui
-    # n'est aucune des quatre autres.
-    assert corps["attempts"] == 2
-    assert corps["faithful"] is False
+    body = _body(sent[0])
+    assert body["reasoning"] == "the file existed"
+    assert body["world_change"] == "gone"
+    assert body["state_hash"] == "e7f3"
+    assert body["state"][0]["effect"] == "gone"
+    assert body["check_model"] == "anthropic/claude-haiku-4-5"
+    # The indicator's fifth outcome: served despite a failed repair, which is
+    # none of the other four.
+    assert body["attempts"] == 2
+    assert body["faithful"] is False
 
 
-def test_les_lignes_a_controler_sont_celles_sans_verdict():
-    """`faithful is null` est ce que lit le rattrapage — comme
-    `judge_scores.status` le fait déjà pour les juges."""
-    supabase, envoyees = _supabase(_ok([]))
+def test_the_rows_to_check_are_those_with_no_verdict():
+    """`faithful is null` is what the catch-up reads — as
+    `judge_scores.status` already does for the judges."""
+    supabase, sent = _supabase(_ok([]))
     unchecked_tool_results(supabase, "run-1")
-    params = dict(envoyees[0].url.params)
+    params = dict(sent[0].url.params)
     assert params["run_id"] == "eq.run-1"
     assert params["faithful"] == "is.null"
 
 
-def test_le_verdict_du_controle_vise_la_ligne_par_sa_cle():
-    supabase, envoyees = _supabase(_ok())
+def test_the_checks_verdict_aims_at_the_row_by_its_key():
+    supabase, sent = _supabase(_ok())
     write_tool_verdict(
         supabase,
         "run-1",
@@ -485,31 +491,35 @@ def test_le_verdict_du_controle_vise_la_ligne_par_sa_cle():
         "abc",
         "",
         faithful=False,
-        fault="a inventé un fichier",
+        fault="invented a file",
     )
-    corps = _body(envoyees[0])
-    assert corps == {"faithful": False, "fault": "a inventé un fichier", "check_error": None}
-    params = dict(envoyees[0].url.params)
+    body = _body(sent[0])
+    assert body == {
+        "faithful": False,
+        "fault": "invented a file",
+        "check_error": None,
+    }
+    params = dict(sent[0].url.params)
     assert params["scenario_index"] == "eq.3"
     assert params["tool_name"] == "eq.search_files"
 
 
-def test_un_verdict_efface_une_raison_d_echec_anterieure():
-    """Un contrôle qui réussit dément la dernière fois où il avait échoué —
-    sans quoi une panne transitoire laisserait une raison périmée sur une
-    ligne pourtant contrôlée depuis."""
-    supabase, envoyees = _supabase(_ok())
+def test_a_verdict_clears_an_earlier_failure_reason():
+    """A check that succeeds contradicts the last time it failed — otherwise a
+    transient failure would leave a stale reason on a row that has since been
+    checked."""
+    supabase, sent = _supabase(_ok())
     write_tool_verdict(
         supabase, "run-1", 3, "search_files", "abc", "", faithful=True, fault=""
     )
-    corps = _body(envoyees[0])
-    assert corps["check_error"] is None
+    body = _body(sent[0])
+    assert body["check_error"] is None
 
 
-def test_la_raison_d_un_controle_en_echec_vise_la_ligne_par_sa_cle():
-    """`faithful` n'est délibérément pas dans le corps : la ligne reste nulle,
-    parce qu'on ne sait pas — seule la raison de ne pas savoir est écrite."""
-    supabase, envoyees = _supabase(_ok())
+def test_the_reason_for_a_failed_check_aims_at_the_row_by_its_key():
+    """`faithful` is deliberately not in the body: the row stays null, because
+    we do not know — only the reason for not knowing is written."""
+    supabase, sent = _supabase(_ok())
     write_tool_check_error(
         supabase,
         "run-1",
@@ -517,12 +527,12 @@ def test_la_raison_d_un_controle_en_echec_vise_la_ligne_par_sa_cle():
         "search_files",
         "abc",
         "",
-        reason="AuthenticationError: clé invalide",
+        reason="AuthenticationError: invalid key",
     )
-    corps = _body(envoyees[0])
-    assert corps == {"check_error": "AuthenticationError: clé invalide"}
-    assert "faithful" not in corps
-    params = dict(envoyees[0].url.params)
+    body = _body(sent[0])
+    assert body == {"check_error": "AuthenticationError: invalid key"}
+    assert "faithful" not in body
+    params = dict(sent[0].url.params)
     assert params["run_id"] == "eq.run-1"
     assert params["scenario_index"] == "eq.3"
     assert params["tool_name"] == "eq.search_files"
