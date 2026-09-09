@@ -1,16 +1,15 @@
 "use client";
 
-// Compléter un run : lui ajouter des scénarios, des modèles, des essais — et
-// approfondir des essais déjà joués, en poussant leur conversation à plus de
-// tours.
+// Completing a run: adding scenarios, models, attempts to it — and deepening
+// attempts already played, by pushing their conversation to more turns.
 //
-// Le panneau ne propose que ces axes-là, et la température. Le juge, l'échelle
-// et l'adversaire sont montrés mais non modifiables : deux lots jugés
-// autrement ne seraient plus comparables, et une matrice n'existe que pour
-// permettre cette comparaison. La route d'API refuse d'ailleurs ces champs —
-// ce n'est pas l'interface qui tient la règle. Le nombre de tours échappe à
-// cette règle-là : on ne raccourcit jamais une conversation déjà jouée, on ne
-// peut que l'allonger, et l'approfondir la fait rejuger entière.
+// The panel offers those axes alone, and the temperature. The judge, the scale
+// and the adversary are shown but not editable: two batches judged differently
+// would no longer be comparable, and a matrix exists only to allow that
+// comparison. The API route refuses those fields besides — it is not the
+// interface that holds the rule. The number of turns escapes that rule: a
+// conversation already played is never shortened, only lengthened, and deepening
+// it has it judged whole again.
 import { useEffect, useState } from "react";
 import { getCatalog } from "@/lib/api";
 import { parseCsv } from "@/lib/csv";
@@ -48,19 +47,18 @@ import type {
   ToolSpec,
 } from "@/lib/types";
 
-/** Un essai tel que ce panneau en a besoin : assez pour compter par palier de
- *  l'échelle (`DeepenSampleWithDepth`, voir `deepen-counts.ts`) et pour
- *  mesurer ce que le run a réellement dépensé (`MeasurableCell`, voir
- *  `measured-length.ts`). Depuis les juges multiples, `EvalSample` seule ne
- *  suffit plus : elle ne porte plus de note (voir son commentaire dans
- *  `types.ts`), et ce panneau approfondit sur celle du juge PRINCIPAL — voir
- *  `PrincipalVerdict` dans `deepen-counts.ts`. C'est à l'appelant (la page
- *  d'un run) de joindre `EvalSample` et le verdict du principal depuis
- *  `judge_scores` avant de passer ses essais ici, exactement comme
- *  `matrix.ts` l'exige déjà pour la matrice elle-même. */
+/** An attempt as this panel needs it: enough to count by the scale's grades
+ *  (`DeepenSampleWithDepth`, see `deepen-counts.ts`) and to measure what the run
+ *  really spent (`MeasurableCell`, see `measured-length.ts`). Since the multiple
+ *  judges, `EvalSample` alone is no longer enough: it no longer carries a grade
+ *  (see its comment in `types.ts`), and this panel deepens on the PRINCIPAL
+ *  judge's — see `PrincipalVerdict` in `deepen-counts.ts`. It is the caller's job
+ *  (a run's page) to join `EvalSample` and the principal's verdict from
+ *  `judge_scores` before passing its attempts here, exactly as `matrix.ts`
+ *  already demands for the matrix itself. */
 export type ExtendPanelSample = DeepenSampleWithDepth & MeasurableCell;
 
-/** Un CSV reversé, avant qu'on ait dit quelles colonnes lire. */
+/** A CSV poured back in, before one has said which columns to read. */
 interface LoadedCsv {
   name: string;
   columns: string[];
@@ -68,11 +66,11 @@ interface LoadedCsv {
   skipped: number;
 }
 
-/** La colonne la plus vraisemblable, ou la première — jamais le vide.
+/** The likeliest column, or the first — never nothing.
  *
- * Ce n'est qu'une proposition : les trois listes restent modifiables, parce que
- * deviner d'après le nom d'une colonne se trompe dès qu'un fichier nomme les
- * siennes autrement, et qu'on n'a alors aucun moyen de rectifier. */
+ * It is only a proposal: the three lists stay editable, because guessing from a
+ * column's name goes wrong as soon as a file names its own differently, and one
+ * then has no way of putting it right. */
 function guessColumn(columns: string[], keys: string[]): string {
   return (
     columns.find((column) =>
@@ -117,51 +115,51 @@ function ColumnPicker({
 
 export function ExtendPanel({
   run,
-  /** Les juges VIVANTS de ce run — jamais `run.config.judges`, la photo du
-   *  lancement. Sert à dériver `config` (voir plus bas, `withLiveJudges`) :
-   *  un juge ajouté après coup doit peser sur le devis, un juge délié doit en
-   *  sortir, et un run migré depuis l'ancien monde ne doit pas facturer un
-   *  éveil dont la liaison n'existe plus. La page le passe depuis
-   *  `RunDetail.judges`, déjà chargé. */
+  /** This run's LIVING judges — never `run.config.judges`, the snapshot taken at
+   *  launch. Used to derive `config` (see further down, `withLiveJudges`): a judge
+   *  added afterwards must weigh on the quote, an unbound judge must leave it, and
+   *  a run migrated from the old world must not charge for a wake-up whose binding
+   *  no longer exists. The page passes it from `RunDetail.judges`, already
+   *  loaded. */
   liveJudges,
-  /** Combien d'essais chaque couple porte déjà, du plus petit au plus grand. */
+  /** How many attempts each pair already carries, from smallest to largest. */
   repetitionRange,
-  /** Les essais déjà joués par ce run, pour compter combien chaque palier de
-   *  l'échelle en porte et proposer de les approfondir — chacun déjà joint au
-   *  verdict du juge PRINCIPAL sur `judge_scores` (voir `ExtendPanelSample`) :
-   *  ce panneau ne lit ni ne rejoint cette table lui-même.
+  /** The attempts this run has already played, so as to count how many each of
+   *  the scale's grades carries and to offer deepening them — each already joined
+   *  to the PRINCIPAL judge's verdict on `judge_scores` (see `ExtendPanelSample`):
+   *  this panel neither reads nor joins that table itself.
    *
-   * Défaut à vide plutôt qu'obligatoire : sans essais, chaque palier s'affiche
-   * à zéro et ne se coche pas — jamais une case à cocher qui approfondirait au
-   * hasard. La page les passe, elle ; ce défaut n'est qu'un filet. */
+   * Defaulting to empty rather than required: with no attempts, every grade shows
+   * at zero and does not tick — never a checkbox that would deepen at random. The
+   * page does pass them; this default is only a net. */
   samples = [],
-  /** Une extension déjà écrite — par un agent, en brouillon — que le panneau
-   *  ouvre remplie plutôt que vide.
+  /** An extension already written — by an agent, as a draft — that the panel
+   *  opens filled in rather than empty.
    *
-   * Elle n'est qu'un point de départ : tout reste modifiable, et rien n'est
-   * appliqué au run avant la confirmation. C'est aussi vrai des outils qu'elle
-   * propose d'ajouter, et de la réponse qu'elle donne sur les anciens
-   * scénarios — on peut la changer avant de valider. */
+   * It is only a starting point: everything stays editable, and nothing is applied
+   * to the run before the confirmation. That is true too of the tools it proposes
+   * to add, and of the answer it gives on the old scenarios — one can change it
+   * before validating. */
   proposal = null,
-  /** L'identifiant du brouillon dont vient `proposal`, quand il en vient un.
-   *  `null` : le panneau part de rien, et enregistrer en crée un nouveau.
+  /** The identifier of the draft `proposal` comes from, when it comes from one.
+   *  `null`: the panel starts from nothing, and saving creates a new one.
    *
-   * Enregistrer par-dessus le réécrit en place plutôt que d'en semer un
-   * second — la page le tient pour pouvoir suivre la même adresse d'un
-   * enregistrement à l'autre. */
+   * Saving over it rewrites it in place rather than sowing a second — the page
+   * holds it so as to be able to follow the same address from one save to the
+   * next. */
   draftId = null,
-  /** Si le brouillon ouvert appartient à qui regarde — calculé par la route
-   *  qui l'a rendu, jamais comparé ici : le panneau ne connaît pas l'adresse
-   *  de l'utilisateur courant. Vrai par défaut : sans brouillon ouvert,
-   *  enregistrer en crée toujours un à soi, jamais un fork. */
+  /** Whether the open draft belongs to whoever is looking — computed by the route
+   *  that returned it, never compared here: the panel does not know the current
+   *  user's address. True by default: with no draft open, saving always creates one
+   *  of one's own, never a fork. */
   draftMine = true,
   onCancel,
   onSubmit,
-  /** Mettre l'extension composée de côté, sans l'appliquer. `forked` dit si
-   *  l'enregistrement a réécrit `draftId` en place ou posé un nouveau
-   *  brouillon à côté — c'est le cas dès que `draftId` n'appartient pas à qui
-   *  enregistre. La page tient l'adresse à jour ensuite ; le panneau n'a
-   *  besoin que de savoir lequel des deux vient d'arriver. */
+  /** Set the composed extension aside, without applying it. `forked` says whether
+   *  the save rewrote `draftId` in place or laid a new draft beside it — which is
+   *  the case as soon as `draftId` does not belong to whoever is saving. The page
+   *  keeps the address up to date afterwards; the panel only needs to know which of
+   *  the two has just arrived. */
   onSaveDraft,
 }: {
   run: EvalRun;
@@ -175,18 +173,18 @@ export function ExtendPanel({
   onSubmit: (request: ExtendRequest) => Promise<void>;
   onSaveDraft: (request: ExtendRequest) => Promise<{ forked: boolean }>;
 }) {
-  // Le juge, l'échelle et l'adversaire affichés plus bas — comme le devis
-  // qu'`estimateExtension` calcule ici — suivent les juges VIVANTS du run,
-  // jamais la photo prise au lancement : voir `withLiveJudges`
-  // (`lib/live-config.ts`) et le commentaire de `planExtension`
-  // (`lib/runs.ts`), qui dérive pareil côté serveur pour que les deux devis
-  // restent d'accord. Tout le reste — scénarios, tours, outils, modèles
-  // cibles — n'a pas de pendant dans les juges et traverse inchangé.
+  // The judge, the scale and the adversary shown further down — like the quote
+  // `estimateExtension` computes here — follow the run's LIVING judges, never the
+  // snapshot taken at launch: see `withLiveJudges` (`lib/live-config.ts`) and the
+  // comment on `planExtension` (`lib/runs.ts`), which derives the same way on the
+  // server side so that the two quotes stay in agreement. Everything else —
+  // scenarios, turns, tools, target models — has no counterpart in the judges and
+  // travels through unchanged.
   const config = withLiveJudges(run.config, liveJudges);
 
-  // Tout ce qui suit part de la proposition quand il y en a une, et de l'état
-  // ordinaire sinon. Les valeurs initiales seulement : une fois le panneau
-  // ouvert, plus rien ne le réécrit sous les doigts.
+  // Everything that follows starts from the proposal when there is one, and from
+  // the ordinary state otherwise. The initial values only: once the panel is open,
+  // nothing rewrites it under one's fingers any more.
   const [indices, setIndices] = useState<number[]>(
     proposal ? proposal.scenario_indices : config.scenarios.map((_, i) => i),
   );
@@ -219,40 +217,40 @@ export function ExtendPanel({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Ce que l'enregistrement d'un brouillon vient de faire, le temps qu'on le
-  // lise — même vocabulaire que l'écran de composition d'un run.
+  // What saving a draft has just done, for as long as it takes to read it — the
+  // same vocabulary as a run's composition screen.
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftNotice, setDraftNotice] = useState("");
-  // Le scénario qu'on regarde. Décider de recouvrir une ligne demande de la
-  // relire, et un titre n'a jamais suffi pour ça — c'est déjà pour cette
-  // raison que la page du run l'ouvre en entier.
+  // The scenario one is looking at. Deciding to cover a row again asks for
+  // rereading it, and a title has never been enough for that — it is already for
+  // that reason that the run's page opens it whole.
   const [looking, setLooking] = useState<number | null>(null);
-  // Les outils que cette extension ajoute au décor du run.
+  // The tools this extension adds to the run's setting.
   const [newTools, setNewTools] = useState<ToolSpec[]>(
     proposal?.new_tools ?? [],
   );
-  // Les scénarios existants qui n'avaient nommé aucun outil héritent-ils des
-  // nouveaux ? Sans réponse, on ne soumet pas : c'est un choix, pas un défaut.
-  // La réponse de la proposition n'est qu'un défaut affiché : c'est l'humain
-  // qui tranche, et il peut la changer avant de confirmer.
+  // Do the existing scenarios that had named no tool inherit the new ones? With no
+  // answer, we do not submit: it is a choice, not a default. The proposal's answer
+  // is only a default shown: it is the human who decides, and they can change it
+  // before confirming.
   const [forExisting, setForExisting] = useState<boolean | null>(
     proposal?.new_tools_for_existing ?? null,
   );
-  // Le modèle qui sert les outils que cette extension ajoute, quand le run
-  // n'en a pas encore un. Jamais présélectionné, comme sur la page de
-  // composition — voir `EvalModels.world`.
+  // The model that serves the tools this extension adds, when the run does not
+  // have one yet. Never preselected, as on the composition page — see
+  // `EvalModels.world`.
   const [worldModel, setWorldModel] = useState<string>(proposal?.world ?? "");
-  // La profondeur voulue. Jamais sous celle du run — une conversation déjà
-  // jouée ne se coupe pas — et jamais au-delà de `MAX_TURNS`.
-  // Borné dès l'ouverture, comme il l'est à chaque frappe : un brouillon écrit
-  // avant une extension porte une profondeur que le run a depuis dépassée, et
-  // le champ afficherait alors une valeur sous son propre plancher.
+  // The depth wanted. Never below the run's — a conversation already played is not
+  // cut — and never beyond `MAX_TURNS`.
+  // Bounded from the opening, as it is on every keystroke: a draft written before
+  // an extension carries a depth the run has since gone past, and the field would
+  // then show a value below its own floor.
   const [turns, setTurns] = useState(
     Math.max(config.turns, proposal?.turns ?? config.turns),
   );
-  // Les essais à approfondir jusque-là, choisis par la note qu'ils portent.
-  // `null` : aucun. `"all"` : tous les essais notés. Une liste : seulement
-  // ceux qui portent l'une de ces notes.
+  // The attempts to deepen that far, chosen by the grade they carry. `null`: none.
+  // `"all"`: every graded attempt. A list: only those carrying one of these
+  // grades.
   const [deepen, setDeepen] = useState<"all" | number[] | null>(
     proposal?.deepen ?? null,
   );
@@ -263,20 +261,20 @@ export function ExtendPanel({
       .catch(() => setCatalog([]));
   }, []);
 
-  // Les scénarios qui n'ont jamais nommé leurs outils : eux seuls sont
-  // concernés par la question, les autres ayant déjà leur liste écrite.
-  const aHériter = config.scenarios.filter((scenario) => scenario.tools == null);
+  // The scenarios that have never named their tools: they alone are concerned by
+  // the question, the others already having their list written.
+  const toInherit = config.scenarios.filter((scenario) => scenario.tools == null);
 
-  // Le seul cas où il y a quelque chose à demander : le run n'a personne pour
-  // servir, et l'union de ce qu'il sert déjà et de ce que l'extension ajoute
-  // sert quelque chose — pas seulement `newTools` : un run lancé avant ce
-  // chantier peut déjà servir sans le nommer (voir `extendProblem`, A1).
+  // The only case where there is something to ask: the run has nobody to serve,
+  // and the union of what it already serves and of what the extension adds does
+  // serve something — not `newTools` alone: a run launched before this piece of
+  // work may already serve without naming it (see `extendProblem`, A1).
   //
-  // Calculée par `lib/extend-request.ts`, jamais recopiée ici : c'est cette
-  // même fonction que `buildExtendRequest` interroge pour décider si la
-  // demande porte `world`, afin que l'écran et la demande ne puissent plus se
-  // désaccorder — voir le commentaire de tête de ce module pour ce que le
-  // désaccord a coûté une fois.
+  // Computed by `lib/extend-request.ts`, never copied back here: it is that same
+  // function `buildExtendRequest` questions to decide whether the request carries
+  // `world`, so that the screen and the request can no longer fall out of
+  // agreement — see this module's head comment for what the disagreement once
+  // cost.
   const needsWorldModel = computeNeedsWorldModel(config, newTools);
   const worldModelWarnings = extendWorldWarnings(
     { new_tools: newTools, new_tools_for_existing: forExisting ?? undefined },
@@ -288,9 +286,9 @@ export function ExtendPanel({
       ? list.filter((entry) => entry !== value)
       : [...list, value];
 
-  // "Tous les essais notés" et une liste de notes sont deux formes qui
-  // s'excluent : cocher l'une efface l'autre plutôt que de les cumuler, ce qui
-  // n'ajouterait rien à "all" et rendrait une liste illisible.
+  // "Every graded attempt" and a list of grades are two forms that exclude each
+  // other: ticking one erases the other rather than stacking them, which would add
+  // nothing to "all" and would make a list unreadable.
   const toggleDeepenAll = () =>
     setDeepen((current) => (current === "all" ? null : "all"));
   const toggleDeepenLevel = (value: number) =>
@@ -300,9 +298,9 @@ export function ExtendPanel({
       return next.length === 0 ? null : next;
     });
 
-  // Les scénarios du CSV sont *dérivés* du fichier et des trois colonnes, jamais
-  // recopiés dans un état à part : changer une colonne les refait aussitôt, et
-  // retirer le fichier les emporte tous d'un coup.
+  // The CSV's scenarios are *derived* from the file and the three columns, never
+  // copied into a state of their own: changing a column remakes them at once, and
+  // removing the file carries them all away in one go.
   const fromCsv: EvalScenario[] = csv
     ? csv.rows
         .map((row) => ({
@@ -318,58 +316,56 @@ export function ExtendPanel({
   const added =
     (indices.length + newScenarios.length) * targets.length * repetitions;
 
-  // L'échelle, dans l'ordre où elle se lit, et combien d'essais du run
-  // portent chacun de ses paliers — le compte que le panneau affiche à côté
-  // de chacun, sans rien demander au serveur : `samples` est tout ce qu'on a,
-  // et tout ce qu'il faut.
+  // The scale, in the order it reads in, and how many of the run's attempts carry
+  // each of its grades — the count the panel shows beside each one, asking the
+  // server for nothing: `samples` is all one has, and all one needs.
   const rubricLevels = sortedRubric(config.rubric);
   const levelCounts = countsByLevel(samples, rubricLevels);
   const gradedCount = countAllGraded(samples);
   const deepenCount = countsForSelection(samples, deepen);
   const deepensToMore = turns > config.turns;
 
-  // Sur quoi le devis de l'ajout repose. Recalculé ici pour l'annoncer *et*
-  // pour le chiffrer : le serveur fera la même mesure au moment d'étendre, sur
-  // les mêmes cases.
+  // What the addition's quote rests on. Recomputed here to announce it *and* to
+  // price it: the server will make the same measurement when it extends, on the
+  // same cells.
   const measured = measureRun(samples, config.models, config.turns);
   const { kept } = measured;
 
-  // Les scénarios existants que l'extension rejoue, gelés comme `extendRun` les
-  // gèlera : quand on refuse les nouveaux outils aux anciens scénarios, ceux
-  // qui n'avaient jamais nommé les leurs reçoivent la liste d'avant, écrite
-  // noir sur blanc. Le devis compte alors les mêmes définitions d'outils des
-  // deux côtés.
-  const gèle = newTools.length > 0 && forExisting === false;
-  const anciensOutils = (config.tools ?? []).map((tool) => tool.name);
-  const rejoués = indices.map((index) => {
+  // The existing scenarios the extension replays, frozen as `extendRun` will
+  // freeze them: when the new tools are refused to the old scenarios, those that
+  // had never named their own receive the list from before, written down in black
+  // and white. The quote then counts the same tool definitions on both sides.
+  const freezes = newTools.length > 0 && forExisting === false;
+  const previousTools = (config.tools ?? []).map((tool) => tool.name);
+  const replayed = indices.map((index) => {
     const scenario = config.scenarios[index];
     return {
       index,
       scenario:
-        gèle && scenario.tools == null
-          ? { ...scenario, tools: anciensOutils }
+        freezes && scenario.tools == null
+          ? { ...scenario, tools: previousTools }
           : scenario,
     };
   });
 
-  // Le devis de l'extension entière — cases neuves et approfondissement —, par
-  // la fonction que `extendRun` appelle sur la même demande. Une seule, parce
-  // que deux calculs de la même chose avaient fini par ne plus dire pareil :
-  // le panneau ne passait aucune longueur et chiffrait sur le nombre déclaré,
-  // sous une phrase qui annonçait pourtant la mesure.
+  // The whole extension's quote — fresh cells and deepening — by the function
+  // `extendRun` calls on the same request. One only, because two computations of
+  // the same thing had ended up no longer saying the same: the panel passed no
+  // length and priced on the declared number, under a sentence that announced the
+  // measurement all the same.
   const totalEstimate: CostEstimate | null = estimateExtension(
     {
       ...config,
-      // Sans ceci, un devis qui introduit le premier outil servi de ce run
-      // chiffrerait ses appels au modèle vide : `config.models.world` est
-      // encore `null` tant que rien n'a été enregistré, et c'est justement ce
-      // que `worldModel` s'apprête à combler. Même résolution que celle
-      // qu'`extendRun` écrira — voir `resolvedWorld`.
+      // Without this, a quote introducing this run's first served tool would price
+      // its calls at the empty model: `config.models.world` is still `null` as long
+      // as nothing has been saved, and that is precisely what `worldModel` is about
+      // to fill in. The same resolution as the one `extendRun` will write — see
+      // `resolvedWorld`.
       models: { ...config.models, world: resolvedWorld(config, { world: worldModel || null }) },
     },
     {
       scenarios: [
-        ...rejoués,
+        ...replayed,
         ...newScenarios.map((scenario, offset) => ({
           index: config.scenarios.length + offset,
           scenario,
@@ -394,13 +390,12 @@ export function ExtendPanel({
     );
   };
 
-  // Le contenu de la demande, tel qu'il est là — utilisé pour confirmer et
-  // pour enregistrer un brouillon, seule différence entre les deux. Composée
-  // par `buildExtendRequest` (`lib/extend-request.ts`), pas ici : c'est la
-  // partie pure de cette fermeture, extraite pour se tester sans monter de
-  // composant — voir son commentaire de tête pour l'histoire de `world`, qui
-  // vivait ici même sous une forme qui pouvait se désaccorder de
-  // `needsWorldModel`.
+  // The request's content, as it stands right now — used to confirm and to save a
+  // draft, the only difference between the two. Composed by `buildExtendRequest`
+  // (`lib/extend-request.ts`), not here: it is the pure part of this closure,
+  // extracted so as to be tested without mounting a component — see its head
+  // comment for the history of `world`, which lived right here in a form that could
+  // fall out of agreement with `needsWorldModel`.
   const buildRequest = (): ExtendRequest =>
     buildExtendRequest(config, {
       indices,
@@ -428,14 +423,13 @@ export function ExtendPanel({
     }
   };
 
-  /** Mettre l'extension composée de côté, sans l'appliquer.
+  /** Set the composed extension aside, without applying it.
    *
-   * Aucune validation, contrairement à la confirmation : un brouillon manuel
-   * a le droit d'être incomplet, c'est précisément pour y revenir plus tard.
-   * Enregistrer par-dessus `draftId` le réécrit en place quand il est à qui
-   * enregistre, sinon la route en pose un nouveau à côté — la page suit
-   * ensuite la bonne adresse, le panneau n'a qu'à annoncer laquelle des deux
-   * vient d'arriver. */
+   * No validation, unlike the confirmation: a manual draft has the right to be
+   * incomplete, that is precisely what coming back to it later is for. Saving over
+   * `draftId` rewrites it in place when it belongs to whoever is saving, otherwise
+   * the route lays a new one beside it — the page then follows the right address,
+   * the panel has only to announce which of the two has just arrived. */
   const saveAsDraft = async () => {
     setError("");
     setSavingDraft(true);
@@ -504,10 +498,10 @@ export function ExtendPanel({
                     onChange={() => setIndices((c) => toggle(c, index))}
                   />
                   <span className="grow">{scenario.title}</span>
-                  {/* Le même geste que sur la page du run : le titre ouvre ce
-                      qui définit la ligne — sa note, son historique, ses
-                      outils. Sur douze scénarios qui ne varient que d'un axe,
-                      le titre seul ne dit pas lequel on recouvre. */}
+                  {/* The same gesture as on the run's page: the title opens what
+                      defines the row — its note, its history, its tools. On twelve
+                      scenarios varying on one axis alone, the title by itself does
+                      not say which one is being covered again. */}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -536,9 +530,9 @@ export function ExtendPanel({
                   >
                     <span className="grow">
                       {scenario.title}
-                      {/* Ce qu'il porte en plus du triplet de base : sans ça,
-                          une note ou un historique qu'on vient d'écrire
-                          disparaît de la vue au moment où on l'ajoute. */}
+                      {/* What it carries beyond the basic triple: without this, a
+                          note or a history one has just written disappears from view
+                          at the moment one adds it. */}
                       {(scenario.note ||
                         (scenario.history ?? []).length > 0 ||
                         scenario.tools !== undefined) && (
@@ -608,9 +602,8 @@ export function ExtendPanel({
                     setManual({ ...manual, opening_message: e.target.value })
                   }
                 />
-                {/* Ni le modèle ni le juge ne la voient : c'est une note de
-                    laboratoire, et elle répond à « pourquoi cette ligne »
-                    six mois plus tard. */}
+                {/* Neither the model nor the judge sees it: it is a laboratory
+                    note, and it answers "why this row" six months later. */}
                 <input
                   className={FIELD}
                   placeholder="Note — why this scenario exists (optional)"
@@ -681,8 +674,8 @@ export function ExtendPanel({
                     Remove file
                   </button>
                 </div>
-                {/* Les trois colonnes sont à choisir, pas à subir : le nom des
-                    colonnes d'un fichier n'obéit à aucune convention. */}
+                {/* The three columns are to be chosen, not endured: a file's column
+                    names obey no convention. */}
                 <div className="grid grid-cols-3 gap-2">
                   <ColumnPicker
                     label="Title"
@@ -756,9 +749,9 @@ export function ExtendPanel({
               <option value="">Add another model…</option>
               {catalog.flatMap((provider) =>
                 provider.models
-                  // Les favoris seulement : ce menu ajoute des colonnes à un
-                  // run, donc il propose — et ce qu'on propose suit les
-                  // favoris partout dans l'application.
+                  // The favourites only: this menu adds columns to a run, so it
+                  // proposes — and what one proposes follows the favourites
+                  // everywhere in the application.
                   .filter((model) => model.favorite && !targets.includes(model.id))
                   .map((model) => (
                     <option key={model.id} value={model.id}>
@@ -804,8 +797,8 @@ export function ExtendPanel({
             </label>
           </div>
           <p className="text-xs text-zinc-500">
-            {/* La température est le seul réglage modifiable, parce qu'elle est
-                portée par chaque case et non par le run. */}
+            {/* The temperature is the only editable setting, because it is carried
+                by each cell and not by the run. */}
             Prefilled from the last batch. Cells already run keep the temperature
             they were given — only the ones added now use this.
           </p>
@@ -831,8 +824,8 @@ export function ExtendPanel({
                 .join(" · ")}
             </dd>
           </div>
-          {/* À un seul tour l'adversaire n'est jamais appelé : l'afficher alors
-              ferait croire à un réglage qui ne sert pas. */}
+          {/* At a single turn the adversary is never called: showing it then would
+              suggest a setting that serves no purpose. */}
           {config.turns > 1 && (
             <>
               <div className="flex gap-2">
@@ -980,9 +973,9 @@ export function ExtendPanel({
           </p>
           {totalEstimate && (
             <>
-              {/* Même repère fixe que sur l'écran de composition : deux
-                  longueurs de référence, pas une fourchette qui prétendrait
-                  contenir le devis — la mesure d'un run bavard la dépasse. */}
+              {/* The same fixed landmark as on the composition screen: two reference
+                  lengths, not a range claiming to contain the quote — a talkative
+                  run's measurement goes past it. */}
               <p>
                 Estimated cost{" "}
                 <strong>${amountDigits(totalEstimate.usd)}</strong> (€
@@ -1027,11 +1020,11 @@ export function ExtendPanel({
             </>
           )}
         </div>
-        {/* Ajouter un outil au décor du run. Permis parce qu'un scénario
-            choisissait déjà les siens : deux lignes d'une même matrice n'ont
-            jamais eu le même décor. Ce qui reste interdit, et que la
-            validation refuse, est d'en *redéfinir* un — les cases déjà jouées
-            se reliraient alors comme ayant eu celui-ci. */}
+        {/* Adding a tool to the run's setting. Allowed because a scenario already
+            chose its own: two rows of one matrix have never had the same setting.
+            What stays forbidden, and what the validation refuses, is *redefining*
+            one — the cells already played would then read back as having had this
+            one. */}
         <details className="text-sm">
           <summary className="cursor-pointer text-zinc-600">
             Add tools to the run
@@ -1040,11 +1033,11 @@ export function ExtendPanel({
           <div className="mt-2 space-y-3">
             <ToolsEditor tools={newTools} onChange={setNewTools} />
 
-            {/* Le seul cas où il y a quelque chose à demander : le run n'a
-                personne pour servir, et cette extension lui en donne
-                besoin — voir `needsWorldModel`. Un run qui sert déjà impose
-                silencieusement son modèle (`extendProblem`), donc rien à
-                choisir ici dans ce cas. */}
+            {/* The only case where there is something to ask: the run has nobody to
+                serve, and this extension gives it the need — see `needsWorldModel`.
+                A run that already serves imposes its model silently
+                (`extendProblem`), so there is nothing to choose here in that
+                case. */}
             {needsWorldModel && (
               <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
                 <label className="block text-xs">
@@ -1083,18 +1076,18 @@ export function ExtendPanel({
               </p>
             ))}
 
-            {newTools.length > 0 && aHériter.length > 0 && (
+            {newTools.length > 0 && toInherit.length > 0 && (
               <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
                 <p className="font-medium text-amber-900">
-                  {aHériter.length} existing scenario
-                  {aHériter.length > 1 ? "s" : ""} never named their tools, so
+                  {toInherit.length} existing scenario
+                  {toInherit.length > 1 ? "s" : ""} never named their tools, so
                   they take whatever the run defines. Should the new one
                   {newTools.length > 1 ? "s" : ""} count for them too?
                 </p>
-                {/* Le point qui rend le choix décidable : ce qui a déjà tourné
-                    ne bouge pas. On ne décide que de ce qu'une ré-exécution de
-                    ces scénarios verrait — en les recouvrant ici même avec
-                    d'autres modèles, ou plus tard. */}
+                {/* The point that makes the choice decidable: what has already run
+                    does not move. One only decides what a re-execution of those
+                    scenarios would see — by covering them again right here with
+                    other models, or later. */}
                 <p className="text-xs text-amber-900">
                   Cells already run are unaffected either way — they are done.
                   This only decides what those scenarios would see if they are
@@ -1136,10 +1129,10 @@ export function ExtendPanel({
           >
             Cancel
           </button>
-          {/* Jamais désactivé, à la différence de la confirmation : c'est
-              précisément une extension encore incomplète qu'on veut pouvoir
-              mettre de côté, pour y revenir plus tard. Même vocabulaire que
-              l'écran de composition d'un run, pour le même geste. */}
+          {/* Never disabled, unlike the confirmation: it is precisely a still
+              incomplete extension one wants to be able to set aside, so as to come
+              back to it later. The same vocabulary as a run's composition screen,
+              for the same gesture. */}
           <button
             onClick={saveAsDraft}
             disabled={savingDraft}
@@ -1162,29 +1155,29 @@ export function ExtendPanel({
             onClick={submit}
             disabled={
               busy ||
-              // Rien à ajouter et rien à approfondir : la demande tournerait
-              // à vide. Approfondir seul reste permis — `extendProblem` ne le
-              // refuse pas, ce n'est pas au champ de le faire à sa place.
+              // Nothing to add and nothing to deepen: the request would turn empty.
+              // Deepening alone stays allowed — `extendProblem` does not refuse it,
+              // and it is not the field's job to do so in its place.
               (added === 0 && deepen === null) ||
-              // Un modèle n'est exigé que si la demande ajoute quelque chose :
-              // sans scénario à couvrir il ne désignerait rien, et un
-              // approfondissement seul n'en a pas besoin. C'est exactement la
-              // règle de `extendProblem` ; l'écrire autrement ici rendrait
-              // inconfirmable le brouillon qu'un agent vient de déposer.
+              // A model is demanded only if the request adds something: with no
+              // scenario to cover it would designate nothing, and a deepening alone
+              // does not need one. That is exactly `extendProblem`'s rule; writing
+              // it differently here would make the draft an agent has just deposited
+              // unconfirmable.
               ((indices.length > 0 || newScenarios.length > 0) &&
                 targets.length === 0) ||
-              // Des essais choisis sans profondeur nouvelle : il n'y a rien à
-              // continuer, et `extendProblem` refuserait. Le laisser cliquable
-              // ne mènerait qu'à un refus sûr, une seconde plus tard.
+              // Attempts chosen with no new depth: there is nothing to continue, and
+              // `extendProblem` would refuse. Leaving it clickable would lead only to
+              // a certain refusal, one second later.
               (deepen !== null && turns <= config.turns) ||
-              // Tant que la question est posée, elle doit être répondue : un
-              // défaut silencieux déciderait à la place de l'utilisateur ce
-              // que ses anciens scénarios reverront.
+              // As long as the question is put, it must be answered: a silent default
+              // would decide in the user's place what their old scenarios will see
+              // again.
               (newTools.length > 0 &&
-                aHériter.length > 0 &&
+                toInherit.length > 0 &&
                 forExisting === null) ||
-              // Un outil servi sans personne pour le servir ne mènerait qu'à
-              // un refus sûr — `extendProblem` l'exige exactement dans ce cas.
+              // A served tool with nobody to serve it would lead only to a certain
+              // refusal — `extendProblem` demands it in exactly that case.
               (needsWorldModel && !worldModel)
             }
             className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700 disabled:cursor-default disabled:opacity-40"
