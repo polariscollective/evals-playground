@@ -4,11 +4,11 @@ import { useState } from "react";
 import { Collapsible } from "@/components/Collapsible";
 import { renderMarkdown } from "@/lib/markdown";
 
-/** Le commentaire d'un run : markdown en édition, HTML une fois sauvé.
+/** A run's comment: markdown while editing, HTML once saved.
  *
- * Le même composant sert avant le lancement et sur la page du run. Sans
- * `onSave`, sauver ne fait que basculer en lecture — c'est le cas du
- * formulaire, où la note part avec la configuration du run.
+ * The same component serves before the launch and on the run's page. Without
+ * `onSave`, saving only switches to reading — that is the form's case, where the
+ * note leaves with the run's configuration.
  */
 export function NotesField({
   value,
@@ -22,40 +22,40 @@ export function NotesField({
   onChange: (next: string) => void;
   onSave?: (next: string) => Promise<void>;
   hint?: string;
-  /** Hauteur de la zone d'édition. Plus grande sur la page d'un run, où l'on
-      écrit ses conclusions, que sur le formulaire, où l'on note une intention. */
+  /** The editing area's height. Larger on a run's page, where one writes one's
+      conclusions, than on the form, where one notes an intention. */
   rows?: number;
-  /** Le titre affiché. Le composant sert aussi à l'analyse d'un run — même
-   *  lecture markdown, même geste d'édition, seul le titre distingue le
-   *  préambule de l'analyse écrite après coup. */
+  /** The heading shown. The component also serves a run's analysis — same
+   *  markdown reading, same editing gesture, only the heading tells the preamble
+   *  from the analysis written afterwards. */
   label?: string;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** Ce que l'utilisateur a décidé, ou `null` s'il n'a rien décidé.
+  /** What the user decided, or `null` if they decided nothing.
    *
-   * Dérivé plutôt que synchronisé : tant que personne n'a touché au champ, son
-   * mode suit ce qu'il contient — vide, on ouvre en édition, parce qu'un bloc
-   * vide avec un bouton « Edit » demanderait un clic pour rien ; rempli, on
-   * affiche le markdown rendu.
+   * Derived rather than synchronised: as long as nobody has touched the field,
+   * its mode follows what it holds — empty, we open in editing, because an empty
+   * block with an "Edit" button would ask for a click for nothing; filled, we
+   * show the rendered markdown.
    *
-   * C'est ce qui manquait : le mode se décidait au seul montage, où le champ
-   * est vide sur le formulaire. Une note qui arrive après — un brouillon
-   * ouvert, une configuration collée, un run repris — restait donc en édition,
-   * et il fallait cliquer sur « Save » pour voir son propre markdown.
+   * That is what was missing: the mode was decided on mount alone, where the
+   * field is empty on the form. A note arriving afterwards — a draft opened, a
+   * configuration pasted, a run taken up again — therefore stayed in editing, and
+   * one had to click "Save" to see one's own markdown.
    *
-   * Dès qu'on écrit ou qu'on clique sur « Edit », la décision est prise et
-   * plus rien ne referme le champ sous les doigts. */
-  const [choisi, setChoisi] = useState<boolean | null>(null);
-  const editing = choisi ?? value.trim() === "";
+   * As soon as one writes or clicks "Edit", the decision is taken and nothing
+   * closes the field under one's fingers any more. */
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const editing = chosen ?? value.trim() === "";
 
   const save = async () => {
     setSaving(true);
     try {
       if (onSave) await onSave(value);
       setError(null);
-      setChoisi(false);
+      setChosen(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -64,9 +64,9 @@ export function NotesField({
   };
 
   return (
-    // Repliable par son titre, sauf en édition : `pinned` la tient ouverte,
-    // et « Edit » sur une case repliée la rouvre du même geste, puisqu'il
-    // fait passer `editing` à vrai.
+    // Foldable by its heading, except while editing: `pinned` holds it open, and
+    // "Edit" on a folded box reopens it in the same gesture, since it turns
+    // `editing` true.
     <Collapsible
       className="rounded border border-zinc-300 p-3"
       pinned={editing}
@@ -84,7 +84,7 @@ export function NotesField({
         ) : (
           <button
             type="button"
-            onClick={() => setChoisi(true)}
+            onClick={() => setChosen(true)}
             className="rounded border border-zinc-300 px-2 py-0.5 text-xs"
           >
             Edit
@@ -97,9 +97,9 @@ export function NotesField({
           <textarea
             value={value}
             onChange={(e) => {
-              // Écrire vaut décision : sans ça, vider le champ le refermerait
-              // au caractère près.
-              setChoisi(true);
+              // Writing counts as a decision: without that, emptying the field
+              // would close it at the last character.
+              setChosen(true);
               onChange(e.target.value);
             }}
             rows={rows}
@@ -113,8 +113,8 @@ export function NotesField({
       ) : (
         <div
           className="notes-prose mt-2 text-sm"
-          // Sûr : `renderMarkdown` échappe tout le HTML d'entrée avant de
-          // produire les seules balises qu'il fabrique lui-même.
+          // Safe: `renderMarkdown` escapes all the input HTML before producing
+          // the only tags it builds itself.
           dangerouslySetInnerHTML={{ __html: renderMarkdown(value) }}
         />
       )}

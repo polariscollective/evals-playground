@@ -1,12 +1,12 @@
 import type { Message } from "@/lib/types";
 
-/** Un tour de conversation, avec tout ce qui dit s'il faut le croire.
+/** A conversation turn, with everything that says whether to believe it.
  *
- * Extrait de la page privée pour servir aussi la page publique : un tour posé
- * d'avance qui s'affiche comme une réponse du modèle, ou une bulle vide qui se
- * lit comme un refus alors que le fournisseur a bloqué la génération, sont
- * deux façons de faire dire à une conversation ce qu'elle n'a pas mesuré — et
- * c'est justement ce qu'un run publié est censé permettre de vérifier. */
+ * Taken out of the private page so as to serve the public page too: a turn laid
+ * down in advance showing as an answer from the model, or an empty bubble
+ * reading as a refusal when the provider blocked the generation, are two ways of
+ * making a conversation say what it did not measure — and that is precisely what
+ * a published run is meant to let one check. */
 export function MessageView({
   message,
   index,
@@ -17,8 +17,8 @@ export function MessageView({
   return (
     <div
       className={
-        // Un tour posé se distingue à l'œil : le modèle ne l'a pas produit,
-        // et le lire comme sien fausserait toute la relecture d'une case.
+        // A seeded turn stands out to the eye: the model did not produce it, and
+        // reading it as its own would falsify a whole cell's rereading.
         message.role === "tool"
           ? "rounded border border-dashed border-amber-300 bg-amber-50 p-3"
           : message.seeded
@@ -41,8 +41,8 @@ export function MessageView({
           </span>
         )}
       </div>
-      {/* L'appel est souvent le comportement mesuré : l'afficher tel quel,
-          arguments compris, plutôt que de le résumer. */}
+      {/* The call is often the measured behaviour: show it as it stands,
+          arguments included, rather than summarising it. */}
       {(message.tool_calls ?? []).map((call) => (
         <div key={call.id} className="mb-1 font-mono text-xs text-teal-900">
           calls {call.name}({JSON.stringify(call.arguments)})
@@ -51,9 +51,9 @@ export function MessageView({
       {message.content.trim() ? (
         <div className="whitespace-pre-wrap text-sm">{message.content}</div>
       ) : (
-        // Une bulle vide se lit comme un modèle qui n'a rien voulu dire.
-        // C'est presque toujours faux : le fournisseur a bloqué la
-        // génération, ce qui n'est ni un refus ni une capitulation.
+        // An empty bubble reads as a model that would not say anything. That is
+        // almost always false: the provider blocked the generation, which is
+        // neither a refusal nor a capitulation.
         <div className="text-sm italic text-amber-800">
           No content returned
           {message.stop_reason === "content_filter"

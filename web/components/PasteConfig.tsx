@@ -1,17 +1,17 @@
 "use client";
 
-// Coller la config que l'agent vient de rendre, sans passer par un fichier.
+// Paste the config the agent has just returned, without going through a file.
 //
-// Ce que l'agent produit est un bloc de texte avec un bouton copier à côté. Le
-// sélecteur de fichier demandait de l'enregistrer, de le nommer et de le
-// retrouver — quatre gestes pour transporter une chaîne d'une fenêtre à
-// l'autre, alors que `/api/config` n'a jamais voulu qu'une chaîne.
+// What the agent produces is a block of text with a copy button beside it. The
+// file picker asked one to save it, to name it and to find it again — four
+// gestures to carry a string from one window to another, when `/api/config`
+// never wanted anything but a string.
 //
-// La fenêtre garde le texte quand il est refusé, et montre le message dedans.
-// C'est la seule chose qu'elle fait autrement que le sélecteur de fichier, et
-// c'est le point : `configProblem` nomme précisément ce qui manque, et ne sert
-// à rien loin du texte qu'il décrit. Là, il se corrige sur place ou se recopie
-// tel quel à l'agent.
+// The window keeps the text when it is refused, and shows the message inside it.
+// That is the only thing it does differently from the file picker, and that is
+// the point: `configProblem` names precisely what is missing, and is of no use
+// far from the text it describes. There, it is fixed on the spot or copied back
+// as it stands to the agent.
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "./Dialog";
 
@@ -25,7 +25,7 @@ rubric:
 export function PasteConfig({
   onLoad,
 }: {
-  /** Lève si le texte est refusé ; son message est montré ici même. */
+  /** Throws if the text is refused; its message is shown right here. */
   onLoad: (text: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -34,9 +34,9 @@ export function PasteConfig({
   const [busy, setBusy] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
 
-  // `autoFocus` ne suffirait pas : `<dialog>` déplace le focus lui-même au
-  // `showModal()`, que `Dialog` fait dans son propre effet. Un effet d'enfant
-  // s'exécutant avant celui du parent, celui-ci passe après, et gagne.
+  // `autoFocus` would not be enough: `<dialog>` moves the focus itself on
+  // `showModal()`, which `Dialog` does in its own effect. A child's effect running
+  // before the parent's, this one goes last, and wins.
   useEffect(() => {
     if (open) area.current?.focus();
   }, [open]);
@@ -102,8 +102,8 @@ export function PasteConfig({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // Entrée seule appartient au texte : un YAML se tape sur plusieurs
-            // lignes, et le raccourci ne doit pas le rendre impossible.
+            // Enter alone belongs to the text: a YAML is typed over several
+            // lines, and the shortcut must not make that impossible.
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
               void load();
