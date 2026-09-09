@@ -17,14 +17,16 @@
 // HTML. The private page cannot — it must first ask for the profile to learn
 // whether it carries an override.
 //
+// All four are rendered here, once, and handed to the client component that
+// switches between them. Markdown rendering is the expensive part and it does
+// not depend on who is looking, so it belongs on this side of the line.
+//
 // `renderMarkdown` and `notes-prose`, like the private page: two renderings
 // of the same document would end up not resembling each other.
 import type { Metadata } from "next";
-import Link from "next/link";
-import { CopyText } from "@/components/CopyButton";
+import { SharedAdviceView } from "@/components/SharedAdviceView";
 import { renderMarkdown } from "@/lib/markdown";
 import {
-  ADVICE_SUMMARY,
   ADVICE_TOPICS,
   DEFAULT_ADVICE,
   isAdviceTopic,
@@ -35,16 +37,9 @@ import {
 // conversation says only "Evals Playground", which does not tell this page
 // apart from any other.
 export const metadata: Metadata = {
-  title: "Guidelines — Evals Playground",
+  title: "Advice — Evals Playground",
   description:
     "What an agent needs to know to write an evaluation here, and to read one.",
-};
-
-const LABEL: Record<AdviceTopic, string> = {
-  scenario: "Writing a scenario",
-  batch: "Putting a batch together",
-  analysis: "Reading the results",
-  judge: "Writing a judge",
 };
 
 export default async function SharedAdvice({
@@ -54,60 +49,30 @@ export default async function SharedAdvice({
 }) {
   // The address without a topic is the one that existed before the advice was
   // split in four, and it is written into prompts that already went out. It
-  // keeps landing on the scenario document.
+  // keeps landing on the scenario document. Read once, to decide which tab
+  // opens: from there the client component holds it, and no click navigates.
   const asked = (await searchParams).topic;
-  const topic: AdviceTopic = isAdviceTopic(asked) ? asked : "scenario";
-  const text = DEFAULT_ADVICE[topic];
+  const initial: AdviceTopic = isAdviceTopic(asked) ? asked : "scenario";
+
+  // `reflow`: the documents are stored wrapped at 78 columns, a writing
+  // convenience rather than an intention — see `/advice`, which renders them
+  // the same way.
+  const rendered = Object.fromEntries(
+    ADVICE_TOPICS.map((topic) => [
+      topic,
+      renderMarkdown(DEFAULT_ADVICE[topic], { reflow: true }),
+    ]),
+  ) as Record<AdviceTopic, string>;
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-8">
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-zinc-500">
-          Guidelines — read only
-        </p>
-        <h1 className="font-serif text-2xl font-normal">{LABEL[topic]}</h1>
-        <p className="text-sm text-zinc-500">{ADVICE_SUMMARY[topic]}</p>
-      </header>
-
-      {/* Four documents read at four different moments, so the reader can see
-          what else exists rather than having to be told. */}
-      <nav className="flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
-        {ADVICE_TOPICS.map((entry) => (
-          <Link
-            key={entry}
-            href={entry === "scenario" ? "/shared/advice" : `/shared/advice?topic=${entry}`}
-            className={`rounded px-3 py-1 text-sm ${
-              entry === topic
-                ? "bg-zinc-900 text-white"
-                : "text-zinc-600 hover:bg-zinc-100"
-            }`}
-          >
-            {LABEL[entry]}
-          </Link>
-        ))}
-      </nav>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <CopyText value={text} title={`Copy: ${LABEL[topic]}`} />
-        {/* The machine-facing twin, named here because this is the page one
-            sends to somebody who will in turn hand it to an agent. */}
-        <span className="text-xs text-zinc-500">
-          The same text as plain text, for an agent:{" "}
-          <code className="rounded bg-zinc-100 px-1">
-            /advice.txt?topic={topic}
-          </code>
-        </span>
-      </div>
-
-      <div
-        className="notes-prose w-full rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
-        // Safe: `renderMarkdown` escapes every bit of incoming HTML before
-        // producing the only tags it builds itself. `reflow`: the documents are
-        // stored wrapped at 78 columns, a writing convenience rather than an
-        // intention — see `/advice`, which renders them the same way.
-        dangerouslySetInnerHTML={{
-          __html: renderMarkdown(text, { reflow: true }),
-        }}
+      <p className="text-xs uppercase tracking-wide text-zinc-500">
+        Advice — read only
+      </p>
+      <SharedAdviceView
+        initial={initial}
+        sources={DEFAULT_ADVICE}
+        rendered={rendered}
       />
     </main>
   );

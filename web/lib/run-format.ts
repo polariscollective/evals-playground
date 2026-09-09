@@ -596,51 +596,27 @@ interface Channel {
  *  but requests to reach the application. Hence the absolute origin, and a
  *  document it renders on screen rather than deposits. */
 const HTTP: Channel = {
-  check: `## Check it before you give it to me
+  check: `## What happens to the document
 
-You do not have to guess whether it passes. {{VALIDATE}} tells you.
+You hand it back to me and I paste it into the application. It checks the whole
+thing there and, if something is wrong, says exactly what — the same words the
+rules above describe. So a mistake costs one exchange between us, not a run.
 
-POST the document as the request body. If POST is not something you can do,
-GET \`{{VALIDATE}}?yaml=<url-encoded document>\` instead.
+Two things follow. Write the document out in full rather than a sample: there is
+nothing to try it against first, so a short version buys nothing. And read the
+rules above properly, because they are the check — every one of them is applied
+for real, and the message names which one you broke.
 
-It answers in plain text, and the first word is the verdict. Three answers:
-
-    OK — 12 scenarios, 2 target models, 4 grades (3 counted), 4 turns × 5
-    repetitions. About 1080 model calls, roughly $19.34 for the document as
-    sent — $1.61 per scenario, so multiply by the size of the real batch. For
-    reference, the same document costs $6.53 at 200 output tokens per turn and
-    $130.42 at 6,000.
-
-    INCOMPLETE — the document names a CSV of scenarios but does not carry it
-    (columns title / system_prompt / opening_message). It will load; upload the
-    CSV before launching. 2 target models, 4 grades (3 counted), 4 turns × 5
-    repetitions.
-
-or the exact reason it would be refused, in the same words I would see.
-
-The price is for the document **as sent**. Since I am asking you for a short
-one, the total is not the run's — the per-scenario figure is the one that
-multiplies. Tell me both when you report back, so I know what I am about to
-spend before I paste anything.
-
-\`INCOMPLETE\` is not a rejection: the document is valid and will load as it is.
-It says a file has to be uploaded before anything can run — which is what you
-want when you announce a CSV you cannot carry. Do not try to correct it.
-
-**Send it a short document.** The run itself — scale, models, turns, adversary
-prompt, tools — plus two or three scenarios, not the whole batch. Everything it
-checks is the shape of the run, and the shape does not depend on how many
-scenarios follow. The GET form has a length limit of a few kilobytes anyway,
-which is a second reason not to push a hundred scenarios through it.
-
-Once it answers OK, write the full document out.`,
+I see the cost before anything runs, so you do not have to work it out. Say
+plainly what you are unsure of instead: a scale whose levels you could not tell
+apart, a scenario you think gives the test away, a number you guessed. Those are
+what I cannot see in a YAML document.`,
   sample: `A hundred scenarios in one YAML document is normal, and it loads in one go. Do
 not summarise, do not stop at a sample, and do not switch to the CSV form below
 to keep the document short — one document holding everything is the simplest
 thing for both of us, and length is not a problem for it.
 
-Only the *checking* step above works on a handful. The document you hand me is
-the complete one.`,
+The document you hand me is the complete one.`,
   csv: `## If the scenarios come from a CSV
 
 The one case where you should not write them out: I already have them in a
@@ -665,15 +641,16 @@ the cell empty for the scenarios that start from nothing, which is most of them.
 I upload the CSV separately, and the tool selects those columns for me. If I have
 not told you the column names, write \`scenarios: csv\` on its own and it will
 guess them.`,
-  advice: `Open {{ORIGIN}}/advice.txt and read the text there — that is the first
-of four documents. Add \`?topic=batch\` and \`?topic=judge\` for the two others you
-need before launching: how the rows of a run relate to each other, and how to
+  advice: `Ask me to paste the advice, and I will. There are four documents and
+you want three of them now: what keeps a scenario from reading as a test to the
+model being evaluated, how the rows of a run relate to each other, and how to
 write a scale someone else could apply.
 
-A fourth, \`?topic=analysis\`, is for afterwards. Do not read it now; read it when
-the results are in, before concluding anything or extending anything.
+The fourth is about reading the results. Do not ask for it yet; ask when the run
+has finished, before concluding anything from it.
 
-Or ask me to paste any of them.`,
+I read them on the application's Advice page and copy them across, the same way
+you got this.`,
   closing: `## The experiment I want
 
 REPLACE THIS LINE with what I want to test, in my own words. Ask me for it if it
@@ -681,7 +658,7 @@ is missing.`,
 };
 
 /** The MCP channel: the agent reads this text with the tools already in hand.
- *  Showing it /validate would be showing it a door it has no business taking —
+ *  It never had the validator this channel used to name —
  *  `submit_draft_run` validates, costs and deposits, and launches nothing. */
 const MCP: Channel = {
   check: `## Check it, and that is also how you hand it over
@@ -864,31 +841,28 @@ function fill(
     .replace("{{CAPS}}", capsText);
 }
 
-/** The prompt as `/format.txt` serves it, with the validator's address.
+/** The document as the Copy button hands it to a human, to paste into an agent.
  *
- * `origin` is left empty when it is not known: the address becomes `/validate`,
- * which an agent that has read `/format.txt` resolves by itself — same for
- * `{{ORIGIN}}`, which points at `/advice.txt`, the public route, not
- * `/advice`, the private page a human reads. Those that know it pass it —
- * the window reads it in the browser, the route in the headers — because a
- * copy-pasted prompt arrives at an agent that has no host context left at
- * all. */
+ * It carries no address at all, and that is the point. There are two ways into
+ * this tool and no third: a person copies a text across, or an agent holds the
+ * MCP connector. The routes that sat between them — a validator to POST to, a
+ * plain-text manual to GET — served an agent that could browse but could not
+ * connect, and that agent could neither launch a run nor be trusted with an
+ * open write endpoint. It handed a YAML back to a human either way.
+ *
+ * So where the MCP channel names a tool, this one names the person reading. */
 export function runFormat(
   models: { id: string; label: string }[],
-  origin = "",
 ): string {
-  return fill(models, HTTP)
-    .replaceAll("{{VALIDATE}}", `${origin}/validate`)
-    .replaceAll("{{ORIGIN}}", origin);
+  return fill(models, HTTP);
 }
 
 /** The same document for `read_format`, that is, for an agent that already
  *  holds the tools.
  *
- * No origin to pass: there is no URL left to reach. What used to replace
- * `{{VALIDATE}}` is here `submit_draft_run`, which validates, costs and
- * deposits without launching anything — giving the validator's address on top
- * would send the agent knocking at an HTTP door it has no reason to open.
+ * No origin to pass: there is no URL left to reach. `submit_draft_run`
+ * validates, costs and deposits without launching anything, which is what this
+ * channel points at instead.
  *
  * `caps` carries the two caps of the caller's profile — the one `read_format`
  * resolved through `callerEmail` before calling this function, not a default of

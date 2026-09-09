@@ -27,7 +27,7 @@ const LINKS = [
   { href: "/", label: "Evaluate" },
   { href: "/runs", label: "Runs" },
   { href: "/advice", label: "Advice" },
-  { href: "/settings/connections", label: "Connections" },
+  { href: "/settings/mcp", label: "MCP" },
 ];
 
 /** Which tab the open page belongs to.
@@ -47,7 +47,7 @@ function isCurrent(pathname: string, href: string): boolean {
  * you are trying to obtain are worse than no bar at all.
  *
  * Not `isOpen` from `public-paths.ts`, which answers a different question —
- * `/format.txt` and `/validate` are open paths that do want the bar. */
+ * `/format.txt` is an open path that does want the bar. */
 const HIDDEN_ON = ["/shared", "/signin"];
 
 export function AppNav() {

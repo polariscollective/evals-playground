@@ -14,14 +14,8 @@ import type { ProviderInfo } from "@/lib/types";
 export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  // The prompt sends the agent to `/validate`, and a copy-pasted prompt reaches
-  // an agent with no host context at all: it needs the whole address, which only
-  // the browser knows.
-  //
-  // Hence the computation on opening and not at render: the server always renders
-  // this window closed, so `window` is there as soon as this text exists. An
-  // effect laying the origin in state would do the same work in two renders, and
-  // the linter refuses it rightly.
+  // Built on opening rather than at render: the server always renders this
+  // window closed, so the work happens once, when somebody asks for it.
   const text = open
     ? runFormat(
         // Filtered to the favourites of whoever is looking: this dialog promises
@@ -30,7 +24,6 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
         catalogModelOptions(providers)
           .filter((model) => model.favorite)
           .map(({ id, label }) => ({ id, label })),
-        window.location.origin,
       )
     : "";
 
@@ -50,12 +43,12 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
         onClick={() => setOpen(true)}
         className="cursor-pointer text-zinc-600 underline hover:text-zinc-900"
       >
-        How to prompt an agent
+        How to have an agent write it
       </button>
 
       <Dialog
         open={open}
-        title="Ask an agent to write the run"
+        title="Have an agent write the run"
         width="46rem"
         onClose={() => setOpen(false)}
         footer={
@@ -71,12 +64,12 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
                 Close
               </button>
               <button
-                onClick={() => copy(text, "Prompt copied.")}
+                onClick={() => copy(text, "Copied.")}
                 className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700"
               >
                 {/* An icon alone would be mute about what this button really
                     does: it carries off two pages of text, not a link. */}
-                ⧉ Copy the prompt
+                ⧉ Copy the format
               </button>
             </div>
           </div>
@@ -84,30 +77,16 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
       >
         <p className="mb-3">
           Describe your experiment to an agent with this, and it will return a
-          YAML document you can paste back right above. The prompt already
-          carries the format, the rules the tool enforces, and the model
-          identifiers currently available — so what comes back loads without
-          editing.
+          YAML document you can paste back right above. The text already carries
+          the format, every rule the tool enforces, and the model identifiers
+          currently available — so what comes back loads without editing.
         </p>
-        {/* An agent that can read a page does without the copy-paste: this address
-            returns the same text, in the clear and with no sign-in — and the prompt
-            it returns already carries the origin, read on the server side. */}
-        {open && (
-          <div className="mb-3 flex items-center gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
-            <span className="shrink-0 text-zinc-500">Or give it this link:</span>
-            <code className="grow truncate font-mono text-xs">
-              {`${window.location.origin}/format.txt`}
-            </code>
-            <button
-              onClick={() =>
-                copy(`${window.location.origin}/format.txt`, "Link copied.")
-              }
-              className="shrink-0 cursor-pointer rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs hover:bg-zinc-50"
-            >
-              ⧉ Copy link
-            </button>
-          </div>
-        )}
+        <p className="mb-3 text-sm text-zinc-500">
+          This is one of two ways in. An agent holding the MCP connector reads
+          the same document by calling <code>read_format</code>, and can then
+          check, save and launch a run without anything passing through you —
+          see the <strong>MCP</strong> tab.
+        </p>
         <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
           {text}
         </pre>

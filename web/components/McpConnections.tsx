@@ -26,7 +26,7 @@ function history(grant: McpGrant): string {
   return `${born} ${when(grant.created_at)} · ${used}`;
 }
 
-export default function ConnectionsPage() {
+export function McpConnections() {
   // The list comes from the shared cache: "Evaluate" preloaded it, so a click on
   // this tab shows what one already had and checks again behind.
   const { grants, loading, error: loadError } = useConnections();
@@ -62,15 +62,15 @@ export default function ConnectionsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-8">
-      <header className="space-y-1">
-        <h1 className="font-serif text-2xl font-normal">MCP connections</h1>
+    <section className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="eyebrow">Your connections</h2>
         <p className="flex items-center gap-2 text-sm text-zinc-500">
           Connectors that can read this workspace on your behalf. Only yours are
           listed here.
           {loading && grants !== null && <Refreshing />}
         </p>
-      </header>
+      </div>
       {(error ?? loadError) && (
         <p className="text-sm text-red-600">{error ?? loadError}</p>
       )}
@@ -125,6 +125,6 @@ export default function ConnectionsPage() {
           instead of renewing its token.
         </p>
       )}
-    </main>
+    </section>
   );
 }

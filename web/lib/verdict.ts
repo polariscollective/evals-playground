@@ -1,4 +1,4 @@
-// The verdict `/validate` returns on a document, in three outcomes.
+// The verdict on a document, in three outcomes.
 //
 // Separated from the route because it is the part that holds a rule, and the
 // only part the repository knows how to test: `node --test` looks only at

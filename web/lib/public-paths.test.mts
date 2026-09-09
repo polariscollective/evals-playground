@@ -7,9 +7,6 @@ import { isOpen, proxyMatcher } from "./public-paths.ts";
 
 test("the open paths go through the door with no session", () => {
   for (const path of [
-    "/format.txt",
-    "/validate",
-    "/advice.txt",
     "/shared/2f1c9e6a-0000-4000-8000-000000000000",
     // The writing advice, readable with no account. Being static it wins over
     // `/shared/[runId]` — and `isRunId` would refuse "scenarios" anyway.
@@ -43,8 +40,10 @@ test("their prefix neighbours stay closed", () => {
     "/validatex",
     "/sharedx",
     "/prompts-secrets",
-    "/advice.txtx",
     "/advice",
+    "/validate",
+    "/advice.txt",
+    "/format.txt",
     // The private page a human reads stays closed: only the dedicated route,
     // which returns the default, is public.
     "/scenarios",

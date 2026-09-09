@@ -92,17 +92,22 @@ test("an empty catalogue says so rather than leaving a gap", () => {
   assert.match(mcpRunFormat([], CAPS), /ask me for the model identifiers/);
 });
 
-test("the pasted prompt carries the origin it is given", () => {
-  // It arrives at an agent with no host context: relative, it leads nowhere.
-  const prompt = runFormat(MODELS, "https://evals.example");
-  assert.ok(prompt.includes("https://evals.example/validate"));
+test("the pasted document names no address at all", () => {
+  // Two ways into this tool and no third: a person copies a text across, or an
+  // agent holds the connector. This channel is the first, so it points at the
+  // person reading rather than at a URL an agent could fetch.
+  const prompt = runFormat(MODELS);
+  assert.ok(!prompt.includes("http"));
+  assert.ok(!prompt.includes(".txt"));
 });
 
-test("the MCP prompt never sends the agent to /validate", () => {
-  // It holds the tool: showing it the HTTP door means watching it take it.
-  const prompt = mcpRunFormat(MODELS, CAPS);
-  assert.ok(!prompt.includes("/validate"));
-  assert.ok(prompt.includes("submit_draft_run"));
+test("neither channel names a validator any more", () => {
+  // `/validate` is gone. The pasted channel says the document comes back to a
+  // human; the MCP one names `submit_draft_run`, which does strictly more.
+  for (const prompt of [runFormat(MODELS), mcpRunFormat(MODELS, CAPS)]) {
+    assert.ok(!prompt.includes("/validate"));
+  }
+  assert.ok(mcpRunFormat(MODELS, CAPS).includes("submit_draft_run"));
 });
 
 test("the MCP prompt promises nothing gets launched", () => {
@@ -153,12 +158,12 @@ test("the MCP prompt does not guess a cap when the profile could not be read", (
 test("the prompt announces the awareness judge and the writing advice", () => {
   // What the prompt leaves out becomes a field an agent never writes, or advice
   // it does not go and fetch.
-  const prompt = runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
+  const prompt = runFormat(agentModels(DEFAULT_FAVORITE_MODELS));
   assert.match(prompt, /check_eval_awareness/);
   // The MCP channel calls a tool; the HTTP channel opens the dedicated public
   // route — never `/scenarios`, the private page an agent with no session cannot
   // read (see `web/app/advice.txt/route.ts`).
-  assert.match(prompt, /read_advice|\/advice\.txt/);
+  assert.match(prompt, /read_advice|paste the advice/);
 });
 
 test("the prompt announces the two tool forms and the world", () => {
@@ -166,7 +171,7 @@ test("the prompt announces the two tool forms and the world", () => {
   // whose answer ignores the arguments, which the awareness judge will report
   // once the run is paid for.
   for (const prompt of [
-    runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    runFormat(agentModels(DEFAULT_FAVORITE_MODELS)),
     mcpRunFormat(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /retrieval_rules/);
@@ -184,7 +189,7 @@ test("the prompt announces models.world and its equivalence", () => {
   // The field has existed in the template since the previous project, but nothing
   // else said so: an agent that reads only the prose of the rules would not know
   // it becomes mandatory as soon as a tool is served.
-  const prompt = runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test");
+  const prompt = runFormat(agentModels(DEFAULT_FAVORITE_MODELS));
   assert.match(prompt, /models\.world/);
   assert.match(prompt, /required as soon as one tool has/i);
 });
@@ -194,7 +199,7 @@ test("the prompt says the run names the world's server, at its own rate", () => 
   // adversary and judge), and every served call is billed at the named model's
   // rate — never a constant, as `pricing.ts` already does.
   for (const prompt of [
-    runFormat(agentModels(DEFAULT_FAVORITE_MODELS), "https://example.test"),
+    runFormat(agentModels(DEFAULT_FAVORITE_MODELS)),
     mcpRunFormat(agentModels(DEFAULT_FAVORITE_MODELS), null),
   ]) {
     assert.match(prompt, /`models\.world` is what names its server/);

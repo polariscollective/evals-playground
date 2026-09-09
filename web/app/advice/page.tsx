@@ -26,21 +26,14 @@ import { Loading, Refreshing } from "@/components/Loading";
 import { updateAdvice } from "@/lib/api";
 import { putProfile, refreshProfile, useProfile } from "@/lib/profile-store";
 import { renderMarkdown } from "@/lib/markdown";
+import { AdviceTabs } from "@/components/AdviceTabs";
 import {
-  ADVICE_SUMMARY,
-  ADVICE_TOPICS,
+  ADVICE_LABEL,
   DEFAULT_ADVICE,
   adviceFor,
   overridesOf,
   type AdviceTopic,
 } from "@/lib/advice";
-
-const LABEL: Record<AdviceTopic, string> = {
-  scenario: "Writing a scenario",
-  batch: "Putting a batch together",
-  analysis: "Reading the results",
-  judge: "Writing a judge",
-};
 
 export default function AdvicePage() {
   // The profile comes from the shared cache: "Evaluate" preloaded it, and the
@@ -114,37 +107,24 @@ export default function AdvicePage() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-8">
-      <header className="space-y-1">
-        <h1 className="font-serif text-2xl font-normal">Guidelines</h1>
-        <p className="flex items-center gap-2 text-sm text-zinc-500">
-          {ADVICE_SUMMARY[topic]}
-          {loading && loaded && <Refreshing />}
-        </p>
+      <header className="flex items-center gap-2">
+        <h1 className="font-serif text-2xl font-normal">Advice</h1>
+        {loading && loaded && <Refreshing />}
       </header>
 
       {/* Four documents read at four moments. Switching tabs abandons an edit in
           progress rather than dragging it onto another document, where it would
-          save over the wrong text. */}
-      <nav className="flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
-        {ADVICE_TOPICS.map((entry) => (
-          <button
-            key={entry}
-            onClick={() => {
-              setTopic(entry);
-              setEditing(false);
-              setSaveError(null);
-            }}
-            disabled={busy}
-            className={`cursor-pointer rounded px-3 py-1 text-sm disabled:opacity-50 ${
-              entry === topic
-                ? "bg-zinc-900 text-white"
-                : "text-zinc-600 hover:bg-zinc-100"
-            }`}
-          >
-            {LABEL[entry]}
-          </button>
-        ))}
-      </nav>
+          save over the wrong text — nothing else moves, every document being a
+          constant of this bundle. */}
+      <AdviceTabs
+        topic={topic}
+        onSelect={(entry) => {
+          setTopic(entry);
+          setEditing(false);
+          setSaveError(null);
+        }}
+        disabled={busy}
+      />
 
       {loadError && <p className="text-sm text-red-700">{loadError}</p>}
 
@@ -166,7 +146,7 @@ export default function AdvicePage() {
                 // While editing, what one copies must be what one is looking at in
                 // the input — the draft, not the version still saved below.
               value={editing ? draft : shown}
-              title={`Copy: ${LABEL[topic]}`}
+              title={`Copy: ${ADVICE_LABEL[topic]}`}
               className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
             >
               {(copied) => (copied ? "Copied" : "Copy")}

@@ -25,6 +25,10 @@ next-env.d.ts
 /logs/
 /local/*
 /backend/logs/
+# Runs the engine wrote to disk before Supabase existed — nothing reads or
+# writes it any more, and the Cloud Run image never copied it. Left on disk
+# where it stands; ignored so it stops showing up as untracked.
+/data/
 
 # os
 .DS_Store
