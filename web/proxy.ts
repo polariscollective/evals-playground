@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { callbackFor } from "@/lib/signin-callback";
 
 // This file does **not** authenticate. It routes.
 //
@@ -46,7 +47,16 @@ export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.redirect(new URL("/api/auth/signin", request.nextUrl.origin));
+  // The requested path travels along, so a bookmark to /runs/xyz comes back
+  // to /runs/xyz rather than dropping the visitor on the home page — unless
+  // it would only repeat `login`'s own fallback, which is what `callbackFor`
+  // decides. It cannot become an open redirect: `login` hands it to Auth.js,
+  // whose default `redirect` callback answers `baseUrl` for any origin that
+  // is not ours.
+  const signin = new URL("/signin", request.nextUrl.origin);
+  const callback = callbackFor(request.nextUrl.pathname, request.nextUrl.search);
+  if (callback) signin.searchParams.set("callbackUrl", callback);
+  return NextResponse.redirect(signin);
 }
 
 // This literal must stay equal to what `proxyMatcher()` in `lib/public-paths.ts`
@@ -54,6 +64,6 @@ export function proxy(request: NextRequest) {
 // `public-paths.test.mts` holds the two in agreement.
 export const config = {
   matcher: [
-    "/((?!api/auth(?:/|$)|prompt(?:/|$)|validate(?:/|$)|scenario-advice(?:/|$)|shared(?:/|$)|inspect-view(?:/|$)|mcp(?:/|$)|\\.well-known(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$|icon\\.svg$).*)",
+    "/((?!api/auth(?:/|$)|signin(?:/|$)|prompt(?:/|$)|validate(?:/|$)|scenario-advice(?:/|$)|shared(?:/|$)|inspect-view(?:/|$)|mcp(?:/|$)|\\.well-known(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon\\.ico$|icon\\.svg$).*)",
   ],
 };

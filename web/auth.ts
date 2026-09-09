@@ -21,6 +21,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // read.
   trustHost: true,
   providers: [Google],
+  // Both keys, not just the first. `AccessDenied` — what the `signIn`
+  // callback below raises — extends `AuthError` directly rather than
+  // `SignInError`, so its `kind` is "error" and Auth.js routes it to
+  // `pages.error`. Setting only `pages.signIn` would leave the refusal on
+  // Auth.js's own card, which is the one screen someone outside the
+  // collective ever sees.
+  pages: { signIn: "/signin", error: "/signin" },
   callbacks: {
     // The application's only access control: signing in with Google is not
     // enough, one has to be on the list. Refusing here rather than afterwards

@@ -75,7 +75,7 @@ export async function GET(request: Request) {
       // Google only to land on the home page, while claude.ai waited for a code
       // that would never arrive. Same reason as `originOf` in `/prompt`.
     const origin = getPublicOrigin(request);
-    const signin = new URL("/api/auth/signin", origin);
+    const signin = new URL("/signin", origin);
     signin.searchParams.set("callbackUrl", `${origin}${url.pathname}${url.search}`);
     return NextResponse.redirect(signin);
   }

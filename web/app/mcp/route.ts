@@ -262,8 +262,14 @@ const handler = createMcpHandler((server) => {
     {
       title: "Read the run-writing prompt",
       description:
-        "How to write an evals-playground run as YAML: the format, the rules that would refuse a " +
-        "document, the models available, and how to hand the finished one over. Read it before writing a run.",
+        "Start here, before writing anything. The complete manual for writing an evals-playground " +
+        "run as YAML: the format field by field, every rule that would refuse a document, the " +
+        "model catalogue to name models from, what the cost estimate is built on, and how to hand " +
+        "the finished run over. Everything this server expects of a run is in this one document, " +
+        "and nothing else here repeats it — a run written without reading it is written from " +
+        "guesswork, and the refusal comes a round trip later. It also names the second document " +
+        "to read, read_scenario_advice, before the scenarios themselves are written. Starts " +
+        "nothing and spends nothing.",
       inputSchema: z.object({}),
     },
     async (_input, ctx) => {
@@ -1821,7 +1827,24 @@ const handler = createMcpHandler((server) => {
       return { content: [{ type: "text", text: `${field === "notes" ? "Notes" : "Analysis"} saved.` }] };
     },
   );
-}, {});
+}, {
+  // The only channel that reaches an agent before it calls anything: tool
+  // descriptions are fetched one at a time, and only once the agent has
+  // already decided which tool it wants. Everything a caller has to know
+  // *before* choosing goes here — what this server is for, which document to
+  // read first, and which single tool spends money.
+  instructions:
+    "Evals playground: run behavioural evaluations of language models — one scenario played " +
+    "against several models, several times each, graded by judges on a scale you define, and " +
+    "read as a matrix.\n\n" +
+    "Start with `read_prompt`. It is the entire manual for writing a run, and nothing else on " +
+    "this server explains the format: a run written without it is written from guesswork, and " +
+    "this server will refuse it. Before writing the scenarios themselves, also call " +
+    "`read_scenario_advice` — it is what keeps a scenario from reading as a test to the model " +
+    "being evaluated, which is the one failure no validation can catch.\n\n" +
+    "Both start nothing and spend nothing. So does everything else here, with a single " +
+    "exception: `launch_draft` spends real money.",
+});
 
 async function verifyToken(
   _req: Request,

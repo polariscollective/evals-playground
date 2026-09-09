@@ -21,6 +21,10 @@
 export const OPEN_PREFIXES = [
   // Signing in itself, without which nobody can get in.
   "api/auth",
+  // The page that asks. Same status as `api/auth`, and for the same reason:
+  // no one can sign in through a page that requires being signed in. Safe
+  // behind an open door — it reads nothing and writes nothing.
+  "signin",
   // The instructions and the checker: they address an agent, which has no
   // session and would not know how to obtain one.
   "prompt",

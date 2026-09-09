@@ -15,6 +15,9 @@ test("the open paths go through the door with no session", () => {
     // `/shared/[runId]` — and `isRunId` would refuse "scenarios" anyway.
     "/shared/scenarios",
     "/api/auth/signin",
+    // The page that asks. Without this the door would send visitors to a
+    // page the door itself refuses, once per redirect, forever.
+    "/signin",
     "/favicon.ico",
     "/icon.svg",
     "/_next/static/chunks/main.js",
@@ -48,6 +51,7 @@ test("their prefix neighbours stay closed", () => {
     "/icon.svgx",
     "/mcpx",
     "/mcp-secrets",
+    "/signinx",
   ]) {
     assert.equal(isOpen(path), false, path);
   }
