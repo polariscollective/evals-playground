@@ -19,6 +19,7 @@ import type {
   Tag,
 } from "./types";
 import { PLAIN_VIEW, viewToQuery, type MatrixView } from "./view";
+import type { AdviceTopic } from "./advice";
 
 /** Makes an error response's body readable, rather than showing raw JSON. */
 async function readError(response: Response): Promise<string> {
@@ -413,9 +414,17 @@ export const updateProfileCaps = (caps: {
 
 /** Writes the advice override, or `null` to restore the default. */
 export const updateScenarioAdvice = (advice: string | null) =>
+  updateAdvice("scenario", advice);
+
+/** Writes the override of ONE advice document. `null` puts the default back.
+ *
+ * `topic` travels beside the text rather than being four routes: it is the same
+ * gesture on the same profile, and the route applies one setting at a time
+ * anyway — see `profilePatchProblem`. */
+export const updateAdvice = (topic: AdviceTopic, advice: string | null) =>
   request<{ profile: Profile }>("/api/profile", {
     method: "PATCH",
-    body: JSON.stringify({ scenario_advice: advice }),
+    body: JSON.stringify({ advice_topic: topic, scenario_advice: advice }),
   });
 
 /** Writes the favourites of whoever is signed in. Sent alone: the route applies

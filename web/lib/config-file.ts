@@ -17,6 +17,7 @@ import type {
   EvalScenario,
   ExpectedCsv,
   JudgeSpec,
+  JudgeTarget,
   RubricLevel,
   SeededTurn,
   ToolParamType,
@@ -275,8 +276,64 @@ function readJudges(value: unknown): JudgeSpec[] {
       criterion: asString(row.criterion),
       rubric: readRubric(row.rubric, `judge ${position + 1}: rubric`),
       ...(typeof model === "string" ? { model } : {}),
+      ...readTargets(row.targets, `judge ${position + 1}`),
+      ...(typeof row.sees_system_prompt === "boolean"
+        ? { sees_system_prompt: row.sees_system_prompt }
+        : {}),
     };
   });
+}
+
+/** A judge's targets, as the document writes them.
+ *
+ * Returns an object to spread rather than a value: absent must stay ABSENT and
+ * not become `null`, or a configuration read then written back would gain a key
+ * nobody laid down.
+ *
+ * The shape only — the length of the list and each grade's membership of the
+ * scale are `targetsProblem`'s business (`lib/targets.ts`), called by
+ * `configProblem`. Here as everywhere in this file, we give a shape, never a
+ * judgement: two copies of the same rule would end up diverging, and the
+ * validation is what decides. */
+function readTargets(
+  value: unknown,
+  where: string,
+): { targets?: JudgeTarget[] } {
+  if (value === undefined || value === null) return {};
+  if (!Array.isArray(value)) {
+    throw new ConfigFileError(`${where}: targets must be a list.`);
+  }
+  return {
+    targets: value.map((entry, position) => {
+      if (!entry || typeof entry !== "object") {
+        throw new ConfigFileError(
+          `${where}: targets ${position + 1} is not a mapping.`,
+        );
+      }
+      const row = entry as Record<string, unknown>;
+      if (typeof row.expected !== "number") {
+        throw new ConfigFileError(
+          `${where}: targets ${position + 1} needs an \`expected\` grade.`,
+        );
+      }
+      return {
+        expected: row.expected,
+        // `check: false` is never written: it is the default, and a document
+        // laying it on a hundred rows teaches a field where there is nothing to
+        // decide.
+        ...(row.check === true ? { check: true } : {}),
+      };
+    }),
+  };
+}
+
+/** The targets, as they go back into the document. */
+function targetsDocument(targets: JudgeTarget[]): unknown[] {
+  return targets.map((target) =>
+    target.check
+      ? { expected: target.expected, check: true }
+      : { expected: target.expected },
+  );
 }
 
 /** Removes the Markdown fence, when it came with the text.
@@ -319,6 +376,12 @@ export function readConfigFile(text: string): ImportedConfig {
     scenarios,
     criterion: asString(file.criterion),
     rubric: readRubric(file.rubric),
+    // The PRINCIPAL's targets, at the top level like its criterion and its
+    // scale. The secondaries' travel inside `judges`.
+    ...readTargets(file.targets, "the principal judge"),
+    ...(typeof file.sees_system_prompt === "boolean"
+      ? { sees_system_prompt: file.sees_system_prompt }
+      : {}),
       // The secondary judges, on top of the principal above — see `readJudges`.
       // Absent or empty, this is the old shape: a single judge.
     judges: readJudges(file.judges),
@@ -418,6 +481,8 @@ export function writeConfigFile(config: EvalRunConfig): string {
       // default, and a file that writes it everywhere teaches a field where it
       // serves no purpose.
     rubric: rubricDocument(config.rubric),
+    ...(config.targets ? { targets: targetsDocument(config.targets) } : {}),
+    ...(config.sees_system_prompt === false ? { sees_system_prompt: false } : {}),
       // A block of its own, conditioned on itself alone — never shared with
       // another field's. It is exactly that trap (a key laid inside another's
       // conditional block) which has already lost `max_tool_calls_per_turn` in
@@ -429,6 +494,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
             criterion: judge.criterion,
             rubric: rubricDocument(judge.rubric),
             ...(judge.model ? { model: judge.model } : {}),
+            ...(judge.targets ? { targets: targetsDocument(judge.targets) } : {}),
+            // Written only when it differs from the default: a key laid
+            // everywhere would teach a setting where there is nothing to decide.
+            ...(judge.sees_system_prompt === false
+              ? { sees_system_prompt: false }
+              : {}),
           })),
         }
       : {}),

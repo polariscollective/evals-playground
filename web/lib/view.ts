@@ -35,12 +35,42 @@ export interface MatrixView {
   aggregate: Aggregate;
   /** Original grade → replacement grade, or `null` to put it outside. */
   remap: Record<number, number | null>;
+  /** Read every cell as a distance from what a good model should have scored,
+   *  rather than as a grade — see `deviation` in `targets.ts`.
+   *
+   * **Exclusive with `remap`**, and `withRelative`/`withRemap` below are the
+   * only two places that set either, so the exclusion does not have to be
+   * remembered by every caller. A folded scale no longer matches the one the
+   * targets were written against: the distance would be measured from a target
+   * that has moved. */
+  relative?: boolean;
 }
 
 export const PLAIN_VIEW: MatrixView = { aggregate: "mean", remap: {} };
 
 export function isPlainView(view: MatrixView): boolean {
-  return view.aggregate === "mean" && Object.keys(view.remap).length === 0;
+  return (
+    view.aggregate === "mean" &&
+    Object.keys(view.remap).length === 0 &&
+    !view.relative
+  );
+}
+
+/** Switches the deviation reading on or off, dropping the remap if there was
+ *  one. The two cannot coexist — see `MatrixView.relative`. */
+export function withRelative(view: MatrixView, relative: boolean): MatrixView {
+  return relative
+    ? { aggregate: view.aggregate, remap: {}, relative: true }
+    : { aggregate: view.aggregate, remap: {} };
+}
+
+/** Sets a remap, turning the deviation reading off if it was on. Symmetric
+ *  with `withRelative`. */
+export function withRemap(
+  view: MatrixView,
+  remap: Record<number, number | null>,
+): MatrixView {
+  return { aggregate: view.aggregate, remap };
 }
 
 /** What a grade becomes, or `null` if it leaves the computation.
@@ -82,6 +112,10 @@ export function viewBounds(
   rubric: RubricLevel[] | undefined,
   view: MatrixView,
 ): { min: number; max: number } {
+  // The deviation reading has bounds of its own, the same for every row
+  // whatever their scales — that is the whole point of the normalisation. See
+  // `deviation`, `targets.ts`.
+  if (view.relative) return { min: -1, max: 1 };
   const values = (rubric ?? [])
     .map((level) => mapScore(level.value, rubric, view))
     .filter((value): value is number => value !== null);
@@ -100,6 +134,13 @@ export function describeView(
   const how =
     AGGREGATES.find((entry) => entry.id === view.aggregate)?.sentence ??
     "the mean of its grades";
+  if (view.relative) {
+    // Never combined with a remap: `withRelative` forbids it. The sentence
+    // therefore does not have to describe both.
+    const measure = how.replace("its grades", "how far its grades landed from " +
+      "what a well-behaved model should have scored");
+    return measure;
+  }
   const changed = (rubric ?? [])
     .filter((level) => level.value in view.remap)
     .map((level) => {
@@ -118,6 +159,7 @@ export function describeView(
 export function viewToQuery(view: MatrixView): string {
   const params = new URLSearchParams();
   if (view.aggregate !== "mean") params.set("agg", view.aggregate);
+  if (view.relative) params.set("rel", "1");
   const pairs = Object.entries(view.remap).map(
     ([from, to]) => `${from}:${to === null ? "x" : to}`,
   );
@@ -131,6 +173,10 @@ export function viewFromQuery(params: URLSearchParams): MatrixView {
   const aggregate = AGGREGATES.some((entry) => entry.id === asked)
     ? (asked as Aggregate)
     : "mean";
+
+  // The deviation wins if both are there: an address hand-tinkered with must
+  // not produce a view `withRelative` would never have let exist.
+  if (params.get("rel") === "1") return { aggregate, remap: {}, relative: true };
 
   const remap: Record<number, number | null> = {};
   for (const pair of (params.get("remap") ?? "").split(",")) {

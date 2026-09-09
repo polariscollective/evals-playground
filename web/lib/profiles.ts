@@ -8,7 +8,7 @@
 // that has never opened the screen must not discover the profile's absence at
 // the moment it tries to spend.
 import "server-only";
-import { DEFAULT_SCENARIO_ADVICE } from "./scenario-advice";
+import { DEFAULT_ADVICE, type AdviceTopic } from "./advice";
 import { PROFILES, SupabaseError, insert, select, update } from "./supabase";
 import type { Profile } from "./types";
 
@@ -90,9 +90,44 @@ export async function updateScenarioAdvice(
   email: string,
   advice: string | null,
 ): Promise<Profile> {
+  return updateAdvice(email, "scenario", advice);
+}
+
+/** Writes the override of ONE advice document, from the page that edits them.
+ *
+ * Writing exactly the default is worth putting it back to `null`: the intended
+ * gesture is "I have nothing of my own here", and copying the default into the
+ * row would deprive this person of every later improvement without their having
+ * asked. A blank string does the same, and that is the "put the default back"
+ * gesture on screen.
+ *
+ * The `scenario` topic writes BOTH columns: the new one, and the older
+ * `scenario_advice`, so that a deployment rolled back does not lose the text.
+ * That is the only reason to keep the old one up to date; `overridesOf`
+ * (`advice.ts`) always reads it second. */
+export async function updateAdvice(
+  email: string,
+  topic: AdviceTopic,
+  advice: string | null,
+): Promise<Profile> {
+  const profile = await ensureProfile(email);
   const trimmed = advice?.trim() ?? "";
-  const value = trimmed !== "" && trimmed !== DEFAULT_SCENARIO_ADVICE.trim() ? advice : null;
-  await update(PROFILES, { scenario_advice: value }, { user_email: `eq.${email}` });
+  const own =
+    trimmed !== "" && trimmed !== DEFAULT_ADVICE[topic].trim() ? advice : null;
+
+  const overrides: Record<string, string> = { ...(profile.advice_overrides ?? {}) };
+  if (own === null) delete overrides[topic];
+  else overrides[topic] = own;
+
+  const patch: Record<string, unknown> = {
+    // An empty object rather than `null` would be an override that overrides
+    // nothing: `overridesOf` would read it the same, but `null` says what we
+    // mean.
+    advice_overrides: Object.keys(overrides).length > 0 ? overrides : null,
+  };
+  if (topic === "scenario") patch.scenario_advice = own;
+
+  await update(PROFILES, patch, { user_email: `eq.${email}` });
   return ensureProfile(email);
 }
 

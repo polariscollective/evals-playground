@@ -171,8 +171,8 @@ test("the principal done with no grade (empty or off the scale) counts ungraded"
 test("a grade from the principal feeds the cell's mean", () => {
   const cells = cellsOf(
     [
-      sample({ principal: verdict(0) }),
-      sample({ principal: verdict(2) }),
+      sample({ scenario_index: 0, principal: verdict(0) }),
+      sample({ scenario_index: 0, principal: verdict(2) }),
     ],
     1,
     [
@@ -205,10 +205,10 @@ test("progressOf looks only at the execution status", () => {
 
 test("overallMean ignores why the principal did not grade", () => {
   const mean = overallMean([
-    { principal: verdict(0) },
-    { principal: verdict(2) },
-    { principal: verdict(null, "pending") },
-    { principal: verdict(null, "error") },
+    { scenario_index: 0, principal: verdict(0) },
+    { scenario_index: 0, principal: verdict(2) },
+    { scenario_index: 0, principal: verdict(null, "pending") },
+    { scenario_index: 0, principal: verdict(null, "error") },
   ]);
   assert.equal(mean, 1);
 });

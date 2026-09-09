@@ -408,7 +408,7 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
         # The only place in the repository that filters on deleted_at for this
         # table.
         deleted_at="is.null",
-        select="id,run_id,judge_id,system_type,is_principal,created_at",
+        select="id,run_id,judge_id,system_type,is_principal,targets,created_at",
         order="created_at",
     )
     if not links:
@@ -418,7 +418,7 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
     judges = supabase.select(
         JUDGES,
         id="in.(" + ",".join(judge_ids) + ")",
-        select="id,criterion,rubric,model,system_type,created_by,created_at",
+        select="id,criterion,rubric,model,system_type,sees_system_prompt,created_by,created_at",
     )
     by_id = {judge["id"]: judge for judge in judges}
 

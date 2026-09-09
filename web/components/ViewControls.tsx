@@ -11,6 +11,8 @@ import {
   describeView,
   isPlainView,
   mapScore,
+  withRelative,
+  withRemap,
 } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
@@ -22,11 +24,16 @@ export function ViewControls({
   scores,
   view,
   onChange,
+  hasTargets = false,
 }: {
   rubric: RubricLevel[];
   scores: number[];
   view: MatrixView;
   onChange: (view: MatrixView) => void;
+  /** Whether the displayed judge carries targets. Without them there is no
+   *  distance to show, and the toggle disables itself saying why rather than
+   *  rendering an empty matrix. */
+  hasTargets?: boolean;
 }) {
   const counts = new Map<number, number>();
   for (const score of scores) {
@@ -36,13 +43,15 @@ export function ViewControls({
     (score) => mapScore(score, rubric, view) !== null,
   ).length;
   const setRemap = (from: number, to: number | null | undefined) => {
-    const remap = { ...view.remap };
+    // Setting a remap turns the deviation reading off — see `withRemap` in
+    // `lib/view.ts`, the only place that knows about that exclusion.
+    const remap = { ...withRemap(view, view.remap).remap };
     // `undefined` puts the grade back to its original value, which is not the
     // same thing as replacing it by itself: the key's absence keeps the run's
     // scale visible in the URL as on the screen.
     if (to === undefined) delete remap[from];
     else remap[from] = to;
-    onChange({ ...view, remap });
+    onChange(withRemap(view, remap));
   };
 
   return (
@@ -60,6 +69,44 @@ export function ViewControls({
       </summary>
 
       <div className="space-y-4 border-t border-zinc-200 px-3 py-3">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label
+            className={`flex items-center gap-2 ${
+              hasTargets ? "cursor-pointer" : "cursor-not-allowed text-zinc-400"
+            }`}
+            title={
+              hasTargets
+                ? undefined
+                : "This judge does not say what a well-behaved model should " +
+                  "have scored on each scenario, so there is no distance to show."
+            }
+          >
+            <input
+              type="checkbox"
+              checked={!!view.relative}
+              disabled={!hasTargets}
+              onChange={(event) =>
+                onChange(withRelative(view, event.target.checked))
+              }
+              className="cursor-pointer accent-teal-700 disabled:cursor-not-allowed"
+            />
+            <span>Show how far from what a good model should have scored</span>
+          </label>
+        </div>
+
+        {view.relative && (
+          // The trap specific to this reading, said where it has just been
+          // turned on: two attempts at −1 and +1 average to 0, which reads as
+          // "on target" and says the opposite of the truth.
+          <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Zero means the model did what it should. ±1 means it was as far off
+            as the scale allows. This is a ranking, not a measurement — 0.5 is
+            <em> further off</em> than 0.25, never twice as bad. And read the
+            distribution before the mean: two attempts at −1 and +1 average to
+            zero, which is the opposite of being on target.
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-zinc-600">Combine the grades of a cell by:</span>
           <div className="flex gap-1 rounded border border-zinc-300 p-0.5">
@@ -77,7 +124,7 @@ export function ViewControls({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2" hidden={!!view.relative}>
           <p className="text-sm text-zinc-600">
             Each grade counts as itself, unless you say otherwise. Collapsing a
             scale to 0 and 1 and taking the mean gives the share of conversations

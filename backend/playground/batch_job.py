@@ -127,6 +127,14 @@ def judge_metadata(link: dict[str, Any]) -> dict[str, Any]:
         "system_type": judge.get("system_type"),
         "criterion": judge.get("criterion"),
         "rubric": judge.get("rubric"),
+        # Decides whether the transcript handed to THIS judge carries the
+        # scenario's system prompt. Absent means true — the behaviour from
+        # before this field.
+        #
+        # `targets` does not cross: it is a lab annotation, like a scenario's
+        # note, and it has no business near a judge. Giving it to the judge
+        # would be giving it the answer.
+        "sees_system_prompt": judge.get("sees_system_prompt", True) is not False,
     }
 
 

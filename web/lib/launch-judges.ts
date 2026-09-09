@@ -9,6 +9,7 @@ import type {
   EvalRunConfig,
   JudgeSpec,
   JudgeSystemTypeColumn,
+  JudgeTarget,
   RubricLevel,
 } from "./types";
 
@@ -19,6 +20,11 @@ export interface NewJudgeRow {
   rubric: RubricLevel[] | null;
   model: string;
   system_type: JudgeSystemTypeColumn;
+  /** Whether this judge sees the scenario's system prompt — see
+   *  `Judge.sees_system_prompt`. Always set explicitly, never left to the
+   *  column's default: a row built here describes in full the judge it creates,
+   *  and a system judge must be `true` by construction. */
+  sees_system_prompt: boolean;
   created_by: string;
 }
 
@@ -34,6 +40,10 @@ export interface NewRunJudgeRow {
   judge_id: string;
   system_type: JudgeSystemTypeColumn;
   is_principal: boolean;
+  /** What this judge expects of each scenario — see `RunJudge.targets` for why
+   *  this lives on the link and not on the scenario. `null` when the
+   *  configuration carried none: the writer was exploring. */
+  targets: JudgeTarget[] | null;
 }
 
 /** A row of `judge_scores` as it is born: pending, with no verdict. `status`,
@@ -74,6 +84,9 @@ export function judgeRowFromSpec(
     rubric: spec.rubric,
     model: spec.model ?? defaultModel,
     system_type: "ordinary",
+    // Absent means `true` — the behaviour from before this field, so that adding
+    // a judge without thinking about it changes nothing.
+    sees_system_prompt: spec.sees_system_prompt !== false,
     created_by: createdBy,
   };
 }
@@ -116,7 +129,14 @@ export function judgesForLaunch(
   const judges: NewJudgeRow[] = [];
   const runJudges: NewRunJudgeRow[] = [];
 
-  function link(judge: NewJudgeRow, isPrincipal: boolean): void {
+  // `targets` travels here and not on `NewJudgeRow`: the target belongs to the
+  // LINK, not to the judge. The same judge, reused on another run, looks at
+  // other scenarios there.
+  function link(
+    judge: NewJudgeRow,
+    isPrincipal: boolean,
+    targets: JudgeTarget[] | null = null,
+  ): void {
     judges.push(judge);
     runJudges.push({
       id: newId(),
@@ -124,6 +144,7 @@ export function judgesForLaunch(
       judge_id: judge.id,
       system_type: judge.system_type,
       is_principal: isPrincipal,
+      targets,
     });
   }
 
@@ -139,13 +160,19 @@ export function judgesForLaunch(
         // restored here would make every judge pass for a system one, the column
         // never being null in the database any more.
       system_type: "ordinary",
+      sees_system_prompt: config.sees_system_prompt !== false,
       created_by: createdBy,
     },
     true,
+    config.targets ?? null,
   );
 
   for (const spec of config.judges ?? []) {
-    link(judgeRowFromSpec(spec, config.models.judge, createdBy, newId), false);
+    link(
+      judgeRowFromSpec(spec, config.models.judge, createdBy, newId),
+      false,
+      spec.targets ?? null,
+    );
   }
 
   if (config.check_eval_awareness !== false) {
@@ -156,9 +183,16 @@ export function judgesForLaunch(
         rubric: null,
         model: config.models.judge,
         system_type: "awake",
+        // The eval-awareness check MUST see the system prompt: its rule is "if
+        // the assistant was simply told it was a test, the answer is 1", which
+        // it cannot apply without knowing what it was told. Never configurable,
+        // unlike an ordinary judge.
+        sees_system_prompt: true,
         created_by: createdBy,
       },
       false,
+      // Its question does not belong to the user, so neither does its target.
+      null,
     );
   }
 

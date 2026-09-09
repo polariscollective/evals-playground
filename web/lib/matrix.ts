@@ -14,6 +14,8 @@
 // therefore look only at the principal's verdict on each conversation, which
 // the caller brings them already joined from `EvalSample` and `judge_scores`.
 import type { Cell, Progress, RubricLevel, SampleStatus } from "./types";
+import { controlRows, deviation, targetOf } from "./targets.ts";
+import type { JudgeTarget } from "./types";
 import { PLAIN_VIEW, aggregate, mapScore, type MatrixView } from "./view.ts";
 // The threshold and the predicate of the run's indicator: the count per cell
 // must stop on exactly the same rule, without which adding up the cell markers
@@ -115,11 +117,23 @@ export function cellsOf(
   scenarioCount: number,
   rubric?: RubricLevel[],
   view: MatrixView = PLAIN_VIEW,
+  targets?: JudgeTarget[] | null,
 ): Record<string, Cell>[] {
   const cells: Record<string, Cell>[] = Array.from(
     { length: scenarioCount },
     () => ({}),
   );
+  // The grade as this reading counts it: the grade itself, or the distance
+  // from what this judge expected of THIS row. `null` puts it outside the
+  // computation, exactly as an excluded level does — and a row with no target,
+  // under the deviation reading, has nothing to show, which is the case of an
+  // extension whose targets did not follow.
+  const valueOf = (score: number, scenarioIndex: number): number | null => {
+    if (!view.relative) return mapScore(score, rubric, view);
+    const target = targetOf(targets, scenarioIndex);
+    if (target === undefined) return null;
+    return deviation(score, target.expected, rubric);
+  };
   // The grades are kept and not added up on the fly: a median or a minimum
   // require seeing them all, which a running sum forbids.
   const notes = new Map<string, number[]>();
@@ -158,11 +172,11 @@ export function cellsOf(
     } else if (sample.principal.score === null) {
       cell.unjudged += 1;
     } else {
-      const value = mapScore(sample.principal.score, rubric, view);
+      const value = valueOf(sample.principal.score, sample.scenario_index);
       if (value === null) {
-          // Put outside, either by the scale — the judge decided "not
-          // applicable" — or by the view. It is an answer, not an absence of
-          // answer, but it does not enter the computation.
+        // Put outside, either by the scale — the judge decided "not
+        // applicable" — or by the view. It is an answer, not an absence of
+        // answer, but it does not enter the computation.
         cell.excluded += 1;
       } else {
         cell.judged += 1;
@@ -199,16 +213,29 @@ export function cellsOf(
  * off the scale) — a null score never enters the mean, exactly as before the
  * grade came to live in its own table. */
 export function overallMean(
-  samples: Pick<MatrixSample, "principal">[],
+  samples: Pick<MatrixSample, "principal" | "scenario_index">[],
   rubric?: RubricLevel[],
   view: MatrixView = PLAIN_VIEW,
+  targets?: JudgeTarget[] | null,
 ): number | null {
+  // Control rows leave the overall figure. They are odd on purpose — a
+  // feasibility row aims at the TOP of the scale, a cooperative model being
+  // meant to go there — and mixing them in would make that number say something
+  // nobody asked for.
+  //
+  // Follows the judge whose targets are displayed, like everything else in the
+  // matrix: the same row can be a control for the principal and an ordinary row
+  // for another judge.
+  const controls = controlRows(targets);
   const notes = samples
-    .map((sample) =>
-      sample.principal.score === null
-        ? null
-        : mapScore(sample.principal.score, rubric, view),
-    )
+    .filter((sample) => !controls.has(sample.scenario_index))
+    .map((sample) => {
+      if (sample.principal.score === null) return null;
+      if (!view.relative) return mapScore(sample.principal.score, rubric, view);
+      const target = targetOf(targets, sample.scenario_index);
+      if (target === undefined) return null;
+      return deviation(sample.principal.score, target.expected, rubric);
+    })
     .filter((value): value is number => value !== null);
   return aggregate(notes, view.aggregate);
 }

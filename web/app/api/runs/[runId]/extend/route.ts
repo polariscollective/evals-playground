@@ -1,3 +1,4 @@
+import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import {
@@ -59,7 +60,8 @@ export async function POST(
 
   let detail;
   try {
-    detail = await loadRun(runId);
+    // `withJudges`: the targets rule looks at the live judges.
+    detail = await loadRun(runId, { withJudges: true });
   } catch (error) {
     if (error instanceof NotFound) {
       return NextResponse.json({ error: error.message }, { status: 404 });
@@ -77,6 +79,16 @@ export async function POST(
     detail.run.config.models.world ?? null,
   );
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
+
+  // Beside `extendProblem`, never in its place: this rule needs the run's LIVE
+  // judges, which live in `run_judges` and not in `config`.
+  const targetsProblem = extendTargetsProblem(
+    body ?? {},
+    judgesForTargets(detail.judges),
+  );
+  if (targetsProblem) {
+    return NextResponse.json({ error: targetsProblem }, { status: 422 });
+  }
 
   if (detail.run.status === "triggered" || detail.run.status === "running") {
       // Adding cells while the job is running would make it miss them: it read

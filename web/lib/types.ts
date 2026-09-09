@@ -157,6 +157,25 @@ export interface EvalModels {
  * excluding the `'ordinary'` sentinel. */
 export type JudgeSystemType = "awake";
 
+/** What a judge expects of one scenario: the grade a model behaving the way we
+ *  want should get, and whether this row is a control.
+ *
+ * Defined here rather than in `lib/targets.ts`, which uses it: this file is
+ * where the types live, and the other way round would make the imports circle.
+ *
+ * An absent `check` is false. Most rows are not controls, and writing
+ * `check: false` a hundred times would be noise.
+ *
+ * A CONTROL says: this row has to land near its target, or nothing else on the
+ * matrix can be read. It adds a reading order and an exclusion from any figure
+ * computed across rows — and it never replaces the distance itself. A base-rate
+ * row that drifts teaches two things at once, that the decor pushes on its own
+ * and that the model drifts unprompted; a pass/fail would erase half of it. */
+export interface JudgeTarget {
+  expected: number;
+  check?: boolean;
+}
+
 /** The value really stored in the `system_type` column of `judges` and
  *  `run_judges`, sentinel included: `"ordinary"` for an ordinary judge, or one
  *  of the real system types of `JudgeSystemType`.
@@ -204,6 +223,29 @@ export interface Judge {
    *  and its breakdown never costs the principal judge its grade — those three
    *  properties live in the code that builds this judge, not here. */
   system_type: JudgeSystemTypeColumn;
+  /** Whether this judge is shown the scenario's system prompt, at the top of
+   *  the transcript.
+   *
+   * `true` is the column's default and the behaviour from before this field:
+   * no run already stored changes its grades. A default of `false` would
+   * silently produce nonsense for every criterion that refers to the model's
+   * instructions — the judge would grade against something it cannot see, with
+   * no error to report it.
+   *
+   * Turn it off as soon as the system prompt states the thing being graded,
+   * which is the common case: the judge is then handed the answer before
+   * reading a single turn. And it is worst on the batch shape the guides
+   * recommend — when the axis is "the rule is in the prompt" against "the rule
+   * is removed", the judge sees a different amount of guidance per row, so its
+   * severity varies ALONG THE AXIS BEING MEASURED.
+   *
+   * On `judges` and not on `RunJudge`: it is a property of the question being
+   * asked. A judge asking "did it follow its instructions" needs the prompt on
+   * every run it will ever be linked to.
+   *
+   * Always `true` for a system judge: the eval-awareness check must see the
+   * prompt to rule out the model having simply been told it was a test. */
+  sees_system_prompt: boolean;
   /** Who created this judge — the session's address, never what the client
    *  claims. */
   created_by: string;
@@ -268,6 +310,25 @@ export interface RunJudge {
    *  `deleted_at is null`, once only, in `loadLiveRunJudges` (`lib/runs.ts`) —
    *  that carries the whole weight of no longer showing them. */
   deleted_at: string | null;
+  /** What a well-behaved model should have scored on each scenario, in
+   *  `scenario_index` order.
+   *
+   * Here, on the LINK, and not on the scenario, for two reasons: `Judge` is
+   * reused across runs whose scenarios differ — "row 3 expects a 0" would mean
+   * nothing there; and the same row carries a different target depending on
+   * which judge looks at it. A cooperative model asked outright to clear a
+   * drive should land at the top of the deletion scale AND at the top of the
+   * honesty one.
+   *
+   * `null` means the writer was exploring and did not know what a good result
+   * looks like. That is a real answer, and it says this matrix is not meant to
+   * be quoted. Never partial: `configProblem` refuses a list that does not
+   * cover every scenario — six months later a hole cannot be told from an
+   * oversight.
+   *
+   * See `lib/targets.ts` for the distance to the target, and for the three
+   * ideas the word "expected" was covering. */
+  targets: JudgeTarget[] | null;
   created_at: string;
 }
 
@@ -348,6 +409,13 @@ export interface RunJudgeView {
    *  living judge only on demand, for the same weight reason as the transcripts.
    *  A conversation absent from here reads as pending, never as "no judge". */
   scores: Record<string, JudgeVerdictEntry>;
+  /** What this judge expected of each scenario — see `RunJudge.targets`.
+   *
+   * On the view and not on `judge`: the target belongs to the link, as it does
+   * in the database. It is what lets the matrix read a cell as a distance, and
+   * know which rows are controls. `null`: this judge declares none, and the
+   * deviation reading then has nothing to show for it. */
+  targets: JudgeTarget[] | null;
 }
 
 /** A run's secondary judge, on top of the principal — an entry of
@@ -370,6 +438,13 @@ export interface JudgeSpec {
    *  Absent takes that one: laying down one more judge should not force one to
    *  repeat the same model when it really is that one. */
   model?: string | null;
+  /** What this judge expects of each scenario — see `RunJudge.targets`, where
+   *  these entries end up at launch. All or nothing: absent, or one entry per
+   *  scenario. */
+  targets?: JudgeTarget[] | null;
+  /** Whether this judge sees the scenario's system prompt — see
+   *  `Judge.sees_system_prompt`. Absent means `true`, today's behaviour. */
+  sees_system_prompt?: boolean;
 }
 
 export interface TemperatureSpec {
@@ -402,6 +477,16 @@ export interface EvalRunConfig {
   criterion: string;
   /** The scale the judge grades on. At least two levels. */
   rubric: RubricLevel[];
+  /** What the PRINCIPAL judge expects of each scenario — see
+   *  `RunJudge.targets`, where these entries end up at launch.
+   *
+   * At the top level like `criterion` and `rubric`, and for the same reason:
+   * the principal describes itself here, the secondaries in `judges`. All or
+   * nothing — absent, or one entry per scenario. */
+  targets?: JudgeTarget[] | null;
+  /** Whether the PRINCIPAL judge sees the scenario's system prompt — see
+   *  `Judge.sees_system_prompt`. Absent means `true`. */
+  sees_system_prompt?: boolean;
   /** The run's secondary judges, on top of the principal described by
    *  `criterion`, `rubric` and `models.judge` above.
    *
@@ -495,6 +580,17 @@ export interface ExtendRequest {
   scenario_indices: number[];
   /** Fresh scenarios, added after the run's own. */
   new_scenarios: EvalScenario[];
+  /** What each judge expects of the scenarios this extension adds, keyed by
+   *  `run_judge_id`.
+   *
+   * Required exactly of the judges that already declare targets, and refused
+   * of the others — see `extendTargetsProblem` (`lib/targets.ts`) for the rule
+   * and for why it lives beside `extendProblem` rather than inside it.
+   *
+   * Carries ONLY the new rows, never the whole list: resending the full list
+   * would allow rewriting what was expected of rows already played, and a
+   * target rewritten after seeing the result is worth nothing. */
+  new_targets?: Record<string, JudgeTarget[]>;
   /** Models to cover — already evaluated or not, the distinction is made here. */
   targets: string[];
   /** How many repetitions to add to each pair kept. */
@@ -707,6 +803,20 @@ export interface Profile {
    * carrying the version of the day they signed up. Returning to the default
    * means setting `null` back. */
   scenario_advice: string | null;
+  /** The four advice documents, as this person has rewritten them, keyed by
+   *  topic — see `AdviceOverrides` in `advice.ts`.
+   *
+   * `null`, a missing topic, or a blank string all mean "use the code's
+   * default". The default is never copied here, for the same reason as
+   * `scenario_advice` and `favorite_models`: improving it would stop reaching
+   * anyone.
+   *
+   * One JSON column rather than four text ones, so a fifth document costs no
+   * migration. `scenario_advice` above stays the override for the `scenario`
+   * topic as long as this one carries none — nobody should lose a text written
+   * before the advice was split in four. `overridesOf` (`advice.ts`) holds that
+   * rule. */
+  advice_overrides: Record<string, string> | null;
   /** The models this person wants offered.
    *
    * `null` — the common case — means "use the code's default", through

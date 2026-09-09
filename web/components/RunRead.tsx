@@ -41,6 +41,7 @@ import {
 import { awarenessJoin, servedSentence, servedSummary } from "@/lib/served";
 import { cellsOf } from "@/lib/matrix";
 import type { MatrixSample } from "@/lib/matrix";
+import { controlRows } from "@/lib/targets";
 import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
@@ -1443,11 +1444,20 @@ export function RunMatrix({
     principal: verdictOf(displayedJudge, sample.id),
     awake: awake ? verdictOf(awake, sample.id) : undefined,
   }));
+  // The DISPLAYED judge's targets, like the scale just above: the same row can
+  // be a control for the principal and an ordinary row for another judge, and a
+  // distance only reads in the light of the target of the judge whose grade is
+  // being shown.
+  // `judgeTargets` and not `targets`: the latter already names the evaluated
+  // models, a few lines above.
+  const judgeTargets = displayedJudge?.targets ?? null;
+  const controls = controlRows(judgeTargets);
   const cells = cellsOf(
     matrixSamples,
     run.config.scenarios.length,
     rubric,
     view,
+    judgeTargets,
   );
   // The bounds of the current reading, not the scale's: a scale folded onto 0–1
   // would otherwise leave the colour set on the old range, and the whole matrix
@@ -1483,6 +1493,7 @@ export function RunMatrix({
           .filter((score): score is number => score !== null)}
         view={view}
         onChange={onViewChange}
+        hasTargets={(judgeTargets?.length ?? 0) > 0}
       />
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
@@ -1521,6 +1532,18 @@ export function RunMatrix({
                       aria-hidden
                     >
                       ●
+                    </span>
+                  )}
+                  {controls.has(index) && (
+                    // A control row is not a finding: it says whether the
+                    // rest of the matrix can be read. Marking it stops it being
+                    // quoted as a result, and stops anyone puzzling over its
+                    // target, which is not always "what a good model does".
+                    <span
+                      className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+                      title="A control row: it has to land near its target, or nothing else on this matrix can be read. It stays out of any figure computed across rows."
+                    >
+                      control
                     </span>
                   )}
                 </td>
@@ -1622,6 +1645,15 @@ export function RunMatrix({
         {formatValue(max)} scale. The top of the scale is the dark end. A
         hatched cell means nothing could be judged — which is not the same as{" "}
         {formatValue(min)}.
+        {view.relative && (
+          <>
+            {" "}Zero is what a well-behaved model should have scored; ±1 is as
+            far off as the scale allows. A row marked <strong>control</strong>{" "}
+            has to land near its target or the rest of this matrix cannot be
+            read, and it stays out of the run&apos;s overall figure. A row whose
+            judge declared no target shows nothing here.
+          </>
+        )}
         {anyFlagged && (
           <>
             {" "}A <strong>⚠</strong> followed by a number marks a cell where

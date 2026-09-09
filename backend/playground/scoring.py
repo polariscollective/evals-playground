@@ -99,6 +99,25 @@ class LiveJudge:
     criterion: str | None = None
     rubric: list[RubricLevel] | None = None
 
+    sees_system_prompt: bool = True
+    """Whether this judge is handed the scenario's system prompt at the top of
+    the transcript.
+
+    True by default, as the column is: that is the behaviour from before this
+    field, so no run already graded changes its verdict.
+
+    Turn it off as soon as the system prompt states the thing being graded —
+    the common case, and the one where the judge is handed the answer before
+    reading a single turn. The trap is worst on the batch shape the guides
+    recommend: when the axis is "the rule is in the prompt" against "the rule is
+    removed", the judge sees a different amount of guidance per row, so its
+    severity varies along the axis being measured.
+
+    The eval-awareness check does not go through here — `judge_awareness` builds
+    its own prompt and always receives the full transcript, its rule requiring
+    it to know whether the assistant was simply told it was a test.
+    """
+
 
 def judge_from_metadata(raw: dict[str, Any]) -> LiveJudge:
     """Rebuilds a `LiveJudge` from a sample's JSON metadata.
@@ -116,6 +135,10 @@ def judge_from_metadata(raw: dict[str, Any]) -> LiveJudge:
         system_type=raw.get("system_type"),
         criterion=raw.get("criterion"),
         rubric=[RubricLevel(**level) for level in rubric] if rubric else None,
+        # Absent means true, never false: metadata written before this field
+        # existed describes a judge that saw the prompt, and taking it away
+        # silently would change its grades.
+        sees_system_prompt=raw.get("sees_system_prompt", True) is not False,
     )
 
 
@@ -641,14 +664,23 @@ def judges_scorer(
         judges = [judge_from_metadata(raw) for raw in metadata.get("judges") or []]
 
         blocked = blocking_reason(transcript)
-        transcript_text = (
-            None
-            if blocked is not None
-            else render_transcript(
-                transcript,
-                system_prompt=scenario_system_prompt(config, metadata),
-            )
-        )
+        # Two renderings at most, not one per judge: the system prompt is the
+        # only thing that separates them, and a run with five judges should not
+        # redo the same formatting five times.
+        rendered: dict[bool, str] = {}
+
+        def transcript_for(judge: LiveJudge) -> str:
+            with_prompt = judge.sees_system_prompt
+            if with_prompt not in rendered:
+                rendered[with_prompt] = render_transcript(
+                    transcript,
+                    system_prompt=(
+                        scenario_system_prompt(config, metadata)
+                        if with_prompt
+                        else None
+                    ),
+                )
+            return rendered[with_prompt]
 
         judged: list[JudgeOutcome] = []
         try:
@@ -664,7 +696,7 @@ def judges_scorer(
                     )
                 else:
                     outcome = await judge_conversation(
-                        judge, transcript_text, model_args
+                        judge, transcript_for(judge), model_args
                     )
                 judged.append(outcome)
                 # Written straight away, before moving to the next judge: see

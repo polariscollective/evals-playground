@@ -29,6 +29,7 @@ import {
 } from "./supabase";
 import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
+import { extendedTargets } from "./targets";
 import { resolvedWorld } from "./tools";
 import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
@@ -515,6 +516,10 @@ async function attachJudges(
   }
 
   return live.map((link) => ({
+    // The column arrives already: the link is read with `select: "*"`. `null`
+    // for a run launched before it existed, as for a run where nobody declared
+    // a target.
+    targets: link.targets ?? null,
     run_judge_id: link.id,
     judge: link.judge,
     is_principal: link.is_principal,
@@ -1047,6 +1052,10 @@ export async function addJudge(
     judge_id: judge.id,
     system_type: judge.system_type,
     is_principal: false,
+    // On the link and not on the judge — see `RunJudge.targets`. A judge placed
+    // on a twelve-row run has to say what it expects of the twelve, which
+    // `judgeSpecProblem` has already checked by this point.
+    targets: spec.targets ?? null,
   });
   if (samples.length > 0) {
     await insert(
@@ -1616,6 +1625,27 @@ export async function extendRun(
     inserted.length > 0 || continuedSampleIds.length > 0
       ? (await loadLiveRunJudges(runId)).map((judge) => judge.id)
       : [];
+
+  // Each judge's targets grow by the rows we have just added.
+  //
+  // A study extended without this would keep targets on its old rows and none
+  // on the new ones — exactly the two-halved matrix targets exist to prevent —
+  // and `extendTargetsProblem` refused the request upstream if it did not bring
+  // what was needed.
+  //
+  // We write ONLY what we add: the existing list is copied through unchanged at
+  // the front. Rewriting a target already laid down, after seeing the result,
+  // would empty it of its meaning.
+  if (request.new_scenarios.length > 0 && request.new_targets) {
+    const links = await loadLiveRunJudges(runId);
+    for (const [runJudgeId, added] of Object.entries(request.new_targets)) {
+      const link = links.find((judge) => judge.id === runJudgeId);
+      if (!link) continue;
+      const lengthened = extendedTargets(link.targets ?? null, added);
+      if (lengthened === null) continue;
+      await update(RUN_JUDGES, { targets: lengthened }, { id: `eq.${runJudgeId}` });
+    }
+  }
 
   if (inserted.length > 0 && liveJudgeIds.length > 0) {
     await insert(

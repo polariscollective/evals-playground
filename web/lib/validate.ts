@@ -6,6 +6,7 @@
 // multi-turn run with no adversary would produce a run that measures nothing,
 // and the job would have no way of noticing.
 import { knownModelIds } from "./catalog.ts";
+import { targetsProblem } from "./targets.ts";
 import { servesTools } from "./tools.ts";
 import type {
   Draft,
@@ -116,13 +117,33 @@ export function rubricProblem(rubric: unknown): string | null {
  *  afterwards (`app/api/runs/[runId]/judges/route.ts`).
  *
  * `label` names what is wrong in the returned message — "judge 2", or "the new
- * judge" on the adding route's side, which has only one entry to name. */
-export function judgeSpecProblem(spec: unknown, label: string): string | null {
+ * judge" on the adding route's side, which has only one entry to name.
+ *
+ * `scenarioCount` is known only to callers holding the run: the whole
+ * configuration (`configProblem`), or the adding route, which reads it from the
+ * run it targets. Absent, a target list is checked on its shape and its values,
+ * never on its length — a judge examined outside any run cannot know how many
+ * scenarios it should cover. */
+export function judgeSpecProblem(
+  spec: unknown,
+  label: string,
+  scenarioCount?: number,
+): string | null {
   if (!spec || typeof spec !== "object") return `${label} is not a mapping`;
   const judge = spec as JudgeSpec;
   if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
   const rubric = rubricProblem(judge.rubric);
   if (rubric) return `${label}: ${rubric}`;
+  if (judge.sees_system_prompt !== undefined && typeof judge.sees_system_prompt !== "boolean") {
+    return `${label}: sees_system_prompt must be true or false`;
+  }
+  const targets = targetsProblem(
+    judge.targets,
+    scenarioCount ?? judge.targets?.length ?? 0,
+    judge.rubric,
+    label,
+  );
+  if (targets) return targets;
   // Absent inherits the run's model — see `JudgeSpec.model`. Present, it must
   // be a non-empty text: a different type is not guessed, and letting it through
   // would run this judge under the default model without anyone having asked
@@ -145,12 +166,15 @@ export function judgeSpecProblem(spec: unknown, label: string): string | null {
  * or pass itself off as an awareness judge. The two shapes never contradict each
  * other: the top level always describes the principal, `judges` only ever adds
  * secondary judges. */
-export function judgesProblem(judges: unknown): string | null {
+export function judgesProblem(
+  judges: unknown,
+  scenarioCount?: number,
+): string | null {
   if (judges === undefined || judges === null) return null;
   if (!Array.isArray(judges)) return "judges must be a list";
 
   for (const [index, entry] of judges.entries()) {
-    const problem = judgeSpecProblem(entry, `judge ${index + 1}`);
+    const problem = judgeSpecProblem(entry, `judge ${index + 1}`, scenarioCount);
     if (problem) return problem;
   }
   return null;
@@ -351,7 +375,21 @@ export function configProblem(config: unknown): string | null {
   const rubric = rubricProblem(c.rubric);
   if (rubric) return rubric;
 
-  const judges = judgesProblem(c.judges);
+  if (c.sees_system_prompt !== undefined && typeof c.sees_system_prompt !== "boolean") {
+    return "sees_system_prompt must be true or false";
+  }
+  // The principal describes itself at the top level, like `criterion` and
+  // `rubric` — hence this check here rather than in `judgesProblem`, which only
+  // ever sees the secondaries.
+  const principalTargets = targetsProblem(
+    c.targets,
+    c.scenarios.length,
+    c.rubric,
+    "the principal judge",
+  );
+  if (principalTargets) return principalTargets;
+
+  const judges = judgesProblem(c.judges, c.scenarios.length);
   if (judges) return judges;
 
   if (!Number.isInteger(c.turns) || c.turns < MIN_TURNS || c.turns > MAX_TURNS) {
@@ -584,7 +622,10 @@ export function extendProblem(
   const freshJudges = r.new_judges ?? [];
   if (!Array.isArray(freshJudges)) return "new_judges must be a list";
   for (const [index, spec] of freshJudges.entries()) {
-    const problem = judgeSpecProblem(spec, `new judge ${index + 1}`);
+    // The run's count, not that of the list sent: a judge placed on a
+    // twelve-row run has to say what it expects of the twelve. Without this
+    // third argument, a list of three went through.
+    const problem = judgeSpecProblem(spec, `new judge ${index + 1}`, scenarioCount);
     if (problem) return problem;
   }
   if (freshJudges.length > 0) {
