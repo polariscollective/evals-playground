@@ -19,6 +19,7 @@ import type {
   Tag,
 } from "./types";
 import { PLAIN_VIEW, viewToQuery, type MatrixView } from "./view";
+import type { AdviceTopic } from "./advice";
 
 /** Rend lisible le corps d'une réponse d'erreur, plutôt que d'afficher du JSON brut. */
 async function readError(response: Response): Promise<string> {
@@ -415,9 +416,17 @@ export const updateProfileCaps = (caps: {
 
 /** Écrit la surcharge du conseil, ou `null` pour remettre le défaut. */
 export const updateScenarioAdvice = (advice: string | null) =>
+  updateAdvice("scenario", advice);
+
+/** Écrit la surcharge d'UN document de conseil. `null` remet le défaut.
+ *
+ * `topic` voyage à côté du texte plutôt que d'être quatre routes : c'est le
+ * même geste sur le même profil, et la route applique un réglage à la fois de
+ * toute façon — voir `profilePatchProblem`. */
+export const updateAdvice = (topic: AdviceTopic, advice: string | null) =>
   request<{ profile: Profile }>("/api/profile", {
     method: "PATCH",
-    body: JSON.stringify({ scenario_advice: advice }),
+    body: JSON.stringify({ advice_topic: topic, scenario_advice: advice }),
   });
 
 /** Écrit les favoris de qui est connecté. Envoyés seuls : la route applique

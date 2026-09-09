@@ -20,16 +20,34 @@
 import { useEffect, useState } from "react";
 import { CopyButton, CopyIcon } from "@/components/CopyButton";
 import { Loading, Refreshing } from "@/components/Loading";
-import { updateScenarioAdvice } from "@/lib/api";
+import { updateAdvice } from "@/lib/api";
 import { putProfile, refreshProfile, useProfile } from "@/lib/profile-store";
 import { renderMarkdown } from "@/lib/markdown";
-import { DEFAULT_SCENARIO_ADVICE, scenarioAdvice } from "@/lib/scenario-advice";
+import {
+  ADVICE_SUMMARY,
+  ADVICE_TOPICS,
+  DEFAULT_ADVICE,
+  adviceFor,
+  overridesOf,
+  type AdviceTopic,
+} from "@/lib/advice";
+
+const LABEL: Record<AdviceTopic, string> = {
+  scenario: "Writing a scenario",
+  batch: "Putting a batch together",
+  analysis: "Reading the results",
+  judge: "Writing a judge",
+};
 
 export default function ScenariosPage() {
   // Le profil vient du cache partagé : « Evaluate » l'a préchargé, et la page
   // « Profile » lit la même ressource. On affiche donc ce qu'on avait déjà, et
   // la revérification se fait derrière.
   const { data: profileData, loading, error: loadError } = useProfile();
+  // Quel document on regarde. Un état et non une adresse : la page est un
+  // client, le profil est déjà en cache, et changer d'onglet ne doit rien
+  // recharger.
+  const [topic, setTopic] = useState<AdviceTopic>("scenario");
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,8 +68,9 @@ export default function ScenariosPage() {
   // `scenario_advice` nul ne veut rien dire, et la page ne doit surtout pas se
   // croire sans surcharge avant d'avoir lu ce que le profil porte vraiment.
   const loaded = profileData !== null;
-  const saved = profileData?.profile.scenario_advice ?? null;
-  const shown = scenarioAdvice(saved);
+  const overrides = profileData ? overridesOf(profileData.profile) : {};
+  const saved = overrides[topic] ?? null;
+  const shown = adviceFor(topic, overrides);
   const custom = saved !== null && saved.trim() !== "";
 
   /** Ce que « Save » doit envoyer : `null` — le geste « remets le défaut » —
@@ -66,7 +85,7 @@ export default function ScenariosPage() {
    *  le texte garde sa version telle quelle, même si elle ne diffère que par
    *  une indentation. */
   function normalizedDraft(): string | null {
-    if (draft.trim() === "" || draft.trim() === DEFAULT_SCENARIO_ADVICE.trim()) {
+    if (draft.trim() === "" || draft.trim() === DEFAULT_ADVICE[topic].trim()) {
       return null;
     }
     return draft;
@@ -78,9 +97,9 @@ export default function ScenariosPage() {
   function write(value: string | null) {
     setBusy(true);
     setSaveError(null);
-    updateScenarioAdvice(value)
+    updateAdvice(topic, value)
       .then(({ profile }) => {
-        setDraft(scenarioAdvice(profile.scenario_advice));
+        setDraft(adviceFor(topic, overridesOf(profile)));
         setEditing(false);
         // Le cache porte l'ancien profil : sans ça, « Profile » afficherait
         // encore la version d'avant au prochain clic.
@@ -93,13 +112,36 @@ export default function ScenariosPage() {
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-8">
       <header className="space-y-1">
-        <h1 className="font-serif text-2xl font-normal">Scenarios</h1>
+        <h1 className="font-serif text-2xl font-normal">Guidelines</h1>
         <p className="flex items-center gap-2 text-sm text-zinc-500">
-          What an agent needs to know to write a scenario a model will not
-          recognise as a test.
+          {ADVICE_SUMMARY[topic]}
           {loading && loaded && <Refreshing />}
         </p>
       </header>
+
+      {/* Quatre documents lus à quatre moments. Changer d'onglet abandonne une
+          édition en cours plutôt que de la traîner sur un autre document, où
+          elle s'écrirait par-dessus le mauvais texte. */}
+      <nav className="flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
+        {ADVICE_TOPICS.map((entry) => (
+          <button
+            key={entry}
+            onClick={() => {
+              setTopic(entry);
+              setEditing(false);
+              setSaveError(null);
+            }}
+            disabled={busy}
+            className={`cursor-pointer rounded px-3 py-1 text-sm disabled:opacity-50 ${
+              entry === topic
+                ? "bg-zinc-900 text-white"
+                : "text-zinc-600 hover:bg-zinc-100"
+            }`}
+          >
+            {LABEL[entry]}
+          </button>
+        ))}
+      </nav>
 
       {loadError && <p className="text-sm text-red-700">{loadError}</p>}
 
@@ -110,9 +152,10 @@ export default function ScenariosPage() {
       {loaded && (
         <>
           <p className="text-sm text-zinc-600">
-            This is the exact text the <code>read_scenario_advice</code> MCP tool
-            serves. Paste it into an agent that only has HTTP, or let one that holds
-            the tools fetch it itself. Edit it and the tool serves your version.
+            This is the exact text the <code>read_advice</code> MCP tool serves for{" "}
+            <code>{topic}</code>. Paste it into an agent that only has HTTP, or let
+            one that holds the tools fetch it itself. Edit it and the tool serves
+            your version.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -121,7 +164,7 @@ export default function ScenariosPage() {
               // dans la zone de saisie — le brouillon, pas la version encore
               // enregistrée en dessous.
               value={editing ? draft : shown}
-              title="Copy the scenario-writing advice"
+              title={`Copy: ${LABEL[topic]}`}
               className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
             >
               {(copied) => (copied ? "Copied" : "Copy")}
@@ -163,9 +206,16 @@ export default function ScenariosPage() {
             {custom
               ? "Public link — anyone can read it, but it serves the default, not your edit:"
               : "Public link — anyone can read this, no account needed:"}{" "}
-            <code className="rounded bg-zinc-100 px-1">/shared/scenarios</code>
+            <code className="rounded bg-zinc-100 px-1">
+              {topic === "scenario"
+                ? "/shared/scenarios"
+                : `/shared/scenarios?topic=${topic}`}
+            </code>
             <CopyButton
-              value={() => `${window.location.origin}/shared/scenarios`}
+              value={() =>
+                `${window.location.origin}/shared/scenarios` +
+                (topic === "scenario" ? "" : `?topic=${topic}`)
+              }
               title="Copy the public link"
               className="rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
             >

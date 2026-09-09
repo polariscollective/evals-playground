@@ -1,3 +1,4 @@
+import { ADVICE_TOPICS, isAdviceTopic } from "@/lib/advice";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { favoritesProblem } from "@/lib/favorite-models";
@@ -6,7 +7,7 @@ import {
   ensureProfile,
   updateFavoriteModels,
   updateProfileCaps,
-  updateScenarioAdvice,
+  updateAdvice,
 } from "@/lib/profiles";
 import { mcpActivityLastHour } from "@/lib/runs";
 
@@ -50,6 +51,10 @@ export async function PATCH(request: Request) {
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
     scenario_advice?: unknown;
+    /** Lequel des quatre documents `scenario_advice` porte. Absent vaut
+     *  `"scenario"` — la forme d'avant que le conseil ne se coupe en quatre,
+     *  qu'un client déjà déployé envoie encore. */
+    advice_topic?: unknown;
     favorite_models?: unknown;
   };
 
@@ -68,8 +73,19 @@ export async function PATCH(request: Request) {
         { status: 422 },
       );
     }
-    const profile = await updateScenarioAdvice(
+    const topic = body.advice_topic ?? "scenario";
+    if (!isAdviceTopic(topic)) {
+      return NextResponse.json(
+        {
+          error:
+            `advice_topic must be one of ${ADVICE_TOPICS.join(", ")}`,
+        },
+        { status: 422 },
+      );
+    }
+    const profile = await updateAdvice(
       user.email,
+      topic,
       body.scenario_advice as string | null,
     );
     return NextResponse.json({ profile });
