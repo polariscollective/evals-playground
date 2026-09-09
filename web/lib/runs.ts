@@ -1,9 +1,10 @@
-// Lire et écrire les runs. Le seul endroit qui connaît la forme des deux tables.
+// Reading and writing the runs. The only place that knows the shape of the two
+// tables.
 import "server-only";
 import { randomUUID } from "node:crypto";
-// La matrice se calcule là où on la regarde : l'écran laisse relire un run
-// autrement — une médiane, une échelle repliée — et deux calculs de la même
-// chose finiraient par ne plus dire pareil.
+// The matrix is computed where it is looked at: the screen allows rereading a
+// run another way — a median, a folded scale — and two computations of the same
+// thing would end up no longer saying the same.
 import { overallMean, progressOf } from "./matrix";
 import { meanFromHistogram } from "./run-list-mean";
 import { catchupCandidateCount } from "./catchup";
@@ -43,13 +44,13 @@ import {
 import { classifyRunJudgesRefusal } from "./run-judges-refusal";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
-// `AWAKE_TYPE` : la seule chose qu'on emprunte à `awareness.ts` pour trouver
-// la liaison d'éveil d'un run — jamais `findAwakeJudge`, dont la contrainte
-// générique (`T extends { system_type: JudgeSystemType | null }`) date d'avant
-// le sentinelle et n'accepte donc plus un vrai `RunJudge` (`system_type:
-// JudgeSystemTypeColumn`, qui inclut `"ordinary"`, non assignable à
-// `JudgeSystemType | null`). Corriger cette contrainte appartient à
-// `awareness.ts`, hors du périmètre de cette tâche — voir le rapport.
+// `AWAKE_TYPE`: the only thing borrowed from `awareness.ts` to find a run's
+// awareness link — never `findAwakeJudge`, whose generic constraint
+// (`T extends { system_type: JudgeSystemType | null }`) predates the sentinel
+// and therefore no longer accepts a real `RunJudge` (`system_type:
+// JudgeSystemTypeColumn`, which includes `"ordinary"`, not assignable to
+// `JudgeSystemType | null`). Fixing that constraint belongs to `awareness.ts`,
+// outside this task's scope — see the report.
 import { AWAKE_TYPE, type JudgeVerdict } from "./awareness.ts";
 import type {
   CostEstimate,
@@ -76,63 +77,61 @@ import type {
   ToolSpec,
 } from "./types";
 
-/** Les colonnes d'une case, sauf le transcript.
+/** A cell's columns, transcript aside.
  *
- * Un transcript pèse plusieurs kilo-octets ; les ramener tous pour compter des
- * statuts ferait passer des mégaoctets par le réseau à chaque rafraîchissement,
- * toutes les trois secondes pendant qu'un run tourne.
+ * A transcript weighs several kilobytes; bringing them all back to count
+ * statuses would push megabytes over the network on every refresh, every three
+ * seconds while a run is going.
  *
- * Depuis les juges multiples, cette liste ne nomme plus `score`,
- * `justification`, `awareness_score`, `awareness_justification` ni
- * `awareness_error` : la migration
- * `20260906093000_drop_eval_samples_score_columns.sql` (dépôt
- * polaris-supabase) les a supprimées d'`eval_samples` — ce que rendait un
- * juge sur une conversation vit désormais dans `judge_scores`, voir
- * `loadLiveRunJudges`, `awarenessMissingTotal` et `loadRuns` plus bas, qui le
- * lisent à part. `error` reste une colonne de `eval_samples` : elle porte
- * l'échec de l'*exécution* de la conversation, jamais celui d'un juge — voir
- * `JudgeScore.error` pour ce second sens, distinct. */
+ * Since the multiple judges, this list no longer names `score`,
+ * `justification`, `awareness_score`, `awareness_justification` or
+ * `awareness_error`: the migration
+ * `20260906093000_drop_eval_samples_score_columns.sql` (polaris-supabase
+ * repository) dropped them from `eval_samples` — what a judge returned on a
+ * conversation now lives in `judge_scores`, see `loadLiveRunJudges`,
+ * `awarenessMissingTotal` and `loadRuns` below, which read it apart. `error`
+ * stays a column of `eval_samples`: it carries the failure of the conversation's
+ * *execution*, never a judge's — see `JudgeScore.error` for that second,
+ * distinct sense. */
 const SAMPLE_COLUMNS =
   "id,run_id,scenario_index,scenario_title,target_model,repetition,status," +
-  // `usage` porte les jetons facturés de la case. Petit — cinq compteurs par
-  // modèle — et sans commune mesure avec les transcripts, qu'on continue de ne
-  // ramener que sur demande. C'est ce qui permet au panneau d'annoncer sur quoi
-  // son devis repose, et à `extendRun` de le calculer pareil.
+  // `usage` carries the cell's billed tokens. Small — five counters per model —
+  // and no comparison with the transcripts, which are still brought back only on
+  // demand. It is what lets the panel announce what its quote rests on, and
+  // `extendRun` compute it the same way.
   //
-  // `turns_done` dit à quelle profondeur cette case-là a joué, et rien d'autre
-  // ne le dit : `config.turns` ne nomme que la dernière demandée. Un run
-  // approfondi porte des cases à des profondeurs différentes — sans cette
-  // colonne, le panneau les regroupait toutes à la profondeur du run et la
-  // mesure divisait chacune par elle.
+  // `turns_done` says at what depth that particular cell played, and nothing
+  // else says it: `config.turns` names only the last one asked for. A deepened
+  // run carries cells at different depths — without this column, the panel
+  // grouped them all at the run's depth and the measurement divided each by it.
   "turns_done,temperature,error,started_at,finished_at,cost_usd,usage";
 
 export class NotFound extends Error {}
 
-/** Délier le principal d'un run sans remplaçant valide, alors qu'il reste
- *  d'autres liaisons vivantes sur ce run.
+/** Unlinking a run's principal with no valid replacement, while other living
+ *  links remain on that run.
  *
- * Posé par la base, pas par ce fichier — c'est le changement par rapport à
- * une version précédente de ce commentaire, qui décrivait ceci comme un
- * filet posé en application faute d'un tel garde-fou en base. Le déclencheur
- * différé `run_judges_require_principal_trg`
+ * Laid by the database, not by this file — that is the change from an earlier
+ * version of this comment, which described this as a net laid in the application
+ * for want of such a guard in the database. The deferred trigger
+ * `run_judges_require_principal_trg`
  * (`evals/supabase/migrations/20260906102248_require_run_judges_principal.sql`,
- * dépôt `polaris-supabase`) garantit désormais, au commit, qu'un run ayant au
- * moins une liaison vivante en a toujours exactement une principale.
- * `unlinkJudge` ne fait plus que traduire son message — du français d'une
- * trace serveur vers une phrase anglaise lisible — voir
- * `classifyRunJudgesRefusal`. */
+ * `polaris-supabase` repository) now guarantees, at commit time, that a run with
+ * at least one living link always has exactly one principal. `unlinkJudge` now
+ * does no more than translate its message — from the French of a server trace
+ * into a readable English sentence — see `classifyRunJudgesRefusal`. */
 export class PrincipalRequiresReplacement extends Error {}
 
-/** Combien d'essais chaque couple scénario × modèle porte : le moins, le plus.
+/** How many attempts each scenario × model pair carries: the fewest, the most.
  *
- * Compté sur les cases plutôt que lu dans `config.repetitions`, qui ne dit que
- * ce qui avait été demandé au dernier lot : un run complété a des couples plus
- * fournis que d'autres, et une moyenne de case porte alors sur moins de
- * conversations que sa voisine.
+ * Counted on the cells rather than read from `config.repetitions`, which says
+ * only what had been asked for the last batch: a run completed in several goes
+ * has some pairs fuller than others, and a cell's mean then bears on fewer
+ * conversations than its neighbour's.
  *
- * N'exige que deux colonnes — pas `EvalSample` en entier — pour rester
- * satisfait aussi bien par les cases de `loadRuns` (déjà réduites, et
- * augmentées du verdict du principal) que par une `EvalSample` complète. */
+ * Demands only two columns — not a whole `EvalSample` — so as to be satisfied
+ * just as well by the cells of `loadRuns` (already reduced, and augmented with
+ * the principal's verdict) as by a complete `EvalSample`. */
 function repetitionRange(
   samples: Pick<EvalSample, "scenario_index" | "target_model">[],
 ): [number, number] {
@@ -146,14 +145,13 @@ function repetitionRange(
   return [Math.min(...values), Math.max(...values)];
 }
 
-/** Une case telle que `loadRuns` la voit : ses coordonnées et son statut
- *  d'exécution, plus le verdict du juge PRINCIPAL — jamais un autre juge, même
- *  règle que `matrix.ts` (voir `MatrixSample`) et pour la même raison :
- *  c'est le juge que la matrice affiche, donc celui dont la moyenne de la
- *  liste des runs doit rendre compte. Un sample sans principal vivant sur son
- *  run (aucun juge, ou tous déliés) porte `{status: "pending", score: null}` :
- *  une absence de juge n'est pas différente, pour cette moyenne, d'un juge qui
- *  n'a pas encore noté. */
+/** A cell as `loadRuns` sees it: its coordinates and its execution status, plus
+ *  the PRINCIPAL judge's verdict — never another judge, same rule as `matrix.ts`
+ *  (see `MatrixSample`) and for the same reason: it is the judge the matrix
+ *  shows, hence the one the runs list's mean must account for. A sample with no
+ *  living principal on its run (no judge, or all unlinked) carries
+ *  `{status: "pending", score: null}`: an absence of judge is no different, for
+ *  that mean, from a judge that has not graded yet. */
 interface RunListSample {
   run_id: string;
   status: SampleStatus;
@@ -162,23 +160,21 @@ interface RunListSample {
   principal: JudgeVerdict;
 }
 
-/** Le verdict du juge PRINCIPAL de chacun de ces runs, par identifiant de
- *  conversation — ce qu'il faut à `overallMean` pour chiffrer la moyenne de
- *  la liste des runs, en une poignée de requêtes plutôt qu'une par run comme
- *  le ferait `loadLiveRunJudges` appelée une fois par run.
+/** The PRINCIPAL judge's verdict for each of these runs, by conversation
+ *  identifier — what `overallMean` needs to cost the runs list's mean, in a
+ *  handful of requests rather than one per run as `loadLiveRunJudges` called
+ *  once per run would do.
  *
- * Filtre `run_judges` sur `deleted_at` et `is_principal` directement, ce qui
- * en fait la seule autre exception, avec `loadLiveRunJudges` elle-même, à la
- * règle que documente cette dernière (« LA fonction... la seule autorisée à
- * filtrer run_judges sur deleted_at »). L'exception est délibérée : cette
- * fonction-là ne sait interroger qu'un run à la fois, et `loadRuns` doit
- * rester quelques requêtes quel que soit le nombre de runs — exactement
- * comme elle l'est déjà pour les cases (voir son commentaire). Le filtre
- * `deleted_at: "is.null"` n'existe donc qu'à deux endroits dans tout le
- * dépôt, à quelques dizaines de lignes l'un de l'autre dans ce même fichier :
- * le risque que ce chantier signale — un oubli dans une troisième copie,
- * ailleurs — reste contenu, il n'y a nulle part d'autre où le réécrire par
- * erreur. */
+ * Filters `run_judges` on `deleted_at` and `is_principal` directly, which makes
+ * it the only other exception, along with `loadLiveRunJudges` itself, to the
+ * rule the latter documents ("THE function... the only one allowed to filter
+ * run_judges on deleted_at"). The exception is deliberate: that function can
+ * only query one run at a time, and `loadRuns` must stay a few requests whatever
+ * the number of runs — exactly as it already is for the cells (see its comment).
+ * The `deleted_at: "is.null"` filter therefore exists in only two places in the
+ * whole repository, a few dozen lines apart in this same file: the risk this
+ * project warns about — an omission in a third copy, elsewhere — stays
+ * contained, there is nowhere else to rewrite it by mistake. */
 async function principalVerdictsByRun(
   runIds: string[],
 ): Promise<Map<string, JudgeVerdict>> {
@@ -208,10 +204,10 @@ async function principalVerdictsByRun(
   return bySample;
 }
 
-/** Une ligne de la vue `eval_run_list` : un run déjà agrégé.
+/** A row of the `eval_run_list` view: a run already aggregated.
  *
- * Les noms viennent de la vue, pas de la table — voir la migration
- * `20260907140037_eval_run_list_view.sql` (dépôt polaris-supabase). */
+ * The names come from the view, not from the table — see the migration
+ * `20260907140037_eval_run_list_view.sql` (polaris-supabase repository). */
 interface RunListRow {
   id: string;
   created_at: string;
@@ -234,31 +230,31 @@ interface RunListRow {
   scenario_count: number;
   min_tries: number;
   max_tries: number;
-  /** Combien de fois chaque note est tombée, du juge principal seul. `null`
-   *  quand aucun juge principal n'a encore noté — distinct d'un objet vide,
-   *  qui affirmerait qu'il a noté sans rien trouver. */
+  /** How many times each grade came up, from the principal judge alone. `null`
+   *  when no principal judge has graded yet — distinct from an empty object,
+   *  which would assert that it graded and found nothing. */
   principal_scores: Record<string, number> | null;
 }
 
-/** Les runs tels que la LISTE WEB les montre — une requête, une ligne par run.
+/** The runs as the WEB LIST shows them — one request, one row per run.
  *
- * L'agrégation est faite en base par la vue `eval_run_list`. Avant elle, cette
- * fonction ramenait TOUTES les cases de TOUS les runs, sans filtre, puis
- * toutes les lignes de score du juge principal, uniquement pour compter des
- * statuts et faire une moyenne. Ça tenait sur treize runs et cessait de tenir
- * sans prévenir : PostgREST est plafonné à 1000 lignes (`max_rows` dans
- * `config.toml`) et tronque en répondant 200. À une douzaine de cases par run,
- * le plafond tombait vers quatre-vingt-dix runs — après quoi les avancements
- * et les moyennes des plus anciens seraient devenus faux en silence.
+ * The aggregation is done in the database by the `eval_run_list` view. Before
+ * it, this function brought back EVERY cell of EVERY run, with no filter, then
+ * every score row of the principal judge, only to count statuses and make a
+ * mean. That held on thirteen runs and stopped holding without warning:
+ * PostgREST is capped at 1000 rows (`max_rows` in `config.toml`) and truncates
+ * while answering 200. At a dozen cells per run, the cap fell around ninety
+ * runs — after which the progress and the means of the oldest would have become
+ * false in silence.
  *
- * Le plafond existe toujours, mais il compte désormais des runs et non des
- * cases : mille runs au lieu de quatre-vingt-dix, et le remède ce jour-là sera
- * une pagination de la liste, pas une troncature muette.
+ * The cap still exists, but it now counts runs and not cells: a thousand runs
+ * instead of ninety, and the remedy that day will be a paginated list, not a
+ * mute truncation.
  *
- * La moyenne se calcule ici et non dans la vue : voir `meanFromHistogram`.
+ * The mean is computed here and not in the view: see `meanFromHistogram`.
  *
- * `loadRuns`, juste en dessous, reste la source de la recherche MCP, qui elle
- * a besoin du texte entier de chaque run. */
+ * `loadRuns`, just below, stays the source of the MCP search, which does need
+ * the whole text of each run. */
 export async function loadRunList(): Promise<RunListItem[]> {
   await failStaleRuns();
 
@@ -296,33 +292,33 @@ export async function loadRunList(): Promise<RunListItem[]> {
   }));
 }
 
-/** Tous les runs, du plus récent au plus ancien, avec leur avancement.
+/** Every run, from the most recent to the oldest, with its progress.
  *
- * Ne sert plus la liste web — `loadRunList` ci-dessus s'en charge, sans la
- * configuration. Reste la source de la recherche MCP, qui elle a besoin de
- * tout le texte d'un run.
+ * No longer serves the web list — `loadRunList` above takes care of that,
+ * without the configuration. Stays the source of the MCP search, which does need
+ * all of a run's text.
  *
- * Les cases sont lues en une seule requête pour tous les runs, sans leurs
- * transcripts : les colonnes ramenées sont minuscules, et une requête par run
- * serait bien plus coûteuse. Si la table grossissait au point que ça pèse, une
- * vue d'agrégation en base serait le remède — pas une pagination des cases.
- * Même logique pour le verdict du principal de chaque run, ajouté par
- * `principalVerdictsByRun` en deux requêtes de plus, jamais une par run. */
+ * The cells are read in one single request for every run, without their
+ * transcripts: the columns brought back are tiny, and one request per run would
+ * be far more costly. If the table grew to the point of weighing, an aggregation
+ * view in the database would be the remedy — not a pagination of the cells. Same
+ * logic for each run's principal verdict, added by `principalVerdictsByRun` in
+ * two more requests, never one per run. */
 export async function loadRuns(): Promise<RunSummary[]> {
   await failStaleRuns();
 
   const runs = await select<EvalRun>(RUNS, {
     select: "*",
-    // Un run écarté ne se lit plus nulle part : ni la liste, ni la page
-    // publique, ni les outils MCP, qui passent tous par ici.
+    // A run set aside is read nowhere any more: neither the list, nor the public
+    // page, nor the MCP tools, which all go through here.
     deleted_at: "is.null",
     order: "created_at.desc",
   });
   if (runs.length === 0) return [];
 
-  // Les coordonnées de chaque case en plus des statuts : c'est par elles qu'on
-  // voit qu'un run complété n'a plus le même nombre d'essais partout. Deux
-  // petites colonnes de plus, à comparer aux transcripts qu'on ne ramène pas.
+  // Each cell's coordinates on top of the statuses: it is by them that one sees
+  // a completed run no longer has the same number of attempts everywhere. Two
+  // small extra columns, against the transcripts we do not bring back.
   const samples = await select<
     Pick<EvalSample, "id" | "run_id" | "status" | "scenario_index" | "target_model">
   >(SAMPLES, {
@@ -356,36 +352,35 @@ export async function loadRuns(): Promise<RunSummary[]> {
   });
 }
 
-/** Un run et ses cases.
+/** A run and its cells.
  *
- * `withTranscripts` ne sert qu'à l'ouverture d'une case, aux exports, et à la
- * lecture publique d'un coup (voir `app/shared/[runId]/page.tsx`) : le
- * rafraîchissement d'un run en cours n'en a pas besoin.
+ * `withTranscripts` serves only the opening of a cell, the exports, and the
+ * public reading in one go (see `app/shared/[runId]/page.tsx`): refreshing a run
+ * under way does not need it.
  *
- * `withJudges` attache les juges vivants du run et leurs verdicts (voir
- * `attachJudges`) — sur demande, pas par défaut, pour la même raison que
- * `withAwarenessMissingFlag` avant lui, généralisé ci-dessous en
- * `withCatchupMissingFlag` : la quasi-totalité des appelants de `loadRun` ne
- * l'utilisent jamais. Une douzaine de routes n'appellent cette fonction que
- * pour vérifier qu'un run existe, et les outils MCP demandent explicitement
- * la version légère pour rester légers. Le laisser tourner par défaut pour
- * eux a déjà traîné toute une matrice de conversations hors de la base pour
- * une simple note ou une mise à la corbeille — même risque pour les juges,
- * qui multiplient ce poids par le nombre de juges vivants.
+ * `withJudges` attaches the run's living judges and their verdicts (see
+ * `attachJudges`) — on demand, not by default, for the same reason as
+ * `withAwarenessMissingFlag` before it, generalised below into
+ * `withCatchupMissingFlag`: almost every caller of `loadRun` never uses it. A
+ * dozen routes call this function only to check a run exists, and the MCP tools
+ * explicitly ask for the light version to stay light. Letting it run by default
+ * for them has already dragged a whole matrix of conversations out of the
+ * database for a simple note or a move to the bin — the same risk for the
+ * judges, which multiply that weight by the number of living judges.
  *
- * `withFullJudgeScores` force le mode complet d'`attachJudges` — les
- * verdicts de TOUS les juges vivants, secondaires compris, pas seulement du
- * principal et de l'éveil — sans exiger `withTranscripts`. Les deux sont
- * normalement demandés ensemble (voir `attachJudges`) parce qu'ouvrir une
- * case ou lire un run publié d'un coup a besoin des deux à la fois ; l'outil
- * MCP `get_run_results` (`app/mcp/route.ts`) est le seul appelant qui a
- * besoin de l'un sans l'autre — rendre le verdict de chaque juge sur chaque
- * case, jamais une conversation. Sans ce champ séparé, lui donner ce dont il
- * a besoin aurait exigé de lui faire porter aussi `withTranscripts`, et donc
- * de rompre la promesse « no transcripts » que sa description tient.
+ * `withFullJudgeScores` forces `attachJudges`'s full mode — the verdicts of
+ * EVERY living judge, secondaries included, not only the principal's and
+ * awareness's — without demanding `withTranscripts`. The two are normally asked
+ * for together (see `attachJudges`) because opening a cell or reading a
+ * published run in one go needs both at once; the MCP tool `get_run_results`
+ * (`app/mcp/route.ts`) is the only caller that needs one without the other —
+ * returning each judge's verdict on each cell, never a conversation. Without
+ * this separate field, giving it what it needs would have demanded making it
+ * carry `withTranscripts` too, and therefore breaking the "no transcripts"
+ * promise its description keeps.
  *
  * Throws:
- *   NotFound: si aucun run ne porte cet identifiant.
+ *   NotFound: if no run carries this identifier.
  */
 export async function loadRun(
   runId: string,
@@ -395,12 +390,11 @@ export async function loadRun(
     withJudges?: boolean;
     withCatchupMissingFlag?: boolean;
     withFullJudgeScores?: boolean;
-    /** Ramène les résultats d'outils servis depuis le monde, pour le voyant du
-     *  run et son croisement avec l'éveil (voir `lib/served.ts`).
+    /** Brings back the results of tools served from the world, for the run's
+     *  indicator and its crossing with awareness (see `lib/served.ts`).
      *
-     * Hors du défaut, comme les transcripts : la quasi-totalité des runs n'en
-     * a aucun, et la liste des runs ne doit pas payer une lecture par run pour
-     * une table le plus souvent vide. */
+     * Outside the default, like the transcripts: almost every run has none, and
+     * the runs list must not pay a read per run for a table most often empty. */
     withToolResults?: boolean;
   } = {},
 ): Promise<RunDetail> {
@@ -412,8 +406,8 @@ export async function loadRun(
     deleted_at: "is.null",
     limit: 1,
   });
-  // Écarté ou inexistant lèvent la même erreur : de dehors, les deux doivent
-  // se ressembler.
+  // Set aside and non-existent raise the same error: from outside, the two must
+  // look alike.
   if (runs.length === 0) throw new NotFound(`Unknown run: ${runId}`);
   const run = runs[0];
 
@@ -427,10 +421,10 @@ export async function loadRun(
     sample.usage ??= {};
   }
 
-  // `sourceCsv` ramène la colonne entière — plusieurs centaines de kilo-octets
-  // possibles — pour n'en garder qu'un booléen. `loadPublicRun` n'a personne à
-  // qui le montrer : le bouton de téléchargement n'existe que sur la page
-  // privée. Lui épargner cette lecture est le seul but de `withSourceCsvFlag`.
+  // `sourceCsv` brings back the whole column — possibly several hundred
+  // kilobytes — only to keep a boolean of it. `loadPublicRun` has nobody to show
+  // it to: the download button only exists on the private page. Sparing it that
+  // read is the sole purpose of `withSourceCsvFlag`.
   const sourceCsvAvailable =
     options.withSourceCsvFlag === false ? false : Boolean(await sourceCsv(runId));
 
@@ -449,8 +443,8 @@ export async function loadRun(
     tool_results: options.withToolResults
       ? await select<ToolResultRow>(TOOL_RESULTS, {
           run_id: `eq.${runId}`,
-          // `check_error` en plus depuis que le voyant distingue « jamais
-          // tenté » de « tenté sans aboutir » — voir `lib/served.ts`.
+            // `check_error` on top, since the indicator distinguishes "never
+            // attempted" from "attempted without succeeding" — see `lib/served.ts`.
           select: "scenario_index,tool_name,arguments,faithful,fault,check_error",
           order: "scenario_index.asc,tool_name.asc",
         })
@@ -458,30 +452,28 @@ export async function loadRun(
   };
 }
 
-/** Les juges vivants d'un run, avec leur verdict sur chaque conversation —
- *  ce que `RunDetail.judges` porte à l'écran (voir `RunJudgeView`,
- *  `types.ts`). Passe par `loadLiveRunJudges`, comme tout code qui a besoin
- *  de savoir quels juges sont vivants sur un run : aucun filtre
- *  `deleted_at` de plus n'est écrit ici.
+/** A run's living judges, with their verdict on each conversation — what
+ *  `RunDetail.judges` carries to the screen (see `RunJudgeView`, `types.ts`).
+ *  Goes through `loadLiveRunJudges`, like all code that needs to know which
+ *  judges are alive on a run: no further `deleted_at` filter is written here.
  *
- * `fullScores` décide du poids de cette jointure, sur le même principe que
- * `SAMPLE_COLUMNS`/`withTranscripts` plus haut : les verdicts de N juges sur
- * toutes les conversations d'un run pèsent, eux aussi, plusieurs juges ×
- * plusieurs dizaines de conversations × une justification qui peut faire
- * plusieurs phrases. `false` (le défaut, à chaque rafraîchissement de trois
- * secondes pendant qu'un run tourne) ne ramène les notes que du juge
- * PRINCIPAL et de l'éventuelle liaison d'éveil — les deux seuls que la
- * matrice et son voyant affichent sans qu'on déplie quoi que ce soit. `true`
- * ramène aussi celles des juges secondaires : demandé par `loadRun` dès que
- * `withTranscripts` l'est (ouvrir une case, ou lire un run publié d'un
- * coup — voir `AttemptView`, `components/RunRead.tsx`) OU que
- * `withFullJudgeScores` l'est — voir sa docstring sur `loadRun` pour le seul
- * appelant qui demande l'un sans l'autre : rendre chaque juge sans jamais
- * charger une conversation.
+ * `fullScores` decides this join's weight, on the same principle as
+ * `SAMPLE_COLUMNS`/`withTranscripts` above: the verdicts of N judges on every
+ * conversation of a run also weigh — several judges × several dozen
+ * conversations × a justification that can run to several sentences. `false`
+ * (the default, on every three-second refresh while a run is going) brings back
+ * the grades of the PRINCIPAL judge and of the awareness link if there is one
+ * only — the two the matrix and its indicator show without anything being
+ * unfolded. `true` also brings back the secondary judges': asked for by
+ * `loadRun` as soon as `withTranscripts` is (opening a cell, or reading a
+ * published run in one go — see `AttemptView`, `components/RunRead.tsx`) OR as
+ * soon as `withFullJudgeScores` is — see its docstring on `loadRun` for the only
+ * caller that asks for one without the other: returning every judge without ever
+ * loading a conversation.
  *
- * Chaque juge vivant apparaît toujours dans le tableau rendu — y compris
- * sans `fullScores`, où un juge secondaire porte alors `scores: {}` — pour
- * que « Show N other judges » compte juste sans avoir à charger leurs notes. */
+ * Every living judge always appears in the returned array — including without
+ * `fullScores`, where a secondary judge then carries `scores: {}` — so that
+ * "Show N other judges" counts right without having to load their grades. */
 async function attachJudges(
   runId: string,
   fullScores: boolean,
@@ -492,7 +484,7 @@ async function attachJudges(
   const wanted = fullScores
     ? live
     : live.filter(
-        (liaison) => liaison.is_principal || liaison.system_type === AWAKE_TYPE,
+        (link) => link.is_principal || link.system_type === AWAKE_TYPE,
       );
 
   const rows =
@@ -506,7 +498,7 @@ async function attachJudges(
           justification: string;
           error: string | null;
         }>(JUDGE_SCORES, {
-          run_judge_id: `in.(${wanted.map((liaison) => liaison.id).join(",")})`,
+          run_judge_id: `in.(${wanted.map((link) => link.id).join(",")})`,
           select: "run_judge_id,sample_id,status,score,justification,error",
         });
 
@@ -522,51 +514,48 @@ async function attachJudges(
     byJudge.set(row.run_judge_id, scores);
   }
 
-  return live.map((liaison) => ({
-    run_judge_id: liaison.id,
-    judge: liaison.judge,
-    is_principal: liaison.is_principal,
-    system_type: liaison.system_type,
-    scores: byJudge.get(liaison.id) ?? {},
+  return live.map((link) => ({
+    run_judge_id: link.id,
+    judge: link.judge,
+    is_principal: link.is_principal,
+    system_type: link.system_type,
+    scores: byJudge.get(link.id) ?? {},
   }));
 }
 
-/** Combien de lignes de `judge_scores`, en attente OU en erreur sur une
- *  liaison vivante, portent sur une conversation déjà terminée — donc ce que
- *  le prochain rattrapage va réellement remplir. Généralise l'ancienne
- *  `awarenessMissingTotal` (jusqu'aux juges multiples, seule la liaison
- *  d'éveil pouvait porter des lignes en attente après coup) à n'importe quel
- *  juge vivant — voir la conception, section « Le rattrapage, généralisé ».
+/** How many rows of `judge_scores`, pending OR in error on a living link, bear
+ *  on a conversation already finished — hence what the next catch-up will
+ *  really fill in. Generalises the old `awarenessMissingTotal` (until the
+ *  multiple judges, only the awareness link could carry pending rows after the
+ *  fact) to any living judge — see the design, section « Le rattrapage,
+ *  généralisé ».
  *
- * `en attente OU en erreur` : le rattrapage reprend les deux, pas seulement
- * les lignes jamais jugées — voir `catchup_dataset`,
- * `backend/playground/batch_job.py`, qui filtre pareil (`status =
- * "in.(pending,error)"`). Compter l'un sans l'autre ferait dire deux choses
- * différentes au bouton et au moteur qu'il déclenche — déjà arrivé une fois
- * sur ce chantier.
+ * `pending OR in error`: the catch-up takes both back, not only the rows never
+ * judged — see `catchup_dataset`, `backend/playground/batch_job.py`, which
+ * filters the same way (`status = "in.(pending,error)"`). Counting one without
+ * the other would make the button and the engine it triggers say two different
+ * things — already happened once on this project.
  *
- * Sur demande, jamais par défaut, même raison que l'ancienne version : la
- * quasi-totalité des appelants de `loadRun` ne l'utilisent jamais.
+ * On demand, never by default, same reason as the old version: almost every
+ * caller of `loadRun` never uses it.
  *
- * LE PIÈGE, et il a déjà mordu ce chantier une fois sur l'éveil : une ligne
- * en attente ou en erreur sur une liaison vivante n'est pas forcément
- * rattrapable — sa conversation doit AUSSI être terminée (`status = 'done'`).
- * Le moteur (`catchup_dataset`, `backend/playground/batch_job.py`) applique
- * ces trois conditions ensemble et ne rattrape jamais une conversation qui ne
- * l'est pas ; un compte qui ignorerait la troisième annoncerait du travail
- * que le moteur ne fera jamais, et le bouton resterait allumé pour toujours.
- * La troisième condition est vérifiée ici par `catchupCandidateCount`
- * (`catchup.ts`), qui documente ce piège en détail — jamais recomptée à la
- * main ailleurs : la route qui démarre un rattrapage
- * (`.../catchup/route.ts`) relit ce même champ plutôt que de refaire le
- * calcul de son côté, ce qui fait de cette fonction-ci le seul endroit du
- * dépôt qui décide « combien reste-t-il à rattraper ».
+ * THE TRAP, and it has already bitten this project once on awareness: a row
+ * pending or in error on a living link is not necessarily catchable up — its
+ * conversation must ALSO be finished (`status = 'done'`). The engine
+ * (`catchup_dataset`, `backend/playground/batch_job.py`) applies those three
+ * conditions together and never catches up a conversation that is not; a count
+ * ignoring the third would announce work the engine will never do, and the
+ * button would stay lit forever. The third condition is checked here by
+ * `catchupCandidateCount` (`catchup.ts`), which documents that trap in detail —
+ * never recounted by hand elsewhere: the route that starts a catch-up
+ * (`.../catchup/route.ts`) rereads this same field rather than redoing the
+ * computation on its side, which makes this function the only place in the
+ * repository that decides "how much is left to catch up".
  *
- * Deux cas déjà connus restent : le run tourne encore, auquel cas le nombre
- * ne sert à rien puisque le bouton qui le lit exige `!running` — l'annoncer
- * à zéro évite une lecture à chaque rafraîchissement de trois secondes ;
- * aucune liaison vivante ne rend zéro aussi, faute de quoi que ce soit qui
- * puisse manquer. */
+ * Two already known cases remain: the run is still going, in which case the
+ * number is useless since the button that reads it demands `!running` —
+ * announcing it as zero avoids a read on every three-second refresh; no living
+ * link returns zero too, for want of anything that could be missing. */
 async function catchupMissingTotal(
   run: EvalRun,
   options: { withCatchupMissingFlag?: boolean },
@@ -579,9 +568,9 @@ async function catchupMissingTotal(
 
   const pending = await select<{ sample_id: string }>(JUDGE_SCORES, {
     run_id: `eq.${run.id}`,
-    run_judge_id: `in.(${live.map((liaison) => liaison.id).join(",")})`,
-    // En attente ET en erreur : le rattrapage reprend les deux (voir la
-    // docstring ci-dessus) — même filtre que `catchup_dataset` côté moteur.
+    run_judge_id: `in.(${live.map((link) => link.id).join(",")})`,
+    // Pending AND in error: the catch-up takes both back (see the docstring
+    // above) — same filter as `catchup_dataset` on the engine's side.
     status: "in.(pending,error)",
     select: "sample_id",
   });
@@ -598,10 +587,10 @@ async function catchupMissingTotal(
   return catchupCandidateCount(pending, new Set(done.map((row) => row.id)));
 }
 
-/** Le CSV téléversé au lancement, ou null s'il n'y en a pas eu.
+/** The CSV uploaded at launch, or null if there was none.
  *
- * Lu à part du run : la colonne peut peser plusieurs centaines de kilo-octets,
- * et aucune autre lecture n'en a besoin. */
+ * Read apart from the run: the column can weigh several hundred kilobytes, and
+ * no other read needs it. */
 export async function sourceCsv(runId: string): Promise<string | null> {
   const rows = await select<{ source_csv: string | null }>(RUNS, {
     id: `eq.${runId}`,
@@ -611,17 +600,16 @@ export async function sourceCsv(runId: string): Promise<string | null> {
   return rows[0]?.source_csv ?? null;
 }
 
-/** Crée un run et toute sa matrice, en attente.
+/** Creates a run and its whole matrix, pending.
  *
- * Les cases sont écrites au lancement, pas par le job : c'est ce qui rend la
- * progression exacte avant même que le job démarre, et ce qui permet d'afficher
- * la matrice grisée dès la première seconde.
+ * The cells are written at launch, not by the job: it is what makes the progress
+ * exact before the job even starts, and what allows showing the greyed matrix
+ * from the first second.
  *
- * `launchedVia` vaut `'ui'` par défaut : les appelants d'avant cette colonne
- * — le formulaire, la route de lancement d'un brouillon — n'ont rien à changer
- * pour continuer à écrire ce qu'ils écrivaient déjà. Seul l'outil MCP
- * `launch_draft` passe `'mcp'`, la seule valeur que compte le budget de
- * `mcp-budget.ts`. */
+ * `launchedVia` is `'ui'` by default: the callers predating this column — the
+ * form, the route that launches a draft — have nothing to change to keep writing
+ * what they already wrote. Only the MCP tool `launch_draft` passes `'mcp'`, the
+ * only value `mcp-budget.ts`'s budget counts. */
 export async function createRun(
   config: EvalRunConfig,
   userEmail: string,
@@ -641,15 +629,15 @@ export async function createRun(
       notes: config.notes ?? "",
       source_csv: csvText,
       total_samples: total,
-      // Recalculé ici et non repris du navigateur : le devis enregistré doit
-      // être celui que ce code produit, pas celui qu'un client affirme avoir
-      // vu. Sans ça, la comparaison d'après ne mesurerait plus rien. La
-      // longueur supposée, elle, vient bien du client — mais par la config,
-      // qui est validée, et non par un paramètre à côté.
+      // Recomputed here and not taken from the browser: the recorded quote must
+      // be the one this code produces, not the one a client claims to have seen.
+      // Without that, the comparison afterwards would measure nothing any more.
+      // The assumed length does come from the client — but through the config,
+      // which is validated, and not through a parameter on the side.
       estimate: estimateCost(config),
-      // D'où il sort, quand il sort d'un brouillon. Porté par le run et non
-      // par le brouillon : relancer le même brouillon est prévu, et une case
-      // unique de l'autre côté écraserait le run précédent.
+      // Where it comes from, when it comes from a draft. Carried by the run and
+      // not by the draft: relaunching the same draft is expected, and a single
+      // cell on the other side would overwrite the previous run.
       draft_id: draftId,
       launched_via: launchedVia,
     },
@@ -657,26 +645,25 @@ export async function createRun(
   );
   const run = created[0];
 
-  // La température est posée ici, pas calculée par le job : un run qu'on
-  // complétera plus tard verra ses nouvelles répétitions étalées à part, et
-  // recalculer depuis `config.repetitions` réécrirait alors la température des
-  // cases déjà payées.
+  // The temperature is laid here, not computed by the job: a run completed later
+  // will have its new repetitions spread out apart, and recomputing from
+  // `config.repetitions` would then rewrite the temperature of the cells already
+  // paid for.
   //
-  // `returning: true` : les identifiants des cases sont nécessaires juste en
-  // dessous pour poser les lignes de `judge_scores`, qui visent une
-  // conversation par son `id` et non par son quadruplet.
+  // `returning: true`: the cells' identifiers are needed just below to lay the
+  // rows of `judge_scores`, which aim at a conversation by its `id` and not by
+  // its quadruplet.
   const samples = await insert<{ id: string }>(
     SAMPLES,
     cellsForRun(config).map((cell) => ({ run_id: run.id, ...cell })),
     { returning: true },
   );
 
-  // Les juges du run, et toutes leurs lignes de score en attente — même
-  // geste que la matrice ci-dessus : rien n'est inventé plus tard, tout
-  // existe déjà, en pending. Trois inserts dans cet ordre précisément parce
-  // que chacune des tables suivantes porte une clé étrangère vers la
-  // précédente : judges avant run_judges, run_judges (et les échantillons,
-  // déjà en base) avant judge_scores.
+  // The run's judges, and all their pending score rows — same gesture as the
+  // matrix above: nothing is invented later, everything already exists, pending.
+  // Three inserts in that precise order because each of the following tables
+  // carries a foreign key to the previous one: judges before run_judges,
+  // run_judges (and the samples, already in the database) before judge_scores.
   const { judges, runJudges, judgeScores } = judgesForLaunch(
     config,
     run.id,
@@ -690,76 +677,75 @@ export async function createRun(
   return run;
 }
 
-// --- les juges -----------------------------------------------------------
+// --- the judges ------------------------------------------------------------
 
-/** Une liaison vivante, avec le juge qu'elle vise déjà résolu — ce qu'un
- *  appelant a besoin de savoir pour afficher, exporter, ou noter au nom de ce
- *  juge, sans jamais relire `judges` à côté. */
+/** A living link, with the judge it aims at already resolved — what a caller
+ *  needs to know to show, export, or grade in that judge's name, without ever
+ *  rereading `judges` beside it. */
 export interface LiveRunJudge extends RunJudge {
   judge: Judge;
 }
 
-/** LA fonction qui charge les juges d'un run — la seule autorisée à filtrer
- *  `run_judges` sur `deleted_at`, avec l'exception ci-dessous. Tout code qui a
- *  besoin de savoir quels juges sont vivants sur un run — l'écran, un export,
- *  un outil MCP, le devis, la configuration renvoyée à un agent — appelle
- *  celle-ci ; rien d'autre dans ce dépôt n'a le droit de relire `run_judges`
- *  par un `select` direct.
+/** THE function that loads a run's judges — the only one allowed to filter
+ *  `run_judges` on `deleted_at`, with the exception below. All code that needs
+ *  to know which judges are alive on a run — the screen, an export, an MCP tool,
+ *  the quote, the configuration returned to an agent — calls this one; nothing
+ *  else in this repository has the right to reread `run_judges` through a direct
+ *  `select`.
  *
- * Recopié dans deux lectures, ce filtre serait oublié dans une troisième :
- * ce chantier a déjà produit deux exemples réels de cet oubli — un compte qui
- * alourdissait douze routes qu'on n'avait pas vues, un formulaire qui
- * ignorait un champ pendant tout un plan (voir la conception,
- * docs/superpowers/specs/2026-09-06-juges-multiples.md). Un juge délié ne
- * doit plus jamais ressortir nulle part ; le seul moyen de le garantir est
- * qu'il n'y ait qu'un seul endroit à vérifier. Tout code qui a besoin de
- * savoir quels juges sont vivants sur un run passe par elle plutôt que de
- * relire `run_judges` à sa façon — `unlinkJudge` et `designatePrincipal`,
- * juste en dessous, n'en font plus partie : ils délèguent désormais ce
- * même filtre aux fonctions RPC qui portent leur geste en base, en une
- * transaction (voir leurs commentaires).
+ * Copied into two reads, this filter would be forgotten in a third: this project
+ * has already produced two real examples of that omission — a count that weighed
+ * down twelve routes nobody had seen, a form that ignored a field for a whole
+ * plan (see the design,
+ * docs/superpowers/specs/2026-09-06-juges-multiples.md). An unlinked judge must
+ * never come back anywhere; the only way to guarantee it is that there be one
+ * single place to check. All code that needs to know which judges are alive on a
+ * run goes through it rather than rereading `run_judges` its own way —
+ * `unlinkJudge` and `designatePrincipal`, just below, are no longer part of it:
+ * they now delegate that same filter to the RPC functions that carry their
+ * gesture in the database, in one transaction (see their comments).
  *
- * L'UNE exception, delibérée : `principalVerdictsByRun`, plus bas dans ce
- * même fichier, filtre `run_judges` sur `deleted_at` elle aussi, mais en vrac
- * pour plusieurs runs à la fois — ce que cette fonction-ci, prenant un seul
- * `runId`, ne sait pas faire sans devenir un appel par run dans `loadRuns`.
- * Les deux copies du filtre vivent à quelques dizaines de lignes l'une de
- * l'autre, dans ce même fichier : le risque d'oubli que ce commentaire décrit
- * reste contenu, faute d'un troisième endroit où le réécrire par erreur. */
+ * THE ONE exception, deliberate: `principalVerdictsByRun`, further down in this
+ * same file, filters `run_judges` on `deleted_at` too, but in bulk for several
+ * runs at once — which this function, taking a single `runId`, cannot do without
+ * becoming one call per run in `loadRuns`. The two copies of the filter live a
+ * few dozen lines apart, in this same file: the risk of omission this comment
+ * describes stays contained, for want of a third place to rewrite it by
+ * mistake. */
 export async function loadLiveRunJudges(runId: string): Promise<LiveRunJudge[]> {
-  const liaisons = await select<RunJudge>(RUN_JUDGES, {
+  const links = await select<RunJudge>(RUN_JUDGES, {
     run_id: `eq.${runId}`,
-    // Le seul endroit du dépôt qui filtre sur deleted_at pour cette table.
+    // The only place in the repository that filters on deleted_at for this table.
     deleted_at: "is.null",
     select: "*",
     order: "created_at.asc",
   });
-  if (liaisons.length === 0) return [];
+  if (links.length === 0) return [];
 
-  const judgeIds = [...new Set(liaisons.map((liaison) => liaison.judge_id))];
+  const judgeIds = [...new Set(links.map((link) => link.judge_id))];
   const judges = await select<Judge>(JUDGES, {
     id: `in.(${judgeIds.join(",")})`,
     select: "*",
   });
   const byId = new Map(judges.map((judge) => [judge.id, judge]));
 
-  return liaisons.map((liaison) => {
-    const judge = byId.get(liaison.judge_id);
+  return links.map((link) => {
+    const judge = byId.get(link.judge_id);
     if (!judge) {
-      // Ne devrait jamais arriver : la clé étrangère composée
-      // `run_judges_judge_fk` garantit qu'un `judge_id` de `run_judges`
-      // existe toujours dans `judges`. Une base qui viole sa propre
-      // contrainte mérite un échec bruyant, pas une liaison sans juge.
+        // Should never happen: the composite foreign key `run_judges_judge_fk`
+        // guarantees that a `judge_id` of `run_judges` always exists in
+        // `judges`. A database that violates its own constraint deserves a loud
+        // failure, not a link with no judge.
       throw new SupabaseError(
-        `run_judges ${liaison.id} references unknown judge ${liaison.judge_id}`,
+        `run_judges ${link.id} references unknown judge ${link.judge_id}`,
       );
     }
-    return { ...liaison, judge };
+    return { ...link, judge };
   });
 }
 
-/** Le juge et son verdict, pour une liaison vivante d'un run — ce que
- *  `judgeVerdictsForSample`, juste en dessous, rend pour CHACUNE. */
+/** The judge and its verdict, for a living link of a run — what
+ *  `judgeVerdictsForSample`, just below, returns for EACH one. */
 export interface SampleJudgeVerdict {
   judge: Judge;
   is_principal: boolean;
@@ -767,19 +753,17 @@ export interface SampleJudgeVerdict {
   verdict: JudgeVerdictEntry;
 }
 
-/** Le verdict de chaque juge vivant d'un run sur UNE conversation choisie —
- *  ce qu'il faut à l'outil MCP `get_run_trajectory` pour montrer le verdict
- *  de chacun sur une seule case, sans charger tout le run comme le ferait
- *  `attachJudges` : une ligne de `judge_scores` par juge vivant, jamais une
- *  par conversation du run entier. Passe par `loadLiveRunJudges`, comme tout
- *  code qui a besoin de savoir quels juges sont vivants sur un run — un juge
- *  délié ne doit jamais apparaître ici non plus.
+/** Each living judge of a run's verdict on ONE chosen conversation — what the
+ *  MCP tool `get_run_trajectory` needs to show each one's verdict on a single
+ *  cell, without loading the whole run as `attachJudges` would: one row of
+ *  `judge_scores` per living judge, never one per conversation of the whole run.
+ *  Goes through `loadLiveRunJudges`, like all code that needs to know which
+ *  judges are alive on a run — an unlinked judge must never appear here either.
  *
- * Une liaison sans ligne pour ce `sampleId` — ne devrait pas arriver, voir la
- * conception, section « Les lignes de score sont créées d'avance » — rend son
- * attente par défaut plutôt que de disparaître de la liste : chaque juge
- * vivant apparaît toujours, exactement comme `attachJudges` le fait déjà pour
- * un run entier. */
+ * A link with no row for this `sampleId` — should not happen, see the design,
+ * section « Les lignes de score sont créées d'avance » — returns its default
+ * pending state rather than disappearing from the list: every living judge
+ * always appears, exactly as `attachJudges` already does for a whole run. */
 export async function judgeVerdictsForSample(
   runId: string,
   sampleId: string,
@@ -794,17 +778,17 @@ export async function judgeVerdictsForSample(
     justification: string;
     error: string | null;
   }>(JUDGE_SCORES, {
-    run_judge_id: `in.(${live.map((liaison) => liaison.id).join(",")})`,
+    run_judge_id: `in.(${live.map((link) => link.id).join(",")})`,
     sample_id: `eq.${sampleId}`,
     select: "run_judge_id,status,score,justification,error",
   });
   const byJudge = new Map(rows.map((row) => [row.run_judge_id, row]));
 
-  return live.map((liaison) => ({
-    judge: liaison.judge,
-    is_principal: liaison.is_principal,
-    system_type: liaison.system_type,
-    verdict: byJudge.get(liaison.id) ?? {
+  return live.map((link) => ({
+    judge: link.judge,
+    is_principal: link.is_principal,
+    system_type: link.system_type,
+    verdict: byJudge.get(link.id) ?? {
       status: "pending",
       score: null,
       justification: "",
@@ -813,18 +797,18 @@ export async function judgeVerdictsForSample(
   }));
 }
 
-/** Traduit un refus de `run_judges_unlink` ou `run_judges_transfer_principal`
- *  — ou du déclencheur différé qui les couvre — en l'erreur que ces deux
- *  fonctions exposent déjà, avec un message anglais lisible. Toute erreur
- *  qui n'est pas un refus reconnu de ces fonctions (`SupabaseError` sans
- *  correspondance, ou une erreur d'une autre nature) traverse telle quelle :
- *  mieux vaut un message imparfait que d'en avaler un qu'on n'a pas su lire.
+/** Translates a refusal from `run_judges_unlink` or
+ *  `run_judges_transfer_principal` — or from the deferred trigger that covers
+ *  them — into the error those two functions already expose, with a readable
+ *  English message. Any error that is not a recognised refusal from those
+ *  functions (a `SupabaseError` with no match, or an error of another kind)
+ *  passes through as it stands: better an imperfect message than swallowing one
+ *  we could not read.
  *
- * Le classement lui-même — reconnaître le texte français que Postgres rend —
- * vit dans `run-judges-refusal.ts`, à part de ce fichier, pour rester
- * testable sans Supabase (voir son commentaire). Cette fonction-ci ne fait
- * que choisir, selon le classement, laquelle des classes d'erreur de ce
- * fichier lever.
+ * The classification itself — recognising the French text Postgres returns —
+ * lives in `run-judges-refusal.ts`, apart from this file, so as to stay testable
+ * without Supabase (see its comment). This function does no more than choose,
+ * according to the classification, which of this file's error classes to raise.
  */
 function throwRunJudgesRefusal(error: unknown): never {
   if (error instanceof SupabaseError) {
@@ -840,45 +824,44 @@ function throwRunJudgesRefusal(error: unknown): never {
   throw error;
 }
 
-/** Délie un juge d'un run : marque sa liaison supprimée, sans toucher au
- *  juge — une configuration qui peut resservir — ni à `judge_scores`, dont
- *  les lignes restent en base, inchangées : la suppression est un `UPDATE`
- *  qui pose `deleted_at`, jamais un `DELETE`, et rien ne déclenche jamais la
- *  cascade `ON DELETE` que porte la clé étrangère de `judge_scores` vers
- *  cette table — voir le commentaire de `RunJudge.deleted_at` (`types.ts`)
- *  et celui de la migration du même nom qui l'a corrigé après coup. C'est la
- *  discipline de lecture — filtrer sur `deleted_at is null`, une seule fois,
- *  dans `loadLiveRunJudges` — qui porte tout le poids de ne plus les
- *  montrer.
+/** Unlinks a judge from a run: marks its link deleted, without touching the
+ *  judge — a configuration that can serve again — or `judge_scores`, whose rows
+ *  stay in the database, unchanged: the deletion is an `UPDATE` that lays
+ *  `deleted_at`, never a `DELETE`, and nothing ever fires the `ON DELETE`
+ *  cascade the foreign key from `judge_scores` to this table carries — see the
+ *  comment on `RunJudge.deleted_at` (`types.ts`) and that of the migration of
+ *  the same name which fixed it after the fact. It is the discipline of
+ *  reading — filtering on `deleted_at is null`, once only, in
+ *  `loadLiveRunJudges` — that carries the whole weight of no longer showing
+ *  them.
  *
- * Passe par la fonction RPC `run_judges_unlink`, qui délie et — si
- * `replacementRunJudgeId` est fourni et que `runJudgeId` porte le principal —
- * transfère le principal au remplaçant, en une seule transaction.
+ * Goes through the RPC function `run_judges_unlink`, which unlinks and — if
+ * `replacementRunJudgeId` is supplied and `runJudgeId` carries the principal —
+ * transfers the principal to the replacement, in one single transaction.
  *
- * **Pourquoi une fonction en base, et non deux écritures** : PostgREST fait
- * un aller-retour par écriture, donc une transaction par écriture. Poser
- * `deleted_at` sur le principal comme écriture séparée de celle qui
- * désignerait son remplaçant laisserait, la première validée seule, un run
- * sans aucun principal — ce que le déclencheur différé
- * `run_judges_require_principal_trg` refuse désormais à son propre commit
- * (voir `PrincipalRequiresReplacement`). Deux écritures redeviendraient donc
- * un aller simple qui échoue toujours dès qu'il reste d'autres juges vivants
- * sur le run. Voir .superpowers/sdd/fix-principal-rpc-report.md pour le SQL
- * exact des deux fonctions RPC et ce que chaque refus signifie.
+ * **Why a function in the database, and not two writes**: PostgREST makes one
+ * round trip per write, hence one transaction per write. Laying `deleted_at` on
+ * the principal as a write separate from the one that would designate its
+ * replacement would leave, once the first alone had committed, a run with no
+ * principal at all — which the deferred trigger
+ * `run_judges_require_principal_trg` now refuses at its own commit (see
+ * `PrincipalRequiresReplacement`). Two writes would therefore become again a
+ * one-way trip that always fails as soon as other judges are still alive on the
+ * run. See .superpowers/sdd/fix-principal-rpc-report.md for the exact SQL of the
+ * two RPC functions and what each refusal means.
  *
- * Sans `replacementRunJudgeId` : délier une liaison qui n'est pas principale
- * ne pose aucune question. Délier la dernière liaison vivante du run est
- * permis aussi — un run sans aucun juge est un état valide. Délier le
- * principal alors qu'il reste d'autres liaisons vivantes, sans remplaçant,
- * est refusé par le déclencheur différé cité plus haut ; ce n'est plus ce
- * fichier qui recompte les liaisons pour l'anticiper.
+ * Without `replacementRunJudgeId`: unlinking a link that is not principal asks
+ * no question. Unlinking the run's last living link is allowed too — a run with
+ * no judge at all is a valid state. Unlinking the principal while other living
+ * links remain, with no replacement, is refused by the deferred trigger cited
+ * above; it is no longer this file that recounts the links to anticipate it.
  *
  * Throws:
- *   NotFound: si `runJudgeId` (ou le remplaçant fourni) ne désigne aucune
- *     liaison de ce run, ou en désigne une déjà déliée.
- *   PrincipalRequiresReplacement: si `runJudgeId` est le principal vivant du
- *     run, qu'aucun remplaçant valide n'est fourni, et qu'il reste d'autres
- *     liaisons vivantes sur ce run.
+ *   NotFound: if `runJudgeId` (or the replacement supplied) designates no link
+ *     of this run, or designates one already unlinked.
+ *   PrincipalRequiresReplacement: if `runJudgeId` is the run's living principal,
+ *     no valid replacement is supplied, and other living links remain on that
+ *     run.
  */
 export async function unlinkJudge(
   runId: string,
@@ -896,23 +879,23 @@ export async function unlinkJudge(
   }
 }
 
-/** Désigne le principal d'un run : celui que la matrice affiche.
+/** Designates a run's principal: the one the matrix shows.
  *
- * Passe par la fonction RPC `run_judges_transfer_principal`, qui retire
- * `is_principal` à l'ancien principal vivant, s'il y en a un, et le pose sur
- * `runJudgeId` — dans cet ordre, jamais l'inverse — en une seule transaction.
- * L'ordre importe pour la même raison qu'avant : poser le nouveau principal
- * avant de retirer l'ancien ferait cohabiter, l'instant d'un aller-retour,
- * deux liaisons vivantes principales pour le même run, ce que l'index unique
- * partiel `run_judges_single_principal_idx` refuse. Voir le commentaire
- * d'`unlinkJudge` pour pourquoi c'est désormais la fonction RPC, et non ce
- * fichier en deux écritures, qui tient cet ordre.
+ * Goes through the RPC function `run_judges_transfer_principal`, which takes
+ * `is_principal` away from the former living principal, if there is one, and
+ * lays it on `runJudgeId` — in that order, never the reverse — in one single
+ * transaction. The order matters for the same reason as before: laying the new
+ * principal before removing the old would let two living principal links for the
+ * same run coexist for the length of a round trip, which the partial unique
+ * index `run_judges_single_principal_idx` refuses. See `unlinkJudge`'s comment
+ * for why it is now the RPC function, and not this file in two writes, that
+ * holds that order.
  *
- * Idempotent : désigner un juge déjà principal ne réécrit rien — c'est la
- * fonction RPC elle-même qui le garantit, pas une vérification ici.
+ * Idempotent: designating a judge that is already principal rewrites nothing —
+ * it is the RPC function itself that guarantees it, not a check here.
  *
  * Throws:
- *   NotFound: si `runJudgeId` ne désigne aucune liaison vivante de ce run.
+ *   NotFound: if `runJudgeId` designates no living link of this run.
  */
 export async function designatePrincipal(runId: string, runJudgeId: string): Promise<void> {
   try {
@@ -925,24 +908,22 @@ export async function designatePrincipal(runId: string, runJudgeId: string): Pro
   }
 }
 
-/** Ce qu'un appelant a lancé par MCP sur l'heure qui vient de s'écouler : le
- *  nombre de lancements, et leur devis additionné — jamais ce qu'un run a
- *  fini par coûter réellement, qui n'existe qu'une fois celui-ci terminé et
- *  qu'un agent ne peut donc jamais prévoir avant d'appeler.
+/** What a caller has launched through MCP over the hour just past: the number of
+ *  launches, and their summed quote — never what a run ended up really costing,
+ *  which only exists once it has finished and which an agent can therefore never
+ *  foresee before calling.
  *
- * Compté sur `mcp_launches`, pas sur `eval_runs` : une extension écrit sur un
- * run existant, qui peut avoir été créé par un humain ou déjà porter les
- * lancements de plusieurs agents différents — `eval_runs.launched_via` ne
- * répond plus à « combien tel appelant a-t-il dépensé », seulement à « ce run
- * a-t-il été démarré par un agent ». `mcp_launches` porte une ligne par
- * lancement et non par run, ce qui rend une extension comptable exactement
- * comme un run neuf. Filtré sur `user_email` et `created_at` : la lecture que
- * couvre l'index posé avec la table.
+ * Counted on `mcp_launches`, not on `eval_runs`: an extension writes on an
+ * existing run, which may have been created by a human or may already carry the
+ * launches of several different agents — `eval_runs.launched_via` no longer
+ * answers "how much has that caller spent", only "was this run started by an
+ * agent". `mcp_launches` carries one row per launch and not per run, which makes
+ * an extension countable exactly like a fresh run. Filtered on `user_email` and
+ * `created_at`: the read the index laid with the table covers.
  *
- * Le compte sert la page de profil, le montant sert aussi la décision de
- * budget de `app/mcp/route.ts` — voir `mcpSpendLastHour`, qui n'en garde que
- * le second pour ne pas changer la forme attendue là où le compte ne sert à
- * rien. */
+ * The count serves the profile page, the amount also serves the budget decision
+ * of `app/mcp/route.ts` — see `mcpSpendLastHour`, which keeps only the second so
+ * as not to change the expected shape where the count is of no use. */
 export async function mcpActivityLastHour(
   userEmail: string,
 ): Promise<{ count: number; usd: number }> {
@@ -958,19 +939,19 @@ export async function mcpActivityLastHour(
   };
 }
 
-/** Le seul chiffre dont la décision de budget a besoin — voir
- *  `mcpActivityLastHour` pour ce qui est compté et pourquoi. */
+/** The only figure the budget decision needs — see `mcpActivityLastHour` for
+ *  what is counted and why. */
 export async function mcpSpendLastHour(userEmail: string): Promise<number> {
   return (await mcpActivityLastHour(userEmail)).usd;
 }
 
-/** Enregistre un lancement réussi par MCP, `run` comme `extend`.
+/** Records a launch that succeeded through MCP, `run` as much as `extend`.
  *
- * À appeler après que le job a réellement démarré, jamais avant : une ligne
- * pour un lancement qui n'a pas eu lieu consommerait un budget pour rien.
- * `quotedUsd` est le devis qui a servi à décider du lancement — celui vérifié
- * contre les deux plafonds — et non un coût recalculé après coup : c'est lui
- * qui fait foi, voir `mcpSpendLastHour`. */
+ * To be called after the job has really started, never before: a row for a
+ * launch that did not happen would consume budget for nothing. `quotedUsd` is
+ * the quote that served to decide the launch — the one checked against the two
+ * caps — and not a cost recomputed afterwards: it is the one that counts, see
+ * `mcpSpendLastHour`. */
 export async function recordLaunch(
   userEmail: string,
   runId: string,
@@ -985,21 +966,20 @@ export async function recordLaunch(
   });
 }
 
-/** Ouvre une passe de rattrapage sur un run.
+/** Opens a catch-up pass on a run.
  *
- * Ne remet RIEN en attente, contrairement à `extendRun` : les lignes à
- * remplir existent déjà, en `pending`, depuis le lancement, une extension,
- * ou l'ajout d'un juge (`addJudge`, juste en dessous) — ce que ce rattrapage
- * vient combler, pas refaire. Seul le run repasse en `running`, pour que
- * l'écran montre qu'il se passe quelque chose.
+ * Puts NOTHING back to pending, unlike `extendRun`: the rows to fill already
+ * exist, `pending`, since the launch, an extension, or the addition of a judge
+ * (`addJudge`, just below) — which this catch-up comes to fill in, not to redo.
+ * Only the run goes back to `running`, so that the screen shows something is
+ * happening.
  *
- * Remplace l'ancien `resetForRejudge` et l'ancien `startAwarenessPass` : le
- * premier écrasait le verdict du principal avant de refaire — « rejuger »
- * n'existe plus, voir `addJudge` pour ce que ce geste est devenu — et le
- * second ne rattrapait que la liaison d'éveil. Un seul mode dans le job
- * (`catchup`, voir `run_batch_job`, `backend/playground/batch_job.py`) pour
- * les deux, généralisé à n'importe quel juge — voir
- * `.superpowers/sdd/task-9-report.md`. */
+ * Replaces the old `resetForRejudge` and the old `startAwarenessPass`: the first
+ * overwrote the principal's verdict before redoing it — "re-judging" no longer
+ * exists, see `addJudge` for what that gesture has become — and the second only
+ * caught up the awareness link. One single mode in the job (`catchup`, see
+ * `run_batch_job`, `backend/playground/batch_job.py`) for both, generalised to
+ * any judge — see `.superpowers/sdd/task-9-report.md`. */
 export async function startCatchupPass(runId: string): Promise<void> {
   await update(
     RUNS,
@@ -1008,32 +988,31 @@ export async function startCatchupPass(runId: string): Promise<void> {
   );
 }
 
-/** Ajoute un juge secondaire à un run existant : le juge, sa liaison —
- *  jamais principale — et une ligne de `judge_scores` en attente sur CHAQUE
- *  conversation déjà posée pour ce run, jouée ou non.
+/** Adds a secondary judge to an existing run: the judge, its link — never
+ *  principal — and a pending row of `judge_scores` on EVERY conversation already
+ *  laid down for this run, played or not.
  *
- * C'est ce que « rejuger » est devenu depuis les juges multiples : on
- * n'écrase plus le verdict du principal, on ajoute un juge de plus, et
- * l'ancien reste pour comparer — voir `.superpowers/sdd/task-9-report.md`.
+ * This is what "re-judging" has become since the multiple judges: the
+ * principal's verdict is no longer overwritten, one more judge is added, and the
+ * old one stays to compare — see `.superpowers/sdd/task-9-report.md`.
  *
- * Sans ces lignes de `judge_scores`, `write_judge_score` (moteur,
- * `supabase_store.py`) ne trouverait rien à mettre à jour : elle ne fait
- * qu'un UPDATE ciblé sur (`run_judge_id`, `sample_id`), jamais un INSERT —
- * voir le commentaire de `judgeScoresForSamples`. Ce défaut a déjà existé
- * une fois, sur l'extension de run (`extendRun`), avant d'être corrigé ; il
- * ne doit pas se répéter ici. `startCatchupPass`, plus haut, est ce qui
- * remplit ensuite ces lignes pour les conversations déjà terminées — voir
- * `catchupMissingTotal` pour comment ce qui reste à rattraper se compte.
+ * Without these `judge_scores` rows, `write_judge_score` (the engine,
+ * `supabase_store.py`) would find nothing to update: it only does a targeted
+ * UPDATE on (`run_judge_id`, `sample_id`), never an INSERT — see the comment on
+ * `judgeScoresForSamples`. That flaw has already existed once, on run extension
+ * (`extendRun`), before being fixed; it must not repeat here. `startCatchupPass`,
+ * above, is what then fills those rows for the conversations already finished —
+ * see `catchupMissingTotal` for how what is left to catch up is counted.
  *
- * Toujours secondaire (`is_principal: false`) : désigner un juge principal
- * dès sa création confondrait deux gestes distincts, voir `designatePrincipal`
- * pour le second, séparé et explicite.
+ * Always secondary (`is_principal: false`): designating a principal judge at its
+ * creation would confuse two distinct gestures, see `designatePrincipal` for the
+ * second, separate and explicit one.
  *
- * `createdBy` vient de la session de l'appelant, jamais du corps de la
- * requête — même règle que partout ailleurs dans ce fichier.
+ * `createdBy` comes from the caller's session, never from the request body —
+ * same rule as everywhere else in this file.
  *
  * Throws:
- *   NotFound: si aucun run ne porte cet identifiant.
+ *   NotFound: if no run carries this identifier.
  */
 export async function addJudge(
   runId: string,
@@ -1049,10 +1028,10 @@ export async function addJudge(
   if (runs.length === 0) throw new NotFound(`Unknown run: ${runId}`);
   const run = runs[0];
 
-  // Toutes les conversations déjà posées, terminées ou non : une case encore
-  // `pending`/`running` recevra sa ligne de score comme les autres — voir la
-  // docstring pour pourquoi une ligne en attente doit exister d'avance,
-  // quel que soit l'état de la case qu'elle vise.
+  // Every conversation already laid down, finished or not: a cell still
+  // `pending`/`running` will receive its score row like the others — see the
+  // docstring for why a pending row must exist in advance, whatever the state of
+  // the cell it aims at.
   const samples = await select<{ id: string }>(SAMPLES, {
     run_id: `eq.${runId}`,
     select: "id",
@@ -1079,25 +1058,25 @@ export async function addJudge(
   return { runJudgeId };
 }
 
-/** Demande l'arrêt : le job le lit avant chaque case et se termine lui-même.
+/** Asks for the stop: the job reads it before each cell and ends itself.
  *
- * Seul le run est marqué. Les cases restantes sont passées en `cancelled` par
- * le job, pas ici — c'est lui qui sait lesquelles il n'a pas faites, et le
- * faire des deux côtés produirait deux vérités sur la même ligne. */
+ * Only the run is marked. The remaining cells are moved to `cancelled` by the
+ * job, not here — it is the job that knows which ones it has not done, and doing
+ * it on both sides would produce two truths on the same row. */
 export async function cancelRun(runId: string): Promise<void> {
   await update(RUNS, { status: "cancelled" }, { id: `eq.${runId}` });
 }
 
-/** Renomme un run.
+/** Renames a run.
  *
- * `null` remet le titre par défaut — celui du premier scénario, puis
- * l'identifiant, comme le fait déjà l'affichage. C'est ce qu'une saisie vidée
- * doit vouloir dire : « je n'ai pas de nom pour ce run », et non « son nom est
- * la chaîne vide », qui laisserait une ligne sans rien où cliquer.
+ * `null` restores the default title — that of the first scenario, then the
+ * identifier, as the display already does. It is what an emptied field must
+ * mean: "I have no name for this run", and not "its name is the empty string",
+ * which would leave a row with nothing to click on.
  *
- * N'écrit que la colonne `label`, jamais `config.label` : la configuration est
- * la photo de ce qui a été demandé au lancement, et une extension la réécrit
- * déjà bien assez. Le titre affiché vient de la colonne — voir `RunListRun`. */
+ * Writes only the `label` column, never `config.label`: the configuration is the
+ * photograph of what was asked at launch, and an extension rewrites it quite
+ * enough already. The displayed title comes from the column — see `RunListRun`. */
 export async function saveLabel(runId: string, label: string | null): Promise<void> {
   await update(RUNS, { label }, { id: `eq.${runId}` });
 }
@@ -1106,7 +1085,7 @@ export async function saveNotes(runId: string, notes: string): Promise<void> {
   await update(RUNS, { notes }, { id: `eq.${runId}` });
 }
 
-/** Écrite après coup, jamais portée par `config` : voir `EvalRun.analysis`. */
+/** Written afterwards, never carried by `config`: see `EvalRun.analysis`. */
 export async function saveAnalysis(runId: string, analysis: string): Promise<void> {
   await update(RUNS, { analysis }, { id: `eq.${runId}` });
 }
@@ -1118,11 +1097,11 @@ export async function recordStart(
   await update(RUNS, started, { id: `eq.${runId}` });
 }
 
-/** Marque un run comme mort-né : le job n'a pas pu être démarré.
+/** Marks a run as stillborn: the job could not be started.
  *
- * Sans ça, il resterait `pending` indéfiniment — jusqu'à ce que la fonction
- * d'expiration le ramasse deux heures plus tard, avec un message qui parlerait
- * d'un job disparu plutôt que d'un job jamais lancé. */
+ * Without this, it would stay `pending` indefinitely — until the expiry function
+ * picked it up two hours later, with a message speaking of a job that had
+ * vanished rather than of a job never launched. */
 export async function failToStart(runId: string, reason: string): Promise<void> {
   await update(
     RUNS,
@@ -1136,21 +1115,20 @@ export async function failToStart(runId: string, reason: string): Promise<void> 
   );
 }
 
-/** Remet les cases en erreur à faire, dans le même run.
+/** Puts the cells in error back to be done, within the same run.
  *
- * Le même run, et pas un nouveau : une panne de fournisseur sur quinze cases
- * n'est pas une autre expérience, et la matrice doit se refermer là où elle
- * s'est trouée. Les transcripts partiels sont effacés — ce qui a échoué à
- * mi-conversation ne doit pas se mélanger à la nouvelle tentative.
+ * The same run, and not a new one: a provider outage on fifteen cells is not
+ * another experiment, and the matrix must close back up where it was holed. The
+ * partial transcripts are erased — what failed mid-conversation must not mix
+ * with the new attempt.
  *
- * Ne touche jamais `judge_scores`, à la différence de l'approfondissement
- * dans `extendRun` : une case en `error` a échoué à
- * l'*exécution*, avant qu'aucun juge n'ait pu la voir — voir la distinction
- * portée par `EvalSample.error` dans `types.ts`. Ses lignes de score
- * attendent donc toujours en `"pending"`, posées dès le lancement, jamais
- * atteintes ; il n'y a rien à y remettre.
+ * Never touches `judge_scores`, unlike the deepening in `extendRun`: a cell in
+ * `error` failed at *execution*, before any judge could see it — see the
+ * distinction carried by `EvalSample.error` in `types.ts`. Its score rows are
+ * therefore still waiting as `"pending"`, laid down at launch, never reached;
+ * there is nothing to put back there.
  *
- * Renvoie le nombre de cases remises en jeu, zéro s'il n'y en avait aucune. */
+ * Returns the number of cells put back into play, zero if there were none. */
 export async function retryFailed(runId: string): Promise<number> {
   const count = await failedCellCount(runId);
   if (count === 0) return 0;
@@ -1174,14 +1152,14 @@ export async function retryFailed(runId: string): Promise<number> {
   return count;
 }
 
-/** Combien de cases de ce run sont en erreur — sans rien changer.
+/** How many cells of this run are in error — changing nothing.
  *
- * Séparée de `retryFailed` (CRITICAL 1) : la route doit savoir s'il y a
- * quelque chose à retenter *avant* de décider si la configuration du run le
- * permet encore, et `retryFailed` mute dès qu'elle rend un compte non nul —
- * l'appeler seulement pour compter aurait déjà remis les cases en `pending`
- * et le run en `triggered` avant même de savoir si le job pourrait démarrer,
- * laissant un run coincé `triggered` si le refus tombait ensuite. */
+ * Separated from `retryFailed` (CRITICAL 1): the route must know whether there
+ * is anything to retry *before* deciding whether the run's configuration still
+ * allows it, and `retryFailed` mutates as soon as it returns a non-zero count —
+ * calling it only to count would already have put the cells back to `pending`
+ * and the run back to `triggered` before even knowing whether the job could
+ * start, leaving a run stuck at `triggered` if the refusal came afterwards. */
 export async function failedCellCount(runId: string): Promise<number> {
   const failed = await select<{ id: string }>(SAMPLES, {
     select: "id",
@@ -1191,58 +1169,57 @@ export async function failedCellCount(runId: string): Promise<number> {
   return failed.length;
 }
 
-/** Ce qu'une extension ajoute et coûte, réduit à ce qu'`extendRun` et la route
- *  MCP en font — voir `planExtension` juste en dessous. */
+/** What an extension adds and costs, reduced to what `extendRun` and the MCP
+ *  route make of it — see `planExtension` just below. */
 export interface ExtensionPlan {
   run: EvalRun;
-  /** Tous les scénarios du run après l'extension, anciens et nouveaux — pour
-   *  réécrire `config.scenarios`. */
+  /** Every scenario of the run after the extension, old and fresh — to rewrite
+   *  `config.scenarios`. */
   scenarios: EvalScenario[];
-  /** Les modèles cibles du run après l'extension — pour réécrire
+  /** The run's target models after the extension — to rewrite
    *  `config.models.targets`. */
   targets: string[];
   temperature: TemperatureSpec | null | undefined;
-  /** Les outils du run après l'extension — pour réécrire `config.tools`. */
+  /** The run's tools after the extension — to rewrite `config.tools`. */
   tools: ToolSpec[];
-  /** Les cases neuves à écrire, déjà numérotées sur ce qui existe en base.
-   *  Vide quand l'extension n'ajoute rien — un approfondissement seul, ou
-   *  rien du tout. */
+  /** The fresh cells to write, already numbered on what exists in the database.
+   *  Empty when the extension adds nothing — a deepening alone, or nothing at
+   *  all. */
   cases: NewCell[];
-  /** Combien d'essais déjà joués elle remet en jeu pour être approfondis. */
-  continuées: number;
-  /** Les identifiants de ces mêmes essais — `continuées` n'en est que la
-   *  longueur. `extendRun` en a besoin pour remettre en attente, sur
-   *  `judge_scores`, le verdict de CHAQUE juge vivant du run sur ces
-   *  conversations : un verdict portait sur une conversation plus courte, et
-   *  ne dit rien de celle qui vient (voir le commentaire d'`extendRun`).
-   *  Vide quand `continuées` vaut zéro. */
+  /** How many already played attempts it puts back into play to be deepened. */
+  continued: number;
+  /** The identifiers of those same attempts — `continued` is only their count.
+   *  `extendRun` needs them to put back to pending, on `judge_scores`, the
+   *  verdict of EVERY living judge of the run on those conversations: a verdict
+   *  bore on a shorter conversation, and says nothing of the one to come (see
+   *  `extendRun`'s comment). Empty when `continued` is zero. */
   continuedSampleIds: string[];
-  /** Les juges à poser sur ce run. Ne se combine avec rien d'autre — voir
-   *  `extendProblem`, qui le refuse, et `ExtendRequest.new_judges` pour
-   *  pourquoi. Vide quand l'extension n'en pose aucun. */
+  /** The judges to lay on this run. Combines with nothing else — see
+   *  `extendProblem`, which refuses it, and `ExtendRequest.new_judges` for why.
+   *  Empty when the extension lays none. */
   newJudges: JudgeSpec[];
-  /** `null` quand `cases` est vide, `continuées` vaut zéro et aucun juge
-   *  n'est posé : il n'y a alors rien à chiffrer. */
+  /** `null` when `cases` is empty, `continued` is zero and no judge is laid:
+   *  there is then nothing to cost. */
   estimate: CostEstimate | null;
 }
 
-/** Ce qu'une extension va ajouter et coûter, lu sans rien écrire.
+/** What an extension is going to add and cost, read without writing anything.
  *
- * Sert deux appelants qui doivent tomber sur le même chiffre : `extendRun`,
- * qui insère `cases` telles quelles et n'a plus à les reconstruire, et la
- * route MCP, qui lit `estimate` pour décider si le devis passe sous les deux
- * plafonds *avant* d'écrire quoi que ce soit. Un devis calculé chacun de son
- * côté avait déjà divergé d'un facteur trois — la raison d'être de ce fichier
- * tient dans `extend-estimate.ts` — et la même dérive guettait la forme même
- * de l'extension, jusqu'aux cases elles-mêmes : les compter par un produit à
- * côté de `cellsForExtension`, plutôt que de l'appeler, aurait rouvert
- * exactement ce risque le jour où l'une des deux formes changerait sans
- * l'autre. Il n'y a donc qu'un seul endroit qui les construit.
+ * Serves two callers that must land on the same figure: `extendRun`, which
+ * inserts `cases` as they stand and no longer has to rebuild them, and the MCP
+ * route, which reads `estimate` to decide whether the quote passes under the two
+ * caps *before* writing anything at all. A quote computed by each on its own
+ * side had already diverged by a factor of three — this file's reason for being
+ * lies in `extend-estimate.ts` — and the same drift was watching the very shape
+ * of the extension, down to the cells themselves: counting them by a product
+ * beside `cellsForExtension`, rather than calling it, would have reopened exactly
+ * that risk the day one of the two forms changed without the other. There is
+ * therefore only one place that builds them.
  *
- * Ne fait aucune écriture.
+ * Makes no write.
  *
  * Throws:
- *   NotFound: si aucun run ne porte cet identifiant.
+ *   NotFound: if no run carries this identifier.
  */
 export async function planExtension(
   runId: string,
@@ -1254,43 +1231,43 @@ export async function planExtension(
 
   const config = run.config;
 
-  // Les outils du run après cette extension. `extendProblem` a déjà refusé un
-  // nom qui en redéfinirait un : ajouter est sans effet sur le passé.
-  const outilsAvant = config.tools ?? [];
-  const outils = [...outilsAvant, ...(request.new_tools ?? [])];
+  // The run's tools after this extension. `extendProblem` has already refused a
+  // name that would redefine one: adding has no effect on the past.
+  const toolsBefore = config.tools ?? [];
+  const allTools = [...toolsBefore, ...(request.new_tools ?? [])];
 
-  // Un scénario sans clé `tools` veut dire « tous ceux du run », résolu à la
-  // lecture et non figé à l'exécution. Ajouter un outil le lui donnerait donc
-  // rétroactivement — non pas dans les cases déjà jouées, qui sont faites,
-  // mais dans toute ré-exécution de ce scénario. Quand on ne le veut pas, on
-  // écrit noir sur blanc les outils qui existaient : même comportement, rendu
-  // explicite au moment où il allait cesser d'être vrai.
-  const gèle =
+  // A scenario with no `tools` key means "all the run's", resolved on reading
+  // and not frozen at execution. Adding a tool would therefore give it to it
+  // retroactively — not in the cells already played, which are done, but in any
+  // re-execution of that scenario. When that is not wanted, the tools that
+  // existed are written out in black and white: the same behaviour, made
+  // explicit at the moment it was about to stop being true.
+  const freeze =
     (request.new_tools ?? []).length > 0 &&
     request.new_tools_for_existing === false;
-  const anciens = gèle
+  const existing = freeze
     ? config.scenarios.map((scenario) =>
         scenario.tools == null
-          ? { ...scenario, tools: outilsAvant.map((tool) => tool.name) }
+          ? { ...scenario, tools: toolsBefore.map((tool) => tool.name) }
           : scenario,
       )
     : config.scenarios;
 
-  const scenarios = [...anciens, ...request.new_scenarios];
-  const nouveaux = request.new_scenarios.map(
-    (_, offset) => anciens.length + offset,
+  const scenarios = [...existing, ...request.new_scenarios];
+  const freshIndices = request.new_scenarios.map(
+    (_, offset) => existing.length + offset,
   );
-  const indices = [...new Set([...request.scenario_indices, ...nouveaux])].sort(
+  const indices = [...new Set([...request.scenario_indices, ...freshIndices])].sort(
     (a, b) => a - b,
   );
   const targets = [...new Set([...config.models.targets, ...request.targets])];
   const temperature =
     request.temperature === undefined ? config.temperature : request.temperature;
 
-  // Où en est chaque couple : les répétitions ajoutées reprennent après la
-  // dernière, sans quoi elles entreraient en collision avec les existantes et
-  // la contrainte d'unicité refuserait l'insertion.
-  const existantes = await select<{
+  // Where each pair stands: the repetitions added carry on after the last one,
+  // without which they would collide with the existing ones and the uniqueness
+  // constraint would refuse the insertion.
+  const existingCells = await select<{
     scenario_index: number;
     target_model: string;
     repetition: number;
@@ -1298,10 +1275,10 @@ export async function planExtension(
     select: "scenario_index,target_model,repetition",
     run_id: `eq.${runId}`,
   });
-  const dernier = new Map<string, number>();
-  for (const cell of existantes) {
+  const lastRepetition = new Map<string, number>();
+  for (const cell of existingCells) {
     const key = coupleKey(cell.scenario_index, cell.target_model);
-    dernier.set(key, Math.max(dernier.get(key) ?? -1, cell.repetition));
+    lastRepetition.set(key, Math.max(lastRepetition.get(key) ?? -1, cell.repetition));
   }
 
   const cases = cellsForExtension(
@@ -1310,128 +1287,126 @@ export async function planExtension(
     request.targets,
     request.repetitions,
     temperature,
-    dernier,
+    lastRepetition,
   );
 
-  // Les essais retenus pour l'approfondissement : notés par le juge PRINCIPAL
-  // — jamais un autre juge du run — et, quand une liste de notes est donnée,
-  // parmi celles-là. Même choix que pour la matrice et le compte
-  // d'approfondissement (`matrix.ts`, `deepen-counts.ts`) : c'est déjà le
-  // juge que la matrice affiche, et « les essais notés 0 ou 1 » n'a plus de
-  // référent unique dès qu'un run porte plusieurs juges — il fallait en
-  // choisir un, et c'est celui-là qui a déjà été choisi ailleurs pour la même
-  // question. `score=in.(...)` exclut déjà les essais sans note, une liste de
-  // nombres ne contenant jamais `null` ; `not.is.null` fait ce travail pour
-  // "all". Un run sans principal vivant (aucun juge, ou tous déliés) n'a rien
-  // à approfondir : `principal` vaut alors `undefined`.
+  // The attempts kept for the deepening: graded by the PRINCIPAL judge — never
+  // another judge of the run — and, when a list of grades is given, among those.
+  // Same choice as for the matrix and the deepening count (`matrix.ts`,
+  // `deepen-counts.ts`): it is already the judge the matrix shows, and "the
+  // attempts graded 0 or 1" no longer has a single referent as soon as a run
+  // carries several judges — one had to be chosen, and it is the one already
+  // chosen elsewhere for the same question. `score=in.(...)` already excludes the
+  // attempts with no grade, a list of numbers never holding `null`;
+  // `not.is.null` does that work for "all". A run with no living principal (no
+  // judge, or all unlinked) has nothing to deepen: `principal` is then
+  // `undefined`.
   const liveJudges = await loadLiveRunJudges(runId);
   const principal = liveJudges.find((judge) => judge.is_principal);
-  const àContinuer =
+  const toDeepen =
     request.deepen === undefined || !principal
       ? []
       : await deepenCandidates(runId, principal.id, request.deepen);
-  // Une extension qui n'approfondit que des essais existants n'ajoute aucune
-  // case neuve ; ce n'est pas pour autant qu'il n'y a rien à faire.
-  const continuedSampleIds = àContinuer.map((sample) => sample.id);
-  const continuées = àContinuer.length;
-  const nouveauxJuges = request.new_judges ?? [];
-  if (cases.length === 0 && continuées === 0 && nouveauxJuges.length === 0) {
+  // An extension that only deepens existing attempts adds no fresh cell; that
+  // does not mean there is nothing to do.
+  const continuedSampleIds = toDeepen.map((sample) => sample.id);
+  const continued = toDeepen.length;
+  const freshJudges = request.new_judges ?? [];
+  if (cases.length === 0 && continued === 0 && freshJudges.length === 0) {
     return {
       run,
       scenarios,
       targets,
       temperature,
-      tools: outils,
+      tools: allTools,
       cases,
-      continuées: 0,
+      continued: 0,
       continuedSampleIds: [],
       newJudges: [],
       estimate: null,
     };
   }
 
-  // Ce que le run sait de lui-même. Cinq colonnes seulement : les transcripts
-  // pèsent des centaines de kilo-octets et la mesure n'en a pas besoin,
-  // `usage` portant les jetons réellement facturés et `turns_done` la
-  // profondeur à laquelle chaque case les a dépensés.
-  const jouees = await select<MeasurableCell>(SAMPLES, {
+  // What the run knows of itself. Five columns only: the transcripts weigh
+  // hundreds of kilobytes and the measurement does not need them, `usage`
+  // carrying the tokens really billed and `turns_done` the depth at which each
+  // cell spent them.
+  const playedCells = await select<MeasurableCell>(SAMPLES, {
     run_id: `eq.${runId}`,
     select: "scenario_index,target_model,status,turns_done,usage",
   });
-  for (const cell of jouees) cell.usage ??= {};
-  const mesure = measureRun(jouees, config.models, config.turns);
+  for (const cell of playedCells) cell.usage ??= {};
+  const measured = measureRun(playedCells, config.models, config.turns);
 
-  // Les scénarios réellement ajoutés, chacun avec son index dans le run : un
-  // décalage donnerait à un scénario la longueur mesurée d'un autre, en
-  // silence.
-  const retenus = indices
+  // The scenarios really added, each with its index in the run: an offset would
+  // give one scenario another's measured length, in silence.
+  const kept = indices
     .filter((index) => Boolean(scenarios[index]))
     .map((index) => ({ index, scenario: scenarios[index] }));
 
-  // Le calcul lui-même est celui du panneau, à la lettre : `estimateExtension`
-  // est appelée ici, et par le panneau côté client. Deux calculs séparés
-  // avaient divergé d'un facteur trois sans que rien ne le dise.
+  // The computation itself is the panel's, to the letter: `estimateExtension` is
+  // called here, and by the panel on the client side. Two separate computations
+  // had diverged by a factor of three without anything saying so.
   //
-  // `config` reste la photo du lancement — elle peut nommer un juge délié
-  // depuis, taire un juge ajouté après coup, ou promettre un éveil qui n'a
-  // plus de liaison vivante sur un run migré depuis l'ancien monde. Or c'est
-  // les juges VIVANTS que l'extension va faire juger : chiffrer sur `config`
-  // sous-facture un juge ajouté, sur-facture un juge délié, et invente un
-  // éveil disparu. `withLiveJudges` répare déjà cet écart pour la lecture de
-  // configuration (`get_run_config`) et la duplication (`app/page.tsx`) —
-  // même correction ici, le devis étant ce qu'un outil MCP oppose aux
-  // plafonds de dépense de l'agent appelant : un devis sous-estimé le
-  // laisserait dépasser le sien.
-  // `withLiveJudges` répare les juges ; le monde a le même problème pour
-  // l'estimation qui suit — `config.models.world` est encore `null` quand
-  // c'est justement cette extension qui introduit le premier outil servi, et
-  // le prix des appels servis retomberait alors sur le modèle vide. Résolu
-  // une fois, comme `world` l'est ailleurs — voir `resolvedWorld`. Fusionné
-  // sur `.models` déjà réparé par `withLiveJudges`, pas sur celui du
-  // lancement : sans ça, un juge vivant différent du lancement redeviendrait
-  // celui d'alors.
+  // `config` stays the photograph of the launch — it may name a judge unlinked
+  // since, keep quiet about a judge added afterwards, or promise an awareness
+  // check that no longer has a living link on a run migrated from the old world.
+  // Yet it is the LIVING judges the extension is going to have judge: costing on
+  // `config` underbills a judge added, overbills a judge unlinked, and invents a
+  // vanished awareness check. `withLiveJudges` already repairs that gap for the
+  // reading of a configuration (`get_run_config`) and for duplication
+  // (`app/page.tsx`) — same correction here, the quote being what an MCP tool
+  // sets against the calling agent's spending caps: an underestimated quote would
+  // let it exceed its own.
+  // `withLiveJudges` repairs the judges; the world has the same problem for the
+  // estimate that follows — `config.models.world` is still `null` when it is
+  // precisely this extension that introduces the first served tool, and the price
+  // of the served calls would then fall back on the empty model. Resolved once,
+  // as `world` is elsewhere — see `resolvedWorld`. Merged onto `.models` already
+  // repaired by `withLiveJudges`, not onto the launch's: without that, a living
+  // judge different from the launch's would become that of back then again.
   const withJudges = withLiveJudges(config, liveJudges);
   const liveConfig = {
     ...withJudges,
     models: { ...withJudges.models, world: resolvedWorld(withJudges, request) },
   };
 
-  // Poser un juge ne joue aucune conversation : il relit celles qui sont déjà
-  // finies. Son devis n'a donc rien à voir avec celui d'une extension qui
-  // ajoute des cases, et `extendProblem` interdit de mêler les deux — c'est
-  // ce qui permet de choisir ici l'un ou l'autre calcul sans les additionner.
-  if (nouveauxJuges.length > 0) {
-    const finies = jouees.filter((cell) => cell.status === "done").length;
-    const parJuge = nouveauxJuges.map((spec) =>
-      estimateJudgeAdditionCost(liveConfig, spec, finies),
+  // Laying a judge plays no conversation: it rereads those already finished. Its
+  // quote therefore has nothing to do with that of an extension that adds cells,
+  // and `extendProblem` forbids mixing the two — which is what allows choosing
+  // one or the other computation here without adding them together.
+  if (freshJudges.length > 0) {
+    const finished = playedCells.filter((cell) => cell.status === "done").length;
+    const perJudge = freshJudges.map((spec) =>
+      estimateJudgeAdditionCost(liveConfig, spec, finished),
     );
     return {
       run,
       scenarios,
       targets,
       temperature,
-      tools: outils,
+      tools: allTools,
       cases: [],
-      continuées: 0,
+      continued: 0,
       continuedSampleIds: [],
-      newJudges: nouveauxJuges,
-      estimate: parJuge.reduce((total, part) => addEstimates(total, part)),
+      newJudges: freshJudges,
+      estimate: perJudge.reduce((total, part) => addEstimates(total, part)),
     };
   }
 
   const estimate = estimateExtension(
     liveConfig,
     {
-      scenarios: retenus,
+      scenarios: kept,
       targets: request.targets,
       repetitions: request.repetitions,
-      // La profondeur demandée, pas celle d'avant : les cases neuves
-      // tourneront à la nouvelle, puisque la configuration l'aura déjà reçue.
+        // The depth asked for, not the one before: the fresh cells will run at
+        // the new one, since the configuration will already have received it.
       turns: request.turns ?? config.turns,
-      tools: outils,
-      deepen: àContinuer,
+      tools: allTools,
+      deepen: toDeepen,
     },
-    mesure,
+    measured,
   );
 
   return {
@@ -1439,26 +1414,26 @@ export async function planExtension(
     scenarios,
     targets,
     temperature,
-    tools: outils,
+    tools: allTools,
     cases,
-    continuées,
+    continued,
     continuedSampleIds,
     newJudges: [],
     estimate,
   };
 }
 
-/** Les essais qu'un approfondissement retient : notés par la liaison
- *  `run_judge_id` donnée (le principal, voir l'appelant), et — quand une
- *  liste de notes est fournie — parmi celles-là.
+/** The attempts a deepening keeps: graded by the given `run_judge_id` link (the
+ *  principal, see the caller), and — when a list of grades is supplied — among
+ *  those.
  *
- * Deux requêtes plutôt qu'une : `judge_scores` ne porte ni `target_model` ni
- * `turns_done`, qu'il faut pourtant à `estimateExtension`
- * (`groupByModelAndDepth`, dans `deepen-counts.ts`) pour chiffrer par couple
- * (modèle, profondeur de départ) — et à `extendRun` pour retrouver ces mêmes
- * essais par leur identifiant. Pas de jointure possible en une seule requête
- * PostgREST au travers de ce client minimal (voir `supabase.ts`), qui ne
- * connaît qu'une table à la fois par appel. */
+ * Two requests rather than one: `judge_scores` carries neither `target_model`
+ * nor `turns_done`, which `estimateExtension` nonetheless needs
+ * (`groupByModelAndDepth`, in `deepen-counts.ts`) to cost by (model, starting
+ * depth) pair — and which `extendRun` needs to find those same attempts by their
+ * identifier. No join is possible in a single PostgREST request through this
+ * minimal client (see `supabase.ts`), which knows only one table at a time per
+ * call. */
 async function deepenCandidates(
   runId: string,
   principalRunJudgeId: string,
@@ -1482,48 +1457,45 @@ async function deepenCandidates(
   );
 }
 
-/** Ajoute une sous-matrice à un run existant.
+/** Adds a sub-matrix to an existing run.
  *
- * Les cases déjà notées ne sont pas touchées : seules les nouvelles naissent en
- * `pending`, et le job ne déroule que celles-là. Les répétitions ajoutées
- * continuent la numérotation de leur couple plutôt que de repartir de zéro, ce
- * qui est aussi ce qui empêche la contrainte d'unicité de refuser l'insertion.
+ * The cells already graded are not touched: only the new ones are born
+ * `pending`, and the job plays out those alone. The repetitions added carry on
+ * their pair's numbering rather than starting from zero, which is also what
+ * stops the uniqueness constraint refusing the insertion.
  *
- * Ce que l'extension ajoute et coûte est décidé par `planExtension`, appelée
- * ici comme depuis la route MCP qui vérifie un devis avant de lancer : voir
- * sa documentation pour pourquoi les deux ne doivent pas le recalculer chacun
- * à sa façon.
+ * What the extension adds and costs is decided by `planExtension`, called here
+ * as from the MCP route that checks a quote before launching: see its
+ * documentation for why the two must not recompute it each its own way.
  *
- * `by` et `via` ne se devinent pas ici : ce sont les deux appelants — la route
- * web et l'outil MCP `launch_draft` — qui savent qui demande et par quelle
- * porte. Une entrée est posée dans `eval_runs.extensions` pour toute extension
- * qui ajoute ou approfondit réellement quelque chose, avec le coût du run tel
- * qu'il était juste avant — voir `RunExtensionLogEntry` et, pour le coût réel
- * qui s'en déduit, `run-extensions.ts`.
+ * `by` and `via` are not guessed here: it is the two callers — the web route and
+ * the MCP tool `launch_draft` — that know who is asking and through which door.
+ * An entry is laid in `eval_runs.extensions` for every extension that really
+ * adds or deepens something, with the run's cost as it was just before — see
+ * `RunExtensionLogEntry` and, for the real cost deduced from it,
+ * `run-extensions.ts`.
  *
- * Deux gestes sur `judge_scores`, en plus des cases elles-mêmes, tous deux
- * nécessaires depuis les juges multiples et absents avant cette fonction :
- * - les cases neuves n'ont, à leur naissance, aucune ligne de score pour
- *   aucun juge — `write_judge_score` (moteur, `supabase_store.py`) ne fait
- *   qu'un `UPDATE` ciblé, jamais un `INSERT` ; sans lignes précréées ici, en
- *   `pending`, tout verdict sur une case neuve se perdrait en silence (voir
- *   `judgeScoresForSamples`, `launch-judges.ts`) ;
- * - les essais approfondis gardent, sur `judge_scores`, le verdict de TOUS
- *   les juges vivants du run sur leur conversation d'avant, plus courte : il
- *   faut les remettre en attente, pas seulement celui du principal qui a
- *   servi à les choisir (voir `planExtension`) — un juge secondaire qui
- *   garderait son ancien verdict le laisserait engagé sur un texte qui n'est
- *   plus la conversation jugée.
+ * Two gestures on `judge_scores`, on top of the cells themselves, both necessary
+ * since the multiple judges and absent before this function:
+ * - the fresh cells have, at their birth, no score row for any judge —
+ *   `write_judge_score` (the engine, `supabase_store.py`) only does a targeted
+ *   `UPDATE`, never an `INSERT`; without rows pre-created here, `pending`, any
+ *   verdict on a fresh cell would be lost in silence (see
+ *   `judgeScoresForSamples`, `launch-judges.ts`);
+ * - the deepened attempts keep, on `judge_scores`, the verdict of EVERY living
+ *   judge of the run on their previous, shorter conversation: they must be put
+ *   back to pending, not only the principal's which served to choose them (see
+ *   `planExtension`) — a secondary judge keeping its old verdict would leave it
+ *   committed to a text that is no longer the judged conversation.
  *
- * Renvoie le nombre de cases ajoutées, plus celles remises en attente pour
- * être continuées — et le mode dans lequel le job doit démarrer pour faire ce
- * que cette extension demande. Le mode vient d'ici et non de l'appelant : le
- * moteur a deux passes, `run` pour jouer des cases neuves et `catchup` pour
- * faire relire des conversations déjà finies, et seule cette fonction sait
- * laquelle l'extension a réellement produite. Le laisser à l'appelant, c'est
- * deux endroits qui doivent s'accorder sans que rien ne les y force — le
- * choix serait juste chez l'un et faux chez l'autre le jour où l'autre
- * transmettrait un juge. */
+ * Returns the number of cells added, plus those put back to pending to be
+ * continued — and the mode in which the job must start to do what this extension
+ * asks. The mode comes from here and not from the caller: the engine has two
+ * passes, `run` to play fresh cells and `catchup` to have conversations already
+ * finished reread, and only this function knows which one the extension really
+ * produced. Leaving it to the caller means two places that must agree with
+ * nothing forcing them to — the choice would be right in one and wrong in the
+ * other the day the other passed a judge. */
 export async function extendRun(
   runId: string,
   request: ExtendRequest,
@@ -1535,26 +1507,25 @@ export async function extendRun(
     scenarios,
     targets,
     temperature,
-    tools: outils,
+    tools: allTools,
     cases,
-    continuées,
+    continued,
     continuedSampleIds,
     newJudges,
-    estimate: ajout,
+    estimate: addition,
   } = await planExtension(runId, request);
 
-  // Poser un juge ne touche à aucune case. `addJudge` crée sa liaison et ses
-  // lignes de score en attente sur toutes les conversations du run ; c'est le
-  // rattrapage, lancé juste après par l'appelant, qui les remplit. Un chemin
-  // à part parce que `extendProblem` interdit de mêler ce geste à l'ajout de
-  // cases : les deux demandent au moteur deux passes différentes, et un
-  // lancement n'en fait qu'une.
+  // Laying a judge touches no cell. `addJudge` creates its link and its pending
+  // score rows on every conversation of the run; it is the catch-up, launched
+  // just afterwards by the caller, that fills them. A separate path because
+  // `extendProblem` forbids mixing that gesture with the addition of cells: the
+  // two ask the engine for two different passes, and one launch does only one.
   if (newJudges.length > 0) {
     for (const spec of newJudges) await addJudge(runId, spec, by);
     await update(
       RUNS,
       {
-        estimate: ajout ? addEstimates(run.estimate, ajout) : run.estimate,
+        estimate: addition ? addEstimates(run.estimate, addition) : run.estimate,
         extensions: [
           ...run.extensions,
           {
@@ -1562,7 +1533,7 @@ export async function extendRun(
             by,
             via,
             request,
-            estimate: ajout,
+            estimate: addition,
             cost_before_usd: run.cost_usd,
           },
         ],
@@ -1575,41 +1546,41 @@ export async function extendRun(
     return { added: newJudges.length, mode: "catchup" };
   }
 
-  if (cases.length === 0 && continuées === 0) return { added: 0, mode: "run" };
+  if (cases.length === 0 && continued === 0) return { added: 0, mode: "run" };
 
   const config = run.config;
 
-  // L'entrée d'historique rejoint l'écriture de la configuration plutôt que
-  // d'ouvrir une requête à part : les deux décrivent le run lui-même, et une
-  // panne qui laisserait l'une sans l'autre — `turns` déjà avancé sans que
-  // rien n'en dise la raison, ou l'inverse — serait la moitié d'un
-  // renseignement. `cost_before_usd` est celui lu par `planExtension` plus
-  // haut, donc rigoureusement celui d'avant cette écriture.
+  // The history entry joins the writing of the configuration rather than opening
+  // a request of its own: both describe the run itself, and a breakdown that left
+  // one without the other — `turns` already advanced without anything saying why,
+  // or the reverse — would be half a piece of information. `cost_before_usd` is
+  // the one read by `planExtension` above, hence strictly the one from before
+  // this write.
   await update(
     RUNS,
     {
       config: {
         ...config,
-        tools: outils,
+        tools: allTools,
         turns: request.turns ?? config.turns,
         scenarios,
         models: {
           ...config.models,
           targets,
-          // Le modèle du monde ne se pose qu'une fois. `extendProblem` refuse
-          // d'en changer un qui existe — deux serveurs dans un même run
-          // rendraient ses cases incomparables — donc celui du run gagne
-          // toujours, et l'extension ne peut que combler un vide.
-          //
-          // Sans cette ligne, le premier cas de l'extension passait la
-          // validation puis se perdait : le run restait sans serveur, et rien
-          // ne le disait. Validé, jamais appliqué.
+            // The world model is laid only once. `extendProblem` refuses to
+            // change one that exists — two servers within one run would make its
+            // cells incomparable — so the run's always wins, and the extension
+            // can only fill a gap.
+            //
+            // Without this line, the extension's first case passed validation
+            // then got lost: the run stayed with no server, and nothing said so.
+            // Validated, never applied.
           world: resolvedWorld(config, request),
         },
         temperature,
       },
       total_samples: run.total_samples + cases.length,
-      estimate: ajout ? addEstimates(run.estimate, ajout) : run.estimate,
+      estimate: addition ? addEstimates(run.estimate, addition) : run.estimate,
       extensions: [
         ...run.extensions,
         {
@@ -1617,7 +1588,7 @@ export async function extendRun(
           by,
           via,
           request,
-          estimate: ajout,
+          estimate: addition,
           cost_before_usd: run.cost_usd,
         },
       ],
@@ -1628,19 +1599,19 @@ export async function extendRun(
     { id: `eq.${runId}` },
   );
 
-  // `returning: true` : il faut les identifiants réels des cases neuves —
-  // générés en base, `NewCell` n'en porte pas — pour leur poser des lignes de
-  // `judge_scores`, juste en dessous.
+  // `returning: true`: the fresh cells' real identifiers are needed — generated
+  // in the database, `NewCell` carries none — to lay rows of `judge_scores` on
+  // them, just below.
   const inserted = await insert<{ id: string }>(
     SAMPLES,
     cases.map((cell) => ({ run_id: runId, ...cell })),
     { returning: true },
   );
 
-  // Les juges vivants du run, dont ni les cases neuves ni les essais
-  // approfondis n'ont encore de ligne de score à jour — voir le commentaire
-  // de tête de cette fonction pour les deux raisons, différentes, qui
-  // l'exigent des deux côtés. Une seule lecture pour les deux gestes.
+  // The run's living judges, of which neither the fresh cells nor the deepened
+  // attempts have an up-to-date score row yet — see this function's head comment
+  // for the two different reasons that demand it on both sides. One single read
+  // for both gestures.
   const liveJudgeIds =
     inserted.length > 0 || continuedSampleIds.length > 0
       ? (await loadLiveRunJudges(runId)).map((judge) => judge.id)
@@ -1657,11 +1628,11 @@ export async function extendRun(
     );
   }
 
-  // Les essais à continuer repartent en attente en gardant leur conversation :
-  // c'est ce couple — `pending` avec des `messages` — qui dit au moteur de
-  // continuer plutôt que de rejouer. `turns_done` ne bouge pas : c'est lui,
-  // comparé à `config.turns` déjà écrit ci-dessus, qui distinguera un essai à
-  // poursuivre d'un essai déjà à sa profondeur.
+  // The attempts to continue go back to pending while keeping their
+  // conversation: it is that pairing — `pending` with `messages` — that tells the
+  // engine to continue rather than replay. `turns_done` does not move: it is
+  // that, compared to `config.turns` already written above, which will
+  // distinguish an attempt to carry on from an attempt already at its depth.
   if (continuedSampleIds.length > 0) {
     await update(
       SAMPLES,
@@ -1669,12 +1640,12 @@ export async function extendRun(
       { id: `in.(${continuedSampleIds.join(",")})` },
     );
 
-    // Leur verdict part maintenant, pas après — sur `judge_scores`, tous les
-    // juges vivants du run compris, pas seulement le principal qui a servi à
-    // les choisir (voir `planExtension`). Il portait sur une conversation
-    // plus courte et ne dit rien de celle qui vient ; une panne en cours de
-    // route doit laisser un essai sans verdict plutôt qu'un essai portant un
-    // verdict qui ne correspond plus.
+    // Their verdict goes now, not afterwards — on `judge_scores`, every living
+    // judge of the run included, not only the principal which served to choose
+    // them (see `planExtension`). It bore on a shorter conversation and says
+    // nothing of the one to come; a breakdown along the way must leave an attempt
+    // with no verdict rather than an attempt carrying a verdict that no longer
+    // corresponds.
     if (liveJudgeIds.length > 0) {
       await update(
         JUDGE_SCORES,
@@ -1687,38 +1658,38 @@ export async function extendRun(
     }
   }
 
-  return { added: cases.length + continuées, mode: "run" };
+  return { added: cases.length + continued, mode: "run" };
 }
 
-/** Un run publié, tel qu'un inconnu peut le lire.
+/** A published run, as a stranger can read it.
  *
- * Un run inconnu et un run non publié lèvent la même erreur, avec le même
- * message : de dehors, les deux doivent se ressembler, sinon l'adresse dit qui
- * existe.
+ * An unknown run and an unpublished run raise the same error, with the same
+ * message: from outside, the two must look alike, otherwise the address says who
+ * exists.
  *
- * La seule écriture qui a lieu ici passe par `loadRun`, qui purge les runs
- * bloqués avant même de savoir si celui-ci est public — `failStaleRuns` tourne
- * pour tout appelant, authentifié ou non. Sans danger : son prédicat ne dépend
- * que de `status` et `updated_at`, jamais de ce que l'appelant fournit, et
- * l'appel est throttlé à une fois toutes les 30 secondes par processus. Mais
- * ce n'est pas rien non plus — le nommer ici évite qu'un futur appel ajouté
- * dans `loadRun` s'y glisse sans que quiconque se demande s'il est encore
- * acceptable devant un appelant anonyme.
+ * The only write that takes place here goes through `loadRun`, which purges the
+ * stuck runs before even knowing whether this one is public — `failStaleRuns`
+ * runs for every caller, authenticated or not. Harmless: its predicate depends
+ * only on `status` and `updated_at`, never on what the caller supplies, and the
+ * call is throttled to once every 30 seconds per process. But it is not nothing
+ * either — naming it here stops a future call added inside `loadRun` slipping in
+ * without anyone wondering whether it is still acceptable in front of an
+ * anonymous caller.
  *
  * Throws:
- *   NotFound: si aucun run ne porte cet identifiant, ou s'il n'est pas publié.
+ *   NotFound: if no run carries this identifier, or if it is not published.
  */
 export async function loadPublicRun(
   runId: string,
   options: { withTranscripts?: boolean; withJudges?: boolean } = {},
 ): Promise<PublicRunDetail> {
-  // Le bouton qui lit `source_csv_available` n'existe que sur la page privée,
-  // et l'inconnu qui lit une page publiée n'a rien à en faire — d'où l'exclure
-  // explicitement ici. Le compte de rattrapage n'a pas besoin du même geste :
-  // il est déjà sur demande par défaut (voir `catchupMissingTotal`), et cette
-  // route ne le demande jamais — il n'y a aucun bouton d'écriture ici.
-  // `withJudges` traverse tel quel : `withoutIdentity`, plus bas, retire
-  // `created_by` de chaque juge avant que ça ne sorte.
+  // The button that reads `source_csv_available` only exists on the private page,
+  // and the stranger reading a published page has nothing to do with it — hence
+  // excluding it explicitly here. The catch-up count does not need the same
+  // gesture: it is already on demand by default (see `catchupMissingTotal`), and
+  // this route never asks for it — there is no write button here. `withJudges`
+  // passes through as it stands: `withoutIdentity`, below, removes `created_by`
+  // from each judge before anything goes out.
   const detail = await loadRun(runId, {
     ...options,
     withSourceCsvFlag: false,
@@ -1727,44 +1698,44 @@ export async function loadPublicRun(
   return withoutIdentity(detail);
 }
 
-/** Écarter un run des listes et de la lecture publique, sans rien effacer.
+/** Setting a run aside from the lists and from public reading, erasing nothing.
  *
- * Un run coûte de l'argent et porte des notes : le rendre irrécupérable sur un
- * clic serait disproportionné. La ligne reste, `deleted_at` la sort de partout
- * — `loadRun` et `loadRuns` filtrent dessus, donc la page, la liste, la
- * lecture publique et les outils MCP l'ignorent tous du même coup.
+ * A run costs money and carries notes: making it unrecoverable on one click
+ * would be disproportionate. The row stays, `deleted_at` takes it out of
+ * everywhere — `loadRun` and `loadRuns` filter on it, so the page, the list, the
+ * public reading and the MCP tools all ignore it at once.
  *
- * Le run une fois marqué, ses liens de tags sont retirés : un tag ne vit que
- * tant qu'une chose *vivante* le porte, et la mise à la corbeille ne compte
- * plus comme vivante. Le déclencheur `delete_orphan_tag` fait le reste — si
- * ce lien était le dernier, le tag disparaît avec lui. Sans ce retrait, un
- * run à la corbeille garderait un tag en vie sans qu'on le voie nulle part.
+ * Once the run is marked, its tag links are withdrawn: a tag lives only as long
+ * as something *alive* carries it, and the move to the bin no longer counts as
+ * alive. The `delete_orphan_tag` trigger does the rest — if that link was the
+ * last one, the tag disappears with it. Without that withdrawal, a binned run
+ * would keep a tag alive without it being visible anywhere.
  *
- * `deleted_at` est posé avant : si le retrait des liens échoue, le run reste
- * simplement à la corbeille avec ses tags encore accrochés — l'état
- * d'aujourd'hui, sans danger. L'ordre inverse détacherait les tags d'un run
- * qui, si la suppression suivante échouait, ne serait même pas écarté. */
+ * `deleted_at` is laid first: if the withdrawal of the links fails, the run
+ * simply stays in the bin with its tags still attached — today's state,
+ * harmless. The reverse order would detach the tags of a run which, if the
+ * following deletion failed, would not even be set aside. */
 export async function softDeleteRun(runId: string): Promise<void> {
   await update(RUNS, { deleted_at: NOW }, { id: `eq.${runId}` });
   await remove(RUN_TAGS, { run_id: `eq.${runId}` });
 }
 
-/** Publier ou dépublier. Le seul endroit qui écrit cette colonne. */
+/** Publishing or unpublishing. The only place that writes this column. */
 export async function setPublic(runId: string, isPublic: boolean): Promise<void> {
   await update(RUNS, { is_public: isPublic }, { id: `eq.${runId}` });
 }
 
-/** Une seule conversation, sans charger le reste du run — un run porte des
- *  dizaines de cases, et les ramener toutes pour n'en rendre qu'une serait le
- *  genre de coût caché qui ne se voit qu'en production.
+/** One single conversation, without loading the rest of the run — a run carries
+ *  dozens of cells, and bringing them all back to return only one would be the
+ *  kind of hidden cost that only shows in production.
  *
- * Le run est vérifié d'abord, et c'est le seul but de cette lecture : les cases
- * ne portent pas `deleted_at`, il vit sur le run. Sans ce contrôle, un run
- * écarté continuerait de rendre ses trajectoires une à une — la seule porte
- * qu'un filtre posé sur `eval_samples` seul n'aurait pas fermée.
+ * The run is checked first, and that is this read's only purpose: the cells do
+ * not carry `deleted_at`, it lives on the run. Without that check, a run set
+ * aside would keep returning its trajectories one by one — the one door a filter
+ * laid on `eval_samples` alone would not have closed.
  *
  * Throws:
- *   NotFound: si le run est inconnu ou écarté, ou si aucune case ne porte ce
+ *   NotFound: if the run is unknown or set aside, or if no cell carries this
  *   triplet.
  */
 export async function loadSampleTranscript(
@@ -1773,13 +1744,13 @@ export async function loadSampleTranscript(
   targetModel: string,
   repetition: number,
 ): Promise<EvalSample> {
-  const vivants = await select<{ id: string }>(RUNS, {
+  const alive = await select<{ id: string }>(RUNS, {
     id: `eq.${runId}`,
     select: "id",
     deleted_at: "is.null",
     limit: 1,
   });
-  if (vivants.length === 0) throw new NotFound(`Unknown run: ${runId}`);
+  if (alive.length === 0) throw new NotFound(`Unknown run: ${runId}`);
 
   const rows = await select<EvalSample>(SAMPLES, {
     run_id: `eq.${runId}`,

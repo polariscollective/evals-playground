@@ -1162,7 +1162,7 @@ const handler = createMcpHandler((server) => {
         // plafonds, et surtout pas celui, sans rapport, d'une heure déjà
         // chargée par d'autres lancements — un devis à 0 $ ne doit jamais se
         // voir refusé pour ce qu'on a dépensé ailleurs.
-        if (plan.cases.length === 0 && plan.continuées === 0) {
+        if (plan.cases.length === 0 && plan.continued === 0) {
           return toolError("Nothing to add: that combination is already covered.");
         }
         const quote = plan.estimate?.usd ?? 0;
@@ -1217,8 +1217,8 @@ const handler = createMcpHandler((server) => {
         if (plan.cases.length > 0) {
           parts.push(`${plan.cases.length} cell${plan.cases.length > 1 ? "s" : ""} added`);
         }
-        if (plan.continuées > 0) {
-          parts.push(`${plan.continuées} attempt${plan.continuées > 1 ? "s" : ""} pushed deeper`);
+        if (plan.continued > 0) {
+          parts.push(`${plan.continued} attempt${plan.continued > 1 ? "s" : ""} pushed deeper`);
         }
         if (plan.newJudges.length > 0) {
           const n = plan.newJudges.length;
@@ -1680,7 +1680,7 @@ const handler = createMcpHandler((server) => {
       // Rien à ajouter ni à approfondir : `launch_draft` refuserait ce
       // brouillon pour cette seule raison, avant même de regarder le budget
       // — même refus, mot pour mot.
-      if (plan.cases.length === 0 && plan.continuées === 0 && plan.newJudges.length === 0) {
+      if (plan.cases.length === 0 && plan.continued === 0 && plan.newJudges.length === 0) {
         return {
           content: [
             {
@@ -1698,8 +1698,8 @@ const handler = createMcpHandler((server) => {
       if (plan.cases.length > 0) {
         parts.push(`${plan.cases.length} cell${plan.cases.length > 1 ? "s" : ""} to add`);
       }
-      if (plan.continuées > 0) {
-        parts.push(`${plan.continuées} attempt${plan.continuées > 1 ? "s" : ""} to deepen`);
+      if (plan.continued > 0) {
+        parts.push(`${plan.continued} attempt${plan.continued > 1 ? "s" : ""} to deepen`);
       }
       if (plan.newJudges.length > 0) {
         const n = plan.newJudges.length;
