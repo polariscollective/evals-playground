@@ -25,13 +25,14 @@ import { HistoryEditor } from "@/components/HistoryEditor";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { ScenarioModal } from "@/components/RunRead";
 import { formatValue, sortedRubric } from "@/lib/judge-prompt";
+import { ExtendTargets } from "@/components/ExtendTargets";
+import { alignNewTargets, judgesForTargets } from "@/lib/targets";
 import { estimateExtension } from "@/lib/extend-estimate";
 import {
   buildExtendRequest,
   needsWorldModel as computeNeedsWorldModel,
 } from "@/lib/extend-request";
 import { withLiveJudges } from "@/lib/live-config";
-import type { JudgeForConfig } from "@/lib/live-config";
 import { measureRun } from "@/lib/measured-length";
 import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
@@ -43,7 +44,9 @@ import type {
   EvalRun,
   EvalScenario,
   ExtendRequest,
+  JudgeTarget,
   ProviderInfo,
+  RunJudgeView,
   ToolSpec,
 } from "@/lib/types";
 
@@ -163,7 +166,10 @@ export function ExtendPanel({
   onSaveDraft,
 }: {
   run: EvalRun;
-  liveJudges: JudgeForConfig[];
+  /** Typed wider than `withLiveJudges` needs, because the targets block needs
+   *  `run_judge_id` and `targets` and those live on the link, not on the judge.
+   *  The page already passes whole `RunJudgeView`s. */
+  liveJudges: RunJudgeView[];
   repetitionRange: [number, number];
   samples?: ExtendPanelSample[];
   proposal?: ExtendRequest | null;
@@ -215,6 +221,13 @@ export function ExtendPanel({
     system_prompt: "",
     opening_message: "",
   });
+  // What each judge declaring targets expects of the rows this extension adds,
+  // keyed by `run_judge_id`. Allowed to lag behind the scenario list: it is
+  // `alignNewTargets` that turns whatever is here into a request the server
+  // accepts, filling untouched rows with the lowest grade of each scale.
+  const [newTargets, setNewTargets] = useState<Record<string, JudgeTarget[]>>(
+    proposal?.new_targets ?? {},
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // What saving a draft has just done, for as long as it takes to read it — the
@@ -313,6 +326,10 @@ export function ExtendPanel({
   const incomplete = csv ? csv.rows.length - fromCsv.length : 0;
 
   const newScenarios = [...byHand, ...fromCsv];
+  // The judges that can carry a target, in the shape `extendTargetsProblem`
+  // reads on the server: the same function on both sides, so the screen cannot
+  // build a request the route will refuse.
+  const targetJudges = judgesForTargets(liveJudges);
   const added =
     (indices.length + newScenarios.length) * targets.length * repetitions;
 
@@ -409,6 +426,11 @@ export function ExtendPanel({
       worldModel,
       turns,
       deepen,
+      newTargets: alignNewTargets(
+        targetJudges,
+        newScenarios.length,
+        newTargets,
+      ),
     });
 
   const submit = async () => {
@@ -709,6 +731,16 @@ export function ExtendPanel({
                 )}
               </div>
             )}
+
+            {/* Right under the rows being added, because it is about them.
+                Silent when this extension adds none, or when no judge on the
+                run declared a target in the first place. */}
+            <ExtendTargets
+              judges={targetJudges}
+              newScenarios={newScenarios}
+              value={newTargets}
+              onChange={setNewTargets}
+            />
           </div>
         </div>
 

@@ -277,6 +277,56 @@ export function extendedTargets(
   return [...current, ...(added ?? [])];
 }
 
+/** The grade a fresh target list starts from: the lowest real grade on the
+ *  scale.
+ *
+ * A starting point and not a guess. Every row it fills is on screen to be
+ * corrected, and the alternative — leaving the rows empty — builds exactly the
+ * partial list `targetsProblem` refuses. */
+export function openingGrade(rubric: RubricLevel[] | undefined): number {
+  const real = (rubric ?? []).filter(
+    (level) => !level.excluded && typeof level.value === "number",
+  );
+  return real.length ? Math.min(...real.map((level) => level.value)) : 0;
+}
+
+/** The `new_targets` an extension sends, whatever state the form is in.
+ *
+ * The form's own state is allowed to lag: rows are added and removed while it
+ * is open, and a judge only starts existing in the record once somebody has
+ * touched one of its rows. This function is what turns that into a request
+ * `extendTargetsProblem` will accept, or into nothing at all when there is
+ * nothing to say.
+ *
+ * `undefined` rather than an empty object when no scenario is being added or no
+ * judge declares targets: a setting with no effect is worse than an absent one,
+ * and `extendTargetsProblem` refuses `new_targets` on an extension that adds no
+ * rows. */
+export function alignNewTargets(
+  judges: {
+    run_judge_id: string;
+    rubric: RubricLevel[] | undefined;
+    targets: JudgeTarget[] | null;
+  }[],
+  newCount: number,
+  held: Record<string, JudgeTarget[]>,
+): Record<string, JudgeTarget[]> | undefined {
+  if (newCount === 0) return undefined;
+  const declaring = judges.filter((judge) => judge.targets !== null);
+  if (declaring.length === 0) return undefined;
+
+  const aligned: Record<string, JudgeTarget[]> = {};
+  for (const judge of declaring) {
+    const opening = openingGrade(judge.rubric);
+    const own = held[judge.run_judge_id] ?? [];
+    aligned[judge.run_judge_id] = Array.from(
+      { length: newCount },
+      (_, index) => own[index] ?? { expected: opening },
+    );
+  }
+  return aligned;
+}
+
 /** A run's judges, reduced to what `extendTargetsProblem` looks at.
  *
  * Written once rather than at all three callers: a judge's label names the one

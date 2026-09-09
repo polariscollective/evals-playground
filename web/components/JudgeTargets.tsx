@@ -12,6 +12,7 @@
 // to declare targets and a button to drop them, and no way to leave half a list
 // behind. `configProblem` refuses a partial one, and a form that could build one
 // would only be a way of meeting that refusal later.
+import { openingGrade } from "@/lib/targets";
 import type { EvalScenario, JudgeTarget, RubricLevel } from "@/lib/types";
 
 export function JudgeTargets({
@@ -31,10 +32,7 @@ export function JudgeTargets({
   const declared = targets != null;
   const usable = rubric.filter((level) => typeof level.value === "number");
 
-  /** The grade a fresh list starts from: the lowest of the scale, which is what
-   *  a well-behaved model scores under the house convention. It is a starting
-   *  point and not a guess, and every row is visible for correcting. */
-  const opening = usable.filter((level) => !level.excluded)[0]?.value ?? 0;
+  const opening = openingGrade(rubric);
 
   if (usable.length === 0) {
     return (

@@ -14,7 +14,13 @@
 // decides now, and `buildExtendRequest` and the panel both call it — see
 // `components/ExtendPanel.tsx`.
 import { servesTools } from "./tools.ts";
-import type { EvalRunConfig, EvalScenario, ExtendRequest, ToolSpec } from "./types";
+import type {
+  EvalRunConfig,
+  EvalScenario,
+  ExtendRequest,
+  JudgeTarget,
+  ToolSpec,
+} from "./types";
 
 /** Does this run need a world model named for it, once this extension is taken
  *  into account?
@@ -58,6 +64,11 @@ export interface ExtendPanelValues {
   /** The depth wanted. */
   turns: number;
   deepen: "all" | number[] | null;
+  /** What each judge declaring targets expects of the rows this extension
+   *  adds, keyed by `run_judge_id` — already aligned on `newScenarios` by
+   *  `alignNewTargets` (`lib/targets.ts`). `undefined` when there is nothing to
+   *  say: no new row, or no judge that declared any. */
+  newTargets?: Record<string, JudgeTarget[]>;
 }
 
 /** The extension request as it stands — used both to confirm and to save a
@@ -87,6 +98,7 @@ export function buildExtendRequest(
     worldModel,
     turns,
     deepen,
+    newTargets,
   } = values;
   const min = tempMin.trim() === "" ? null : Number(tempMin);
   return {
@@ -109,5 +121,9 @@ export function buildExtendRequest(
     // nothing changed would teach the server nothing it does not already know.
     ...(turns !== config.turns ? { turns } : {}),
     ...(deepen !== null ? { deepen } : {}),
+    // Absent, never empty: `extendTargetsProblem` refuses `new_targets` on an
+    // extension that adds no row, and an empty object would be a setting with
+    // no effect. `alignNewTargets` returns `undefined` in both those cases.
+    ...(newTargets ? { new_targets: newTargets } : {}),
   };
 }

@@ -3,7 +3,12 @@
 // not, and six months later nothing says which one can be read.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extendTargetsProblem, extendedTargets } from "./targets.ts";
+import {
+  alignNewTargets,
+  extendTargetsProblem,
+  extendedTargets,
+  openingGrade,
+} from "./targets.ts";
 import type { JudgeTarget, RubricLevel } from "./types.ts";
 
 const RUBRIC: RubricLevel[] = [
@@ -169,4 +174,79 @@ test("the new entries are appended, and the old ones are untouched", () => {
 
 test("a judge that declared no targets does not gain any by being extended", () => {
   assert.equal(extendedTargets(null, [{ expected: 0 }]), null);
+});
+
+// --- what the screen sends -----------------------------------------------------
+//
+// `alignNewTargets` is the screen's half of the same rule `extendTargetsProblem`
+// enforces on the server. The panel's state is allowed to lag behind the
+// scenario list, so these two functions have to agree about what a lagging
+// state turns into.
+
+test("a judge nobody touched still gets one target per new row", () => {
+  const judges = [
+    {
+      run_judge_id: "a",
+      label: "the principal judge",
+      rubric: [{ value: 1, meaning: "low" }, { value: 3, meaning: "high" }],
+      targets: [{ expected: 3 }],
+    },
+  ];
+  const aligned = alignNewTargets(judges, 2, {});
+  assert.deepEqual(aligned, { a: [{ expected: 1 }, { expected: 1 }] });
+  assert.equal(extendTargetsProblem({ new_scenarios: [{}, {}], new_targets: aligned }, judges), null);
+});
+
+test("a state left behind by a removed row is trimmed, not sent as it stands", () => {
+  const judges = [
+    {
+      run_judge_id: "a",
+      label: "the principal judge",
+      rubric: [{ value: 0, meaning: "no" }, { value: 2, meaning: "yes" }],
+      targets: [{ expected: 2 }],
+    },
+  ];
+  const held = { a: [{ expected: 2 }, { expected: 2 }, { expected: 0 }] };
+  const aligned = alignNewTargets(judges, 1, held);
+  assert.deepEqual(aligned, { a: [{ expected: 2 }] });
+  assert.equal(extendTargetsProblem({ new_scenarios: [{}], new_targets: aligned }, judges), null);
+});
+
+test("a judge that declared no targets is never given any", () => {
+  const judges = [
+    {
+      run_judge_id: "a",
+      label: "the principal judge",
+      rubric: [{ value: 0, meaning: "no" }, { value: 1, meaning: "yes" }],
+      targets: null,
+    },
+  ];
+  assert.equal(alignNewTargets(judges, 3, { a: [{ expected: 1 }] }), undefined);
+});
+
+test("nothing is sent when the extension adds no row", () => {
+  const judges = [
+    {
+      run_judge_id: "a",
+      label: "the principal judge",
+      rubric: [{ value: 0, meaning: "no" }],
+      targets: [{ expected: 0 }],
+    },
+  ];
+  // Left over from rows the form once held and no longer does. Sending it would
+  // be refused: `new_targets` on an extension that adds nothing has no meaning.
+  assert.equal(alignNewTargets(judges, 0, { a: [{ expected: 0 }] }), undefined);
+});
+
+test("the opening grade skips the excluded level", () => {
+  // -1 is "the question did not apply". A fresh row must not silently start
+  // there: it would read as a control aiming at "not applicable".
+  assert.equal(
+    openingGrade([
+      { value: -1, meaning: "n/a", excluded: true },
+      { value: 0, meaning: "no" },
+      { value: 2, meaning: "yes" },
+    ]),
+    0,
+  );
 });
