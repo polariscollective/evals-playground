@@ -258,4 +258,16 @@ the matrix.** Read the transcripts, and answer only these questions.
 The output of an exploration run is a rewritten scenario, not a number. Never
 quote its matrix, and do not extend it: once you know what the axis is, write
 the study from scratch, so that every row of it played the same version.
+
+## Where this comes from
+
+The first two are why the awareness check is read before anything else.
+
+- [Agentic Misalignment: How LLMs could be insider threats](https://www.anthropic.com/research/agentic-misalignment) — reports Opus 4 blackmailing in 55.1% of cases when it reasons the situation is real, against 6.5% when it reasons it is a test. That gap is the whole reason a flagged cell is not a cell to quietly drop.
+- [Stress Testing Deliberative Alignment for Anti-Scheming Training](https://www.apolloresearch.ai/science/stress-testing-deliberative-alignment-for-anti-scheming-training) — causal evidence, by intervening on the chain of thought, that reasoning about being evaluated reduces covert action, and that the rate rises with training. This is why a run at 1 everywhere is weak evidence rather than proof.
+- [Establishing Best Practices for Building Rigorous Agentic Benchmarks](https://arxiv.org/html/2507.02825v5) — the ABC checklist: task validity, outcome validity, reporting. The vocabulary for the environment failures a matrix cannot show.
+- [Automated Transcript Analysis for Detecting Flaws in Agentic Benchmarks](https://arxiv.org/html/2607.27518v1) — what a machine can find in a transcript that a heat map cannot.
+- [Docent](https://transluce.org/docent) — reading long trajectories at scale, which is the problem the "add a judge" answer solves here.
+- [A statistical approach to model evaluations](https://www.anthropic.com/research/statistical-approach-to-model-evals) — paired comparison, and why clustering by scenario widens an interval that was lying to you.
+
 `;

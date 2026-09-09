@@ -861,7 +861,7 @@ function fill(
  * `origin` is left empty when it is not known: the address becomes `/validate`,
  * which an agent that has read `/prompt` resolves by itself — same for
  * `{{ORIGIN}}`, which points at `/scenario-advice`, the public route, not
- * `/scenarios`, the private page a human reads. Those that know it pass it —
+ * `/advice`, the private page a human reads. Those that know it pass it —
  * the window reads it in the browser, the route in the headers — because a
  * copy-pasted prompt arrives at an agent that has no host context left at
  * all. */

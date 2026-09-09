@@ -163,4 +163,11 @@ Note that sharing a run from this application publishes its scenarios in full.
 
 Once the results are in, reading them is its own job with its own failure mode:
 ask for the analysis advice before concluding anything from a matrix.
+
+## Where this comes from
+
+- [A statistical approach to model evaluations](https://www.anthropic.com/research/statistical-approach-to-model-evals) — short and directly applicable; why the scenario, and not the attempt, is the unit that carries your uncertainty.
+- [Measuring what Matters: Construct Validity in LLM Benchmarks](https://proceedings.neurips.cc/paper_files/paper/2025/file/1967e0fc3aa6cbbace562f5cb8e3954e-Paper-Datasets_and_Benchmarks_Track.pdf) — what it takes for a number to be about the thing you say it is about.
+- [Measurement to Meaning: A Validity-Centered Framework for AI Evaluation](https://arxiv.org/abs/2505.10573) — the same question, framed as a checklist you can walk.
+
 `;

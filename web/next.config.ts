@@ -10,6 +10,30 @@ const nextConfig: NextConfig = {
     // two copies that end up drifting apart.
     root: path.join(__dirname, ".."),
   },
+
+  // The advice pages were called `/scenarios` back when there was one document
+  // and it was about scenarios. There are four now — writing a scenario,
+  // putting a batch together, reading the results, writing a judge — and the
+  // old name described a quarter of what lives there.
+  //
+  // Permanent, and the old addresses keep working, because `/shared/scenarios`
+  // is a PUBLIC link: it is printed in `docs/evals-methodology.md`, which is
+  // the document this project hands to people asking for feedback, and it has
+  // been sent to readers who have no reason to know anything moved. A rename
+  // that breaks a link somebody else holds is a rename that was not worth it.
+  //
+  // `?topic=` rides along on its own: Next carries the query string through a
+  // redirect unless told otherwise.
+  async redirects() {
+    return [
+      { source: "/scenarios", destination: "/advice", permanent: true },
+      {
+        source: "/shared/scenarios",
+        destination: "/shared/advice",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

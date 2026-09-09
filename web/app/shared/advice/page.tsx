@@ -1,7 +1,7 @@
 // The four advice documents, for whoever has the address.
 //
 // The third door onto the same texts, and the only one addressed to a human
-// without a session. `/scenarios` shows them to whoever is signed in and lets
+// without a session. `/advice` shows them to whoever is signed in and lets
 // them rewrite them; `/scenario-advice` serves one as plain text to an agent
 // that only has HTTP; this one hands them to somebody we never invited into
 // the application.
@@ -12,7 +12,7 @@
 // Serving a stranger the version somebody rewrote for their own agents would
 // leak a text written in private.
 //
-// A server component, unlike `/scenarios`: the texts are constants of the
+// A server component, unlike `/advice`: the texts are constants of the
 // code, there is nothing to wait for, and they therefore ship in the initial
 // HTML. The private page cannot — it must first ask for the profile to learn
 // whether it carries an override.
@@ -47,7 +47,7 @@ const LABEL: Record<AdviceTopic, string> = {
   judge: "Writing a judge",
 };
 
-export default async function SharedScenarios({
+export default async function SharedAdvice({
   searchParams,
 }: {
   searchParams: Promise<{ topic?: string }>;
@@ -75,7 +75,7 @@ export default async function SharedScenarios({
         {ADVICE_TOPICS.map((entry) => (
           <Link
             key={entry}
-            href={entry === "scenario" ? "/shared/scenarios" : `/shared/scenarios?topic=${entry}`}
+            href={entry === "scenario" ? "/shared/advice" : `/shared/advice?topic=${entry}`}
             className={`rounded px-3 py-1 text-sm ${
               entry === topic
                 ? "bg-zinc-900 text-white"
@@ -104,7 +104,7 @@ export default async function SharedScenarios({
         // Safe: `renderMarkdown` escapes every bit of incoming HTML before
         // producing the only tags it builds itself. `reflow`: the documents are
         // stored wrapped at 78 columns, a writing convenience rather than an
-        // intention — see `/scenarios`, which renders them the same way.
+        // intention — see `/advice`, which renders them the same way.
         dangerouslySetInnerHTML={{
           __html: renderMarkdown(text, { reflow: true }),
         }}

@@ -145,4 +145,11 @@ They are your questions. Some runs are about them and most are not, and building
 one in would mean charging everyone for a question nobody asked. That is what
 secondary judges are for: as many as the run needs, each with its own scale, its
 own targets, and its own column on the same matrix.
+
+## Where this comes from
+
+- [Bloom, an open source tool for automated behavioral evaluations](https://alignment.anthropic.com/2025/bloom-auto-evals/) — the calibration procedure this document describes, and a reference point for what agreement looks like when it works: it reports a Spearman correlation of 0.86 for Opus 4.1 against human grading.
+- [A Survey on LLM-as-a-Judge](https://arxiv.org/html/2411.15594v6) — the known failure modes of a model grading text, gathered in one place.
+- [Judging the Judges](https://arxiv.org/html/2406.07791v6) — position bias specifically: a judge asked to choose between two transcripts favours the one shown first.
+
 `;
