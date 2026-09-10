@@ -186,7 +186,7 @@ function AdviceDocuments() {
                 // the input — the draft, not the version still saved below.
               value={editing ? draft : shown}
               title={`Copy: ${ADVICE_LABEL[topic]}`}
-              className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
+              className="btn-secondary text-sm"
             >
               {(copied) => (copied ? "Copied" : "Copy")}
             </CopyButton>

@@ -26,6 +26,7 @@ import {
 } from "@/components/RunRead";
 import type { PublicRunDetail } from "@/lib/public-run";
 import { OpenInApp } from "@/components/OpenInApp";
+import { PublicHeader } from "@/components/PublicHeader";
 import { runReturn } from "@/lib/shared-return";
 
 export function SharedRunView({
@@ -60,12 +61,13 @@ export function SharedRunView({
   }, [run.id]);
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-8">
-      <div className="flex items-start justify-between gap-4">
+    <>
+      <PublicHeader>
+        <p className="text-xs text-zinc-500">Shared run, read only</p>
+        <OpenInApp href={runReturn(run.id)} signedIn={signedIn} />
+      </PublicHeader>
+      <main className="mx-auto w-full max-w-6xl space-y-6 px-8 pb-8 pt-6">
         <div>
-          <p className="text-xs text-zinc-500">
-            Shared run — read only
-          </p>
           <h1 className="text-2xl tracking-tight">
             {run.label ?? "Evaluation run"}
           </h1>
@@ -92,8 +94,6 @@ export function SharedRunView({
             </p>
           )}
         </div>
-        <OpenInApp href={runReturn(run.id)} signedIn={signedIn} />
-      </div>
 
       {/* Before the judge, as on the private page: the notes say what one wanted
           from this run, and the judge's scale reads afterwards. */}
@@ -158,6 +158,7 @@ export function SharedRunView({
           onClose={() => setOpen(null)}
         />
       )}
-    </main>
+      </main>
+    </>
   );
 }

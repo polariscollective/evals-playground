@@ -107,7 +107,7 @@ export function CopyText({
     <CopyButton
       value={value}
       title={title}
-      className="rounded border px-3 py-1 text-sm hover:bg-zinc-100"
+      className="btn-secondary text-sm"
     >
       {(copied) => (copied ? "Copied" : "Copy")}
     </CopyButton>

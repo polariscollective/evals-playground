@@ -26,6 +26,7 @@
 import type { Metadata } from "next";
 import { getSessionEmail } from "@/auth";
 import { OpenInApp } from "@/components/OpenInApp";
+import { PublicHeader } from "@/components/PublicHeader";
 import { adviceReturn } from "@/lib/shared-return";
 import { SharedAdviceView } from "@/components/SharedAdviceView";
 import { renderMarkdown } from "@/lib/markdown";
@@ -73,20 +74,20 @@ export default async function SharedAdvice({
   const signedIn = (await getSessionEmail()) !== null;
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-8">
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-xs text-zinc-500">
-          Advice — read only
-        </p>
+    <>
+      <PublicHeader>
+        <p className="text-xs text-zinc-500">Advice, read only</p>
         {/* The tab being read travels with the visitor. Somebody signing in
             from the judge document should come back to the judge document. */}
         <OpenInApp href={adviceReturn(initial)} signedIn={signedIn} />
-      </div>
+      </PublicHeader>
+      <main className="mx-auto w-full max-w-6xl space-y-4 px-8 pb-8 pt-6">
       <SharedAdviceView
         initial={initial}
         sources={DEFAULT_ADVICE}
         rendered={rendered}
       />
-    </main>
+      </main>
+    </>
   );
 }

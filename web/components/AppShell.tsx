@@ -2,7 +2,6 @@
 
 import { usePathname } from "next/navigation";
 import { AppNav, hasNav } from "@/components/AppNav";
-import { PublicHeader } from "@/components/PublicHeader";
 
 /** The frame the framework asks of a tool: a fixed navigation down the left, and
  * the content taking the rest of the width.
@@ -15,9 +14,9 @@ import { PublicHeader } from "@/components/PublicHeader";
  * Only above the medium breakpoint: below it the navigation is a band across the
  * top, in the flow, and there is nothing to offset.
  *
- * A page with no navigation still says whose it is: the shared pages get the
- * mark above their content. Sign-in is the exception — it carries the mark in
- * the middle of the page already, and a second one over it would be two. */
+ * A page with no navigation still says whose it is, but it says so itself: the
+ * shared pages render `PublicHeader` with their own read-only line and their own
+ * way back in, which this component knows nothing about. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const navigated = hasNav(pathname);
@@ -26,7 +25,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <AppNav />
       <div className={`flex min-h-screen flex-col ${navigated ? "md:pl-56" : ""}`}>
-        {!navigated && !pathname.startsWith("/signin") && <PublicHeader />}
         {children}
       </div>
     </>
