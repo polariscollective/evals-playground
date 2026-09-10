@@ -54,8 +54,8 @@ test("a \"not applicable\" level keeps its exclusion", () => {
   // Without that flag, the grade would drag the mean down for a reason foreign
   // to what is being measured.
   const { config } = readConfigFile(FULL);
-  assert.equal(config.rubric.at(-1)?.excluded, true);
-  assert.equal(config.rubric[0].excluded, false);
+  assert.equal(config.rubric?.at(-1)?.excluded, true);
+  assert.equal(config.rubric?.[0].excluded, false);
 });
 
 test("the same file in JSON gives the same result", () => {
@@ -396,7 +396,7 @@ test("a Markdown fence that came with the paste does not break the reading", () 
 
 test("a fence opened without a closing one is removed all the same", () => {
   // A mouse selection sometimes stops before the last line.
-  assert.ok(readConfigFile("```\n" + FULL).config.rubric.length >= 2);
+  assert.ok(readConfigFile("```\n" + FULL).config.rubric!.length >= 2);
 });
 
 test("a scale that is present but malformed does not call itself \"missing\"", () => {
@@ -727,7 +727,7 @@ test("a \"not applicable\" level of a secondary judge keeps its exclusion across
         excluded: true`,
   );
   const { config } = readConfigFile(withExclusion);
-  assert.equal(config.judges?.[0].rubric.at(-1)?.excluded, true);
+  assert.equal(config.judges?.[0].rubric?.at(-1)?.excluded, true);
   const reread = readConfigFile(writeConfigFile(config));
   assert.deepEqual(reread.config.judges, config.judges);
   assert.ok(!writeConfigFile(config).includes("excluded: false"));

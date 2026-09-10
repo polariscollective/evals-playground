@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
 import { DraftNotFound, loadDraft, markDraftLaunched } from "@/lib/drafts";
-import { createRun, failToStart, recordStart } from "@/lib/runs";
+import { ConfigProblem, createRun, failToStart, recordStart } from "@/lib/runs";
 import { setRunTags, tagsOfDraft } from "@/lib/tags";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
@@ -44,7 +44,15 @@ export async function POST(
   const problem = configProblem(draft.config);
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
-  const run = await createRun(draft.config, user.email, draft.csv_text, draftId);
+  let run;
+  try {
+    run = await createRun(draft.config, user.email, draft.csv_text, draftId);
+  } catch (error) {
+    if (error instanceof ConfigProblem) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+    throw error;
+  }
   try {
     await recordStart(run.id, await startJob(run.id, "run"));
   } catch (error) {

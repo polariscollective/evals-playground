@@ -31,6 +31,7 @@ import { served, servesTools, toolsFor, writesWorld } from "./tools.ts";
 import type {
   CostEstimate,
   EvalRunConfig,
+  WrittenRunConfig,
   JudgeSpec,
   LengthAssumption,
   ModelCost,
@@ -66,7 +67,7 @@ const PRICES = S.prices as Record<
 const clamp = (tokens: number): number =>
   Math.max(1, Math.min(Math.round(tokens), 100_000));
 
-const declared = (config: EvalRunConfig): number =>
+const declared = (config: WrittenRunConfig): number =>
   clamp(config.average_output_tokens || S.default_response_tokens);
 
 /** The lengths of each scenario, and that of the adversary.
@@ -74,7 +75,7 @@ const declared = (config: EvalRunConfig): number =>
  * A bare number means "the same for everyone": it is the shape the short/long
  * bounds use, which frame the quote knowing nothing about the scenarios. */
 function resolve(
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   lengths: LengthAssumption | number | null | undefined,
 ): { perScenario: number[]; adversary: number } {
   const spec: LengthAssumption =
@@ -106,8 +107,8 @@ function tokens(text: string): number {
   return Math.max(1, Math.floor(text.length / S.chars_per_token));
 }
 
-function rubricTokens(rubric: RubricLevel[]): number {
-  return rubric.reduce((sum, level) => sum + tokens(level.meaning) + 4, 0);
+function rubricTokens(rubric: RubricLevel[] | undefined): number {
+  return (rubric ?? []).reduce((sum, level) => sum + tokens(level.meaning) + 4, 0);
 }
 
 /** A template's tokens, once its placeholders are removed: the part the model
@@ -167,7 +168,7 @@ const WORLD_OVERHEAD_TOKENS = fixedTokens(
  * no configuration declares how many times a model will call its tools, and the
  * only two known bounds are "never" and `max_tool_calls_per_turn` on every turn.
  * A choice taken on, which the quote's sentence names rather than hides. */
-export function servedCallsPerConversation(config: EvalRunConfig): number {
+export function servedCallsPerConversation(config: WrittenRunConfig): number {
   return Math.floor((config.turns * (config.max_tool_calls_per_turn ?? 5)) / 2);
 }
 
@@ -267,7 +268,7 @@ export function roleKey(role: ModelRole, model: string): string {
  * history is sent back on every turn, a scenario that calls for long answers
  * also swells the adversary's input and the judge's. */
 export function estimateTokens(
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   lengths?: LengthAssumption | number | null,
   billFrom = 0,
 ): { conversations: number; modelCalls: number; perModel: Map<string, ModelTokens> } {
@@ -318,15 +319,22 @@ export function estimateTokens(
    * hence its own token volume; an absent `model` takes the run's, exactly as at
    * launch (`judgesForLaunch`) — never all billed at the principal's tariff.
    * Computed once, outside the loop over the scenarios: neither a judge's
-   * question nor its scale varies from one scenario to another. */
+   * question nor its scale varies from one scenario to another.
+   * A judge NAMED rather than described (`judge: <handle>`, see
+   * `WrittenRunConfig`) carries neither here: its question lives on the judge,
+   * which this function does not read — it takes no database. The quote is then
+   * short by that judge's question and scale, a few hundred tokens against a
+   * transcript of thousands, and only until the launch settles the handle: what
+   * a run records is computed on the complete configuration. The form, which
+   * has fetched the judge to show it, quotes on the complete text too. */
   const ordinaryJudges: { model: string; question: number }[] = [
     {
       model: config.models.judge,
-      question: tokens(config.criterion) + rubricTokens(config.rubric),
+      question: tokens(config.criterion ?? "") + rubricTokens(config.rubric),
     },
     ...(config.judges ?? []).map((spec) => ({
       model: spec.model ?? config.models.judge,
-      question: tokens(spec.criterion) + rubricTokens(spec.rubric),
+      question: tokens(spec.criterion ?? "") + rubricTokens(spec.rubric),
     })),
   ];
 
@@ -608,7 +616,7 @@ export function estimateTokens(
 }
 
 function costsFor(
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   lengths: LengthAssumption | number | null | undefined,
   billFrom = 0,
 ): { costs: ModelCost[]; total: number; unpriced: string[] } {
@@ -665,7 +673,7 @@ function round(value: number, digits: number): number {
  * Anthropic's cache write, billed at 1.25 times the input tariff. On the run
  * measured, it weighed 11% of Opus's bill. */
 export function estimateCost(
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   lengths?: LengthAssumption | number | null,
   billFrom = 0,
 ): CostEstimate {
@@ -880,7 +888,7 @@ export function estimateDeepening(
  * JSON — no longer lies when the declaration exceeds them; a range meant to hold
  * the quote does. Same rewording as `page.tsx` and `ExtendPanel.tsx`, adapted to
  * this sentence's telegraphic style. */
-export function costSentence(config: EvalRunConfig): string | null {
+export function costSentence(config: WrittenRunConfig): string | null {
   if (config.scenarios.length === 0) return null;
 
   const estimate = estimateCost(config, null);
@@ -917,7 +925,7 @@ export function costSentence(config: EvalRunConfig): string | null {
  * longer separate. Doubling the cap exactly doubles the number of served calls
  * and touches nothing else — it is the only thing `max_tool_calls_per_turn`
  * decides in the quote. */
-function servedCallsSentence(config: EvalRunConfig): string {
+function servedCallsSentence(config: WrittenRunConfig): string {
   const anyServed = servesTools(config.tools ?? []);
   const cap = config.max_tool_calls_per_turn ?? 5;
   if (!anyServed || servedCallsPerConversation(config) === 0) return "";

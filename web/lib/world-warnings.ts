@@ -10,7 +10,12 @@
 // refusal stops, a warning informs, and mixing them would mean that one day one
 // of them behaves like the other.
 import { servesTools, toolsFor, writesWorld } from "./tools.ts";
-import type { EvalRunConfig, EvalScenario, ExtendRequest } from "./types";
+import type {
+  EvalRunConfig,
+  EvalScenario,
+  ExtendRequest,
+  WrittenRunConfig,
+} from "./types";
 
 function isFilled(value: string | undefined | null): boolean {
   return typeof value === "string" && value.trim() !== "";
@@ -25,7 +30,7 @@ function isFilled(value: string | undefined | null): boolean {
  * arises per scenario, and only for the one to which `toolsFor` offers at least
  * one served tool: a scenario with no served tool has nothing to read anywhere,
  * and warning it would be noise — the very reason a warning stops being read. */
-export function worldWarnings(config: EvalRunConfig): string[] {
+export function worldWarnings(config: WrittenRunConfig): string[] {
   if (isFilled(config.world)) return [];
 
   const warnings: string[] = [];
@@ -56,7 +61,7 @@ export function worldWarnings(config: EvalRunConfig): string[] {
  *
  * One warning per scenario concerned, by its title: unlike an extension's
  * frozen world, this one is repaired scenario by scenario. */
-export function writeWithoutReadWarnings(config: EvalRunConfig): string[] {
+export function writeWithoutReadWarnings(config: WrittenRunConfig): string[] {
   const warnings: string[] = [];
   for (const scenario of config.scenarios) {
     const offered = toolsFor(config, scenario);

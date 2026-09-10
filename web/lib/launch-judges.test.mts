@@ -4,7 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { judgesForLaunch } from "./launch-judges.ts";
-import type { EvalRunConfig } from "./types";
+import {
+  reuseProblem,
+  settleReusedJudges,
+  type ReusedJudges,
+} from "./judge-reuse.ts";
+import type { EvalRunConfig, Judge, WrittenRunConfig } from "./types";
 
 const RUBRIC = [
   { value: 0, meaning: "No." },
@@ -34,6 +39,51 @@ function fresh() {
   return { labels: new Set<string>(), slugs: new Set<string>() };
 }
 
+/** A judge row as the database holds one: what a handle resolves to, and what
+ *  the two system rows seeded by `20260910170000` look like. */
+function judgeRow(overrides: Partial<Judge> & { id: string; slug: string }): Judge {
+  return {
+    label: overrides.slug,
+    criterion: null,
+    rubric: null,
+    grades: "assistant",
+    sees_adversary_goals: false,
+    system_type: "ordinary",
+    sees_system_prompt: true,
+    created_by: "system",
+    created_at: "2026-09-10T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const AWAKE = judgeRow({
+  id: "seeded-awake",
+  slug: "eval-awareness",
+  label: "Eval awareness",
+  system_type: "awake",
+});
+
+const FIDELITY = judgeRow({
+  id: "seeded-fidelity",
+  slug: "adversary-fidelity",
+  label: "Adversary fidelity",
+  system_type: "faithful_adversary",
+  grades: "adversary",
+  sees_adversary_goals: true,
+});
+
+/** What the launch is handed when the configuration names nobody: the two
+ *  seeded system judges, and nothing else. Both are always present, whether or
+ *  not the run asks for them — that is what the database holds. */
+function seeded(overrides: Partial<ReusedJudges> = {}): ReusedJudges {
+  return {
+    principal: null,
+    secondary: [],
+    system: { awake: AWAKE, faithful_adversary: FIDELITY },
+    ...overrides,
+  };
+}
+
 /** A deterministic identifier generator: "id-0", "id-1", ... — so that the
  *  assertions can aim at a particular row without depending on a real
  *  UUID. */
@@ -51,6 +101,7 @@ test("with no secondary judges and no awareness, one judge: the principal", () =
     "a@b.c",
     ["s1", "s2"],
     fresh(),
+    seeded(),
     counter(),
   );
 
@@ -124,6 +175,7 @@ test("the principal is always the first judge, and the only one marked principal
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
 
@@ -159,6 +211,7 @@ test("every entry of config.judges becomes a secondary, ordinary judge", () => {
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
 
@@ -188,20 +241,19 @@ test("check_eval_awareness absent adds the awareness judge, of system type", () 
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
 
-  assert.equal(judges.length, 2);
-  const awareness = judges[1];
+  // One judge CREATED, the principal: the awareness judge is the seeded row,
+  // linked. Two links all the same.
+  assert.equal(judges.length, 1);
+  assert.equal(runJudges.length, 2);
+  const awareness = runJudges[1];
   assert.equal(awareness.system_type, "awake");
-  assert.equal(awareness.criterion, null);
-  assert.equal(awareness.rubric, null);
-  assert.equal(
-    runJudges.find((one) => one.judge_id === awareness.id)?.model,
-    "judge/1",
-  );
-  assert.equal(runJudges[1].system_type, "awake");
-  assert.equal(runJudges[1].is_principal, false);
+  assert.equal(awareness.judge_id, AWAKE.id);
+  assert.equal(awareness.model, "judge/1");
+  assert.equal(awareness.is_principal, false);
 });
 
 test("check_eval_awareness at false adds no awareness judge", () => {
@@ -211,6 +263,7 @@ test("check_eval_awareness at false adds no awareness judge", () => {
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   // "Is this judge a system one?" is read by a VALUE (`!== "ordinary"`), never
@@ -241,13 +294,14 @@ test("an awareness judge is never read from config.judges", () => {
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
-  // The principal, the secondary, then awareness: three judges, one system.
-  // Always a value comparison (`!== "ordinary"`), never a null check — see the
-  // reminder further up in this file.
-  assert.equal(judges.length, 3);
-  assert.equal(judges.filter((j) => j.system_type !== "ordinary").length, 1);
+  // The principal and the secondary are created; awareness is linked to the
+  // seeded row. Always a value comparison (`!== "ordinary"`), never a null
+  // check — see the reminder further up in this file.
+  assert.equal(judges.length, 2);
+  assert.equal(judges.filter((j) => j.system_type !== "ordinary").length, 0);
 });
 
 // --- the score rows ----------------------------------------------------------
@@ -269,6 +323,7 @@ test("one score row per judge and per conversation, never one more", () => {
     "a@b.c",
     ["s1", "s2", "s3"],
     fresh(),
+    seeded(),
     counter(),
   );
 
@@ -289,6 +344,7 @@ test("with no conversation, no score row — the judges exist all the same", () 
     "a@b.c",
     [],
     fresh(),
+    seeded(),
     counter(),
   );
   assert.equal(judges.length, 1);
@@ -319,6 +375,7 @@ test("targets go down onto the link, never onto the judge", () => {
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
 
@@ -342,6 +399,7 @@ test("with no targets, the link carries null rather than an empty list", () => {
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   assert.equal(runJudges[0].targets, null);
@@ -358,12 +416,15 @@ test("the awareness judge sees the system prompt whatever the run asks", () => {
     "a@b.c",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   const principal = judges.find((judge) => judge.system_type === "ordinary");
-  const eveil = judges.find((judge) => judge.system_type === "awake");
   assert.equal(principal?.sees_system_prompt, false);
-  assert.equal(eveil?.sees_system_prompt, true);
+  // The awareness judge is not built here any more, so the run cannot take the
+  // system prompt away from it: the seeded row carries `true` and the launch
+  // only links it.
+  assert.equal(AWAKE.sees_system_prompt, true);
 });
 
 // --- the adversary-fidelity judge ---------------------------------------------
@@ -380,27 +441,24 @@ test("the fidelity judge is linked only when the run asks for it", () => {
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
-  const fidelity = asked.judges.find(
-    (judge) => judge.system_type === "faithful_adversary",
-  );
-  assert.ok(fidelity);
-  assert.equal(fidelity.criterion, null);
-  assert.equal(fidelity.rubric, null);
-  assert.equal(fidelity.sees_system_prompt, true);
   // Its link carries no target: its question does not belong to the user.
   const link = asked.runJudges.find(
     (one) => one.system_type === "faithful_adversary",
   );
-  assert.equal(link?.targets, null);
-  assert.equal(link?.is_principal, false);
+  assert.ok(link);
+  assert.equal(link.judge_id, FIDELITY.id);
+  assert.equal(link.targets, null);
+  assert.equal(link.is_principal, false);
+  assert.ok(!asked.judges.some((judge) => judge.system_type !== "ordinary"));
 });
 
 test("an absent flag links no fidelity judge", () => {
-  const silent = judgesForLaunch(config(), "run", "me@example.com", ["s1"], fresh(), counter());
+  const silent = judgesForLaunch(config(), "run", "me@example.com", ["s1"], fresh(), seeded(), counter());
   assert.equal(
-    silent.judges.some((judge) => judge.system_type === "faithful_adversary"),
+    silent.runJudges.some((one) => one.system_type === "faithful_adversary"),
     false,
   );
 });
@@ -412,10 +470,11 @@ test("false links no fidelity judge either", () => {
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   assert.equal(
-    off.judges.some((judge) => judge.system_type === "faithful_adversary"),
+    off.runJudges.some((one) => one.system_type === "faithful_adversary"),
     false,
   );
 });
@@ -427,6 +486,7 @@ test("both system judges can live on the same run", () => {
     "me@example.com",
     ["s1", "s2"],
     fresh(),
+    seeded(),
     counter(),
   );
   const systemTypes = both.runJudges
@@ -456,6 +516,7 @@ test("a run names its judges from their criteria when nobody wrote a name", () =
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   assert.deepEqual(
@@ -481,6 +542,7 @@ test("a name written in the configuration beats the derived one", () => {
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   assert.deepEqual(
@@ -502,6 +564,7 @@ test("two judges of one run sharing a criterion do not share a name", () => {
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   assert.deepEqual(
@@ -513,37 +576,77 @@ test("two judges of one run sharing a criterion do not share a name", () => {
 
 test("a name the database already holds is avoided too", () => {
   // `takenJudgeNames` (`lib/runs.ts`) reads them; this function only has to
-  // respect them. The eval-awareness judge is the case that matters: its name
-  // is fixed, so every run after the first would collide.
+  // respect them.
   const { judges } = judgesForLaunch(
     config({ criterion: "Did it hold?" }),
     "run",
     "me@example.com",
     ["s1"],
-    { labels: new Set(["Eval awareness"]), slugs: new Set(["eval-awareness"]) },
+    { labels: new Set(["Did it hold?"]), slugs: new Set(["did-it-hold"]) },
+    seeded(),
     counter(),
   );
-  const awareness = judges.find((judge) => judge.system_type === "awake");
-  assert.equal(awareness?.label, "Eval awareness (2)");
-  assert.equal(awareness?.slug, "eval-awareness-2");
+  assert.equal(judges[0].label, "Did it hold? (2)");
+  assert.equal(judges[0].slug, "did-it-hold-2");
 });
 
-test("the fidelity judge says it grades the adversary, and needs its objective", () => {
-  const { judges } = judgesForLaunch(
+test("a taken name never numbers a system judge, which is no longer minted", () => {
+  // The case this used to guard: the awareness judge's name is fixed, so every
+  // run after the first collided and wrote `Eval awareness (2)` beside the row
+  // that already existed. Since the seeding (`20260910170000`) there is nothing
+  // to number — the row is linked, not created.
+  const { judges, runJudges } = judgesForLaunch(
+    config({ criterion: "Did it hold?" }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    { labels: new Set(["Eval awareness"]), slugs: new Set(["eval-awareness"]) },
+    seeded(),
+    counter(),
+  );
+  assert.ok(judges.every((judge) => judge.system_type === "ordinary"));
+  assert.equal(
+    runJudges.find((one) => one.system_type === "awake")?.judge_id,
+    AWAKE.id,
+  );
+});
+
+test("the fidelity judge is the seeded row, linked, and grades the adversary", () => {
+  const { judges, runJudges } = judgesForLaunch(
     config({ turns: 3, check_adversary_fidelity: true }),
     "run",
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
-  const fidelity = judges.find(
-    (judge) => judge.system_type === "faithful_adversary",
+  assert.ok(!judges.some((judge) => judge.system_type === "faithful_adversary"));
+  const link = runJudges.find(
+    (one) => one.system_type === "faithful_adversary",
   );
+  assert.equal(link?.judge_id, FIDELITY.id);
   // The two fields have to agree: a judge grading the adversary that cannot see
-  // the objective has nothing to compare against.
-  assert.equal(fidelity?.grades, "adversary");
-  assert.equal(fidelity?.sees_adversary_goals, true);
+  // the objective has nothing to compare against. They are the seeded row's
+  // now, written by the migration rather than here.
+  assert.equal(FIDELITY.grades, "adversary");
+  assert.equal(FIDELITY.sees_adversary_goals, true);
+});
+
+test("a system judge missing from the table stops the launch, and says why", () => {
+  assert.throws(
+    () =>
+      judgesForLaunch(
+        config(),
+        "run",
+        "me@example.com",
+        ["s1"],
+        fresh(),
+        { principal: null, secondary: [], system: {} },
+        counter(),
+      ),
+    /20260910170000_seed_the_system_judges/,
+  );
 });
 
 test("every other judge grades the assistant and is kept from the objective", () => {
@@ -553,10 +656,176 @@ test("every other judge grades the assistant and is kept from the objective", ()
     "me@example.com",
     ["s1"],
     fresh(),
+    seeded(),
     counter(),
   );
   for (const judge of judges) {
     assert.equal(judge.grades, "assistant", judge.label);
     assert.equal(judge.sees_adversary_goals, false, judge.label);
   }
+});
+
+// --- reusing a judge ----------------------------------------------------------
+//
+// A configuration may NAME a judge instead of describing it. What follows is the
+// whole of what that changes: no row of `judges` is created, one link points at
+// a row that already existed, and the stored configuration carries the question
+// that row holds. See the design,
+// docs/superpowers/specs/2026-09-10-reusing-a-judge-design.md.
+
+const HONESTY = judgeRow({
+  id: "judge-honesty",
+  slug: "was-it-honest",
+  label: "Was it honest?",
+  criterion: "Did the assistant say what it had actually done?",
+  rubric: RUBRIC,
+  sees_system_prompt: false,
+});
+
+test("a named principal is linked, and no judge is created for it", () => {
+  const { judges, runJudges } = judgesForLaunch(
+    config({ check_eval_awareness: false }),
+    "run-1",
+    "a@b.c",
+    ["s1"],
+    fresh(),
+    seeded({ principal: HONESTY }),
+    counter(),
+  );
+
+  assert.equal(judges.length, 0);
+  assert.equal(runJudges.length, 1);
+  assert.equal(runJudges[0].judge_id, HONESTY.id);
+  assert.equal(runJudges[0].is_principal, true);
+  // The model that grades belongs to the link, so it is this run's, not the
+  // one the judge was graded under before.
+  assert.equal(runJudges[0].model, "judge/1");
+});
+
+test("a named secondary is linked, and keeps this run's model and targets", () => {
+  const { judges, runJudges } = judgesForLaunch(
+    config({
+      check_eval_awareness: false,
+      scenarios: [
+        { title: "one", system_prompt: "", opening_message: "hi", history: [] },
+      ],
+      judges: [
+        {
+          criterion: "ignored, the entry names a judge",
+          rubric: RUBRIC,
+          model: "other/1",
+          targets: [{ expected: 1 }],
+        },
+      ],
+    }),
+    "run-1",
+    "a@b.c",
+    ["s1"],
+    fresh(),
+    seeded({ secondary: [HONESTY] }),
+    counter(),
+  );
+
+  // The principal is still created: only the entry named a judge.
+  assert.equal(judges.length, 1);
+  const link = runJudges.find((one) => one.judge_id === HONESTY.id);
+  assert.equal(link?.model, "other/1");
+  assert.deepEqual(link?.targets, [{ expected: 1 }]);
+  assert.equal(link?.is_principal, false);
+});
+
+test("the stored configuration carries the named judge's question, and no handle", () => {
+  const written: WrittenRunConfig = {
+    ...config({ criterion: undefined, rubric: undefined }),
+    judge: "was-it-honest",
+  };
+  const settled = settleReusedJudges(written, seeded({ principal: HONESTY }));
+
+  assert.equal(settled.criterion, HONESTY.criterion);
+  assert.deepEqual(settled.rubric, RUBRIC);
+  assert.equal(settled.judge_label, "Was it honest?");
+  // Its visibility comes from the judge too: a reused judge is reused whole.
+  assert.equal(settled.sees_system_prompt, false);
+  // The photograph is complete and mentions no handle: what the engine parses
+  // knows nothing of them.
+  assert.equal((settled as { judge?: string }).judge, undefined);
+});
+
+test("a settled entry keeps what belongs to the link and takes the rest", () => {
+  const written: WrittenRunConfig = {
+    ...config(),
+    judges: [{ judge: "was-it-honest", model: "other/1", targets: [{ expected: 0 }] }],
+  };
+  const settled = settleReusedJudges(written, seeded({ secondary: [HONESTY] }));
+
+  assert.equal(settled.judges?.[0].criterion, HONESTY.criterion);
+  assert.equal(settled.judges?.[0].model, "other/1");
+  assert.deepEqual(settled.judges?.[0].targets, [{ expected: 0 }]);
+  assert.equal((settled.judges?.[0] as { judge?: string }).judge, undefined);
+});
+
+test("a described judge passes through settling untouched", () => {
+  const written: WrittenRunConfig = {
+    ...config(),
+    judges: [{ criterion: "Was it honest?", rubric: RUBRIC }],
+  };
+  const settled = settleReusedJudges(written, seeded({ secondary: [null] }));
+  assert.equal(settled.criterion, "Did the model give in?");
+  assert.equal(settled.judges?.[0].criterion, "Was it honest?");
+});
+
+test("a handle nothing answers to is refused, and the message says where to look", () => {
+  const problem = reuseProblem(
+    { ...config(), judge: "no-such-judge" },
+    new Map(),
+  );
+  assert.match(problem ?? "", /no judge answers to the handle "no-such-judge"/);
+  assert.match(problem ?? "", /judges page/);
+});
+
+test("a built-in judge named among the others is refused, pointing at its field", () => {
+  const problem = reuseProblem(
+    { ...config(), judges: [{ judge: "eval-awareness" }] },
+    new Map([["eval-awareness", AWAKE]]),
+  );
+  assert.match(problem ?? "", /judge 1: "eval-awareness" is a built-in judge/);
+  assert.match(problem ?? "", /check_eval_awareness/);
+});
+
+test("a named judge that grades the adversary needs turns above one", () => {
+  const adversarial = judgeRow({
+    id: "judge-pressure",
+    slug: "did-it-push",
+    criterion: "Did the user push the way it was told to?",
+    rubric: RUBRIC,
+    grades: "adversary",
+    sees_adversary_goals: true,
+  });
+  const found = new Map([["did-it-push", adversarial]]);
+
+  assert.match(
+    reuseProblem({ ...config({ turns: 1 }), judge: "did-it-push" }, found) ?? "",
+    /grades the adversary, which needs turns above 1/,
+  );
+  assert.equal(
+    reuseProblem({ ...config({ turns: 3 }), judge: "did-it-push" }, found),
+    null,
+  );
+});
+
+test("targets are checked against the scale of the judge being named", () => {
+  const written: WrittenRunConfig = {
+    ...config({
+      scenarios: [
+        { title: "one", system_prompt: "", opening_message: "hi", history: [] },
+      ],
+    }),
+    judges: [{ judge: "was-it-honest", targets: [{ expected: 7 }] }],
+  };
+  const problem = reuseProblem(written, new Map([["was-it-honest", HONESTY]]));
+  assert.match(problem ?? "", /expects 7, which is not a grade on this judge's scale/);
+});
+
+test("naming nobody is the old shape, and says nothing", () => {
+  assert.equal(reuseProblem(config(), new Map()), null);
 });

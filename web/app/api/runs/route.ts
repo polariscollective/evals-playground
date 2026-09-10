@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { createRun, failToStart, loadRunList, recordStart } from "@/lib/runs";
+import {
+  ConfigProblem,
+  createRun,
+  failToStart,
+  loadRunList,
+  recordStart,
+} from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { configProblem } from "@/lib/validate";
-import type { EvalRunConfig } from "@/lib/types";
+import type { WrittenRunConfig } from "@/lib/types";
 
 export async function GET() {
   const user = await requireUser();
@@ -23,7 +29,7 @@ export async function POST(request: Request) {
   if ("response" in user) return user.response;
 
   const body = (await request.json().catch(() => null)) as {
-    config?: EvalRunConfig;
+    config?: WrittenRunConfig;
     csv_text?: string | null;
     draft_id?: string | null;
   } | null;
@@ -35,12 +41,23 @@ export async function POST(request: Request) {
   // original draft, for its part, can only come from the client: it is the client
   // that knows what the form was open on, and getting it wrong only attributes a
   // provenance, never a right.
-  const run = await createRun(
-    body!.config!,
-    user.email,
-    body?.csv_text ?? null,
-    body?.draft_id ?? null,
-  );
+  // The judges a configuration NAMES are resolved inside `createRun`, which is
+  // where the database is: a handle nothing answers to comes back as the same
+  // 422 as a fault `configProblem` could see on its own.
+  let run;
+  try {
+    run = await createRun(
+      body!.config!,
+      user.email,
+      body?.csv_text ?? null,
+      body?.draft_id ?? null,
+    );
+  } catch (error) {
+    if (error instanceof ConfigProblem) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+    throw error;
+  }
 
   try {
     await recordStart(run.id, await startJob(run.id, "run"));

@@ -16,7 +16,12 @@ import {
   worldEquivalenceProblem,
 } from "./validate.ts";
 import { knownModelIds } from "./catalog.ts";
-import type { Draft, EvalRunConfig, ExtendDraft, ExtendRequest } from "./types.ts";
+import type {
+  Draft,
+  ExtendDraft,
+  ExtendRequest,
+  WrittenRunConfig,
+} from "./types.ts";
 
 const VALID = `
 label: Pressure on the procedure
@@ -42,7 +47,9 @@ scenarios:
 
 /** The valid document, read back then modified — so that each case differs from
  *  the passing case only by the fault it tests. */
-function withPatch(patch: (config: EvalRunConfig) => void): EvalRunConfig {
+function withPatch(
+  patch: (config: WrittenRunConfig) => void,
+): WrittenRunConfig {
   const { config } = readConfigFile(VALID);
   patch(config);
   return config;
@@ -312,7 +319,7 @@ test("a world with no served tool at all is not an error", () => {
 // docs/superpowers/specs/2026-09-07-le-modele-du-monde-design.md.
 
 /** A run that serves a tool, with the model that serves it. */
-function configWithServedTool(): EvalRunConfig {
+function configWithServedTool(): WrittenRunConfig {
   return withPatch((c) => {
     c.world = "A shared drive, thirty files.";
     c.tools = [
@@ -329,7 +336,7 @@ function configWithServedTool(): EvalRunConfig {
 }
 
 /** The same tool, but fixed: nothing serves, and nothing names a model. */
-function configWithoutServedTool(): EvalRunConfig {
+function configWithoutServedTool(): WrittenRunConfig {
   return withPatch((c) => {
     c.tools = [
       {
@@ -537,4 +544,70 @@ test("a string in place of the boolean is refused, not read as on", () => {
     }),
   );
   assert.equal(problem, "check_adversary_fidelity must be true or false");
+});
+
+// --- naming a judge instead of describing one ---------------------------------
+//
+// See the design, docs/superpowers/specs/2026-09-10-reusing-a-judge-design.md.
+// Everything a handle can be wrong about without the database is checked here;
+// whether it answers to anything is `reuseProblem`'s business
+// (`launch-judges.ts`), which needs a read.
+
+test("a principal named by its handle needs neither criterion nor scale", () => {
+  const named = withPatch((c) => {
+    delete (c as { criterion?: string }).criterion;
+    delete (c as { rubric?: unknown }).rubric;
+    (c as { judge?: string }).judge = "was-it-honest";
+  });
+  assert.equal(configProblem(named), null);
+});
+
+test("a judge named and described at once is refused, and says which to drop", () => {
+  const both = withPatch((c) => {
+    (c as { judge?: string }).judge = "was-it-honest";
+  });
+  const problem = configProblem(both);
+  assert.match(problem ?? "", /names a judge and describes one/);
+  assert.match(problem ?? "", /criterion, rubric/);
+});
+
+test("a handle that is not shaped like one is refused before any lookup", () => {
+  const shouty = withPatch((c) => {
+    delete (c as { criterion?: string }).criterion;
+    delete (c as { rubric?: unknown }).rubric;
+    (c as { judge?: string }).judge = "Was It Honest?";
+  });
+  assert.match(configProblem(shouty) ?? "", /is not the shape of a handle/);
+});
+
+test("an entry of judges may name one too", () => {
+  const named = withPatch((c) => {
+    c.judges = [{ judge: "was-it-honest" } as unknown as NonNullable<typeof c.judges>[number]];
+  });
+  assert.equal(configProblem(named), null);
+});
+
+test("the same judge named twice on one run is refused", () => {
+  const twice = withPatch((c) => {
+    delete (c as { criterion?: string }).criterion;
+    delete (c as { rubric?: unknown }).rubric;
+    (c as { judge?: string }).judge = "was-it-honest";
+    c.judges = [{ judge: "was-it-honest" } as unknown as NonNullable<typeof c.judges>[number]];
+  });
+  assert.match(configProblem(twice) ?? "", /named twice/);
+});
+
+test("a model and targets stay writable beside a handle", () => {
+  // They belong to the link, not to the judge: the same judge on another run
+  // grades other scenarios, under whatever model that run pays for.
+  const named = withPatch((c) => {
+    c.judges = [
+      {
+        judge: "was-it-honest",
+        model: "anthropic/claude-haiku-4-5",
+        targets: [{ expected: 0 }],
+      } as unknown as NonNullable<typeof c.judges>[number],
+    ];
+  });
+  assert.equal(configProblem(named), null);
 });

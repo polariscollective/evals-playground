@@ -576,6 +576,60 @@ export interface JudgeSpec {
   sees_adversary_goals?: boolean;
 }
 
+/** A judge as somebody WRITES it, where `JudgeSpec` is a judge as the database
+ *  and every reader afterwards see it.
+ *
+ * One difference, and the whole point of the pair: a written judge may name an
+ * existing one by its handle instead of describing it. The launch settles the
+ * handle into the description it names — see `settleReusedJudges`
+ * (`lib/launch-judges.ts`) — so nothing downstream ever meets this shape: the
+ * configuration stored on a run is a complete photograph, which is what the
+ * engine parses (`EvalConfig` in `eval_schemas.py` requires a criterion and a
+ * scale, and would refuse a handle).
+ *
+ * Two types rather than optional fields on one, because the strictness is worth
+ * keeping where it holds: every reader of a launched run knows it has a
+ * criterion and a scale, and only the three or four functions on the launch path
+ * have to deal with a judge that has neither yet. */
+export type WrittenJudgeSpec = Omit<JudgeSpec, "criterion" | "rubric"> & {
+  /** The handle of a judge that already exists, instead of a description.
+   *
+   * Named, the judge is reused as it stands: its question, its scale, whose
+   * turns it grades and what it is shown belong to the judge, and none of them
+   * may be written beside the handle — `judgeSpecProblem` refuses the pair.
+   * What stays writable is what belongs to the LINK: `model` and `targets`,
+   * which differ from one run to the next.
+   *
+   * A system judge's handle is refused here: those two are turned on by
+   * `check_eval_awareness` and `check_adversary_fidelity`, which is also how
+   * they are read back. */
+  judge?: string;
+  /** Absent exactly when `judge` names one. */
+  criterion?: string;
+  /** Absent exactly when `judge` names one. */
+  rubric?: RubricLevel[];
+};
+
+/** A run as somebody WRITES it — see `WrittenJudgeSpec` for the pair and why
+ *  there are two types.
+ *
+ * The principal judge may be named here as well, by `judge` at the top level,
+ * where `criterion` and `rubric` describe it. */
+export type WrittenRunConfig = Omit<
+  EvalRunConfig,
+  "criterion" | "rubric" | "judges"
+> & {
+  /** The handle of the judge the PRINCIPAL reuses, instead of `criterion` and
+   *  `rubric`. Not to be confused with `models.judge`, which names the model
+   *  that grades: this one names the question. */
+  judge?: string;
+  /** Absent exactly when `judge` names one. */
+  criterion?: string;
+  /** Absent exactly when `judge` names one. */
+  rubric?: RubricLevel[];
+  judges?: WrittenJudgeSpec[];
+};
+
 export interface TemperatureSpec {
   min: number;
   max?: number | null;

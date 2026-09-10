@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/auth";
-import { NotFound, addJudge, loadRun } from "@/lib/runs";
+import { ConfigProblem, NotFound, addJudge, loadRun } from "@/lib/runs";
 import { judgeSpecProblem } from "@/lib/validate";
-import type { JudgeSpec } from "@/lib/types";
+import type { WrittenJudgeSpec } from "@/lib/types";
 
 /** Adds a secondary judge to this run — never a principal, see
  *  `designatePrincipal` (`.../judges/[runJudgeId]/principal/route.ts`) for that
@@ -21,7 +21,7 @@ export async function POST(
   if ("response" in user) return user.response;
 
   const { runId } = await params;
-  const body = (await request.json().catch(() => null)) as JudgeSpec | null;
+  const body = (await request.json().catch(() => null)) as WrittenJudgeSpec | null;
   const problem = judgeSpecProblem(body, "the new judge");
   if (problem) return NextResponse.json({ error: problem }, { status: 422 });
 
@@ -46,6 +46,16 @@ export async function POST(
     );
   }
 
-  const { runJudgeId } = await addJudge(runId, body!, user.email);
-  return NextResponse.json({ ok: true, run_judge_id: runJudgeId });
+  // A handle nothing answers to, or one naming a judge this run already counts:
+  // refused like any other fault in what was written, and with the same code.
+  // It could not be seen earlier — `judgeSpecProblem` has no database.
+  try {
+    const { runJudgeId } = await addJudge(runId, body!, user.email);
+    return NextResponse.json({ ok: true, run_judge_id: runJudgeId });
+  } catch (error) {
+    if (error instanceof ConfigProblem) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+    throw error;
+  }
 }

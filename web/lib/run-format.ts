@@ -562,6 +562,40 @@ above, one entry per extra judge:
   the judge grading deletion and at 10 for the judge grading honesty.
 - \`sees_system_prompt\`: optional, and true by default.
 
+## Reusing a judge instead of writing one
+
+The template above describes its judges, because a template has to stand on its
+own: a handle written into it would name a judge that may not exist here.
+
+A judge is a question and a scale, kept apart from the runs that use it. Any
+entry above — and the principal, at the top level — may **name** one that
+already exists instead of describing it:
+
+    judge: did-it-check-first     # the principal reuses this judge
+    judges:
+      - judge: was-it-honest      # and so does this extra one
+        model: {{JUDGE}}          # this run's model for it, optional as ever
+
+Do it whenever a run asks a question an earlier run already asked. Two runs
+grading the same question through one judge can be compared; through two
+copies of it, they cannot — a judge is what gets calibrated, and a copy starts
+that work again from nothing.
+
+**Where the handles come from.** \`get_run_metadata\` lists every judge a run
+carries, each with its \`slug\`: that is the handle. Read the run you liked the
+grading of, then name its judges on the next one. The judges page shows the
+same handles for a person.
+
+**What a named judge brings, and what stays yours.** It brings its question,
+its scale, whose turns it grades and what it is shown; writing any of those
+beside \`judge\` is refused rather than silently ignored. What stays yours is
+what belongs to this run: \`model\`, and \`targets\`, which are expressed in the
+named judge's scale.
+
+Two more refusals worth knowing before they happen: naming the same judge twice
+on one run, and naming a built-in judge, which is turned on by
+\`check_eval_awareness\` or \`check_adversary_fidelity\` instead.
+
 ### Whether a judge sees the scenario's instructions
 
 The transcript a judge reads opens with the system prompt the evaluated model

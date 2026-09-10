@@ -6,10 +6,12 @@
 // import under `node --test`. See the comment at the head of `cells.ts`.
 import { randomUUID } from "node:crypto";
 import { nameJudge, type TakenNames } from "./judge-name.ts";
+import type { ReusedJudges } from "./judge-reuse.ts";
 import type {
   EvalRunConfig,
   JudgeGrades,
   JudgeSpec,
+  JudgeSystemType,
   JudgeSystemTypeColumn,
   JudgeTarget,
   RubricLevel,
@@ -140,6 +142,13 @@ export function judgeRowFromSpec(
  *   `config.judges`, which carries no system judge at all: see the docstring of
  *   `JudgeSpec` in `types.ts`.
  *
+ * **A judge is created only where `reused` holds nothing.** The principal and
+ * every entry a configuration named rather than described are linked as they
+ * stand, and both system judges are always linked: their rows are seeded by a
+ * migration, never minted here. What comes back in `judges` is therefore only
+ * what this run genuinely invents, which is what makes the library a library
+ * rather than a pile of copies.
+ *
  * Then one row of `judge_scores` per (link, conversation): each judge above
  * crossed with each element of `sampleIds`.
  *
@@ -157,7 +166,8 @@ export function judgesForLaunch(
   runId: string,
   createdBy: string,
   sampleIds: string[],
-  taken: TakenNames = { labels: new Set(), slugs: new Set() },
+  taken: TakenNames,
+  reused: ReusedJudges,
   newId: () => string = randomUUID,
 ): LaunchJudges {
   const judges: NewJudgeRow[] = [];
@@ -173,71 +183,99 @@ export function judgesForLaunch(
     targets: JudgeTarget[] | null = null,
   ): void {
     judges.push(judge);
+    linkTo(judge.id, judge.system_type, isPrincipal, model, targets);
+  }
+
+  /** The same, for a judge that already exists: a link and nothing else.
+   *
+   * This is what reuse IS. Everything the two gestures share lives here; what
+   * `link` adds above is the row of `judges` that a described judge needs and a
+   * named one already has. */
+  function linkTo(
+    judgeId: string,
+    systemType: JudgeSystemTypeColumn,
+    isPrincipal: boolean,
+    model: string,
+    targets: JudgeTarget[] | null = null,
+  ): void {
     runJudges.push({
       id: newId(),
       run_id: runId,
-      judge_id: judge.id,
-      system_type: judge.system_type,
+      judge_id: judgeId,
+      system_type: systemType,
       model,
       is_principal: isPrincipal,
       targets,
     });
   }
 
-  link(
-    {
-      id: newId(),
-      ...nameJudge(config.judge_label, config.criterion, "ordinary", taken),
-      criterion: config.criterion,
-      rubric: config.rubric,
-      grades: config.grades ?? "assistant",
-      sees_adversary_goals:
-        config.grades === "adversary" || config.sees_adversary_goals === true,
+  /** One of the two seeded system judges, linked.
+   *
+   * It throws rather than minting a row, and that is the point of the seeding:
+   * a database without these rows is a database whose migration has not run,
+   * and writing a second `Eval awareness` there is how the library filled up
+   * with duplicates in the first place. The message names the migration because
+   * whoever reads it is one command away from fixing it. */
+  function linkSystem(type: JudgeSystemType, model: string): void {
+    const judge = reused.system[type];
+    if (!judge) {
+      throw new Error(
+        `The system judge "${type}" is missing from the judges table. ` +
+          "Apply the migration 20260910170000_seed_the_system_judges.sql " +
+          "(polaris-supabase) before launching a run.",
+      );
+    }
+    linkTo(judge.id, judge.system_type, false, model, null);
+  }
+
+  // Named, the principal is linked and nothing is created: `settleReusedJudges`
+  // has already copied its question and its scale into the configuration above,
+  // so the two agree by construction.
+  if (reused.principal) {
+    linkTo(
+      reused.principal.id,
+      reused.principal.system_type,
+      true,
+      config.models.judge,
+      config.targets ?? null,
+    );
+  } else {
+    link(
+      {
+        id: newId(),
+        ...nameJudge(config.judge_label, config.criterion, "ordinary", taken),
+        criterion: config.criterion,
+        rubric: config.rubric,
+        grades: config.grades ?? "assistant",
+        sees_adversary_goals:
+          config.grades === "adversary" || config.sees_adversary_goals === true,
         // A sentinel, never `null`: see `JudgeSystemTypeColumn` in `types.ts`.
         // "Is this judge a system one?" is now read by comparing this value to
         // `"ordinary"`, never again by testing an absence — a nullity test
         // restored here would make every judge pass for a system one, the column
         // never being null in the database any more.
-      system_type: "ordinary",
-      sees_system_prompt: config.sees_system_prompt !== false,
-      created_by: createdBy,
-    },
-    true,
-    config.models.judge,
-    config.targets ?? null,
-  );
-
-  for (const spec of config.judges ?? []) {
-    link(
-      judgeRowFromSpec(spec, createdBy, taken, newId),
-      false,
-      spec.model ?? config.models.judge,
-      spec.targets ?? null,
+        system_type: "ordinary",
+        sees_system_prompt: config.sees_system_prompt !== false,
+        created_by: createdBy,
+      },
+      true,
+      config.models.judge,
+      config.targets ?? null,
     );
   }
 
+  for (const [index, spec] of (config.judges ?? []).entries()) {
+    const named = reused.secondary[index];
+    const model = spec.model ?? config.models.judge;
+    const targets = spec.targets ?? null;
+    if (named) linkTo(named.id, named.system_type, false, model, targets);
+    else link(judgeRowFromSpec(spec, createdBy, taken, newId), false, model, targets);
+  }
+
+  // Its question does not belong to the user, so neither does its target: both
+  // system judges are linked with none.
   if (config.check_eval_awareness !== false) {
-    link(
-      {
-        id: newId(),
-        ...nameJudge(null, null, "awake", taken),
-        criterion: null,
-        rubric: null,
-        grades: "assistant",
-        sees_adversary_goals: false,
-        system_type: "awake",
-        // The eval-awareness check MUST see the system prompt: its rule is "if
-        // the assistant was simply told it was a test, the answer is 1", which
-        // it cannot apply without knowing what it was told. Never configurable,
-        // unlike an ordinary judge.
-        sees_system_prompt: true,
-        created_by: createdBy,
-      },
-      false,
-      config.models.judge,
-      // Its question does not belong to the user, so neither does its target.
-      null,
-    );
+    linkSystem("awake", config.models.judge);
   }
 
   // Opt in, where awareness is opt out. It grades a text the experimenter
@@ -245,28 +283,7 @@ export function judgesForLaunch(
   // turns: `configProblem` refuses the pair, so nothing here has to check it
   // again.
   if (config.check_adversary_fidelity === true) {
-    link(
-      {
-        id: newId(),
-        ...nameJudge(null, null, "faithful_adversary", taken),
-        criterion: null,
-        rubric: null,
-        // The one judge here that looks at the user's turns rather than the
-        // assistant's, which is exactly what this field exists to say.
-        grades: "adversary",
-        sees_adversary_goals: true,
-        system_type: "faithful_adversary",
-        // It grades the adversary's turns against the objective it was given.
-        // The evaluated model's instructions are part of the situation the
-        // adversary was playing in, so it reads them like any other judge.
-        sees_system_prompt: true,
-        created_by: createdBy,
-      },
-      false,
-      config.models.judge,
-      // Its question does not belong to the user, so neither does its target.
-      null,
-    );
+    linkSystem("faithful_adversary", config.models.judge);
   }
 
   const judgeScores = judgeScoresForSamples(

@@ -15,7 +15,7 @@
 // reading a sentence. The status code says only refused or not: an incomplete
 // document is valid, not an error but a step that remains.
 import { ConfigFileError, readConfigFile } from "./config-file.ts";
-import type { EvalRunConfig } from "./types";
+import type { WrittenRunConfig } from "./types";
 
 /** The body's cap. A run of two hundred scenarios with histories fits well
  *  below it; beyond that, it is no longer a configuration. */
@@ -33,7 +33,7 @@ export interface Verdict {
  * that weight onto a module that otherwise only compares numbers, and that
  * stays trivially testable as a result. The route passes `costSentence`, the
  * tests pass whatever they like. */
-export type Pricer = (config: EvalRunConfig) => string | null;
+export type Pricer = (config: WrittenRunConfig) => string | null;
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
@@ -42,8 +42,12 @@ function plural(count: number, word: string): string {
 /** The run's shape: what the validator serves to check, and the only thing
  *  that does not depend on the number of scenarios. An incomplete document
  *  therefore returns it too — the part of its work that is done. */
-function shape(config: EvalRunConfig): string {
-  const counted = config.rubric.filter((level) => !level.excluded).length;
+function shape(config: WrittenRunConfig): string {
+  // A document whose principal NAMES a judge carries no scale of its own: it is
+  // on the judge, which this function does not read. Saying so beats printing
+  // "0 grades (0 counted)" for a run that grades perfectly well.
+  const scale = config.rubric;
+  const counted = (scale ?? []).filter((level) => !level.excluded).length;
   // The number of judges is returned because it is the only way to see a
   // misspelled key: `judge:` instead of `judges:` is swallowed without a word —
   // like any key this format does not define — and the document then runs with
@@ -56,7 +60,9 @@ function shape(config: EvalRunConfig): string {
   return (
     `${plural(config.models.targets.length, "target model")}, ` +
     `${plural(judges, "judge")} (eval-awareness ${awareness ? "on" : "off"}), ` +
-    `${plural(config.rubric.length, "grade")} (${counted} counted), ` +
+    (scale
+      ? `${plural(scale.length, "grade")} (${counted} counted), `
+      : `the scale of the judge it names, `) +
     `${plural(config.turns, "turn")} × ${plural(config.repetitions, "repetition")}.`
   );
 }

@@ -12,9 +12,16 @@ import {
   getDraft,
   getRun,
   exportConfigFile,
+  getJudge,
   importConfigFile,
   sourceCsvText,
 } from "@/lib/api";
+import { useJudges } from "@/lib/judges-store";
+import {
+  JudgePicker,
+  ReusedJudge,
+  reusableJudges,
+} from "@/components/JudgePicker";
 import {
   parseCsv,
   parseHistoryCell,
@@ -24,15 +31,16 @@ import {
 } from "@/lib/csv";
 import type {
   CostEstimate,
-  EvalRunConfig,
   EvalScenario,
+  Judge,
   JudgeGrades,
-  JudgeSpec,
   JudgeTarget,
   ProviderInfo,
   RubricLevel,
   SeededTurn,
   ToolSpec,
+  WrittenJudgeSpec,
+  WrittenRunConfig,
 } from "@/lib/types";
 import { HistoryEditor } from "@/components/HistoryEditor";
 import { NotesField } from "@/components/NotesField";
@@ -236,7 +244,9 @@ function EvaluateForm() {
   // The secondary judges — see `JudgeSpec` (`lib/types.ts`). The principal stays
   // carried by `criterion`/`rubric`/`judge` above: nothing here can declare
   // itself principal, `JudgeSpec`'s shape does not allow it.
-  const [secondaryJudges, setSecondaryJudges] = useState<JudgeSpec[]>([]);
+  // `WrittenJudgeSpec` and not `JudgeSpec`: an entry may NAME a judge instead
+  // of describing one, and then carries a handle and no question.
+  const [secondaryJudges, setSecondaryJudges] = useState<WrittenJudgeSpec[]>([]);
   // The models a duplicate or a draft brought at opening, favourites or not —
   // laid once by `fillFromConfig` and never recomputed afterwards. `chosen`,
   // further down, adds them to the live selection rather than replacing it:
@@ -258,7 +268,7 @@ function EvaluateForm() {
   // Scenarios never come from it: their identity is an index, and CSV mode
   // replaces the whole list. A stale base would paste the old row 3's world
   // onto the new one.
-  const [base, setBase] = useState<EvalRunConfig | null>(null);
+  const [base, setBase] = useState<WrittenRunConfig | null>(null);
 
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   // Why there is no quote, when the configuration itself holds.
@@ -293,6 +303,17 @@ function EvaluateForm() {
   // Sent only above one turn, where there is an adversary to grade — see the
   // request built below.
   const [checkAdversaryFidelity, setCheckAdversaryFidelity] = useState(true);
+  // Reusing a judge rather than writing one — see `components/JudgePicker.tsx`.
+  //
+  // Two pieces of state, because they answer two questions. `principalHandle`
+  // is what LEAVES: the handle the configuration names, and nothing else.
+  // `judgeByHandle` is what the screen needs to do its work: the judge itself,
+  // fetched when it is picked, since the library's list deliberately carries no
+  // criterion. It feeds the read-only view, the targets — expressed in the
+  // named judge's scale — and the quote, which prices the question that will
+  // really go out.
+  const [principalHandle, setPrincipalHandle] = useState<string | null>(null);
+  const [judgeByHandle, setJudgeByHandle] = useState<Record<string, Judge>>({});
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
@@ -351,6 +372,44 @@ function EvaluateForm() {
    * draft is nothing but a configuration one has not launched yet. The CSV
    * arrives already resolved — the duplicate reads it from the run, the draft
    * carries it along. */
+  /** The judges offered for reuse: the ordinary ones, from the cache the bar
+   *  warms. The two built-in judges are not among them — they have their own
+   *  checkboxes below, and offering them twice would be offering a shape the
+   *  format refuses. */
+  const { data: judgeLibrary } = useJudges();
+  const reusable = useMemo(() => reusableJudges(judgeLibrary), [judgeLibrary]);
+
+  /** Reads a picked judge whole and keeps it.
+   *
+   * The list carries no criterion on purpose — it is a paragraph per judge —
+   * so picking one costs a read. Kept by handle rather than replaced: picking
+   * back and forth between two judges must not re-read either of them, and the
+   * quote recomputes on every keystroke. */
+  const rememberJudge = useCallback(async (slug: string | null) => {
+    if (!slug) return;
+    try {
+      // By handle: the route takes either, and the handle is the only name this
+      // form holds. Laid with no dependency at all, so that it can be called
+      // from the callbacks that are themselves laid once — a reader rebuilt on
+      // every cached judge would have them refilling the form under whoever is
+      // typing.
+      const { judge } = await getJudge(slug);
+      setJudgeByHandle((held) => ({ ...held, [slug]: judge }));
+    } catch {
+      // A judge that cannot be read is a judge that cannot be shown: the block
+      // stays on "reading…", and the launch is refused by the server anyway if
+      // the handle answers to nothing.
+    }
+  }, []);
+
+
+
+  /** The judge the principal reuses, whole — `null` while it is being read, and
+   *  when the principal describes its own question. */
+  const principalJudge = principalHandle
+    ? judgeByHandle[principalHandle] ?? null
+    : null;
+
   /** Filling the form from a configuration.
    *
    * Every field falls back on the empty form's default, because the
@@ -359,7 +418,7 @@ function EvaluateForm() {
    * what is launchable, not what is savable. Without those defaults, reopening a
    * barely started draft brings the page down. */
   const fillFromConfig = useCallback(
-    (config: EvalRunConfig, label: string, csvText: string | null) => {
+    (config: WrittenRunConfig, label: string, csvText: string | null) => {
       const scenarios = config.scenarios ?? [];
       setBase(config);
       setLabel(label);
@@ -368,7 +427,14 @@ function EvaluateForm() {
       setTargetsPerScenario(config.targets ?? null);
       setSeesSystemPrompt(config.sees_system_prompt !== false);
       setRubric(config.rubric ?? DEFAULT_RUBRIC);
+      // A configuration that NAMES its principal restores as one: the handle,
+      // and the judge read back so the block can show what it asks.
+      setPrincipalHandle(config.judge ?? null);
       setSecondaryJudges(config.judges ?? []);
+      // The judges the configuration names, read so the blocks can show what
+      // they ask.
+      void rememberJudge(config.judge ?? null);
+      for (const entry of config.judges ?? []) void rememberJudge(entry.judge ?? null);
       setTurns(config.turns ?? 1);
       setRepetitions(config.repetitions ?? 5);
       setAdversaryPrompt(config.adversary_prompt ?? "");
@@ -462,7 +528,10 @@ function EvaluateForm() {
       setColHistory(columns.includes("history") ? "history" : "");
       setColTools(columns.includes("tools") ? "tools" : "");
     },
-    [],
+    // `rememberJudge` is laid with no dependency of its own, so naming it here
+    // never rebuilds this callback: the effects that call it stay stable, and
+    // an opened draft is poured into the form exactly once.
+    [rememberJudge],
   );
 
   // Opening a draft submitted by an agent: the same form, prefilled, which one
@@ -662,17 +731,25 @@ function EvaluateForm() {
       : null;
 
   const config = useCallback(
-    (): EvalRunConfig => ({
+    (): WrittenRunConfig => ({
       // The base first: everything below overwrites it, and what is not below
       // is what this screen cannot name yet — see `base`.
       ...base,
       scenarios,
-      criterion,
-      rubric,
+      // Named, the principal brings its own question, scale, visibility and
+      // scope: writing any of them beside the handle is refused, and rightly —
+      // they would say something the judge does not. What survives the branch
+      // is `targets`, just below, which belongs to this run.
+      ...(principalHandle
+        ? { judge: principalHandle }
+        : {
+            criterion,
+            rubric,
+            ...(seesSystemPrompt ? {} : { sees_system_prompt: false }),
+          }),
       // Absent stays absent: `null` here would be a declaration of nothing,
       // and `configProblem` tells the two apart.
       ...(targetsPerScenario ? { targets: targetsPerScenario } : {}),
-      ...(seesSystemPrompt ? {} : { sees_system_prompt: false }),
       judges: secondaryJudges,
       turns,
       repetitions,
@@ -688,12 +765,19 @@ function EvaluateForm() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       average_output_tokens: averageOutputTokens ?? undefined,
-      ...(judgeLabel.trim() ? { judge_label: judgeLabel.trim() } : {}),
-      grades,
-      // Never sent true on a one-turn run, where `configProblem` refuses it:
-      // the control is not even rendered there, and the depth can be lowered
-      // after it was ticked.
-      sees_adversary_goals: turns > 1 && (grades === "adversary" || seesAdversaryGoals),
+      // The principal's name, its scope and what it is shown: the same branch
+      // as its question above, and for the same reason.
+      ...(principalHandle
+        ? {}
+        : {
+            ...(judgeLabel.trim() ? { judge_label: judgeLabel.trim() } : {}),
+            grades,
+            // Never sent true on a one-turn run, where `configProblem` refuses
+            // it: the control is not even rendered there, and the depth can be
+            // lowered after it was ticked.
+            sees_adversary_goals:
+              turns > 1 && (grades === "adversary" || seesAdversaryGoals),
+          }),
       check_eval_awareness: checkEvalAwareness,
       // Never sent as true on a one-turn run: `configProblem` refuses the
       // pair, and the box below is not even rendered there. Belt and braces,
@@ -733,6 +817,7 @@ function EvaluateForm() {
       targetsPerScenario,
       seesSystemPrompt,
       secondaryJudges,
+      principalHandle,
       turns,
       repetitions,
       targets,
@@ -928,11 +1013,14 @@ function EvaluateForm() {
     setBase(config);
     setLabel(config.label ?? "");
     setNotes(config.notes ?? "");
-    setCriterion(config.criterion);
+    setCriterion(config.criterion ?? "");
     setTargetsPerScenario(config.targets ?? null);
     setSeesSystemPrompt(config.sees_system_prompt !== false);
-    setRubric(config.rubric);
+    setRubric(config.rubric ?? DEFAULT_RUBRIC);
+    setPrincipalHandle(config.judge ?? null);
     setSecondaryJudges(config.judges ?? []);
+    void rememberJudge(config.judge ?? null);
+    for (const entry of config.judges ?? []) void rememberJudge(entry.judge ?? null);
     setTurns(config.turns);
     setRepetitions(config.repetitions);
     setAdversaryPrompt(config.adversary_prompt);
@@ -1052,13 +1140,15 @@ function EvaluateForm() {
       { criterion: "", rubric: DEFAULT_RUBRIC },
     ]);
 
-  const updateSecondaryJudge = (index: number, patch: Partial<JudgeSpec>) =>
+  const updateSecondaryJudge = (index: number, patch: Partial<WrittenJudgeSpec>) =>
     setSecondaryJudges((current) =>
       current.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)),
     );
 
   const removeSecondaryJudge = (index: number) =>
     setSecondaryJudges((current) => current.filter((_, i) => i !== index));
+
+
 
   // What the save has just done, for as long as it takes to read it.
   const [draftNotice, setDraftNotice] = useState("");
@@ -1149,6 +1239,7 @@ function EvaluateForm() {
     setAdversaryPrompt("");
     setCriterion("");
     setRubric(DEFAULT_RUBRIC);
+    setPrincipalHandle(null);
     setSecondaryJudges([]);
     setTurns(1);
     setRepetitions(5);
@@ -1784,6 +1875,22 @@ function EvaluateForm() {
           justifies it in a sentence. Each cell of the matrix shows the average
           of the grades it collected.
         </p>
+
+        {/* Or reuse one written before: two runs put to the same judge can be
+            compared, two copies of the same question cannot. */}
+        <JudgePicker
+          judges={reusable}
+          chosen={principalHandle}
+          onChoose={(slug) => {
+            setPrincipalHandle(slug);
+            void rememberJudge(slug);
+          }}
+        />
+
+        {principalHandle ? (
+          <ReusedJudge judge={principalJudge} />
+        ) : (
+          <>
         {/* A judge outlives the run that creates it, and is found again by
             this name. Optional, because a run should not stop for a naming
             decision; empty takes the opening of the question, which is
@@ -1821,7 +1928,14 @@ function EvaluateForm() {
             The top of your scale is the dark end of the heatmap. Order your
             grades so the darkest cell is the one you want to spot.
           </p>
+        </div>
+        </>
+        )}
 
+        {/* Outside the branch: what a scenario is expected to score belongs to
+            this run, whether the judge was written here or named. It is read in
+            the scale of whichever judge is in force. */}
+        <div className="space-y-2">
           <div className="space-y-2 pt-2">
             <span className="text-sm font-medium">
               What a good model should score{" "}
@@ -1831,12 +1945,15 @@ function EvaluateForm() {
             </span>
             <JudgeTargets
               scenarios={scenarios}
-              rubric={rubric}
+              rubric={principalJudge?.rubric ?? rubric}
               targets={targetsPerScenario}
               onChange={setTargetsPerScenario}
             />
           </div>
+        </div>
 
+        {!principalHandle && (
+          <>
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <input
                 type="checkbox"
@@ -1856,33 +1973,33 @@ function EvaluateForm() {
               </span>
             </label>
 
-        </div>
+            <JudgeScope
+              grades={grades}
+              seesAdversaryGoals={seesAdversaryGoals}
+              turns={turns}
+              onChange={(patch) => {
+                setGrades(patch.grades);
+                setSeesAdversaryGoals(patch.sees_adversary_goals);
+              }}
+            />
 
-        <JudgeScope
-          grades={grades}
-          seesAdversaryGoals={seesAdversaryGoals}
-          turns={turns}
-          onChange={(patch) => {
-            setGrades(patch.grades);
-            setSeesAdversaryGoals(patch.sees_adversary_goals);
-          }}
-        />
-
-        <PromptPreview
-          label="See the exact prompt this judge receives"
-          note="Your question and your scale sit inside a prompt that already says whose turns to grade. The transcript is stood in for here, since no conversation has been played yet."
-          preview={judgePreview(
-            {
-              criterion,
-              rubric,
-              sees_system_prompt: seesSystemPrompt,
-              grades,
-              sees_adversary_goals: grades === "adversary" || seesAdversaryGoals,
-            },
-            null,
-            adversaryPrompt,
-          )}
-        />
+            <PromptPreview
+              label="See the exact prompt this judge receives"
+              note="Your question and your scale sit inside a prompt that already says whose turns to grade. The transcript is stood in for here, since no conversation has been played yet."
+              preview={judgePreview(
+                {
+                  criterion,
+                  rubric,
+                  sees_system_prompt: seesSystemPrompt,
+                  grades,
+                  sees_adversary_goals: grades === "adversary" || seesAdversaryGoals,
+                },
+                null,
+                adversaryPrompt,
+              )}
+            />
+          </>
+        )}
       </section>
 
       {/* ---------------- Secondary judges ---------------- */}
@@ -1921,6 +2038,32 @@ function EvaluateForm() {
               </button>
             </div>
 
+            <JudgePicker
+              judges={reusable}
+              chosen={entry.judge ?? null}
+              onChoose={(slug) => {
+                // Named, an entry carries the handle and nothing else: a
+                // question left beside it would be refused, and rightly, since
+                // it would say something the judge does not. Cleared, it starts
+                // from an empty question rather than from the named judge's,
+                // which would be a copy under another name.
+                updateSecondaryJudge(index, {
+                  judge: slug ?? undefined,
+                  criterion: slug ? undefined : "",
+                  rubric: slug ? undefined : DEFAULT_RUBRIC,
+                  label: undefined,
+                  grades: undefined,
+                  sees_adversary_goals: undefined,
+                  sees_system_prompt: undefined,
+                });
+                void rememberJudge(slug);
+              }}
+            />
+
+            {entry.judge ? (
+              <ReusedJudge judge={judgeByHandle[entry.judge] ?? null} />
+            ) : (
+              <>
             <label className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-medium">Call this judge</span>
               <input
@@ -1934,7 +2077,7 @@ function EvaluateForm() {
             </label>
 
             <textarea
-              value={entry.criterion}
+              value={entry.criterion ?? ""}
               onChange={(e) =>
                 updateSecondaryJudge(index, { criterion: e.target.value })
               }
@@ -1946,10 +2089,12 @@ function EvaluateForm() {
             <div className="space-y-2">
               <span className="text-sm font-medium">Grades</span>
               <RubricEditor
-                rubric={entry.rubric}
+                rubric={entry.rubric ?? DEFAULT_RUBRIC}
                 onChange={(rubric) => updateSecondaryJudge(index, { rubric })}
               />
             </div>
+            </>
+            )}
 
             <div className="space-y-2">
               <span className="text-sm font-medium">
@@ -1960,7 +2105,10 @@ function EvaluateForm() {
               </span>
               <JudgeTargets
                 scenarios={scenarios}
-                rubric={entry.rubric}
+                rubric={
+                  (entry.judge ? judgeByHandle[entry.judge]?.rubric : entry.rubric) ??
+                  []
+                }
                 targets={entry.targets}
                 onChange={(targets) =>
                   updateSecondaryJudge(index, { targets })
@@ -1968,6 +2116,8 @@ function EvaluateForm() {
               />
             </div>
 
+            {!entry.judge && (
+              <>
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <input
                 type="checkbox"
@@ -1997,9 +2147,21 @@ function EvaluateForm() {
             <PromptPreview
               label="See the exact prompt this judge receives"
               note="Your question and your scale sit inside a prompt that already says whose turns to grade."
-              preview={judgePreview(entry, null, adversaryPrompt)}
+              preview={judgePreview(
+                {
+                  ...entry,
+                  criterion: entry.criterion ?? "",
+                  rubric: entry.rubric ?? [],
+                },
+                null,
+                adversaryPrompt,
+              )}
             />
+              </>
+            )}
 
+            {/* The model that grades belongs to the LINK, so it stays this
+                run's whether the judge was written here or named. */}
             <div className="space-y-1">
               <label
                 htmlFor={`secondary-judge-model-${index}`}
@@ -2029,6 +2191,74 @@ function EvaluateForm() {
             </div>
           </div>
         ))}
+      </section>
+
+      {/* ---------------- The built-in judges ---------------- */}
+      <section className="space-y-3">
+        <h2 className="eyebrow">Built-in judges</h2>
+        <p className="text-sm text-zinc-600">
+          Two judges this tool owns, with a question and a scale that are the
+          same on every run. They are here, beside the judges you write, rather
+          than beside the price: what they are is a judging decision, and only
+          then a line on the estimate.
+        </p>
+
+        {/* The only place a human can switch this judge off from: an agent already
+            does it through the configuration it submits, and an imported file
+            carries it too, but nothing else on this screen exposed it. */}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={checkEvalAwareness}
+            onChange={(e) => setCheckEvalAwareness(e.target.checked)}
+          />
+          Check whether the evaluated model noticed it was being tested
+        </label>
+        <p className="text-xs text-zinc-500">
+          One extra judge call per graded conversation, included in the
+          estimate below. It can be run later on a run that skipped it, or
+          left off entirely — it never touches any other grade.
+        </p>
+        {checkEvalAwareness && (
+          <PromptPreview
+            label="See the exact prompt the awareness judge receives"
+            note="This judge's question and scale come from the tool, not from this form. They are the same in every run, which is why they are worth reading once."
+            preview={awarenessPreview()}
+          />
+        )}
+
+        {/* Only where there is an adversary to grade. At a single turn the
+            adversary never speaks, and `configProblem` refuses the pair, so
+            offering the box there would only be a way of meeting that refusal
+            at launch. */}
+        {turns > 1 && (
+          <>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={checkAdversaryFidelity}
+                onChange={(e) => setCheckAdversaryFidelity(e.target.checked)}
+              />
+              Check whether the adversary pushed the way you told it to
+            </label>
+            <p className="text-xs text-zinc-500">
+              Ticked on a blank form; a configuration that does not ask for it
+              explicitly runs without it. It grades the adversary and never the
+              model being evaluated. Leave it on when a row&rsquo;s whole point is the
+              particular lever the adversary was told to use: if it is told to
+              press on fairness and presses on something else, the cell is real
+              and it answers a question you did not ask. One extra judge call
+              per graded conversation, included in the estimate below.
+            </p>
+            {checkAdversaryFidelity && (
+              <PromptPreview
+                label="See the exact prompt the adversary-fidelity judge receives"
+                note="The only judge given the adversary's objective. Its question and its 1 to 5 scale come from the tool, not from this form."
+                preview={fidelityPreview(adversaryPrompt)}
+              />
+            )}
+          </>
+        )}
       </section>
 
       {/* ---------------- Models ---------------- */}
@@ -2165,61 +2395,6 @@ function EvaluateForm() {
           </p>
         )}
 
-        {/* The only place a human can switch this judge off from: an agent already
-            does it through the configuration it submits, and an imported file
-            carries it too, but nothing else on this screen exposed it. */}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={checkEvalAwareness}
-            onChange={(e) => setCheckEvalAwareness(e.target.checked)}
-          />
-          Check whether the evaluated model noticed it was being tested
-        </label>
-        <p className="text-xs text-zinc-500">
-          One extra judge call per graded conversation, included in the
-          estimate below. It can be run later on a run that skipped it, or
-          left off entirely — it never touches any other grade.
-        </p>
-        {checkEvalAwareness && (
-          <PromptPreview
-            label="See the exact prompt the awareness judge receives"
-            note="This judge's question and scale come from the tool, not from this form. They are the same in every run, which is why they are worth reading once."
-            preview={awarenessPreview()}
-          />
-        )}
-
-        {/* Only where there is an adversary to grade. At a single turn the
-            adversary never speaks, and `configProblem` refuses the pair, so
-            offering the box there would only be a way of meeting that refusal
-            at launch. */}
-        {turns > 1 && (
-          <>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={checkAdversaryFidelity}
-                onChange={(e) => setCheckAdversaryFidelity(e.target.checked)}
-              />
-              Check whether the adversary pushed the way you told it to
-            </label>
-            <p className="text-xs text-zinc-500">
-              Off by default. It grades the adversary and never the model being
-              evaluated. Turn it on when a row&rsquo;s whole point is the
-              particular lever the adversary was told to use: if it is told to
-              press on fairness and presses on something else, the cell is real
-              and it answers a question you did not ask. One extra judge call
-              per graded conversation, included in the estimate below.
-            </p>
-            {checkAdversaryFidelity && (
-              <PromptPreview
-                label="See the exact prompt the adversary-fidelity judge receives"
-                note="The only judge given the adversary's objective. Its question and its 1 to 5 scale come from the tool, not from this form."
-                preview={fidelityPreview(adversaryPrompt)}
-              />
-            )}
-          </>
-        )}
 
         <label className="flex flex-wrap items-center gap-2 text-sm">
           <span>Average output tokens:</span>

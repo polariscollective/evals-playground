@@ -42,7 +42,7 @@ test("the third row is a control for the principal and ordinary for the other", 
 // the example teaches itself wrong.
 test("its target is the excluded grade, as its own note announces", () => {
   const { config } = readConfigFile(YAML);
-  const excluded = config.rubric.find((level) => level.excluded);
+  const excluded = config.rubric!.find((level) => level.excluded);
   assert.equal(config.targets?.[2].expected, excluded?.value);
   assert.match(String(config.scenarios[2].note), /does not apply|excluded level/);
 });

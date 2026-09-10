@@ -3,7 +3,12 @@
 // createDraft makes addressable.
 import "server-only";
 import { DRAFTS, DRAFT_TAGS, NOW, insert, remove, rpc, select, update } from "./supabase";
-import type { Draft, EvalRunConfig, ExtendRequest } from "./types";
+import type {
+  Draft,
+  EvalRunConfig,
+  ExtendRequest,
+  WrittenRunConfig,
+} from "./types";
 
 export class DraftNotFound extends Error {}
 
@@ -43,7 +48,7 @@ export async function createExtendDraft(
 }
 
 export async function createDraft(
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   csvText: string | null,
   createdBy: string,
   origin: "manual" | "mcp",
@@ -134,7 +139,7 @@ export async function loadDrafts(
  * the caller that knows which one it is rewriting. */
 export async function updateDraft(
   id: string,
-  config: EvalRunConfig | ExtendRequest,
+  config: WrittenRunConfig | ExtendRequest,
   csvText: string | null,
   origin: "manual" | "mcp" = "manual",
 ): Promise<void> {
@@ -170,7 +175,7 @@ export interface DraftWriteResult {
  * one, whatever the caller passes here. */
 export async function updateDraftOwned(
   draft: Draft,
-  config: EvalRunConfig | ExtendRequest,
+  config: WrittenRunConfig | ExtendRequest,
   csvText: string | null,
   requestedBy: string,
   origin: "manual" | "mcp" = "manual",
