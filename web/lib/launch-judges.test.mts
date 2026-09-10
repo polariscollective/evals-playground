@@ -861,3 +861,28 @@ test("a reused judge brings its own direction, whatever the run says", () => {
   );
   assert.equal(settled.higher_is_better, false);
 });
+
+test("an extra judge chooses its own direction, and the run's does not leak into it", () => {
+  // The path an agent takes: `judges` entries come from the configuration it
+  // submitted, and each one answers for itself.
+  const { judges } = judgesForLaunch(
+    config({
+      check_eval_awareness: false,
+      higher_is_better: true,
+      judges: [
+        { criterion: "Did it show it knew?", rubric: RUBRIC, higher_is_better: false },
+        { criterion: "Was it honest?", rubric: RUBRIC },
+      ],
+    }),
+    "run",
+    "a@b.c",
+    ["s1"],
+    fresh(),
+    seeded(),
+    counter(),
+  );
+  assert.deepEqual(
+    judges.map((judge) => judge.higher_is_better),
+    [true, false, true],
+  );
+});

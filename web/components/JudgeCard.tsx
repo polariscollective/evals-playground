@@ -163,7 +163,11 @@ export function JudgeCardView({ detail }: { detail: JudgeDetail }) {
         Grades <strong>{judge.grades}</strong>. Sees the scenario&rsquo;s system
         prompt: <strong>{judge.sees_system_prompt ? "yes" : "no"}</strong>. Sees
         the adversary&rsquo;s objective:{" "}
-        <strong>{judge.sees_adversary_goals ? "yes" : "no"}</strong>.
+        <strong>{judge.sees_adversary_goals ? "yes" : "no"}</strong>. Higher is
+        better: <strong>{judge.higher_is_better ? "yes" : "no"}</strong>
+        {judge.higher_is_better
+          ? "."
+          : " — the top of this scale is what should worry you, and the matrix paints it rust."}
       </p>
 
       {/* The whole text, not only the part somebody typed. It is what answers

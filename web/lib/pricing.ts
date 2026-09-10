@@ -31,8 +31,8 @@ import { served, servesTools, toolsFor, writesWorld } from "./tools.ts";
 import type {
   CostEstimate,
   EvalRunConfig,
+  WrittenJudgeSpec,
   WrittenRunConfig,
-  JudgeSpec,
   LengthAssumption,
   ModelCost,
   ModelRole,
@@ -735,7 +735,7 @@ export function estimateCost(
  * catchable up. */
 export function estimateJudgeAdditionCost(
   config: EvalRunConfig,
-  spec: JudgeSpec,
+  spec: WrittenJudgeSpec,
   conversations: number,
 ): CostEstimate {
   if (conversations <= 0 || config.scenarios.length === 0) {
@@ -743,7 +743,10 @@ export function estimateJudgeAdditionCost(
   }
 
   const model = spec.model || config.models.judge;
-  const question = tokens(spec.criterion) + rubricTokens(spec.rubric);
+  // A judge NAMED rather than described carries neither: its question lives on
+  // the judge, which this function does not read — see `estimateTokens`, whose
+  // note on the same gap applies here word for word.
+  const question = tokens(spec.criterion ?? "") + rubricTokens(spec.rubric);
   const adversaryModel = config.turns > 1 ? config.models.adversary : null;
 
     /** The mean number of tokens this judge would read, at a given length

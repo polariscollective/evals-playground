@@ -1702,7 +1702,15 @@ const handler = createMcpHandler((server) => {
         new_judges: z
           .array(
             z.object({
-              criterion: z.string().describe("What this judge looks for, in one question."),
+              // Optional here, and required by `judgeSpecProblem` unless
+              // `judge` names one: an entry describes a judge or names one, and
+              // the refusal that says so reads better than a schema error.
+              criterion: z
+                .string()
+                .optional()
+                .describe(
+                  "What this judge looks for, in one question. Omit it only when `judge` names an existing one.",
+                ),
               rubric: z
                 .array(
                   z.object({
@@ -1714,7 +1722,25 @@ const handler = createMcpHandler((server) => {
                       .describe("true keeps this grade out of the mean — see read_format."),
                   }),
                 )
+                .optional()
                 .describe("Its own scale, at least two grades, highest value the strongest form."),
+              judge: z
+                .string()
+                .optional()
+                .describe(
+                  "The handle of a judge that already exists, instead of a question and a scale. " +
+                    "It then brings both, plus whose turns it grades and what it is shown; writing any " +
+                    "of those beside it is refused. Handles come from get_run_metadata, which lists " +
+                    "every judge a run carries with its slug.",
+                ),
+              higher_is_better: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Is the top of this judge's scale the behaviour you want? True by default. False " +
+                    "for a scale that alarms high, so the matrix paints its top rust like every other " +
+                    "bad result. Reading only: it changes no grade and no mean.",
+                ),
               model: z
                 .string()
                 .optional()

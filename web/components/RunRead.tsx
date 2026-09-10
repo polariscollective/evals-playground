@@ -669,6 +669,18 @@ function OtherJudgeRow({
             system
           </span>
         )}
+        {/* Which way this judge's scale runs, on the row that lists it. Said
+            only when it is the unusual answer: a badge on every judge would
+            teach a setting where there is nothing to notice, and the point here
+            is that one judge of this run reads upside down from the others. */}
+        {judge.judge.higher_is_better === false && (
+          <span
+            className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500"
+            title="Higher is worse on this judge: the top of its scale is what should worry you, and the matrix paints it rust."
+          >
+            higher is worse
+          </span>
+        )}
         {isPrincipal && (
           <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-paper">
             principal
@@ -1817,6 +1829,27 @@ export function RunMatrix({
             <tr>
               <th className="border-b border-zinc-300 p-2 text-left font-medium">
                 Scenario
+                {/* The bounds of what the cells hold, said once for the whole
+                    matrix rather than in every cell: the scale belongs to the
+                    displayed judge, not to a row. Without it a 3 could be out of
+                    3 or out of 10, and the colours alone do not say which — the
+                    ramp is stretched over whatever the scale is.
+
+                    From `viewBounds`, so it follows the reading on screen: a
+                    remap moves the ends, and the deviation reading replaces them
+                    with its own ±1. */}
+                <span
+                  className="ml-2 font-mono text-xs font-normal text-zinc-500"
+                  title={
+                    view.relative
+                      ? "How far from the target, as a share of the widest miss the scale allows."
+                      : "The ends of the displayed judge's scale. Every cell below is a mean between these two."
+                  }
+                >
+                  {view.relative ? "distance " : "grades "}
+                  {formatValue(min)} to {formatValue(max)}
+                  {!higherIsBetter && ", higher is worse"}
+                </span>
               </th>
               {targets.map((target) => (
                 <th

@@ -1371,7 +1371,7 @@ export interface ExtensionPlan {
   /** The judges to lay on this run. Combines with nothing else — see
    *  `extendProblem`, which refuses it, and `ExtendRequest.new_judges` for why.
    *  Empty when the extension lays none. */
-  newJudges: JudgeSpec[];
+  newJudges: WrittenJudgeSpec[];
   /** `null` when `cases` is empty, `continued` is zero and no judge is laid:
    *  there is then nothing to cost. */
   estimate: CostEstimate | null;

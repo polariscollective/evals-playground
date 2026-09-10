@@ -867,7 +867,7 @@ export interface ExtendRequest {
    * missing verdicts on the conversations already finished, and one launch does
    * only one of them. Mixing them would make half the work paid for and not
    * done — see `extendProblem`. */
-  new_judges?: JudgeSpec[];
+  new_judges?: WrittenJudgeSpec[];
   /** Do the existing scenarios that had named no tool — hence "all the run's" —
    *  inherit the new ones?
    *
