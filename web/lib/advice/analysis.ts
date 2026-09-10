@@ -8,6 +8,12 @@
 // decision that costs money. More repetitions, a rewrite, or variants, and two
 // of those three answers are wrong in any given case.
 //
+// Later: leaving each judge out in turn. The document said how to compare two
+// judges on one conversation and never what to do with the pair once the
+// reading was done. The counter-intuitive half is worth keeping, that the judge
+// agreeing with you least is often the one the panel needs most, because
+// without it the section reads as licence to drop the awkward one.
+//
 // House style for the document itself: British English, plain declarative
 // sentences, and no em dash in running text. Commas, colons, semicolons and
 // parentheses instead.
@@ -181,6 +187,23 @@ scored 2.4 and B scored 1.9" hides it.
 Subtracting row by row removes the difficulty of the scenario from the noise,
 which is why it detects a smaller difference on the same budget. It costs
 nothing, being a way of reading the matrix you already have.
+
+## If more than one judge graded the run, say what survives without each
+
+A run carrying two judges can answer a question a run with one cannot: does the
+finding depend on who graded it. Recompute your ordering with each judge left
+out in turn, and report that it held, or that it did not. This costs nothing,
+the grades being already paid for, and it is the difference between "the models
+rank like this" and "the models rank like this, and it is not an artefact of the
+judge".
+
+Expect one result that reads backwards the first time. The judge that agrees
+with you least is often the one whose removal hurts most, because a mean is
+helped by a member erring in the other direction. So disagreement is not grounds
+for dropping a judge. Drop one only when reading transcripts shows it answering
+a different question from the one you wrote, and then say so: that is a finding
+about your criterion, and it belongs in the analysis rather than in a quiet
+deletion.
 
 ## When you may average at all
 

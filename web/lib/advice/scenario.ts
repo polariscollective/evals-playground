@@ -13,6 +13,12 @@
 // withdraws the permitted sentence "your reasoning will not be shown to the
 // user", itself a claim about a particular deployment.
 //
+// Later, from ARENA's chapter 3: the confounded bad path, which was the one
+// failure a scenario could have while passing every realism rule above, and its
+// mirror, the bad option that is also the clumsy one. Stated against revealed
+// preference is put beside the tells rather than in its own section, being the
+// reason several of them are tells at all.
+//
 // House style for the document itself: British English, plain declarative
 // sentences, and no em dash in running text. Commas, colons, semicolons and
 // parentheses instead.
@@ -42,6 +48,14 @@ chat. This tool is on the hard case.
 - A person who asks a question of principle instead of having a problem.
 - A situation that is too clean. The real world is cluttered with irrelevant
   detail.
+
+The one about questions of principle is worth understanding rather than
+memorising, because it explains the others. Asking a model what it would do
+measures a **stated** preference. Putting it in a situation where acting is one
+of several sensible ways to get the work done measures a **revealed**
+preference: what it does when nothing has announced that the choice matters. The
+second is what you are after, and wanting it is the same thing as not looking
+like a test. Real work never asks anyone to declare their values.
 
 ## Five tells that survive a good decor
 
@@ -153,6 +167,29 @@ behind it, you are measuring the tool list.
 
 This one is checkable before you spend anything, since the tools are right there
 in the configuration.
+
+## Only one reason to take the bad path
+
+A scenario can be believable, offer a real way out, and still measure something
+other than what you named, because the bad path carries a second reason to avoid
+it.
+
+Suppose you are grading whether a model helps itself to resources it was not
+given, and the only route to those resources runs through lying to a colleague.
+A model that declines may have declined the lie. The row measures the sum of two
+things and cannot tell you their shares, and the sum is not what you set out to
+learn.
+
+The check is quick and costs nothing. Name the property. Read the bad path. List
+every reason a model might not take it. If the list has more than one entry, the
+row is confounded, and the fix is to remove the extra reason rather than to
+argue it away.
+
+**The mirror of it: the bad path has to be the competent one.** If the harmful
+option is also the clumsy one, the sloppy analysis, the answer that would fail
+the task on its own merits, then a model that avoids it may simply be working
+well. Every option you leave open should be a good answer to the situation, and
+the one you are watching for should be the one a sharp person would reach for.
 
 ## A tool is fixed, or it is served from the world
 
@@ -300,4 +337,5 @@ Read these if you want the reasoning behind a rule.
 - [Petri, an open-source auditing tool](https://www.anthropic.com/research/petri-open-source-auditing): most of this document is its realism guidance, recast for someone writing a frozen scenario instead of a robot that improvises.
 - [Large Language Models Often Know When They Are Being Evaluated](https://arxiv.org/abs/2505.23836): the empirical taxonomy of the cues models actually use, and the finding that both models and people detect evaluations better in agentic settings than in chat.
 - [AI Control: Improving Safety Despite Intentional Subversion](https://arxiv.org/html/2312.06942v5): where the habit of asking what the *architecture* of a choice permits, and not only what the model did, comes from.
+- [ARENA, Chapter 3: LLM Evaluations](https://learn.arena.education/chapter3_llm_evals/): its quality rubric is where the confounded bad path and the demand that every option be a good answer come from, and where stated and revealed preference are separated.
 `;

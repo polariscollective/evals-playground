@@ -9,14 +9,22 @@
 // was missing, and the question was being settled case by case. The one
 // candidate named, realism, is not part of this piece of work.
 //
+// Later, a third thing that bends a judge: the family it shares with one of the
+// columns it is grading. It gets a section rather than a fourth bullet beside
+// position and length bias, because the two answers are structural, pick
+// another family or add a second judge, and because the direction cannot be
+// reasoned out. Calibration gains the second blind, the model's identity, and
+// the warning that a lone grader can report a direction and have it reverse.
+//
 // House style for the document itself (see the other three): British English,
 // plain declarative sentences, and no em dash in running text. Commas, colons,
 // semicolons and parentheses instead.
 
 export const JUDGE_ADVICE = `# Writing a judge
 
-The judge is part of the experiment. Two things can bend it with nothing on
-screen saying so: a badly written level, and being shown the rule it is grading.
+The judge is part of the experiment. Three things can bend it with nothing on
+screen saying so: a badly written level, being shown the rule it is grading, and
+sharing a family with one of the models it is grading.
 
 ## Writing a scale someone else could apply
 
@@ -74,12 +82,22 @@ measures whether the judge agrees with **you**.
 The procedure is duller than it sounds:
 
 1. Take 30 to 50 conversations from a run.
-2. Grade them yourself, by hand, **without looking at what the judge gave**.
+2. Grade them yourself, by hand, **without looking at what the judge gave, and
+   without knowing which model produced them**. The second blind matters as much
+   as the first. Knowing the column is knowing what you expect to find, and the
+   whole point of the exercise is to be surprised.
 3. Compare.
 
 What matters most is **where** you disagree. If the judge keeps giving 3 where
 you give 1, that almost always points at a level of your scale being badly
 worded.
+
+**One grader is not enough to establish a direction.** A calibration run by a
+single person has been seen to report a judge panel as uniformly lenient, and
+then to reverse to uniformly harsh once the same items were graded
+independently by three people. So "my judge is soft, I will read its grades up a
+notch" is a claim a single grader cannot support. What a single grader can do,
+and it is the more useful half, is find **where** the disagreements sit.
 
 The fixes, in order:
 
@@ -104,7 +122,34 @@ compensating. What you want is the pattern of disagreement.
 
 Two known biases are worth remembering whenever you compare. A judge asked to
 choose between two transcripts favours the one shown first. A judge asked to
-grade one favours the longer answer.
+grade one favours the longer answer. A third depends on who wrote the
+transcript, and has a section of its own below.
+
+## The judge's family is one of your columns
+
+A run puts several models in columns and one judge over all of them. When the
+judge shares a family with one of those columns, every comparison across columns
+carries a bias, and no cell on the matrix shows it.
+
+The documented direction is **self-preference**: a model recognises its own
+output and scores it above what people give it. Assume that first. But it does
+not always run that way. Within a single panel, one family's judge has been
+observed marking its own relatives down while another's marked its own up, which
+means the direction is not something you can reason out from the models
+involved. You can avoid the bias, or you can measure it. You cannot correct for
+it in your head.
+
+- **Avoid it.** Judge with a model from outside every family in the columns.
+  Not always possible, since the columns worth comparing are often the recent
+  ones, and a judge should be a capable model.
+- **Measure it.** Put a second judge from another family on the same run and
+  read the two conversation by conversation. Family bias shows up as
+  disagreement that follows the family line rather than anything in the
+  transcript.
+
+If neither is available, the run is still worth having. Write in the analysis
+which family the judge belongs to, and say plainly that the column sharing it is
+not comparable with the others on the same footing.
 
 ## Targets belong to the judge, and not to the scenario
 
@@ -169,4 +214,5 @@ own targets, and its own column on the same matrix.
 - [Bloom, an open source tool for automated behavioral evaluations](https://alignment.anthropic.com/2025/bloom-auto-evals/): the calibration procedure this document describes, and a reference point for what agreement looks like when it works. It reports a Spearman correlation of 0.86 for Opus 4.1 against human grading.
 - [A Survey on LLM-as-a-Judge](https://arxiv.org/html/2411.15594v6): the known failure modes of a model grading text, gathered in one place.
 - [Judging the Judges](https://arxiv.org/html/2406.07791v6): position bias specifically, where a judge asked to choose between two transcripts favours the one shown first.
+- [LLM Evaluators Recognize and Favor Their Own Generations](https://arxiv.org/abs/2404.13076): self-preference, and the finding that it tracks how well a model recognises its own output. The reason the judge's family is worth knowing before you read a column.
 `;

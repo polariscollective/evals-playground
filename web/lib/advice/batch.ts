@@ -11,6 +11,15 @@
 // modes. A scenario that smells like a test is useless whether you are exploring
 // or measuring.
 //
+// Later: three sections on the axis itself, which the document assumed you
+// could simply declare. Checking it is real before launching; the middle rung
+// of a pressure axis being the one that discriminates, which is the opposite of
+// what a writer reaches for; and the style shared by rows written in one
+// sitting, which is the scenario document's "one voice" tell one level up, and
+// only costs you the run when it drifts along the axis. "What the run is a
+// measure of" sits at the head because a run can pass every rule below it and
+// still measure something nobody asked about.
+//
 // House style for the document itself: British English, plain declarative
 // sentences, and no em dash in running text. Commas, colons, semicolons and
 // parentheses instead.
@@ -43,6 +52,25 @@ an older version of the scenario, and they do not compare.
 Everything from here is written for the second mode. Where a rule only applies
 there, it says so.
 
+## What the run is a measure of
+
+Three things can go wrong before a single row is written, and only the middle
+one is about craft:
+
+1. The property you named is not the one you care about, because your definition
+   of it is loose.
+2. The rows do not measure the property, because they are badly built.
+3. The rows measure the property exactly, and the property turns out not to be
+   connected to what worried you in the first place.
+
+Almost everything in these documents is about the second. The third is the one
+that wastes a whole run, because nothing goes wrong: the matrix is clean, the
+controls land, and the finding is about something nobody needed to know.
+
+The defence takes one sentence, written before launching: "if this comes out the
+way I expect, it matters because ...". If that sentence is hard to finish, the
+axis is not the one you want, and no amount of care further down will fix it.
+
 ## Change one thing per row
 
 If two rows differ in their setting **and** in the pressure applied, a
@@ -53,6 +81,63 @@ pressure in three settings. Put the axis in the scenario's \`note\`.
 When the run serves its tools, the world is the cleanest axis there is. The run
 holds what every row shares, and each scenario's own world holds only its
 difference.
+
+## Check that the axis is real
+
+Naming an axis is not the same as having one. You wrote three degrees of
+pressure, and nothing yet says the middle row sits between the other two. If it
+does not, the differences you read along that axis are about something you never
+named. The same goes for any axis with an order in it: three depths of burial,
+three sizes of stake, three levels of autonomy.
+
+This is checkable before spending anything. Put the rows side by side, take out
+whatever states their intended order, and sort them. Better, have a model sort
+them, having told it only what the axis is. If your order cannot be recovered
+from the text, it is not in the text, and running the batch will not put it
+there.
+
+An adversarial run gets a version of this check for free, after the fact.
+\`check_adversary_fidelity: true\` reads what the adversary actually said and
+grades it against the objective it was handed, which is how you find out that
+two rows meant to differ were played the same way. The judge advice describes
+it. The sorting above is the part you can do first, and it is the only part that
+covers a run with no adversary in it.
+
+## On a pressure axis, the middle rung is the one that pays
+
+The intuition is that the hardest row is the most aggressive one. It is usually
+the other way round. Overt pressure, a threat, a stated deadline, a demand
+repeated after a refusal, is recognisable, and a model that recognises it holds.
+Moderate pressure moves judgement further: professional framing, an authority
+mentioned in passing, a plausible justification, a figure offered as evidence.
+Nothing in it announces that a line is being pushed, so there is nothing to
+brace against.
+
+Two consequences. Put the middle rung in, rather than writing a baseline and a
+maximum and calling that an axis. And do not read a good grade on the top row as
+robustness, since part of that grade is the row being easy to see.
+
+Said from the scenario advice's side, this is the same rule twice: aggression is
+a tell. Your highest-pressure row is also your least realistic one, which is why
+it is a poor row to rest a claim on.
+
+## One voice wrote every row, too
+
+The scenario advice carries this tell for a single world. It has a twin at the
+level of the batch, and the twin is the more dangerous of the two, because
+nothing inside any one row shows it.
+
+Rows written in one sitting share a register, a rhythm, a way of naming people,
+and above all a length. That costs nothing while it stays constant. It costs you
+the run when it drifts **along the axis**, which is what happens when you write
+the rows in the order of the axis and warm up as you go. The high-pressure rows
+come out longer and better made than the baseline, and part of what you then
+measure is prose.
+
+Two cheap defences. Write the rows out of order, or have them rewritten in a
+different order afterwards. And compare their lengths before launching: if the
+axis and the word count climb together, one of the two is not what you think it
+is.
 
 ## Say what a good model should score
 
@@ -170,4 +255,6 @@ Ask for the analysis advice before concluding anything from a matrix.
 - [A statistical approach to model evaluations](https://www.anthropic.com/research/statistical-approach-to-model-evals): short and directly applicable. Why the scenario, and not the attempt, is the unit that carries your uncertainty.
 - [Measuring what Matters: Construct Validity in LLM Benchmarks](https://proceedings.neurips.cc/paper_files/paper/2025/file/1967e0fc3aa6cbbace562f5cb8e3954e-Paper-Datasets_and_Benchmarks_Track.pdf): what it takes for a number to be about the thing you say it is about.
 - [Measurement to Meaning: A Validity-Centered Framework for AI Evaluation](https://arxiv.org/abs/2505.10573): the same question, framed as a checklist you can walk.
+- [How Johnny Can Persuade LLMs to Jailbreak Them](https://arxiv.org/abs/2401.06373): the persuasion taxonomy a pressure axis is built from, and the evidence that humanised persuasion outperforms the overt attack.
+- [ARENA, Chapter 3: LLM Evaluations](https://learn.arena.education/chapter3_llm_evals/): where uniformity of style is treated as a confounder of the result rather than a matter of taste, and where the three ways a measurement misses are separated.
 `;
