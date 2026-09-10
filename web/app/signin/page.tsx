@@ -10,7 +10,9 @@
 // from globals.css, and the button is the primary one from the run page. The
 // page invents no visual language; it only stops using someone else's.
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PolarisStar } from "@/components/PolarisStar";
+import { sharedAdviceFor } from "@/lib/shared-return";
 import { login } from "@/lib/auth-actions";
 import { signInMessage } from "@/lib/signin-error";
 
@@ -63,6 +65,19 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
         >
           sam@polariscollective.org
         </a>
+      </p>
+
+      {/* Last, because it is the smallest of the three things this page can do
+          for somebody. But it is the only one that works right now, and without
+          it a visitor bounced here from `/advice` is standing at a door for
+          something that was never locked. `sharedAdviceFor` carries the
+          document they were heading for. */}
+      <p className="text-sm text-zinc-500">
+        The advice documents are public.{" "}
+        <Link href={sharedAdviceFor(destination)} className="text-teal-700 underline">
+          Read them without signing in
+        </Link>
+        .
       </p>
     </main>
   );
