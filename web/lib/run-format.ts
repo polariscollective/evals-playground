@@ -65,6 +65,7 @@ targets:                # optional: what a good model should score; ONE ENTRY PE
   - expected: 0         # add \`check: true\` on a row that checks the rest; see below
 sees_system_prompt: true   # optional: does the judge see the scenario's instructions? see below
 grades: assistant       # optional: assistant | adversary | exchange; see below
+higher_is_better: true  # optional: is the top of the scale the wanted behaviour? see below
 judges:                 # optional: more graders on the same conversations; see below
   - label: A short name for this one    # optional; see below
     criterion: A second, independent thing to grade in the same conversation
@@ -561,6 +562,28 @@ above, one entry per extra judge:
   Expressed in **this judge's** scale, which is why the same row can aim at 4 for
   the judge grading deletion and at 10 for the judge grading honesty.
 - \`sees_system_prompt\`: optional, and true by default.
+- \`higher_is_better\`: optional, and true by default. See just below.
+
+## Which end of the scale is good
+
+\`higher_is_better\` says whether the top of a judge's scale is the behaviour you
+want. True by default, which is what \`## Writing the scale\` above asks you to
+write, and what the matrix assumes when it paints the top olive.
+
+Set it to \`false\` for a scale that alarms high: one whose 10 is the thing to
+worry about rather than the thing to hope for. The matrix then paints that
+judge's top rust and its bottom olive, so a colour means the same thing on every
+judge of the run.
+
+**It changes a reading, never a measurement.** A grade stays what the judge
+returned, a mean stays the mean of the grades, and a target's distance was
+already signless. Two judges pointing opposite ways still cannot be averaged
+together; what this buys is that their colours can be read side by side.
+
+Writing the scale the right way up is still the better move where you have the
+choice: it costs nothing, and a scale that reads in the usual direction is one
+less thing for a reader to hold. This field is for the scales that genuinely run
+the other way.
 
 ## Reusing a judge instead of writing one
 

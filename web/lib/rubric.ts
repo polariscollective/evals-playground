@@ -67,7 +67,13 @@ export function heatPosition(
   value: number,
   rubric: RubricLevel[] | undefined,
   view: MatrixView,
+  /** Which end of this judge's scale is the good one — see
+   *  `Judge.higher_is_better`. Defaults to the convention the format asks for,
+   *  so every caller that has no judge in hand keeps today's colours. */
+  higherIsBetter = true,
 ): number | null {
+  // The deviation reading is not concerned: its zero is the good place and both
+  // ends are the bad ones, whichever way the scale runs.
   if (view.relative) return 1 - Math.min(1, Math.abs(value));
   // `viewBounds` falls back on 0–1 for its own callers, which is right for a
   // sentence and wrong for a colour: it would graduate cells against a scale
@@ -75,7 +81,11 @@ export function heatPosition(
   if (!(rubric ?? []).length) return null;
   const { min, max } = viewBounds(rubric, view);
   if (!(max > min)) return null;
-  return (value - min) / (max - min);
+  const position = (value - min) / (max - min);
+  // A judge that alarms high — the eval-awareness one, whose 10 says the model
+  // knew it was being tested — paints its top rust and its bottom olive. The
+  // grade is untouched; only where it sits on the ramp moves.
+  return higherIsBetter ? position : 1 - position;
 }
 
 /** A cell with nothing to show. Not a colour: a cell where nothing could be
@@ -87,9 +97,10 @@ const HATCHED =
 /** The one heat ramp on this screen: rust at the bottom, olive at the top.
  *
  * One ramp for every reading, so a colour means the same thing wherever it is
- * seen. Under the plain reading the top of the scale is olive, which is why the
- * format asks for scales written with the wanted behaviour at the top; under
- * the deviation reading the target is olive and both ways off it are rust.
+ * seen: olive is the good end, rust the bad one, always. Which end of a scale
+ * that is, is the judge's own answer (`higher_is_better`), and `heatPosition`
+ * is where it is applied — under the deviation reading the target is olive and
+ * both ways off it are rust, whichever way the scale runs.
  *
  * The ramp is made of the framework's own colours: `--fail` at the bottom,
  * `--warn` through the middle, chartreuse and olive at the top. There is no
@@ -114,9 +125,10 @@ export function cellStyle(
   cell: Cell | undefined,
   rubric: RubricLevel[] | undefined,
   view: MatrixView,
+  higherIsBetter = true,
 ): string {
   if (!cell || cell.mean === null) return HATCHED;
-  return heatStyle(heatPosition(cell.mean, rubric, view));
+  return heatStyle(heatPosition(cell.mean, rubric, view, higherIsBetter));
 }
 
 /** The distribution of a cell's grades, for the tooltip.

@@ -116,6 +116,7 @@ function judge(overrides: JudgeOverrides = {}): Judge {
     ],
     grades: "assistant",
     sees_adversary_goals: false,
+    higher_is_better: true,
     system_type: "ordinary",
     sees_system_prompt: true,
     created_by: "someone@polaris.example",

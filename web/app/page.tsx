@@ -312,6 +312,10 @@ function EvaluateForm() {
   // criterion. It feeds the read-only view, the targets — expressed in the
   // named judge's scale — and the quote, which prices the question that will
   // really go out.
+  // Which end of the principal's scale is the good one. On by default, which
+  // is the convention the format asks for and what every scale written before
+  // this field followed.
+  const [higherIsBetter, setHigherIsBetter] = useState(true);
   const [principalHandle, setPrincipalHandle] = useState<string | null>(null);
   const [judgeByHandle, setJudgeByHandle] = useState<Record<string, Judge>>({});
   const [error, setError] = useState<string | null>(null);
@@ -426,6 +430,7 @@ function EvaluateForm() {
       setCriterion(config.criterion ?? "");
       setTargetsPerScenario(config.targets ?? null);
       setSeesSystemPrompt(config.sees_system_prompt !== false);
+      setHigherIsBetter(config.higher_is_better !== false);
       setRubric(config.rubric ?? DEFAULT_RUBRIC);
       // A configuration that NAMES its principal restores as one: the handle,
       // and the judge read back so the block can show what it asks.
@@ -746,6 +751,7 @@ function EvaluateForm() {
             criterion,
             rubric,
             ...(seesSystemPrompt ? {} : { sees_system_prompt: false }),
+            ...(higherIsBetter ? {} : { higher_is_better: false }),
           }),
       // Absent stays absent: `null` here would be a declaration of nothing,
       // and `configProblem` tells the two apart.
@@ -818,6 +824,7 @@ function EvaluateForm() {
       seesSystemPrompt,
       secondaryJudges,
       principalHandle,
+      higherIsBetter,
       turns,
       repetitions,
       targets,
@@ -1018,6 +1025,7 @@ function EvaluateForm() {
     setSeesSystemPrompt(config.sees_system_prompt !== false);
     setRubric(config.rubric ?? DEFAULT_RUBRIC);
     setPrincipalHandle(config.judge ?? null);
+    setHigherIsBetter(config.higher_is_better !== false);
     setSecondaryJudges(config.judges ?? []);
     void rememberJudge(config.judge ?? null);
     for (const entry of config.judges ?? []) void rememberJudge(entry.judge ?? null);
@@ -1239,6 +1247,7 @@ function EvaluateForm() {
     setAdversaryPrompt("");
     setCriterion("");
     setRubric(DEFAULT_RUBRIC);
+    setHigherIsBetter(true);
     setPrincipalHandle(null);
     setSecondaryJudges([]);
     setTurns(1);
@@ -1924,10 +1933,25 @@ function EvaluateForm() {
             </span>
           </span>
           <RubricEditor rubric={rubric} onChange={setRubric} />
-          <p className="text-xs text-zinc-500">
-            The top of your scale is the dark end of the heatmap. Order your
-            grades so the darkest cell is the one you want to spot.
-          </p>
+
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={higherIsBetter}
+              onChange={(e) => setHigherIsBetter(e.target.checked)}
+              className="mt-1 cursor-pointer accent-teal-700"
+            />
+            <span>
+              The top of this scale is the behaviour I want
+              <span className="block text-xs text-zinc-500">
+                On by default, and the way scales are usually written. It
+                decides how the results are read: ticked, the matrix paints the
+                top of your scale olive and the bottom rust. Untick it for a
+                scale that alarms high, where a 10 is the thing to worry about.
+                It changes colours and wording only, never a grade or a mean.
+              </span>
+            </span>
+          </label>
         </div>
         </>
         )}
@@ -2000,6 +2024,14 @@ function EvaluateForm() {
             />
           </>
         )}
+
+        {/* Here rather than among the evaluated models: it is a property of the
+            grading, and every extra judge below falls back to it. Shown even
+            when the judge is reused, since the model belongs to the run. */}
+        {single("judge", "Judge model", judge, setJudge)}
+        <p className="text-xs text-zinc-500">
+          It grades every judge below too, unless one of them names another.
+        </p>
       </section>
 
       {/* ---------------- Secondary judges ---------------- */}
@@ -2092,6 +2124,26 @@ function EvaluateForm() {
                 rubric={entry.rubric ?? DEFAULT_RUBRIC}
                 onChange={(rubric) => updateSecondaryJudge(index, { rubric })}
               />
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={entry.higher_is_better !== false}
+                  onChange={(e) =>
+                    updateSecondaryJudge(index, {
+                      higher_is_better: e.target.checked,
+                    })
+                  }
+                  className="mt-1 cursor-pointer accent-teal-700"
+                />
+                <span>
+                  The top of this scale is the behaviour I want
+                  <span className="block text-xs text-zinc-500">
+                    Untick it for a scale that alarms high. It decides how this
+                    judge&rsquo;s results are coloured and read, never its
+                    grades.
+                  </span>
+                </span>
+              </label>
             </div>
             </>
             )}
@@ -2307,9 +2359,12 @@ function EvaluateForm() {
             ))}
           </div>
         </div>
+        {/* The judge's model is not here: it sits with the judge it grades for,
+            in "What the judge is asked". Two model pickers a page apart, one
+            among the evaluated models and one among the judges, was read as two
+            different settings. */}
         <div className="grid grid-cols-2 gap-4">
           {turns > 1 && single("adversary", "Adversary", adversary, setAdversary)}
-          {single("judge", "Judge", judge, setJudge)}
         </div>
       </section>
 

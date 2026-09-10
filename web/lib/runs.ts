@@ -620,8 +620,8 @@ export async function sourceCsv(runId: string): Promise<string | null> {
 /** A judge's row, whole. Named rather than `*`: the same discipline as
  *  `SAMPLE_COLUMNS` above, and it is the shape `Judge` promises. */
 const JUDGE_COLUMNS =
-  "id,label,slug,criterion,rubric,grades,sees_adversary_goals,system_type," +
-  "sees_system_prompt,created_by,created_at";
+  "id,label,slug,criterion,rubric,grades,sees_adversary_goals,higher_is_better," +
+  "system_type,sees_system_prompt,created_by,created_at";
 
 /** A configuration the database refuses, in words a person can act on.
  *

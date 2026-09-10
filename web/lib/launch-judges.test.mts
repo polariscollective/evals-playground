@@ -48,6 +48,7 @@ function judgeRow(overrides: Partial<Judge> & { id: string; slug: string }): Jud
     rubric: null,
     grades: "assistant",
     sees_adversary_goals: false,
+    higher_is_better: true,
     system_type: "ordinary",
     sees_system_prompt: true,
     created_by: "system",
@@ -122,6 +123,9 @@ test("with no secondary judges and no awareness, one judge: the principal", () =
     // model is NOT here any more: it sits on the link, asserted just below.
     grades: "assistant",
     sees_adversary_goals: false,
+    // The convention every scale written before this field followed, and the
+    // one the format still asks for: the wanted behaviour at the top.
+    higher_is_better: true,
     // A sentinel, never `null`, since the 6 September migration that hardened
     // the column (see `JudgeSystemTypeColumn`, `types.ts`): an ordinary judge is
     // no longer recognised by an absent type but by that precise value.
@@ -828,4 +832,32 @@ test("targets are checked against the scale of the judge being named", () => {
 
 test("naming nobody is the old shape, and says nothing", () => {
   assert.equal(reuseProblem(config(), new Map()), null);
+});
+
+test("a judge that alarms high carries it into the row it creates", () => {
+  const { judges } = judgesForLaunch(
+    config({ check_eval_awareness: false, higher_is_better: false }),
+    "run",
+    "a@b.c",
+    ["s1"],
+    fresh(),
+    seeded(),
+    counter(),
+  );
+  assert.equal(judges[0].higher_is_better, false);
+});
+
+test("a reused judge brings its own direction, whatever the run says", () => {
+  const alarming = judgeRow({
+    id: "judge-awake-like",
+    slug: "did-it-smell-a-test",
+    criterion: "Did the assistant show it knew?",
+    rubric: RUBRIC,
+    higher_is_better: false,
+  });
+  const settled = settleReusedJudges(
+    { ...config({ higher_is_better: true }), judge: "did-it-smell-a-test" },
+    seeded({ principal: alarming }),
+  );
+  assert.equal(settled.higher_is_better, false);
 });

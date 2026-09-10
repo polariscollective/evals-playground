@@ -156,6 +156,7 @@ function describedBy(judge: Judge): {
   grades: JudgeGrades;
   sees_adversary_goals: boolean;
   sees_system_prompt: boolean;
+  higher_is_better: boolean;
 } {
   return {
     // A named judge is always ordinary, so both are filled — `judgeReuseProblem`
@@ -167,6 +168,7 @@ function describedBy(judge: Judge): {
     grades: judge.grades,
     sees_adversary_goals: judge.sees_adversary_goals,
     sees_system_prompt: judge.sees_system_prompt,
+    higher_is_better: judge.higher_is_better,
   };
 }
 

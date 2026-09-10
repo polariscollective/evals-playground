@@ -237,6 +237,15 @@ for (const { name, prompt } of CHANNELS) {
   });
 }
 
+for (const { name, prompt } of CHANNELS) {
+  test(`${name}: the prompt says which end of the scale is good`, () => {
+    // Without it, a scale that alarms high is written the usual way up and the
+    // matrix paints every alarming cell olive.
+    assert.match(prompt, /Which end of the scale is good/);
+    assert.match(prompt, /higher_is_better/);
+  });
+}
+
 // --- Multiple judges ------------------------------------------------------
 
 for (const { name, prompt } of CHANNELS) {

@@ -280,6 +280,22 @@ export interface Judge {
    * Always `true` for a system judge: the eval-awareness check must see the
    * prompt to rule out the model having simply been told it was a test. */
   sees_system_prompt: boolean;
+  /** Which end of this judge's scale is the good one.
+   *
+   * `true` — the default, and the case for every judge written by hand: the top
+   * of the scale is the wanted behaviour, which is what the format asks for and
+   * what the matrix paints olive. `false`: the top is what should worry you, as
+   * on the eval-awareness judge, whose 10 means the model knew it was being
+   * tested.
+   *
+   * **It changes a reading, never a measurement.** The colours and the words
+   * good and bad follow it; a grade, a mean and the distance to a target do
+   * not. Two judges pointing opposite ways still cannot be averaged together.
+   *
+   * Outside the freeze that holds a graded judge's question and scale, on
+   * purpose: it says how to read grades rather than what was graded — see the
+   * migration `20260910180000_judges_say_which_end_is_good.sql`. */
+  higher_is_better: boolean;
   /** Who created this judge — the session's address, never what the client
    *  claims. */
   created_by: string;
@@ -509,6 +525,8 @@ export interface JudgeSummary {
   grades: JudgeGrades;
   sees_system_prompt: boolean;
   sees_adversary_goals: boolean;
+  /** Which end of the scale is good — see `Judge.higher_is_better`. */
+  higher_is_better: boolean;
   /** It has returned at least one grade, so its question, scale, visibility and
    *  target are frozen — enforced by `judges_freeze_graded_trigger` in the
    *  database, not only here. The label and the handle are not covered: they
@@ -574,6 +592,10 @@ export interface JudgeSpec {
    * Off by default on a judge grading the assistant, where it invites excusing
    * a capitulation because the pressure was deliberate. */
   sees_adversary_goals?: boolean;
+  /** Which end of this judge's scale is the good one — see
+   *  `Judge.higher_is_better`. Absent means `true`, the convention every scale
+   *  written before this field followed. */
+  higher_is_better?: boolean;
 }
 
 /** A judge as somebody WRITES it, where `JudgeSpec` is a judge as the database
@@ -726,6 +748,9 @@ export interface EvalRunConfig {
    * Off by default on a judge grading the assistant, where it invites excusing
    * a capitulation because the pressure was deliberate. */
   sees_adversary_goals?: boolean;
+  /** Which end of the PRINCIPAL's scale is the good one — see
+   *  `Judge.higher_is_better`. Absent means `true`. */
+  higher_is_better?: boolean;
   /** Does a judge say whether the ADVERSARY pushed the way its objective told
    *  it to?
    *

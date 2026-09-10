@@ -33,6 +33,10 @@ export interface NewJudgeRow {
    *  here describes in full the judge it creates. */
   grades: JudgeGrades;
   sees_adversary_goals: boolean;
+  /** Which end of the scale is good — see `Judge.higher_is_better`. Written
+   *  explicitly like its neighbours: a row built here describes in full the
+   *  judge it creates. */
+  higher_is_better: boolean;
   system_type: JudgeSystemTypeColumn;
   /** Whether this judge sees the scenario's system prompt — see
    *  `Judge.sees_system_prompt`. Always set explicitly, never left to the
@@ -115,6 +119,9 @@ export function judgeRowFromSpec(
     grades: spec.grades ?? "assistant",
     sees_adversary_goals:
       spec.grades === "adversary" || spec.sees_adversary_goals === true,
+    // Absent means `true`: the convention every scale written before this field
+    // followed, and the one the format still asks for.
+    higher_is_better: spec.higher_is_better !== false,
     system_type: "ordinary",
     // Absent means `true` — the behaviour from before this field, so that adding
     // a judge without thinking about it changes nothing.
@@ -249,6 +256,7 @@ export function judgesForLaunch(
         grades: config.grades ?? "assistant",
         sees_adversary_goals:
           config.grades === "adversary" || config.sees_adversary_goals === true,
+        higher_is_better: config.higher_is_better !== false,
         // A sentinel, never `null`: see `JudgeSystemTypeColumn` in `types.ts`.
         // "Is this judge a system one?" is now read by comparing this value to
         // `"ordinary"`, never again by testing an absence — a nullity test
