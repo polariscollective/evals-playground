@@ -293,16 +293,15 @@ function EvaluateForm() {
   const [grades, setGrades] = useState<JudgeGrades>("assistant");
   const [seesAdversaryGoals, setSeesAdversaryGoals] = useState(false);
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
-  // On by default on a fresh form, and only there. The configuration's own
-  // default stays off and is read `=== true`: an absent field has to mean
-  // "nobody asked", including on every run recorded before this judge existed.
-  // What a blank form proposes is a different question, and a batch built as
-  // "the same request, pushed four ways" falls apart silently when two of the
-  // four were pushed the same way.
+  // Off on a blank form, like the configuration's own default, which is read
+  // `=== true`: an absent field has to mean "nobody asked", including on every
+  // run recorded before this judge existed. The two agreeing is what stops a
+  // batch built as "the same request, pushed four ways" from being launched
+  // twice with two different sets of judges without anyone noticing.
   //
   // Sent only above one turn, where there is an adversary to grade — see the
   // request built below.
-  const [checkAdversaryFidelity, setCheckAdversaryFidelity] = useState(true);
+  const [checkAdversaryFidelity, setCheckAdversaryFidelity] = useState(false);
   // Reusing a judge rather than writing one — see `components/JudgePicker.tsx`.
   //
   // Two pieces of state, because they answer two questions. `principalHandle`
@@ -2282,28 +2281,40 @@ function EvaluateForm() {
           />
         )}
 
-        {/* Only where there is an adversary to grade. At a single turn the
-            adversary never speaks, and `configProblem` refuses the pair, so
-            offering the box there would only be a way of meeting that refusal
-            at launch. */}
-        {turns > 1 && (
-          <>
-            <label className="flex items-center gap-2 text-sm">
+        {/* Shown at every depth, and refused at one. It used to be rendered
+            only above one turn, which hid the whole judge from anyone reading a
+            form that opens at one: "I cannot find it" reads as "it does not
+            exist", where a disabled box with its reason teaches the rule. The
+            request below still never sends it true at a single turn, whatever
+            was ticked before the depth came down. */}
+        <>
+            <label
+              className={`flex items-center gap-2 text-sm ${turns > 1 ? "" : "text-zinc-400"}`}
+            >
               <input
                 type="checkbox"
-                checked={checkAdversaryFidelity}
+                checked={turns > 1 && checkAdversaryFidelity}
+                disabled={turns <= 1}
                 onChange={(e) => setCheckAdversaryFidelity(e.target.checked)}
               />
               Check whether the adversary pushed the way you told it to
             </label>
+            {turns <= 1 && (
+              <p className="text-xs text-zinc-500">
+                Only above one turn: at a single turn the adversary never
+                speaks, so this judge would read a conversation holding nothing
+                it is meant to grade.
+              </p>
+            )}
+            {turns > 1 && (
+              <>
             <p className="text-xs text-zinc-500">
-              Ticked on a blank form; a configuration that does not ask for it
-              explicitly runs without it. It grades the adversary and never the
-              model being evaluated. Leave it on when a row&rsquo;s whole point is the
-              particular lever the adversary was told to use: if it is told to
-              press on fairness and presses on something else, the cell is real
-              and it answers a question you did not ask. One extra judge call
-              per graded conversation, included in the estimate below.
+              Off unless you ask for it. It grades the adversary and never the
+              model being evaluated. Turn it on when a row&rsquo;s whole point is
+              the particular lever the adversary was told to use: if it is told
+              to press on fairness and presses on something else, the cell is
+              real and it answers a question you did not ask. One extra judge
+              call per graded conversation, included in the estimate below.
             </p>
             {checkAdversaryFidelity && (
               <PromptPreview
@@ -2312,8 +2323,9 @@ function EvaluateForm() {
                 preview={fidelityPreview(adversaryPrompt)}
               />
             )}
-          </>
-        )}
+              </>
+            )}
+        </>
       </section>
 
       {/* ---------------- Models ---------------- */}

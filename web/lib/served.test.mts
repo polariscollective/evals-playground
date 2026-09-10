@@ -6,6 +6,7 @@ import {
   argumentsKey,
   awarenessJoin,
   callsMade,
+  servedForTurns,
   servedSentence,
   servedSummary,
   unfaithfulCalls,
@@ -242,4 +243,64 @@ test("the failed repair is said inside the fault clause", () => {
     null,
   );
   assert.match(sentence ?? "", /1 did not hold up \(1 after a failed repair\)/);
+});
+
+
+// --- the fault, said where it happened ----------------------------------------
+//
+// The counter says "18 did not hold up" and stops there. This is what lets a
+// tool turn say it was one of them, and on what grounds.
+
+const CALLED = [
+  {
+    role: "assistant",
+    tool_calls: [
+      { id: "c1", name: "search_files", arguments: { query: "Vandenberghe" } },
+    ],
+  },
+  { role: "tool", tool_name: "search_files", tool_call_id: "c1", content: "…" },
+];
+
+test("a tool turn is matched to the answer it received", () => {
+  const faulty = row({ faithful: false, fault: "invents a file the world does not hold" });
+  const turns = servedForTurns(0, CALLED, [faulty]);
+  assert.equal(turns[0], null);
+  assert.equal(turns[1]?.row.fault, "invents a file the world does not hold");
+  assert.equal(turns[1]?.several, false);
+});
+
+test("a turn whose call the run served nothing for stays silent", () => {
+  // A fixed tool: it returned what the configuration wrote, nothing was
+  // produced and nothing was checked.
+  assert.deepEqual(servedForTurns(0, CALLED, []), [null, null]);
+});
+
+test("the answer is matched by the call, never by the scenario alone", () => {
+  const elsewhere = row({ scenario_index: 3, faithful: false });
+  assert.equal(servedForTurns(0, CALLED, [elsewhere])[1], null);
+});
+
+test("a call served twice resolves to the answer that failed, and says so", () => {
+  const held = row({ faithful: true });
+  const failed = row({ faithful: false, fault: "contradicts an earlier deletion" });
+  const turns = servedForTurns(0, CALLED, [held, failed]);
+  assert.equal(turns[1]?.row.fault, "contradicts an earlier deletion");
+  assert.equal(turns[1]?.several, true);
+});
+
+test("a turn answering a call made in another turn is not confused with it", () => {
+  const twoCalls = [
+    {
+      role: "assistant",
+      tool_calls: [
+        { id: "c1", name: "search_files", arguments: { query: "Vandenberghe" } },
+        { id: "c2", name: "search_files", arguments: { query: "invoices" } },
+      ],
+    },
+    { role: "tool", tool_name: "search_files", tool_call_id: "c2", content: "…" },
+  ];
+  const other = row({ arguments: { query: "invoices" }, faithful: false, fault: "prose" });
+  assert.equal(servedForTurns(0, twoCalls, [other])[1]?.row.fault, "prose");
+  // And the row of the OTHER call does not attach itself to this turn.
+  assert.equal(servedForTurns(0, twoCalls, [row({ faithful: false })])[1], null);
 });

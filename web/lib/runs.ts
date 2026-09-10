@@ -455,9 +455,20 @@ export async function loadRun(
     tool_results: options.withToolResults
       ? await select<ToolResultRow>(TOOL_RESULTS, {
           run_id: `eq.${runId}`,
-            // `check_error` on top, since the indicator distinguishes "never
-            // attempted" from "attempted without succeeding" — see `lib/served.ts`.
-          select: "scenario_index,tool_name,arguments,faithful,fault,check_error",
+          // `check_error` because the indicator distinguishes "never attempted"
+          // from "attempted without succeeding"; `attempts`, `check_model` and
+          // `model` because it distinguishes two more outcomes that were dead on
+          // screen for want of being read — a fault served after a failed
+          // repair, and a check made by the server's own family. See
+          // `lib/served.ts`, which has counted all five from the start.
+          //
+          // `reasoning` only with the transcripts: it is a paragraph per served
+          // call, it is read one turn at a time, and the indicator needs none of
+          // it.
+          select:
+            "scenario_index,tool_name,arguments,faithful,fault,check_error," +
+            "attempts,check_model,model" +
+            (options.withTranscripts ? ",reasoning" : ""),
           order: "scenario_index.asc,tool_name.asc",
         })
       : undefined,
