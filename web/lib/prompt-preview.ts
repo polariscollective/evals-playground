@@ -33,6 +33,9 @@ export interface PromptPreview {
 export const PROMPT_PLACEHOLDER = {
   systemPrompt: "…the scenario's system prompt…",
   openingMessage: "…the scenario's opening message…",
+  /** For the library page, where a judge is read on its own and belongs to no
+   *  run: the objective is written per run, so there is none to show. */
+  adversaryObjective: "…the objective written for the adversary…",
 } as const;
 
 const PLACEHOLDER_TRANSCRIPT = [

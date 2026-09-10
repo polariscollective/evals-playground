@@ -19,13 +19,16 @@ import { PolarisStar } from "@/components/PolarisStar";
  * under what address somebody else is signed in.
  *
  * A client component rather than a route group: the second would have moved
- * `layout.tsx` and everything depending on it for a menu of four links. The
+ * `layout.tsx` and everything depending on it for a menu of five links. The
  * prefix is read here, once, and the proxy stays the only other source of truth
  * about what is public — see `lib/public-paths.ts`. */
 
+// "Judges" sits beside "Runs" rather than beside "Advice": both answer "what do
+// I already have", where Advice answers "how should I write one".
 const LINKS = [
   { href: "/", label: "Evaluate" },
   { href: "/runs", label: "Runs" },
+  { href: "/judges", label: "Judges" },
   { href: "/advice", label: "Advice" },
   { href: "/settings/mcp", label: "MCP" },
 ];

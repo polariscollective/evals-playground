@@ -137,10 +137,22 @@ function perScenario(
 
 /** A short label for a judge, in the list of "other judges".
  *
- * A system judge carries neither criterion nor scale in the database — see the
- * design, section « Les juges système » — its text lives in the code that builds
- * it, never here: `awake` is the only one today. */
+ * The judge's own name, since it has one. Two screens naming the same judge two
+ * different ways would make the library useless as a place to look something
+ * up: what is called one thing on `/judges` has to be called that here.
+ *
+ * The fallbacks below are what the name is derived FROM, kept for a row read
+ * before the library existed — a judge whose label never got written, which the
+ * `NOT NULL` column makes impossible for anything created since. A system judge
+ * keeps its scale in the label here, which the library shows in a column of its
+ * own. */
 function judgeLabel(judge: PublicJudge): string {
+  if (judge.label?.trim()) {
+    if (judge.system_type === AWAKE_TYPE) return `${judge.label} (built-in, 1–10)`;
+    if (judge.system_type === "faithful_adversary")
+      return `${judge.label} (built-in, 1–5)`;
+    return judge.label;
+  }
   if (judge.system_type === AWAKE_TYPE) return "Eval awareness (built-in, 1–10)";
   if (judge.system_type === "faithful_adversary")
     return "Adversary fidelity (built-in, 1–5)";
