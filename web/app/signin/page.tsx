@@ -6,12 +6,15 @@
 // and fetches the provider logo from authjs.dev. `pages` in `auth.ts` points
 // both at this route, and `signInMessage` is what tells the two apart.
 //
-// Every class here already exists. `.eyebrow` is the site's section heading
-// from globals.css, and the button is the primary one from the run page. The
-// page invents no visual language; it only stops using someone else's.
+// Every class here already exists. `.eyebrow` is the framework's section
+// heading from globals.css, and the button and the links are its own. The page
+// invents no visual language.
+//
+// The mark is olive-deep here, not gold: gold is for olive-deep surfaces, and
+// this page is paper.
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PolarisStar } from "@/components/PolarisStar";
+import { PolarisMark } from "@/components/PolarisMark";
 import { sharedAdviceFor } from "@/lib/shared-return";
 import { login } from "@/lib/auth-actions";
 import { signInMessage } from "@/lib/signin-error";
@@ -36,8 +39,8 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
       <p className="eyebrow">Evals Playground</p>
 
-      <h1 className="flex items-center gap-3 font-serif text-2xl font-normal text-teal-700">
-        <PolarisStar size={22} />
+      <h1 className="flex items-center gap-3 text-2xl text-olive-deep">
+        <PolarisMark size={30} />
         Polaris Collective
       </h1>
 
@@ -47,7 +50,7 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
         <input type="hidden" name="callbackUrl" value={destination ?? ""} />
         <button
           type="submit"
-          className="rounded bg-teal-700 px-4 py-2 text-white hover:bg-teal-800"
+          className="btn-primary px-5 py-2"
         >
           Continue with Google
         </button>
@@ -61,7 +64,7 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
         To request access, please reach out to{" "}
         <a
           href="mailto:sam@polariscollective.org"
-          className="text-teal-700 underline"
+          className="link-underline"
         >
           sam@polariscollective.org
         </a>
@@ -74,7 +77,7 @@ export default async function SignIn({ searchParams }: PageProps<"/signin">) {
           document they were heading for. */}
       <p className="text-sm text-zinc-500">
         The advice documents are public.{" "}
-        <Link href={sharedAdviceFor(destination)} className="text-teal-700 underline">
+        <Link href={sharedAdviceFor(destination)} className="link-underline">
           Read them without signing in
         </Link>
         .

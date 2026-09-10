@@ -22,7 +22,7 @@ export function MessageView({
         message.role === "tool"
           ? "rounded border border-dashed border-amber-300 bg-amber-50 p-3"
           : message.seeded
-            ? "rounded border border-dashed border-zinc-400 bg-white p-3"
+            ? "rounded border border-dashed border-zinc-400 bg-paper p-3"
             : message.role === "assistant"
               ? "rounded bg-teal-50 p-3"
               : "rounded bg-zinc-100 p-3"
@@ -60,7 +60,7 @@ export function MessageView({
         // that would not say anything, which is almost always false. Usually
         // the provider stopped the generation, which is neither a refusal nor a
         // capitulation.
-        <div className="text-sm italic text-amber-800">
+        <div className="text-sm text-amber-800">
           No content returned
           {message.stop_reason === "content_filter"
             ? ", blocked by the provider's content filter"

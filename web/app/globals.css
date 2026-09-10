@@ -1,74 +1,111 @@
 @import "tailwindcss";
 
-/* The palette comes from polariscollective.org: cream ground, brown-black ink,
-   olive for the accent. It is applied not by rewriting eight thousand lines of
-   classes, but by redefining the scales Tailwind already builds. `bg-zinc-50`
-   compiles to `var(--color-zinc-50)` — changing the variable repaints the four
-   hundred and fifty uses without touching a single component.
+/* The Polaris Collective design framework, v1.1, applied to a dense tool.
+   The workspace `CLAUDE.md` holds the framework itself; this file is only its
+   application here, and `docs/superpowers/specs/2026-09-10-design-framework-conformance-design.md`
+   records what had to be decided along the way.
 
-   Three scales taken over, each for what it already serves in the app:
-
-     zinc   the grey of everything — text, borders, grounds, dark panels
-     teal   the accent: links, confirmations, the main action  → olive
-     amber  the warning                                        → gold
-
-   `red` stays as it is. It is the error signal; warming it weakens it. */
+   Two layers of names live below. The framework's own ten tokens come first,
+   spelled as the framework spells them, and new code names them directly. Then
+   four Tailwind scales the application already speaks — `zinc`, `teal`, `amber`,
+   `red` — repointed at those tokens. Nine hundred classes were written against
+   those scales; repointing them repaints the application without touching a
+   component, and every one of them keeps its meaning while changing its value.
+   The scales are transitional. They go once the pages have moved to the tokens. */
 
 @theme {
-  /* Warm greys, calibrated on the site's two values: `zinc-500` is its
-     `--muted-foreground`, `zinc-900` its `--foreground`. The rest interpolates. */
-  --color-zinc-50: #faf7f0;
-  --color-zinc-100: #f0e9d9;
-  --color-zinc-200: #e4dac4;
-  --color-zinc-300: #cdc0a5;
-  --color-zinc-400: #a19783;
-  --color-zinc-500: #6a6457;
-  --color-zinc-600: #565044;
-  --color-zinc-700: #443f36;
-  --color-zinc-800: #302d26;
-  --color-zinc-900: #211f1b;
-  --color-zinc-950: #15130f;
+  /* The framework's six. Chartreuse is the single energy colour and never
+     carries text: 1.59:1 on paper. Gold is for the mark on dark surfaces. */
+  --color-paper: #F1EFE3;
+  --color-ink: #23281B;
+  --color-olive-deep: #333D22;
+  --color-olive: #5C6B3C;
+  --color-chartreuse: #B7C94B;
+  --color-gold: #C9A227;
 
-  /* Olive. `teal-700` is the site's exact accent, #5f6b3a. */
-  --color-teal-50: #eef1e3;
-  --color-teal-100: #e1e6cb;
-  --color-teal-200: #d0d8b0;
-  --color-teal-300: #b2bd8b;
-  --color-teal-400: #93a166;
-  --color-teal-500: #7a874a;
-  --color-teal-600: #6c7841;
-  --color-teal-700: #5f6b3a;
-  --color-teal-800: #4d572f;
-  --color-teal-900: #3d4526;
-  --color-teal-950: #232814;
+  /* And its four for status, which always travel with a text label. */
+  --color-ok: #5C6B3C;
+  --color-warn: #C9A227;
+  --color-fail: #A0522D;
+  --color-neutral: #8A8F7A;
 
-  /* Gold, drawn from the site's favicon (#b8863b). `amber-700` was taken down to
-     #8a6528 rather than its natural value: it carries text at `text-sm`, and it
-     needed 4.5:1 on the cream. */
-  --color-amber-50: #faf3e3;
-  --color-amber-100: #f5e8c6;
-  --color-amber-200: #ecd69d;
-  --color-amber-300: #dfbc72;
-  --color-amber-400: #cfa04c;
-  --color-amber-500: #b98a38;
-  --color-amber-600: #a37a30;
+  /* Two the framework does not state, and text needs.
+
+     Gold reaches 2.1:1 on paper and neutral 2.89:1, so neither can be read.
+     `--color-warn-text` is gold taken down to 4.58:1; where "not run" has to be
+     written rather than drawn, it is written in olive, at 5.02:1. The framework
+     asks for AA on every text, and these are what it costs. */
+  --color-warn-text: #8A6528;
+
+  /* Paper to ink, olive-tinted the whole way. `500` carries most of the
+     secondary text in the application, which is why it is olive and not a grey:
+     a grey light enough to read as secondary does not pass AA on paper. `400` is
+     `--neutral` exactly — it is the muted glyph, the em-dash, the disabled row. */
+  --color-zinc-50: #f6f4ea;
+  --color-zinc-100: #e5e4d5;
+  --color-zinc-200: #d3d5c2;
+  --color-zinc-300: #bdc1a9;
+  --color-zinc-400: #8a8f7a;
+  --color-zinc-500: #5c6b3c;
+  --color-zinc-600: #4c5732;
+  --color-zinc-700: #3f4a2b;
+  --color-zinc-800: #333d22;
+  --color-zinc-900: #23281b;
+  --color-zinc-950: #191d13;
+
+  /* The accent. Olive where it carries text, olive-deep where it is a surface,
+     chartreuse only in the light steps that serve as grounds and rules. */
+  --color-teal-50: #edf0dc;
+  --color-teal-100: #e2e8c4;
+  --color-teal-200: #d3dca6;
+  --color-teal-300: #c4d07c;
+  --color-teal-400: #b7c94b;
+  --color-teal-500: #94a83f;
+  --color-teal-600: #6e7f39;
+  --color-teal-700: #5c6b3c;
+  --color-teal-800: #333d22;
+  --color-teal-900: #2a331c;
+  --color-teal-950: #1e2415;
+
+  /* Gold. `400` is the token; `700` and darker are the steps that carry text. */
+  --color-amber-50: #faf2dc;
+  --color-amber-100: #f4e6bc;
+  --color-amber-200: #ead494;
+  --color-amber-300: #ddbd64;
+  --color-amber-400: #c9a227;
+  --color-amber-500: #b08d22;
+  --color-amber-600: #9c7c1e;
   --color-amber-700: #8a6528;
-  --color-amber-800: #795a25;
-  --color-amber-900: #624920;
-  --color-amber-950: #382810;
+  --color-amber-800: #74551f;
+  --color-amber-900: #5a421a;
+  --color-amber-950: #3a2b10;
+
+  /* The rust of `--fail` at `500`, and nothing warmer than it anywhere. It is
+     the only warm colour the framework permits, and only for status. */
+  --color-red-50: #f8eae2;
+  --color-red-100: #f2d8c9;
+  --color-red-200: #e5bca4;
+  --color-red-300: #d19878;
+  --color-red-400: #bc7550;
+  --color-red-500: #a0522d;
+  --color-red-600: #8e4826;
+  --color-red-700: #7a3e21;
+  --color-red-800: #66331b;
+  --color-red-900: #522915;
+  --color-red-950: #33190d;
 }
 
 :root {
-  --background: #f4eee2;
-  --foreground: #211f1b;
+  --background: #f1efe3;
+  --foreground: #23281b;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-serif: var(--font-spectral);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-instrument-sans);
+  --font-display: var(--font-bricolage);
+  --font-mono: var(--font-plex-mono);
 }
 
 /* No `prefers-color-scheme: dark` block. There was one; it flipped the ground to
@@ -80,6 +117,18 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+  /* 14px on 1.5, the framework's size for a dense tool rather than a page of
+     prose. It reaches only what carries no size class of its own; the hundreds
+     of `text-sm` and `text-xs` in the application are absolute and unmoved. */
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Headings are the display face, and sentence case. Nothing here is set in
+   capitals: the framework forbids it, labels included. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
 }
 
 /* Tailwind v4 removed the `cursor: pointer` browsers used to put on the
@@ -111,43 +160,57 @@ label:has(textarea) {
   cursor: auto;
 }
 
-/* The inputs round off a little more than the 4px of the `rounded` the
-   application puts everywhere. One rule rather than a hundred and ninety-two
-   edits: it is in no layer, and styles outside a layer come before the utilities
-   whatever their specificity. The checkboxes and radio buttons are excluded —
-   they have their own shape. */
+/* The framework gives a field a 4px radius, and the application had settled on
+   8px. One rule rather than a hundred and ninety-two edits: it is in no layer,
+   and styles outside a layer come before the utilities whatever their
+   specificity. The checkboxes and radio buttons are excluded — they have their
+   own shape. */
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
-  border-radius: 0.5rem;
+  border-radius: 4px;
 }
 
-/* On a cream ground, a field must stand out from the paper: it is lighter than
-   it, not darker.
+/* A field is paper, and it is told apart from what surrounds it by its border,
+   not by a fill. Inside a panel, which sits a shade above paper, that reads as a
+   slight recess.
 
    In `base`, unlike the rounding rule just above: here we want precisely the
    reverse. Any `bg-*` laid on a field must win — the adversary panel's
-   `bg-zinc-900`, the explicit `bg-white`s — and a `base` layer comes behind the
+   `bg-zinc-900`, the explicit `bg-paper`s — and a `base` layer comes behind the
    utilities. */
 @layer base {
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
-    background-color: #fffdf8;
+    background-color: var(--color-paper);
   }
 }
 
-/* The site's eyebrow: small olive capitals, widely spaced. No rule above it —
-   the site puts one only in its hero, its section eyebrows are bare text. And a
-   block pseudo-element here would shift the headings that share a flex line with
-   a badge. */
+/* What the site called an eyebrow is, under the framework, a section heading:
+   sentence case in the display face over a short chartreuse rule. The capitals
+   and the letter spacing go, both forbidden, and the class keeps its name only
+   because twenty-five places write it. It is renamed when they move.
+
+   The rule is a block pseudo-element, which does shift a heading that shares a
+   flex line with a badge: the line then aligns on the taller item, and the badge
+   centres against heading and rule together. That is the intended reading. */
 .eyebrow {
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--color-teal-700);
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-olive);
+}
+
+.eyebrow::before {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 3px;
+  background: var(--color-chartreuse);
+  margin-bottom: 8px;
 }
 
 /* Several of these headings drag a gloss behind them — "Tools — what the
@@ -168,10 +231,11 @@ textarea {
   }
 }
 
-/* On the adversary's dark panel, the olive #5f6b3a has nothing to stand out
-   against. The eyebrow turns light green there. */
+/* On the adversary's dark panel, olive has nothing to stand out against. The
+   framework's dark surfaces carry paper text, and the chartreuse rule reads
+   against olive-deep as well as it does against paper. */
 .eyebrow-on-dark {
-  color: var(--color-teal-300);
+  color: var(--color-paper);
 }
 
 .eyebrow-on-dark :where(span, small, em) {
@@ -215,7 +279,7 @@ textarea {
 .notes-prose ol { list-style: decimal; }
 .notes-prose li { margin: 0.15em 0; }
 .notes-prose blockquote {
-  border-left: 3px solid var(--color-zinc-300);
+  border-left: 3px solid var(--color-olive);
   padding-left: 0.7em;
   color: var(--color-zinc-600);
   margin: 0.4em 0;
@@ -226,4 +290,90 @@ textarea {
   padding: 0.1em 0.3em;
   font-size: 0.9em;
 }
-.notes-prose a { color: var(--color-teal-700); text-decoration: underline; }
+.notes-prose a {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--color-chartreuse);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+.notes-prose a:hover {
+  background: var(--color-chartreuse);
+}
+
+/* The focus state, everywhere at once: a 2px chartreuse outline, always visible.
+   The framework asks for it on every focusable thing, and a rule here is the
+   only way to get it without visiting two hundred controls. */
+:where(a, button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-chartreuse);
+  outline-offset: 2px;
+}
+
+/* The two buttons of the framework, as classes rather than as a component: the
+   application writes its buttons inline, and a class can be adopted one button
+   at a time. Pills, and labels that say what happens. */
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.375rem 1rem;
+  font-weight: 600;
+  transition: background-color 150ms, color 150ms, border-color 150ms;
+}
+
+.btn-primary {
+  background: var(--color-olive-deep);
+  color: var(--color-paper);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-chartreuse);
+  color: var(--color-ink);
+}
+
+.btn-secondary {
+  border: 1px solid var(--color-olive);
+  color: var(--color-ink);
+  background: transparent;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-chartreuse);
+  color: var(--color-ink);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.45;
+}
+
+/* A link is ink with a chartreuse underline, and the hover fills the highlight
+   behind the text rather than moving anything. No arrows. */
+.link-underline {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--color-chartreuse);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  transition: background-color 150ms;
+}
+
+.link-underline:hover {
+  background: var(--color-chartreuse);
+  color: var(--color-ink);
+}
+
+/* One ambient animation per surface, and this application has none. What is left
+   is interaction feedback, which a reduced-motion setting does not need either. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

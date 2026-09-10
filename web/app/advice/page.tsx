@@ -46,7 +46,7 @@ import {
 function AdviceHeader() {
   return (
     <header className="flex items-center gap-2">
-      <h1 className="font-serif text-2xl font-normal">Advice</h1>
+      <h1 className="text-2xl">Advice</h1>
     </header>
   );
 }
@@ -147,7 +147,7 @@ function AdviceDocuments() {
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-8">
       <header className="flex items-center gap-2">
-        <h1 className="font-serif text-2xl font-normal">Advice</h1>
+        <h1 className="text-2xl">Advice</h1>
         {loading && loaded && <Refreshing />}
       </header>
 

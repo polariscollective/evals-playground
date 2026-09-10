@@ -80,7 +80,7 @@ export function ExtendTargets({
         return (
           <div key={judge.run_judge_id} className="space-y-1">
             <p className="text-xs font-medium text-zinc-700">{judge.label}</p>
-            <div className="overflow-x-auto rounded border border-zinc-300 bg-white">
+            <div className="overflow-x-auto rounded border border-olive bg-paper">
               <table className="w-full border-collapse text-sm">
                 <tbody>
                   {newScenarios.map((scenario, index) => {

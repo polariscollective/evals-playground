@@ -46,7 +46,7 @@ export function Dialog({
         if (event.target === dialog.current) onClose();
       }}
       style={{ width }}
-      className="m-auto max-h-[85vh] max-w-[92vw] rounded border border-zinc-300 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-900/40"
+      className="m-auto max-h-[85vh] max-w-[92vw] rounded border border-olive bg-paper p-0 text-zinc-900 backdrop:bg-zinc-900/40"
     >
       <div className="flex max-h-[85vh] flex-col">
         <div className="shrink-0 px-5 pt-5">

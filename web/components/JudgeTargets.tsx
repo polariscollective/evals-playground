@@ -86,7 +86,7 @@ export function JudgeTargets({
                 ),
               )
             }
-            className="cursor-pointer rounded border border-amber-700 bg-white px-2 py-0.5"
+            className="cursor-pointer rounded border border-amber-700 bg-paper px-2 py-0.5"
           >
             Fill the missing rows
           </button>
@@ -97,13 +97,13 @@ export function JudgeTargets({
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                 Scenario
               </th>
-              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                 A good model scores
               </th>
-              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                 Control
               </th>
             </tr>

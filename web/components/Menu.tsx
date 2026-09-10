@@ -53,7 +53,7 @@ export function Menu({
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div
             role="menu"
-            className="absolute right-0 z-20 mt-1 w-64 rounded border border-zinc-300 bg-white p-1 shadow-lg"
+            className="absolute right-0 z-20 mt-1 w-64 rounded border border-olive bg-paper p-1"
           >
             {children(() => setOpen(false))}
           </div>

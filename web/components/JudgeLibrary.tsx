@@ -86,7 +86,7 @@ export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="space-y-1">
-        <h1 className="font-serif text-2xl font-normal tracking-tight">Judges</h1>
+        <h1 className="text-2xl tracking-tight">Judges</h1>
         <p className="text-sm text-zinc-600">
           A judge is a question and a scale, kept apart from the runs that use
           it. The model that graded belongs to the run, not to the judge, which
@@ -163,7 +163,7 @@ function Badge({
   return (
     <span
       title={title}
-      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${style}`}
+      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${style}`}
     >
       {children}
     </span>
@@ -291,7 +291,7 @@ function JudgeRow({
           />
 
           <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <p className="text-xs font-medium text-zinc-500">
               Used by
             </p>
             {uses.length === 0 ? (

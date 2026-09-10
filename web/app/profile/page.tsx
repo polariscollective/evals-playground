@@ -125,7 +125,7 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="space-y-1">
-        <h1 className="font-serif text-2xl font-normal">Profile</h1>
+        <h1 className="text-2xl">Profile</h1>
         <p className="flex items-center gap-2 text-sm text-zinc-500">
           What your agents may spend without you standing there, and what
           they have spent recently.

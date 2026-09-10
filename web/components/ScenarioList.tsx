@@ -91,7 +91,7 @@ function Scenario({
       </button>
 
       {open && (
-        <div className="space-y-2 border-t border-zinc-200 bg-white p-2 pl-10 text-xs">
+        <div className="space-y-2 border-t border-zinc-200 bg-paper p-2 pl-10 text-xs">
           {scenario.note?.trim() && (
             <div>
               <span className="font-medium text-zinc-500">

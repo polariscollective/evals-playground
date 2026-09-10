@@ -126,7 +126,7 @@ function openingModel(catalog: ProviderInfo[]): string | null {
 function PageHeader() {
   return (
     <header>
-      <h1 className="font-serif text-2xl font-normal tracking-tight">
+      <h1 className="text-2xl tracking-tight">
         Evaluate scenarios
       </h1>
       <p className="mt-1 text-sm text-zinc-600">
@@ -1236,7 +1236,7 @@ function EvaluateForm() {
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-zinc-300 bg-white p-2 text-sm"
+        className="w-full rounded border border-olive bg-paper p-2 text-sm"
       >
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {modelRows.map((m) => (
@@ -1282,7 +1282,7 @@ function EvaluateForm() {
           database, so that an exported run reimports without translation. */}
       <div className="flex flex-wrap items-center gap-3 rounded border border-dashed border-zinc-300 p-3 text-sm">
         <label className="cursor-pointer">
-          <span className="rounded border border-zinc-300 bg-white px-3 py-1 hover:bg-zinc-50">
+          <span className="rounded border border-olive bg-paper px-3 py-1 hover:bg-zinc-50">
             Load a config file
           </span>
           <input
@@ -1303,7 +1303,7 @@ function EvaluateForm() {
             in are on this same bar. */}
         <button
           onClick={() => setClearing(true)}
-          className="cursor-pointer rounded border border-zinc-300 bg-white px-3 py-1 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+          className="cursor-pointer rounded border border-olive bg-paper px-3 py-1 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
         >
           Clear evaluation config
         </button>
@@ -1649,7 +1649,7 @@ function EvaluateForm() {
                       <select
                         value={f.value}
                         onChange={(e) => f.set(e.target.value)}
-                        className="w-full rounded border border-zinc-300 bg-white p-1 text-sm"
+                        className="w-full rounded border border-olive bg-paper p-1 text-sm"
                       >
                         <option value="">—</option>
                         {csvColumns.map((c) => (
@@ -1929,7 +1929,7 @@ function EvaluateForm() {
                     model: e.target.value || undefined,
                   })
                 }
-                className="w-full rounded border border-zinc-300 bg-white p-2 text-sm"
+                className="w-full rounded border border-olive bg-paper p-2 text-sm"
               >
                 <option value="">Same as the run&apos;s judge above</option>
                 {modelRows.map((m) => (
@@ -2284,7 +2284,7 @@ function EvaluateForm() {
         <button
           onClick={launch}
           disabled={!ready || launching}
-          className="rounded bg-teal-700 px-4 py-2 text-white hover:bg-teal-800 disabled:opacity-40 disabled:hover:bg-teal-700"
+          className="btn-primary px-5 py-2"
         >
           {launching
             ? "Launching…"

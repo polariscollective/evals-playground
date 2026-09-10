@@ -339,7 +339,7 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
               </span>
             )}
           </div>
-          <pre className="max-h-64 overflow-auto rounded border border-zinc-200 bg-white p-3 text-xs whitespace-pre-wrap">
+          <pre className="max-h-64 overflow-auto rounded border border-zinc-200 bg-paper p-3 text-xs whitespace-pre-wrap">
             {config.world}
           </pre>
           {/* Without this line the run's world reads as the last word, while
@@ -472,7 +472,7 @@ export function ScenarioModal({
             </p>
           </div>
         ) : (
-          <p className="text-sm text-zinc-500 italic">
+          <p className="text-sm text-zinc-500">
             No note was written for this scenario.
           </p>
         )}
@@ -643,12 +643,12 @@ function OtherJudgeRow({
         </span>{" "}
         <span className="text-zinc-700">{judgeLabel(judge.judge)}</span>
         {judge.system_type !== "ordinary" && (
-          <span className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] tracking-wide text-zinc-500 uppercase">
+          <span className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">
             system
           </span>
         )}
         {isPrincipal && (
-          <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] tracking-wide text-white uppercase">
+          <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-white">
             principal
           </span>
         )}
@@ -780,7 +780,7 @@ function MakePrincipalButton({
       <button
         onClick={run}
         disabled={busy}
-        className="cursor-pointer rounded border border-amber-400 bg-white px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+        className="cursor-pointer rounded border border-amber-400 bg-paper px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
       >
         {busy ? "Working…" : "Make principal"}
       </button>
@@ -871,7 +871,7 @@ function PrincipalUnlink({
       <select
         value={replacement}
         onChange={(e) => setReplacement(e.target.value)}
-        className="rounded border border-zinc-300 bg-white p-1 text-xs"
+        className="rounded border border-olive bg-paper p-1 text-xs"
       >
         {ordinaryOthers.map((other) => (
           <option key={other.run_judge_id} value={other.run_judge_id}>
@@ -1234,7 +1234,7 @@ export function DetailModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl space-y-5 rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-3xl space-y-5 rounded border border-olive bg-paper p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -1786,7 +1786,7 @@ export function RunMatrix({
                       // to be read, and that has to be visible without hovering
                       // or opening anything.
                       <span
-                        className="ml-2 rounded bg-red-600 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-red-50"
+                        className="ml-2 rounded bg-red-600 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-red-50"
                         title="This control row did not land on its target. Fix it and relaunch before reading the rest of the matrix."
                       >
                         control missed
@@ -1798,7 +1798,7 @@ export function RunMatrix({
                       // over its target, which is not always "what a good model
                       // does".
                       <span
-                        className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600"
+                        className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-zinc-600"
                         title="A control row: it has to land on its target, or nothing else on this matrix can be read. It stays out of any figure computed across rows."
                       >
                         control
@@ -1886,7 +1886,7 @@ export function RunMatrix({
                           // green.
                           // The number is written, not merely a presence: two flagged
                           // attempts out of five is not one.
-                          <span className="ml-1 rounded bg-white/85 px-1 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-700/50">
+                          <span className="ml-1 rounded bg-paper/85 px-1 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-700/50">
                             ⚠{flagged}
                           </span>
                         )}

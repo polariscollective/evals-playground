@@ -33,7 +33,7 @@ export function SharedAdviceView({
 
   return (
     <>
-      <h1 className="font-serif text-2xl font-normal">{ADVICE_LABEL[topic]}</h1>
+      <h1 className="text-2xl">{ADVICE_LABEL[topic]}</h1>
 
       <AdviceTabs topic={topic} onSelect={setTopic} />
 

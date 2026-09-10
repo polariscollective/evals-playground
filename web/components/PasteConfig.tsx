@@ -60,7 +60,7 @@ export function PasteConfig({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="cursor-pointer rounded border border-zinc-300 bg-white px-3 py-1 hover:bg-zinc-50"
+        className="cursor-pointer rounded border border-olive bg-paper px-3 py-1 hover:bg-zinc-50"
       >
         Paste a config
       </button>

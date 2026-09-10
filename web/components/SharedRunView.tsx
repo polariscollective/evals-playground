@@ -63,10 +63,10 @@ export function SharedRunView({
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-wide text-zinc-500">
+          <p className="text-xs text-zinc-500">
             Shared run — read only
           </p>
-          <h1 className="font-serif text-2xl font-normal tracking-tight">
+          <h1 className="text-2xl tracking-tight">
             {run.label ?? "Evaluation run"}
           </h1>
           <p className="text-sm text-zinc-600">

@@ -126,7 +126,7 @@ function ExtensionDetail({
         <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800">
           The request, as it was made
         </summary>
-        <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-zinc-700">
+        <pre className="mt-2 overflow-x-auto rounded bg-paper p-2 text-xs text-zinc-700">
           {stringify(extension.request)}
         </pre>
       </details>
@@ -326,7 +326,7 @@ function AddJudgePanel({
           value={criterion}
           onChange={(e) => setCriterion(e.target.value)}
           rows={3}
-          className="w-full rounded border border-zinc-300 bg-white p-3"
+          className="w-full rounded border border-olive bg-paper p-3"
         />
       </label>
 
@@ -340,7 +340,7 @@ function AddJudgePanel({
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          className="block rounded border border-zinc-300 bg-white p-2 text-sm"
+          className="block rounded border border-olive bg-paper p-2 text-sm"
         >
           {models.map((m) => (
             <option key={m} value={m}>
@@ -383,7 +383,7 @@ function AddJudgePanel({
       <button
         onClick={add}
         disabled={!ready || busy}
-        className="rounded bg-teal-700 px-4 py-2 text-white hover:bg-teal-800 disabled:opacity-40 disabled:hover:bg-teal-700"
+        className="btn-primary px-5 py-2"
       >
         {busy ? "Adding…" : `Add this judge to ${detail.samples.length} conversations`}
       </button>
@@ -748,7 +748,7 @@ export default function EvalRunPage({
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-serif text-2xl font-normal tracking-tight">
+          <h1 className="text-2xl tracking-tight">
             <RunTitle
               runId={run.id}
               label={run.label}
@@ -759,7 +759,7 @@ export default function EvalRunPage({
               editOnClick
                 // The field takes the title's shape — serif, same size, full
                 // width — so that nothing jumps at the moment it opens.
-              inputClassName="w-full border border-zinc-300 bg-transparent px-2 py-0.5 font-serif text-2xl font-normal tracking-tight"
+              inputClassName="w-full border border-zinc-300 bg-transparent px-2 py-0.5 text-2xl tracking-tight"
                 // Written into the state already loaded rather than rereading
                 // everything: the response carries the saved title, and reloading
                 // the whole run for one word would make the matrix flicker below.

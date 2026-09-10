@@ -69,7 +69,7 @@ export function PromptPreview({
   return (
     <div className={panel}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className={`text-xs font-medium uppercase ${muted}`}>
+        <span className={`text-xs font-medium ${muted}`}>
           {label}
         </span>
         <div className="flex items-center gap-3">
@@ -98,7 +98,7 @@ export function PromptPreview({
             className={`cursor-pointer rounded border p-1 text-xs ${
               dark
                 ? "border-zinc-700 bg-zinc-950 text-zinc-100"
-                : "border-zinc-300 bg-white text-zinc-900"
+                : "border-zinc-300 bg-paper text-zinc-900"
             }`}
           >
             {variants.map((variant, index) => (

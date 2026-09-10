@@ -198,7 +198,7 @@ export function TagField({
                   the rest of the rendering, with no need to think of detaching it —
                   the same gesture as the run's actions menu. */}
               <div className="fixed inset-0 z-10" onClick={closeInput} />
-              <div className="absolute left-0 z-20 mt-1 max-h-56 w-48 overflow-auto rounded border border-zinc-300 bg-white p-1 shadow-lg">
+              <div className="absolute left-0 z-20 mt-1 max-h-56 w-48 overflow-auto rounded border border-olive bg-paper p-1">
                 {suggestions.map((tag) => (
                   <button
                     key={tag.id}

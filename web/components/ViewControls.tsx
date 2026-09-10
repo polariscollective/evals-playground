@@ -130,7 +130,7 @@ export function ViewControls({
                     <td className="py-1.5">
                       {ignored ? (
                         <span className="flex items-center gap-2">
-                          <span className="text-zinc-500 italic">
+                          <span className="text-zinc-500">
                             {byTheScale ? "nothing — the scale leaves it out" : "nothing"}
                           </span>
                           <button

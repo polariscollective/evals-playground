@@ -60,7 +60,7 @@ export function InfoDot({
                 spaced small capitals, and a sentence would inherit them. */}
           <span
             role="note"
-            className="absolute left-0 top-full z-20 mt-1 block w-max max-w-xs rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-normal normal-case tracking-normal text-zinc-700 shadow-lg"
+            className="absolute left-0 top-full z-20 mt-1 block w-max max-w-xs rounded border border-olive bg-paper px-2 py-1 text-xs font-normal normal-case tracking-normal text-zinc-700"
           >
             {children}
           </span>

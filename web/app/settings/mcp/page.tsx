@@ -25,7 +25,7 @@ export default async function McpPage() {
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="space-y-1">
-        <h1 className="font-serif text-2xl font-normal">MCP</h1>
+        <h1 className="text-2xl">MCP</h1>
         <p className="text-sm text-zinc-500">
           An agent connected here writes runs, checks them, launches them and
           reads the results — without anything passing through this screen.

@@ -75,7 +75,7 @@ export default async function SharedAdvice({
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-8">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-xs uppercase tracking-wide text-zinc-500">
+        <p className="text-xs text-zinc-500">
           Advice — read only
         </p>
         {/* The tab being read travels with the visitor. Somebody signing in

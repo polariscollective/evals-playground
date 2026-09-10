@@ -23,7 +23,7 @@ function CopyableUrl({ url }: { url: string }) {
             setTimeout(() => setCopied(false), 2000);
           });
         }}
-        className="shrink-0 cursor-pointer rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs hover:bg-zinc-50"
+        className="shrink-0 cursor-pointer rounded border border-olive bg-paper px-2 py-0.5 text-xs hover:bg-zinc-50"
       >
         {copied ? "Copied" : "⧉ Copy"}
       </button>
@@ -74,16 +74,16 @@ export function McpReference({ origin }: { origin: string }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                   Tool
                 </th>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                   What it does
                 </th>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                   Takes
                 </th>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold tracking-wide text-zinc-500 uppercase">
+                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
                   Returns
                 </th>
               </tr>

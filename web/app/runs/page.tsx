@@ -314,7 +314,7 @@ export default function RunsPage() {
     <main className="mx-auto max-w-6xl space-y-6 p-8">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-serif text-2xl font-normal tracking-tight">Runs</h1>
+          <h1 className="text-2xl tracking-tight">Runs</h1>
           <p className="mt-1 flex items-center gap-2 text-sm text-zinc-600">
             {showDrafts
               ? "Everything waiting to be launched, newest first. Open one to review it."
@@ -407,7 +407,7 @@ export default function RunsPage() {
                 out of seven were, and the eye going down the table stumbled on
                 them. A consistent table is worth more here than a typographic
                 convention applied twice. */}
-            <tr className="border-b border-zinc-300 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <tr className="border-b border-zinc-300 text-left text-xs text-zinc-500">
               <th className="py-3 pr-8 font-medium">Run</th>
               <th className="w-40 py-3 pr-8 font-medium">Launched</th>
               <th className="relative w-24 py-3 pr-8 font-medium">
