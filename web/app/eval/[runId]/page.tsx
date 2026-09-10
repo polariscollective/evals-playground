@@ -46,6 +46,7 @@ import {
   DetailModal,
   JudgeBlock,
   RunMatrix,
+  RunSignals,
   ScenarioModal,
   ToolsBlock,
   principalJudge,
@@ -1251,6 +1252,20 @@ export default function EvalRunPage({
         }}
       />
 
+      <RunMatrix
+        detail={detail}
+        view={view}
+        onViewChange={setView}
+        onOpenScenario={setOpenScenario}
+        onOpenCell={openCell}
+        displayedRunJudgeId={displayedRunJudgeId}
+      />
+
+      {/* Under the matrix, because they say whether it can be read at all.
+          They used to sit inside "What the judge was asked", which now
+          arrives folded. */}
+      <RunSignals detail={detail} />
+
       <JudgeBlock
         detail={detail}
         onUnlink={handleUnlinkJudge}
@@ -1261,18 +1276,13 @@ export default function EvalRunPage({
 
       <ToolsBlock detail={detail} />
 
-      <RunMatrix
-        detail={detail}
-        view={view}
-        onViewChange={setView}
-        onOpenScenario={setOpenScenario}
-        onOpenCell={openCell}
-        displayedRunJudgeId={displayedRunJudgeId}
-      />
+
+
 
       <NotesField
         key={`${run.id}-analysis`}
         label="Run analysis"
+        startOpen={false}
         value={analysis}
         onChange={setAnalysis}
         rows={8}

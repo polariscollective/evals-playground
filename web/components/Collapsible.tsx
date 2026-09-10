@@ -25,6 +25,7 @@ export function Collapsible({
   className,
   bodyClassName,
   pinned = false,
+  startOpen = true,
   children,
 }: {
   /** The heading with its own classes — `eyebrow` on the reading boxes,
@@ -42,9 +43,19 @@ export function Collapsible({
    *  needs: folding away what one is writing would make the typing disappear
    *  under one's fingers. */
   pinned?: boolean;
+  /** Open on arrival. True by default: what one comes to read should be there
+   *  without a gesture.
+   *
+   * False for the boxes on a run's page that answer "how was this set up"
+   * rather than "what did it find" — the tools, the judge, the analysis written
+   * afterwards. Four boxes unfolded pushed the matrix below the fold, so the
+   * first thing on screen was the setup and the numbers had to be scrolled to.
+   * The notes stay open: they say what the run was for, which is what makes the
+   * matrix readable at all. */
+  startOpen?: boolean;
   children: ReactNode;
 }) {
-  const [folded, setFolded] = useState(false);
+  const [folded, setFolded] = useState(!startOpen);
   const open = pinned || !folded;
 
   return (

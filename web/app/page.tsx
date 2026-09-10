@@ -283,10 +283,16 @@ function EvaluateForm() {
   const [grades, setGrades] = useState<JudgeGrades>("assistant");
   const [seesAdversaryGoals, setSeesAdversaryGoals] = useState(false);
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
-  // Off by default, unlike the awareness check: it grades a text the
-  // experimenter wrote rather than the model under test, and it is refused
-  // below two turns.
-  const [checkAdversaryFidelity, setCheckAdversaryFidelity] = useState(false);
+  // On by default on a fresh form, and only there. The configuration's own
+  // default stays off and is read `=== true`: an absent field has to mean
+  // "nobody asked", including on every run recorded before this judge existed.
+  // What a blank form proposes is a different question, and a batch built as
+  // "the same request, pushed four ways" falls apart silently when two of the
+  // four were pushed the same way.
+  //
+  // Sent only above one turn, where there is an adversary to grade — see the
+  // request built below.
+  const [checkAdversaryFidelity, setCheckAdversaryFidelity] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [relaunchNote, setRelaunchNote] = useState<string | null>(null);
@@ -1154,7 +1160,7 @@ function EvaluateForm() {
     setGrades("assistant");
     setSeesAdversaryGoals(false);
     setCheckEvalAwareness(true);
-    setCheckAdversaryFidelity(false);
+    setCheckAdversaryFidelity(true);
 
     // A blank page's models, chosen exactly as they are on opening — see
     // `openingModel`. The catalogue is already in hand: nothing to re-fetch.

@@ -17,6 +17,7 @@ export function NotesField({
   hint = "What are you testing, what did you notice?",
   rows = 4,
   label = "Notes",
+  startOpen = true,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -29,6 +30,10 @@ export function NotesField({
    *  markdown reading, same editing gesture, only the heading tells the preamble
    *  from the analysis written afterwards. */
   label?: string;
+  /** Open on arrival — see `Collapsible.startOpen`. The notes are; the analysis
+   *  written afterwards is not, being one of the boxes that says how the run was
+   *  set up rather than what it found. */
+  startOpen?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +75,7 @@ export function NotesField({
     <Collapsible
       className="rounded border border-zinc-300 p-3"
       pinned={editing}
+      startOpen={startOpen}
       title={<h2 className="eyebrow">{label}</h2>}
       aside={
         editing ? (

@@ -312,6 +312,7 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
     <Collapsible
       className="space-y-3 rounded border border-zinc-300 p-4"
       bodyClassName="space-y-3"
+      startOpen={false}
       title={<h2 className="eyebrow">Tools the evaluated model could call</h2>}
       aside={
         <span className="text-xs text-zinc-500">
@@ -917,6 +918,107 @@ function PrincipalUnlink({
   );
 }
 
+/** What a run says about itself, under its matrix.
+ *
+ * Three checks on whether the numbers above can be read at all, and not one of
+ * them a result: whether the models sensed the setting, whether the adversary
+ * pushed the way it was told to, and whether the served tools answered
+ * faithfully. Each keeps quiet when it has nothing to say, because a run that
+ * never asked for a check must not show a reassuring zero for it.
+ *
+ * Under the matrix, and no longer inside "What the judge was asked". They are
+ * about the run rather than about the judge, and that box arrives folded now: a
+ * validity warning behind a chevron is a validity warning nobody reads. */
+export function RunSignals({ detail }: { detail: PublicRunDetail }) {
+  const judges = detail.judges;
+  // The eval-awareness indicator: one figure for the whole run, computed here
+  // rather than in a separate header so that it shows the same way on the private
+  // page and on the public page, which share this component but do not have the
+  // same header. When it sounds, one goes down into the conversations — hence the
+  // fact that it does not say which. The run's `awake` binding, if the run has one
+  // — see `findAwakeJudge`, `lib/awareness.ts`, whose generic constraint no longer
+  // accepts `RunJudgeView`: `AWAKE_TYPE` alone, as `lib/runs.ts` already does for
+  // the same reason.
+  const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
+
+  const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
+  const awarenessPhrase = awarenessSentence(awareness);
+
+  // The adversary-fidelity indicator, beside it and read the same way. Silent
+  // on the runs that did not ask for this judge, which is most of them. Its
+  // scale runs the other way from the awareness one: low is the alarm, see
+  // `lib/fidelity.ts`.
+  const fidelityLink = findFidelityJudge(judges ?? []);
+  const fidelity = fidelitySummary(
+    fidelityLink ? Object.values(fidelityLink.scores) : [],
+  );
+  const fidelityPhrase = fidelitySentence(fidelity);
+
+  // The served-results indicator, right beside the awareness one — and crossed
+  // with it, which is its whole point. A high awareness grade is otherwise a dead
+  // end: one knows the model sensed something, one does not know what. Silent on a
+  // run that served no tool.
+  const toolResults = detail.tool_results ?? [];
+  const served = servedSummary(toolResults);
+  // The transcripts are loaded on demand only. Without them, one does not know
+  // which conversation saw which result: the crossing keeps quiet rather than
+  // announcing zero, which would read as "none" instead of "we do not know".
+  const canCrossCheck = detail.samples.some(
+    (sample) => (sample.messages ?? []).length > 0,
+  );
+  const servedJoin = awarenessJoin(
+    detail.samples.map((sample) => ({
+      scenario_index: sample.scenario_index,
+      transcript: sample.messages ?? [],
+      awake: Boolean(
+        awake && awake.scores[sample.id] && isAwarenessFlagged(awake.scores[sample.id]),
+      ),
+    })),
+    toolResults,
+  );
+  const servedPhrase = servedSentence(served, canCrossCheck ? servedJoin : null);
+
+  return (
+    <div className="space-y-1">
+      {awarenessPhrase && (
+        <p
+          className={
+            awareness.flagged > 0
+              ? "text-sm font-medium text-amber-700"
+              : "text-sm text-zinc-500"
+          }
+        >
+          {awarenessPhrase}
+        </p>
+      )}
+
+      {fidelityPhrase && (
+        <p
+          className={
+            fidelity.drifted > 0
+              ? "text-sm font-medium text-amber-700"
+              : "text-sm text-zinc-500"
+          }
+        >
+          {fidelityPhrase}
+        </p>
+      )}
+
+      {servedPhrase && (
+        <p
+          className={
+            served.unfaithful > 0 || served.couldNotCheck > 0
+              ? "text-sm font-medium text-amber-700"
+              : "text-sm text-zinc-500"
+          }
+        >
+          {servedPhrase}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** What the SHOWN judge was charged with looking at — the principal by default,
  *  another ordinary judge if one chose to look at it — and access to the run's
  *  other undeleted judges.
@@ -993,67 +1095,22 @@ export function JudgeBlock({
   // The shown judge is authoritative once attached — it may differ from `config`
   // if another judge has taken over the title since the launch, or if one chose to
   // look at another. Without it, `config` stays the only source, as before the
-  // multiple judges.
-  const judgeModel = displayedJudge?.model ?? config.models.judge;
-  const criterion = displayedJudge?.judge.criterion ?? config.criterion;
-  const rubric = displayedJudge?.judge.rubric ?? config.rubric;
-
-  // The eval-awareness indicator: one figure for the whole run, computed here
-  // rather than in a separate header so that it shows the same way on the private
-  // page and on the public page, which share this component but do not have the
-  // same header. When it sounds, one goes down into the conversations — hence the
-  // fact that it does not say which. The run's `awake` binding, if the run has one
-  // — see `findAwakeJudge`, `lib/awareness.ts`, whose generic constraint no longer
-  // accepts `RunJudgeView`: `AWAKE_TYPE` alone, as `lib/runs.ts` already does for
-  // the same reason.
-  const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
-
   // Which judge's card is open, if any. One window for the whole block: the
   // list below can hold a dozen rows, and one dialog each would mount a dozen
   // to show one.
   const [openJudge, setOpenJudge] = useState<string | null>(null);
-  const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
-  const awarenessPhrase = awarenessSentence(awareness);
 
-  // The adversary-fidelity indicator, beside it and read the same way. Silent
-  // on the runs that did not ask for this judge, which is most of them. Its
-  // scale runs the other way from the awareness one: low is the alarm, see
-  // `lib/fidelity.ts`.
-  const fidelityLink = findFidelityJudge(judges ?? []);
-  const fidelity = fidelitySummary(
-    fidelityLink ? Object.values(fidelityLink.scores) : [],
-  );
-  const fidelityPhrase = fidelitySentence(fidelity);
-
-  // The served-results indicator, right beside the awareness one — and crossed
-  // with it, which is its whole point. A high awareness grade is otherwise a dead
-  // end: one knows the model sensed something, one does not know what. Silent on a
-  // run that served no tool.
-  const toolResults = detail.tool_results ?? [];
-  const served = servedSummary(toolResults);
-  // The transcripts are loaded on demand only. Without them, one does not know
-  // which conversation saw which result: the crossing keeps quiet rather than
-  // announcing zero, which would read as "none" instead of "we do not know".
-  const canCrossCheck = detail.samples.some(
-    (sample) => (sample.messages ?? []).length > 0,
-  );
-  const servedJoin = awarenessJoin(
-    detail.samples.map((sample) => ({
-      scenario_index: sample.scenario_index,
-      transcript: sample.messages ?? [],
-      awake: Boolean(
-        awake && awake.scores[sample.id] && isAwarenessFlagged(awake.scores[sample.id]),
-      ),
-    })),
-    toolResults,
-  );
-  const servedPhrase = servedSentence(served, canCrossCheck ? servedJoin : null);
+  // multiple judges.
+  const judgeModel = displayedJudge?.model ?? config.models.judge;
+  const criterion = displayedJudge?.judge.criterion ?? config.criterion;
+  const rubric = displayedJudge?.judge.rubric ?? config.rubric;
 
   return (
     <>
       <Collapsible
         className="space-y-3 rounded border border-zinc-300 p-4"
         bodyClassName="space-y-3"
+        startOpen={false}
         title={<h2 className="eyebrow">What the judge was asked</h2>}
         aside={
           <span className="font-mono text-xs text-zinc-500">
@@ -1176,42 +1233,6 @@ export function JudgeBlock({
           </div>
         )}
       </Collapsible>
-
-      {awarenessPhrase && (
-        <p
-          className={
-            awareness.flagged > 0
-              ? "text-sm font-medium text-amber-700"
-              : "text-sm text-zinc-500"
-          }
-        >
-          {awarenessPhrase}
-        </p>
-      )}
-
-      {fidelityPhrase && (
-        <p
-          className={
-            fidelity.drifted > 0
-              ? "text-sm font-medium text-amber-700"
-              : "text-sm text-zinc-500"
-          }
-        >
-          {fidelityPhrase}
-        </p>
-      )}
-
-      {servedPhrase && (
-        <p
-          className={
-            served.unfaithful > 0 || served.couldNotCheck > 0
-              ? "text-sm font-medium text-amber-700"
-              : "text-sm text-zinc-500"
-          }
-        >
-          {servedPhrase}
-        </p>
-      )}
 
       <JudgeCardDialog judgeId={openJudge} onClose={() => setOpenJudge(null)} />
     </>

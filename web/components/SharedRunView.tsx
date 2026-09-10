@@ -20,6 +20,7 @@ import {
   DetailModal,
   JudgeBlock,
   RunMatrix,
+  RunSignals,
   ScenarioModal,
   ToolsBlock,
   repetitionRange,
@@ -113,10 +114,6 @@ export function SharedRunView({
         </Collapsible>
       )}
 
-      <JudgeBlock detail={detail} />
-
-      <ToolsBlock detail={detail} />
-
       <RunMatrix
         detail={detail}
         view={view}
@@ -125,10 +122,20 @@ export function SharedRunView({
         onOpenCell={(scenario, target) => setOpen({ scenario, target })}
       />
 
+      {/* Under the matrix, because they say whether it can be read at
+          all. */}
+      <RunSignals detail={detail} />
+
+      <JudgeBlock detail={detail} />
+
+      <ToolsBlock detail={detail} />
+
+
       {run.analysis.trim() !== "" && (
         <Collapsible
           className="space-y-2 rounded border border-zinc-300 p-3"
           bodyClassName="space-y-2"
+          startOpen={false}
           title={<h2 className="eyebrow">Run analysis</h2>}
         >
           <div
