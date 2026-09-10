@@ -148,16 +148,40 @@ hover lifts. Focus outlines are always visible.
 ## Two stages
 
 Stage one, the shell: tokens, typefaces, mark, tab icon, navigation, buttons,
-links, focus rings, and the removal of shadows and serif. Reviewed before
-stage two starts.
+links, focus rings, and the removal of shadows and serif.
 
-Stage two, the interior: the dense pages migrate from the repointed legacy scales
-to the semantic tokens, tables take the framework's rules, status colour lands on
-`ok`, `warn`, `fail` and `neutral` with a text label beside it in every case. The
-legacy scales are retired at the end of it.
+Stage two, the interior: the tag palette, the heat ramp, the buttons, the links,
+the table headers, the bullets and the middle dots.
+
+## What was decided along the way
+
+- The star's waist is 3.6 on the 48 grid. The framework fixes every other number
+  in the mark and not this one; at 2.4 the star is swallowed by the ring at the
+  sizes the application uses it.
+- `favicon.ico` is rasterised from the same geometry, at 16, 32 and 48, by a
+  script in the scratchpad rather than by an encoder: this machine has none.
+- The shared pages carry the mark and the name above their content. They are
+  shown no navigation, which had left them saying nothing about whose they are.
+- The six tag colours in the database are aliased onto the new tints rather than
+  falling back to neutral. A live table of tags would otherwise have come back
+  all one colour.
+
+## What was not done, and why
+
+- **The legacy scales stay.** Retiring them means renaming nine hundred classes
+  for no visual change, which is churn with a real chance of regression. They are
+  repointed, documented as transitional in `globals.css`, and the pages that get
+  touched for other reasons can move as they go.
+- **The bordered panels stay.** The framework allows one bordered callout per
+  view, and the application has fifty-five boxes. The ones that read as cards —
+  a list of judges rendered as a stack — became ruled rows, and every box that
+  carried both a rule and a fill lost the fill. The rest group form fields in a
+  dense editor, where removing the boundary would cost more than the rule buys.
+- **The voice section is untouched** beyond the middle dots. The em-dashes in the
+  interface copy are still there; rewriting them is a pass over the wording, not
+  over the styling.
 
 ## Not in scope
 
-The wording of the interface is not rewritten for the framework's voice section,
-beyond what the restyling touches. The Python engine, the API routes and the
-Supabase schema are not touched: this is a change of surface only.
+The Python engine, the API routes and the Supabase schema are not touched: this
+is a change of surface only.
