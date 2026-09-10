@@ -1,6 +1,7 @@
 """The Supabase store: what goes out on the network, and what comes back."""
 
 import json
+from urllib.parse import unquote
 
 import httpx
 import pytest
@@ -255,6 +256,20 @@ def test_the_live_judges_merge_link_and_configuration():
                 ],
             )
         assert "/rest/v1/judges" in str(request.url)
+        # The columns are pinned, because PostgREST refuses the whole read as
+        # soon as one of them is gone and the job then dies before its first
+        # cell. That is exactly what happened when `judges.model` was dropped
+        # while this list still named it.
+        asked = unquote(str(request.url).split("select=")[1].split("&")[0])
+        assert set(asked.split(",")) == {
+            "id",
+            "criterion",
+            "rubric",
+            "system_type",
+            "sees_system_prompt",
+            "created_by",
+            "created_at",
+        }
         return httpx.Response(
             200,
             json=[
@@ -262,7 +277,6 @@ def test_the_live_judges_merge_link_and_configuration():
                     "id": "j1",
                     "criterion": "Did it give in?",
                     "rubric": [{"value": 1, "meaning": "no"}],
-                    "model": "m",
                     "system_type": "ordinary",
                     "created_by": "a@b.c",
                     "created_at": "t",
@@ -271,7 +285,6 @@ def test_the_live_judges_merge_link_and_configuration():
                     "id": "j2",
                     "criterion": None,
                     "rubric": None,
-                    "model": "m",
                     "system_type": "awake",
                     "created_by": "a@b.c",
                     "created_at": "t",

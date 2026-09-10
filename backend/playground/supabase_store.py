@@ -418,7 +418,13 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
     judges = supabase.select(
         JUDGES,
         id="in.(" + ",".join(judge_ids) + ")",
-        select="id,criterion,rubric,model,system_type,sees_system_prompt,created_by,created_at",
+        # Every column named here must exist: PostgREST refuses the whole read
+        # otherwise, with `column judges.x does not exist`, and the job dies
+        # before its first cell. `model` was named here until it was dropped by
+        # the migration `20260910100000_drop_dead_judges_model.sql` — the model
+        # that grades belongs to the LINK, read just above, since judges became
+        # a library. `tests/test_supabase_store.py` pins this list.
+        select="id,criterion,rubric,system_type,sees_system_prompt,created_by,created_at",
     )
     by_id = {judge["id"]: judge for judge in judges}
 
