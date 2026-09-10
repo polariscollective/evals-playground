@@ -115,15 +115,16 @@ export function AppNav() {
           the same thing.
 
           On an olive-deep surface the mark is gold, which is the one place the
-          framework allows gold at all, and it turns chartreuse under the cursor.
-          The name does not change colour: chartreuse never carries text. */}
+          framework allows gold at all, and it deepens under the cursor rather
+          than brightening: a mark that lights up when pressed is a mark moving
+          the wrong way. The name does not change colour. */}
       <a
         href={POLARIS_SITE}
         target="_blank"
         rel="noopener noreferrer"
         className="group flex items-center gap-2.5"
       >
-        <span className="text-gold transition-colors duration-150 group-hover:text-chartreuse">
+        <span className="text-gold transition-colors duration-150 group-hover:text-amber-600 group-active:text-amber-700">
           <PolarisMark size={26} />
         </span>
         <span className="font-display text-base leading-tight">Polaris Collective</span>

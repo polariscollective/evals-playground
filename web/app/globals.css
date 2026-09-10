@@ -267,6 +267,16 @@ textarea {
 .notes-prose h5 {
   font-weight: 600;
   margin: 0.6em 0 0.2em;
+  color: var(--color-olive);
+}
+
+/* Bold reads olive. Everything the application renders from markdown passes
+   through this class — the run's notes and analysis, the four advice documents,
+   the format guide — so emphasis is written the same everywhere, and it is
+   written in the framework's colour rather than in a heavier black. */
+.notes-prose strong,
+.notes-prose b {
+  color: var(--color-olive);
 }
 .notes-prose h2 { font-size: 1.05rem; }
 .notes-prose h3 { font-size: 1rem; }

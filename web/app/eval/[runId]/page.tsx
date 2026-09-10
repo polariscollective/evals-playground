@@ -1239,7 +1239,7 @@ export default function EvalRunPage({
       <NotesField
         // The key forces a remount when the run changes: without it, the
         // component's local state would survive navigation from one run to
-        // another. Distinct from the Run Analysis field's, further down — two
+        // another. Distinct from the Run analysis field's, further down — two
         // instances of the same component, at the same depth, cannot share a key
         // without React confusing their local state.
         key={`${run.id}-notes`}
@@ -1272,7 +1272,7 @@ export default function EvalRunPage({
 
       <NotesField
         key={`${run.id}-analysis`}
-        label="Run Analysis"
+        label="Run analysis"
         value={analysis}
         onChange={setAnalysis}
         rows={8}

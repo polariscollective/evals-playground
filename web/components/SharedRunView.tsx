@@ -101,10 +101,12 @@ export function SharedRunView({
         <Collapsible
           className="space-y-2 rounded border border-zinc-300 p-3"
           bodyClassName="space-y-2"
-          title={<h2 className="text-sm font-medium">Notes</h2>}
+          title={<h2 className="eyebrow">Notes</h2>}
         >
           <div
-            className="notes-prose text-sm"
+            // Ten lines, then it scrolls inside: the same cap the private page
+            // puts on the field these were written in.
+            className="notes-prose max-h-[13.125rem] overflow-y-auto text-sm"
             // Safe: `renderMarkdown` escapes all the input HTML.
             dangerouslySetInnerHTML={{ __html: renderMarkdown(run.notes) }}
           />
@@ -127,10 +129,10 @@ export function SharedRunView({
         <Collapsible
           className="space-y-2 rounded border border-zinc-300 p-3"
           bodyClassName="space-y-2"
-          title={<h2 className="text-sm font-medium">Run Analysis</h2>}
+          title={<h2 className="eyebrow">Run analysis</h2>}
         >
           <div
-            className="notes-prose text-sm"
+            className="notes-prose max-h-[13.125rem] overflow-y-auto text-sm"
             // Safe: `renderMarkdown` escapes all the input HTML.
             dangerouslySetInnerHTML={{ __html: renderMarkdown(run.analysis) }}
           />

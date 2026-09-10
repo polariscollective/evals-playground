@@ -6,9 +6,14 @@ import type { ReactNode } from "react";
 /** A box one folds away by clicking its heading.
  *
  * Open to start with: what one comes to read is there without a gesture, and
- * folding is only useful once one has read. Only the heading toggles, not the
- * whole header — several of these boxes carry a button there ("Edit", "Save"),
- * which a fully clickable header would swallow.
+ * folding is only useful once one has read.
+
+ * The heading takes the whole width left over, so that the click lands anywhere
+ * on the line rather than on the words alone — a heading of two words in a box
+ * of a thousand pixels is a small target for a gesture one repeats. What it does
+ * not take is the room the aside needs: several of these boxes carry a button
+ * there ("Edit", "Save"), and a header clickable edge to edge would swallow
+ * them.
  *
  * What is folded away is not rendered at all: the foldable boxes here carry
  * tables and transcripts, and keeping them mounted for the sole beauty of an
@@ -52,7 +57,7 @@ export function Collapsible({
             type="button"
               onClick={() => setFolded((current) => !current)}
               aria-expanded={open}
-            className="group flex cursor-pointer items-baseline gap-1.5 text-left"
+            className="group flex flex-1 cursor-pointer items-baseline gap-1.5 text-left"
           >
             <svg
               viewBox="0 0 10 10"

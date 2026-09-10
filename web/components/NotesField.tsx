@@ -70,7 +70,7 @@ export function NotesField({
     <Collapsible
       className="rounded border border-zinc-300 p-3"
       pinned={editing}
-      title={<h2 className="text-sm font-medium">{label}</h2>}
+      title={<h2 className="eyebrow">{label}</h2>}
       aside={
         editing ? (
           <button
@@ -112,7 +112,10 @@ export function NotesField({
         </>
       ) : (
         <div
-          className="notes-prose mt-2 text-sm"
+          // Ten lines at 14px on 1.5, and the rest scrolls inside. A note or an
+          // analysis can run to a page, and a page of prose between the run's
+          // name and its matrix pushes the matrix off the screen.
+          className="notes-prose mt-2 max-h-[13.125rem] overflow-y-auto text-sm"
           // Safe: `renderMarkdown` escapes all the input HTML before producing
           // the only tags it builds itself.
           dangerouslySetInnerHTML={{ __html: renderMarkdown(value) }}

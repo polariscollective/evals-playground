@@ -14,8 +14,10 @@ import { POLARIS_SITE, PolarisMark } from "@/components/PolarisMark";
  * Sticky, and opaque, so that the way back stays reachable from the bottom of a
  * long run rather than only from the top of it.
  *
- * The mark is olive-deep, because the page is paper, and it leads to the
- * collective's site. Not into this application: a reader with no session would
+ * The mark and the name are olive, and they darken to olive-deep under the
+ * cursor and to ink while the click is held. A link that grows lighter as it is
+ * pressed reads as fading out, which is the wrong direction for a gesture. The
+ * mark leads to the collective's site. Not into this application: a reader with no session would
  * be sent to a sign-in they did not ask for, and the way in is the button on the
  * right of this same band.
  *
@@ -25,14 +27,14 @@ export function PublicHeader({ children }: { children?: React.ReactNode }) {
   return (
     <div className="sticky top-0 z-40 bg-paper">
       <div className="mx-auto w-full max-w-6xl px-8">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-200 py-4 text-olive-deep">
-          {/* Olive under the cursor rather than chartreuse: chartreuse on paper
-              is 1.59:1, and a mark that fades on hover reads as broken. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-200 py-4">
+          {/* Not chartreuse anywhere in here: it is 1.59:1 on paper, and a mark
+              that fades when touched reads as broken. */}
           <a
             href={POLARIS_SITE}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2.5 transition-colors duration-150 hover:text-olive"
+            className="flex items-center gap-2.5 text-olive transition-colors duration-150 hover:text-olive-deep active:text-ink"
           >
             <PolarisMark size={24} />
             <span className="font-display text-base">Polaris Collective</span>
