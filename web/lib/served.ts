@@ -42,6 +42,10 @@ export interface ToolResultRow {
   check_model?: string | null;
   /** The model that served this result, for the comparison above. */
   model?: string | null;
+  /** Why the environment answered that, in its own words — when the run's
+   *  transcripts are loaded. Absent otherwise: it is a paragraph per served
+   *  call, and the indicator above needs none of it. */
+  reasoning?: string | null;
 }
 
 /** A call's arguments in comparable form.
@@ -138,7 +142,11 @@ export function servedSummary(rows: ToolResultRow[]): ServedSummary {
 /** One transcript turn, reduced to the calls it carries. */
 interface TranscriptTurn {
   role: string;
-  tool_calls?: { name: string; arguments: Record<string, unknown> }[] | null;
+  tool_calls?:
+    | { id?: string; name: string; arguments: Record<string, unknown> }[]
+    | null;
+  /** On a tool turn: the call this result answers — see `servedForTurns`. */
+  tool_call_id?: string | null;
 }
 
 /** The calls a conversation actually made, in comparable form.
@@ -270,5 +278,55 @@ export function servedSentence(
       ` ${join.faultUnnoticed} ${join.faultUnnoticed === 1 ? "conversation" : "conversations"}` +
       " saw one without the awareness judge noticing.";
   }
+  // Where to look. The figure was a dead end for as long as nothing said which
+  // call it was about: a run of twelve scenarios × five repetitions is sixty
+  // transcripts to reread on the strength of a number.
+  if (summary.unfaithful > 0) {
+    sentence +=
+      " Open a conversation: the turn that received one says so, with the" +
+      " reason the check gave.";
+  }
   return sentence;
+}
+
+
+/** The served answer behind each turn of one conversation, or `null` where a
+ *  turn has none: everything that is not a tool turn, a tool that was fixed
+ *  rather than served, and a call whose row this run does not hold.
+ *
+ * Matched by the call, never by position: a tool turn carries what came back
+ * and the id of the call it answers, and the arguments live on the assistant
+ * turn that made it. That is the same key the indicator counts on, so a turn
+ * marked here and a fault counted above are the same fault.
+ *
+ * A call served more than once in a run — the world changed between two
+ * identical calls, so each state has its own row — resolves to the one that did
+ * not hold up if there is one. That is the row worth showing, and `several`
+ * says the choice was made, so the screen can say so rather than presenting one
+ * of them as the whole truth. */
+export function servedForTurns(
+  scenarioIndex: number,
+  transcript: TranscriptTurn[],
+  rows: ToolResultRow[],
+): ({ row: ToolResultRow; several: boolean } | null)[] {
+  const byKey = new Map<string, ToolResultRow[]>();
+  for (const row of rows) {
+    if (row.scenario_index !== scenarioIndex) continue;
+    const key = callKey(row.scenario_index, row.tool_name, row.arguments);
+    byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+
+  const keyOfCall = new Map<string, string>();
+  return transcript.map((turn) => {
+    for (const call of turn.tool_calls ?? []) {
+      if (call.id) {
+        keyOfCall.set(call.id, callKey(scenarioIndex, call.name, call.arguments));
+      }
+    }
+    if (turn.role !== "tool" || !turn.tool_call_id) return null;
+    const found = byKey.get(keyOfCall.get(turn.tool_call_id) ?? "");
+    if (!found || found.length === 0) return null;
+    const faulty = found.find((row) => row.faithful === false);
+    return { row: faulty ?? found[0], several: found.length > 1 };
+  });
 }

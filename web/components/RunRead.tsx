@@ -38,7 +38,13 @@ import {
   awarenessSummary,
   isAwarenessFlagged,
 } from "@/lib/awareness";
-import { awarenessJoin, servedSentence, servedSummary } from "@/lib/served";
+import {
+  awarenessJoin,
+  servedForTurns,
+  servedSentence,
+  servedSummary,
+  type ToolResultRow,
+} from "@/lib/served";
 import {
   fidelitySentence,
   fidelitySummary,
@@ -1443,6 +1449,7 @@ export function DetailModal({
             judges={detail.judges}
             rubric={rubric}
             runTurns={detail.run.config.turns}
+            toolResults={detail.tool_results}
           />
         ))}
       </div>
@@ -1455,6 +1462,7 @@ export function AttemptView({
   judges,
   rubric,
   runTurns,
+  toolResults,
 }: {
   attempt: EvalSample;
   /** All the run's living judges, with their verdict on each conversation — see
@@ -1466,10 +1474,23 @@ export function AttemptView({
   /** The depth the run asked for, so as to flag only the attempts that depart from
    *  it — see the comment on `turns_done` further down. */
   runTurns: number;
+  /** The run's served answers, so a tool turn can say whether what it returned
+   *  held up. Absent on the public page and on any caller that did not load
+   *  them: the turns then read as they always did. */
+  toolResults?: ToolResultRow[];
 }) {
   // Folded by default: ten repetitions of ten turns would make a wall of text
   // where one no longer finds the attempt one was after.
   const [open, setOpen] = useState(false);
+
+  // The served answer behind each turn, when there is one. Computed here rather
+  // than per turn: the match walks the whole conversation to find the call each
+  // tool turn answers, and doing that once per turn would walk it n times.
+  const servedTurns = servedForTurns(
+    attempt.scenario_index,
+    attempt.messages ?? [],
+    toolResults ?? [],
+  );
 
   const principal = principalJudge(judges);
   const principalVerdict = verdictOf(principal, attempt.id);
@@ -1643,7 +1664,12 @@ export function AttemptView({
       {open && (
         <div className="space-y-2 border-t border-zinc-200 p-3">
           {attempt.messages.map((message, index) => (
-            <MessageView key={index} message={message} index={index} />
+            <MessageView
+              key={index}
+              message={message}
+              index={index}
+              served={servedTurns[index]}
+            />
           ))}
         </div>
       )}
