@@ -200,11 +200,16 @@ export function ScoreBadge({
   status,
   verdict,
   rubric,
+  higherIsBetter = true,
   executionError,
 }: {
   status: SampleStatus;
   verdict: JudgeVerdictEntry;
   rubric: RubricLevel[];
+  /** Which end of this judge's scale is the good one — see
+   *  `Judge.higher_is_better`. A grade from the awareness judge is coloured the
+   *  other way round, and a reader must not have to remember that. */
+  higherIsBetter?: boolean;
   executionError?: string | null;
 }) {
   if (status === "pending" || status === "running") {
@@ -271,7 +276,9 @@ export function ScoreBadge({
   // from a green cell must not find its attempts in another set of colours.
   // Always the plain reading: this is one judge's raw grade, and neither a
   // remap nor a deviation applies to it.
-  const style = heatStyle(heatPosition(verdict.score, rubric, PLAIN_VIEW));
+  const style = heatStyle(
+    heatPosition(verdict.score, rubric, PLAIN_VIEW, higherIsBetter),
+  );
   return (
     <span className={`rounded px-2 py-0.5 text-xs ${style}`} title={meaning}>
       {formatValue(verdict.score)}
@@ -705,7 +712,10 @@ function OtherJudgeRow({
       </div>
       {(onUnlink || onView) && (
         <div className="flex items-center gap-2">
-          {onView && judge.system_type === "ordinary" && (
+          {/* Every judge, built-in ones included: what stopped them was that
+              nobody knew which end of their scale was the good one, and the
+              judge itself now says (`higher_is_better`). */}
+          {onView && (
             viewing ? (
               <span className="rounded bg-zinc-900 px-2 py-0.5 text-xs text-paper">
                 Viewing
@@ -1068,8 +1078,9 @@ export function JudgeBlock({
   // The shown judge: the one chosen locally if it still lives and stays ordinary,
   // otherwise the principal. A reading choice, never a write — it is lost on
   // reload and changes nothing for anybody else.
-  // Never a system judge: its scale does not read as a grading grid (see
-  // `judgeLabel`), and it cannot become principal anyway.
+  // A system judge may be viewed like any other since it carries the direction
+  // of its own scale (`higher_is_better`). It still cannot become principal:
+  // the banner below drops that offer rather than the whole banner.
   //
   // A run always keeps at least one living ordinary judge — `PrincipalUnlink`
   // further down refuses to unlink the last one — so `principal` should never be
@@ -1078,10 +1089,7 @@ export function JudgeBlock({
   // nothing: that is what lets the banner below stay actionable rather than
   // disappearing along with the one gesture that repairs the situation.
   const displayedJudge =
-    others.find(
-      (judge) =>
-        judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
-    ) ??
+    others.find((judge) => judge.run_judge_id === displayedRunJudgeId) ??
     principal ??
     others.find((judge) => judge.system_type === "ordinary");
   // True only if a principal exists AND it is the one being looked at.
@@ -1104,6 +1112,10 @@ export function JudgeBlock({
   const judgeModel = displayedJudge?.model ?? config.models.judge;
   const criterion = displayedJudge?.judge.criterion ?? config.criterion;
   const rubric = displayedJudge?.judge.rubric ?? config.rubric;
+  // Which end of that judge's scale is the good one. Absent on a judge read
+  // back from a run recorded before the column existed: `true`, the convention
+  // it was written under.
+  const higherIsBetter = displayedJudge?.judge.higher_is_better !== false;
 
   return (
     <>
@@ -1140,6 +1152,17 @@ export function JudgeBlock({
             ))}
           </tbody>
         </table>
+
+        {/* Said in words, and not only in colour. This judge is now one you can
+            view as a matrix, and the awareness one reads upside down: without
+            this line its 10 looks like a good result to anyone who has not
+            noticed the ramp running the other way. */}
+        {!higherIsBetter && (
+          <p className="text-xs text-zinc-500">
+            On this judge the top of the scale is what should worry you, so the
+            matrix paints it rust and its bottom olive.
+          </p>
+        )}
 
         {/* The whole text this judge was handed, and not only the part
             somebody typed. It is what answers "why did it grade like that" six
@@ -1179,7 +1202,9 @@ export function JudgeBlock({
               view, but the export and the MCP tools still follow the
               principal.
             </p>
-            {onDesignatePrincipal && (
+            {/* Not offered on a built-in judge: its question is not the
+                user's, and the database refuses it as principal. */}
+            {onDesignatePrincipal && displayedJudge.system_type === "ordinary" && (
               <MakePrincipalButton
                 runJudgeId={displayedJudge.run_judge_id}
                 onDesignatePrincipal={onDesignatePrincipal}
@@ -1590,6 +1615,7 @@ export function AttemptView({
                     status={attempt.status}
                     verdict={verdict}
                     rubric={judge.judge.rubric ?? []}
+                    higherIsBetter={judge.judge.higher_is_better}
                   />
                 </div>
                 {verdict.justification && (
@@ -1649,11 +1675,13 @@ export function RunMatrix({
   // `detail.judges` is not provided yet, or `displayedRunJudgeId` no longer
   // designates anything living.
   const displayedJudge =
-    detail.judges?.find(
-      (judge) =>
-        judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
-    ) ?? principal;
+    detail.judges?.find((judge) => judge.run_judge_id === displayedRunJudgeId) ??
+    principal;
   const rubric = displayedJudge?.judge.rubric ?? run.config.rubric;
+  // Which end of that judge's scale is the good one. `!== false` rather than a
+  // plain read: a judge stored before the column existed carries nothing, and
+  // it was written under the convention this defaults to.
+  const higherIsBetter = displayedJudge?.judge.higher_is_better !== false;
   const targets = run.config.models.targets;
   // The run's `awake` binding, for the cells' awareness badge — the same inline
   // search as `JudgeBlock` (see its comment on `findAwakeJudge`).
@@ -1894,7 +1922,7 @@ export function RunMatrix({
                     <td key={target} className="border-b border-zinc-200 p-1">
                       <button
                         onClick={() => onOpenCell(index, target)}
-                        className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric, view)}`}
+                        className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric, view, higherIsBetter)}`}
                         title={
                           flagged > 0
                             ? `${baseTitle}, ${flagged} attempt${flagged > 1 ? "s" : ""} showed signs of knowing it was a test`

@@ -52,6 +52,7 @@ function describesAJudge(nameField: "label" | "judge_label"): string[] {
     "grades",
     "sees_adversary_goals",
     "sees_system_prompt",
+    "higher_is_better",
   ];
 }
 
@@ -273,6 +274,12 @@ export function judgeSpecProblem(
     if (rubric) return `${label}: ${rubric}`;
     if (judge.sees_system_prompt !== undefined && typeof judge.sees_system_prompt !== "boolean") {
       return `${label}: sees_system_prompt must be true or false`;
+    }
+    if (
+      judge.higher_is_better !== undefined &&
+      typeof judge.higher_is_better !== "boolean"
+    ) {
+      return `${label}: higher_is_better must be true or false`;
     }
     const whose = judgeGradesProblem(judge, turns ?? 2, label);
     if (whose) return whose;
@@ -558,6 +565,9 @@ export function configProblem(config: unknown): string | null {
 
     if (c.sees_system_prompt !== undefined && typeof c.sees_system_prompt !== "boolean") {
       return "sees_system_prompt must be true or false";
+    }
+    if (c.higher_is_better !== undefined && typeof c.higher_is_better !== "boolean") {
+      return "higher_is_better must be true or false";
     }
     // The principal describes itself at the top level, like `criterion` and
     // `rubric` — hence this check here rather than in `judgesProblem`, which only

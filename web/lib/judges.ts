@@ -42,7 +42,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Everything on a judge's row except its name: the columns the list shows. */
 const SUMMARY_COLUMNS =
-  "id,label,slug,system_type,grades,sees_system_prompt,sees_adversary_goals";
+  "id,label,slug,system_type,grades,sees_system_prompt,sees_adversary_goals," +
+  "higher_is_better";
 
 /** How many conversations each link has actually graded.
  *

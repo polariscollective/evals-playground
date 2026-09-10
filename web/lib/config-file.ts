@@ -311,6 +311,11 @@ function readJudges(value: unknown): WrittenJudgeSpec[] {
       ...(typeof row.sees_system_prompt === "boolean"
         ? { sees_system_prompt: row.sees_system_prompt }
         : {}),
+      // Read as written, never coerced: absent means true, and a value of
+      // another type is refused by `configProblem` rather than guessed at.
+      ...(typeof row.higher_is_better === "boolean"
+        ? { higher_is_better: row.higher_is_better }
+        : {}),
     };
   });
 }
@@ -427,6 +432,9 @@ export function readConfigFile(text: string): ImportedConfig {
     ...readTargets(file.targets, "the principal judge"),
     ...(typeof file.sees_system_prompt === "boolean"
       ? { sees_system_prompt: file.sees_system_prompt }
+      : {}),
+    ...(typeof file.higher_is_better === "boolean"
+      ? { higher_is_better: file.higher_is_better }
       : {}),
       // The secondary judges, on top of the principal above — see `readJudges`.
       // Absent or empty, this is the old shape: a single judge.
@@ -552,6 +560,10 @@ export function writeConfigFile(config: WrittenRunConfig): string {
         }),
     ...(config.targets ? { targets: targetsDocument(config.targets) } : {}),
     ...(config.sees_system_prompt === false ? { sees_system_prompt: false } : {}),
+    // Written only when it leaves the ordinary answer, like its neighbours: a
+    // key on every document would teach a setting where there is nothing to
+    // decide.
+    ...(config.higher_is_better === false ? { higher_is_better: false } : {}),
       // A block of its own, conditioned on itself alone — never shared with
       // another field's. It is exactly that trap (a key laid inside another's
       // conditional block) which has already lost `max_tool_calls_per_turn` in
@@ -579,6 +591,9 @@ export function writeConfigFile(config: WrittenRunConfig): string {
             // everywhere would teach a setting where there is nothing to decide.
             ...(judge.sees_system_prompt === false
               ? { sees_system_prompt: false }
+              : {}),
+            ...(judge.higher_is_better === false
+              ? { higher_is_better: false }
               : {}),
           })),
         }

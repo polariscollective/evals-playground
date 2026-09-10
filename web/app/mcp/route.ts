@@ -336,6 +336,10 @@ function judgeIdentity(view: {
     grades: view.judge.grades,
     sees_system_prompt: view.judge.sees_system_prompt,
     sees_adversary_goals: view.judge.sees_adversary_goals,
+    // Which end of this judge's scale is the good one. Read it before comparing
+    // two judges' numbers: the awareness judge alarms at 10, and averaging it
+    // with a judge that alarms at 1 says nothing at all.
+    higher_is_better: view.judge.higher_is_better,
     // What this judge expected of each scenario, in row order. `null` means it
     // declares none: the run was written as an exploration, and its matrix is
     // not meant to be quoted. Never returned to the evaluated model nor to the

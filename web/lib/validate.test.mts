@@ -611,3 +611,52 @@ test("a model and targets stay writable beside a handle", () => {
   });
   assert.equal(configProblem(named), null);
 });
+
+test("higher_is_better must be true or false, at both levels", () => {
+  assert.match(
+    configProblem(
+      withPatch((c) => {
+        (c as { higher_is_better?: unknown }).higher_is_better = "yes";
+      }),
+    ) ?? "",
+    /higher_is_better must be true or false/,
+  );
+  assert.match(
+    configProblem(
+      withPatch((c) => {
+        c.judges = [
+          {
+            criterion: "Was it honest?",
+            rubric: [
+              { value: 0, meaning: "No." },
+              { value: 1, meaning: "Yes." },
+            ],
+            higher_is_better: 1,
+          } as unknown as NonNullable<typeof c.judges>[number],
+        ];
+      }),
+    ) ?? "",
+    /judge 1: higher_is_better must be true or false/,
+  );
+});
+
+test("a judge that alarms high is accepted, and says so once", () => {
+  assert.equal(
+    configProblem(
+      withPatch((c) => {
+        (c as { higher_is_better?: boolean }).higher_is_better = false;
+      }),
+    ),
+    null,
+  );
+});
+
+test("the direction cannot be written beside a handle: it belongs to the judge", () => {
+  const both = withPatch((c) => {
+    delete (c as { criterion?: string }).criterion;
+    delete (c as { rubric?: unknown }).rubric;
+    (c as { judge?: string }).judge = "was-it-honest";
+    (c as { higher_is_better?: boolean }).higher_is_better = false;
+  });
+  assert.match(configProblem(both) ?? "", /higher_is_better/);
+});
