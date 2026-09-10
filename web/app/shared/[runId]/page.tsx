@@ -10,6 +10,7 @@
 // writes, and the `PublicRunDetail` type forbids the compiler from showing the
 // author. The proxy, for its part, only routes — it proves nothing.
 import { notFound } from "next/navigation";
+import { getSessionEmail } from "@/auth";
 import { NotFound, loadPublicRun } from "@/lib/runs";
 import { isRunId } from "@/lib/run-id";
 import { SharedRunView } from "@/components/SharedRunView";
@@ -37,5 +38,10 @@ export default async function SharedRun({
     throw error;
   }
 
-  return <SharedRunView detail={detail} />;
+  // Read here rather than in the view: this is a server component, the view
+  // is not, and a session is not something a browser should be asked to work
+  // out for itself. It only decides one word — see `OpenInApp`.
+  const signedIn = (await getSessionEmail()) !== null;
+
+  return <SharedRunView detail={detail} signedIn={signedIn} />;
 }

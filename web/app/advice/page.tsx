@@ -20,7 +20,8 @@
 // reads, not a payload one inspects. The promise above holds all the same:
 // "Copy" copies the source, "Edit" shows it, and nothing between the two
 // rewrites a character. Only the layout changes, never what leaves.
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CopyButton, CopyIcon } from "@/components/CopyButton";
 import { Loading, Refreshing } from "@/components/Loading";
 import { updateAdvice } from "@/lib/api";
@@ -31,11 +32,41 @@ import {
   ADVICE_LABEL,
   DEFAULT_ADVICE,
   adviceFor,
+  isAdviceTopic,
   overridesOf,
   type AdviceTopic,
 } from "@/lib/advice";
 
+/** The page's heading, on both sides of the Suspense boundary.
+ *
+ * `useSearchParams` forces client rendering of everything under that boundary,
+ * and the whole page is under it. Without this the fallback would replace the
+ * page with one word, and the heading would vanish and come back. It waits on
+ * nothing. Same shape as `/`, for the same reason. */
+function AdviceHeader() {
+  return (
+    <header className="flex items-center gap-2">
+      <h1 className="font-serif text-2xl font-normal">Advice</h1>
+    </header>
+  );
+}
+
 export default function AdvicePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-6xl space-y-4 p-8">
+          <AdviceHeader />
+          <p className="text-sm text-zinc-500">Loading…</p>
+        </main>
+      }
+    >
+      <AdviceDocuments />
+    </Suspense>
+  );
+}
+
+function AdviceDocuments() {
   // The profile comes from the shared cache: "Evaluate" preloaded it, and the
   // "Profile" page reads the same resource. So we show what we already had, and
   // the re-check happens behind.
@@ -43,7 +74,15 @@ export default function AdvicePage() {
   // Which document we are looking at. A piece of state and not an address: the
   // page is a client, the profile is already cached, and switching tabs should
   // reload nothing.
-  const [topic, setTopic] = useState<AdviceTopic>("scenario");
+  //
+  // `?topic=` decides which one OPENS, and is then let go of. It is what the
+  // shared page carries across a sign-in — somebody reading the judge document
+  // without a session, who logs in from it, comes back to the judge document
+  // rather than to the first tab.
+  const asked = useSearchParams().get("topic");
+  const [topic, setTopic] = useState<AdviceTopic>(
+    isAdviceTopic(asked) ? asked : "scenario",
+  );
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);

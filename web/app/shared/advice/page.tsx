@@ -24,6 +24,9 @@
 // `renderMarkdown` and `notes-prose`, like the private page: two renderings
 // of the same document would end up not resembling each other.
 import type { Metadata } from "next";
+import { getSessionEmail } from "@/auth";
+import { OpenInApp } from "@/components/OpenInApp";
+import { adviceReturn } from "@/lib/shared-return";
 import { SharedAdviceView } from "@/components/SharedAdviceView";
 import { renderMarkdown } from "@/lib/markdown";
 import {
@@ -64,11 +67,21 @@ export default async function SharedAdvice({
     ]),
   ) as Record<AdviceTopic, string>;
 
+  // Only decides one word on the link below — see `OpenInApp`. It changes
+  // nothing about the documents themselves: this page serves the defaults to
+  // everybody, signed in or not, because a profile's own rewrite is private.
+  const signedIn = (await getSessionEmail()) !== null;
+
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-8">
-      <p className="text-xs uppercase tracking-wide text-zinc-500">
-        Advice — read only
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs uppercase tracking-wide text-zinc-500">
+          Advice — read only
+        </p>
+        {/* The tab being read travels with the visitor. Somebody signing in
+            from the judge document should come back to the judge document. */}
+        <OpenInApp href={adviceReturn(initial)} signedIn={signedIn} />
+      </div>
       <SharedAdviceView
         initial={initial}
         sources={DEFAULT_ADVICE}

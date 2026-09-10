@@ -25,8 +25,18 @@ import {
   repetitionRange,
 } from "@/components/RunRead";
 import type { PublicRunDetail } from "@/lib/public-run";
+import { OpenInApp } from "@/components/OpenInApp";
+import { runReturn } from "@/lib/shared-return";
 
-export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
+export function SharedRunView({
+  detail,
+  signedIn = false,
+}: {
+  detail: PublicRunDetail;
+  /** Decided on the server by the page above. Absent means signed out, which is
+   *  what a caller that does not know is describing. */
+  signedIn?: boolean;
+}) {
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
   const [openScenario, setOpenScenario] = useState<number | null>(null);
   const [open, setOpen] = useState<{ scenario: number; target: string } | null>(
@@ -51,35 +61,38 @@ export function SharedRunView({ detail }: { detail: PublicRunDetail }) {
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-8">
-      <div>
-        <p className="text-xs uppercase tracking-wide text-zinc-500">
-          Shared run — read only
-        </p>
-        <h1 className="font-serif text-2xl font-normal tracking-tight">
-          {run.label ?? "Evaluation run"}
-        </h1>
-        <p className="text-sm text-zinc-600">
-          {new Date(run.created_at).toISOString().slice(0, 10)} ·{" "}
-          {run.config.scenarios.length} scenario
-          {run.config.scenarios.length > 1 ? "s" : ""} ·{" "}
-          {run.config.models.targets.length} model
-          {run.config.models.targets.length > 1 ? "s" : ""} ·{" "}
-          {low === high ? low : `${low}–${high}`} repetition
-          {high > 1 ? "s" : ""} · {run.config.turns} turn
-          {run.config.turns > 1 ? "s" : ""}
-        </p>
-        {inspectLogs && (
-          <p className="mt-2 text-sm">
-            <a
-              href={inspectViewUrl(run.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
-            >
-              View Inspect AI logs
-            </a>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-zinc-500">
+            Shared run — read only
           </p>
-        )}
+          <h1 className="font-serif text-2xl font-normal tracking-tight">
+            {run.label ?? "Evaluation run"}
+          </h1>
+          <p className="text-sm text-zinc-600">
+            {new Date(run.created_at).toISOString().slice(0, 10)} ·{" "}
+            {run.config.scenarios.length} scenario
+            {run.config.scenarios.length > 1 ? "s" : ""} ·{" "}
+            {run.config.models.targets.length} model
+            {run.config.models.targets.length > 1 ? "s" : ""} ·{" "}
+            {low === high ? low : `${low}–${high}`} repetition
+            {high > 1 ? "s" : ""} · {run.config.turns} turn
+            {run.config.turns > 1 ? "s" : ""}
+          </p>
+          {inspectLogs && (
+            <p className="mt-2 text-sm">
+              <a
+                href={inspectViewUrl(run.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+              >
+                View Inspect AI logs
+              </a>
+            </p>
+          )}
+        </div>
+        <OpenInApp href={runReturn(run.id)} signedIn={signedIn} />
       </div>
 
       {/* Before the judge, as on the private page: the notes say what one wanted
