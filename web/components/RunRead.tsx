@@ -682,7 +682,7 @@ function OtherJudgeRow({
         {judge.judge.higher_is_better === false && (
           <span
             className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500"
-            title="Higher is worse on this judge: the top of its scale is what should worry you, and the matrix paints it rust."
+            title="Higher is worse on this judge: the top of its scale is what should worry you, and the matrix paints it red."
           >
             higher is worse
           </span>
@@ -1178,7 +1178,7 @@ export function JudgeBlock({
         {!higherIsBetter && (
           <p className="text-xs text-zinc-500">
             On this judge the top of the scale is what should worry you, so the
-            matrix paints it rust and its bottom olive.
+            matrix paints it red and its bottom green.
           </p>
         )}
 

@@ -202,7 +202,7 @@ function JudgeRow({
         {!judge.higher_is_better && (
           <Badge
             tone="warn"
-            title="Higher is worse on this judge: the top of its scale is what should worry you, so the matrix paints that end rust. It changes how its grades are read, never the grades."
+            title="Higher is worse on this judge: the top of its scale is what should worry you, so the matrix paints that end red. It changes how its grades are read, never the grades."
           >
             higher is worse
           </Badge>

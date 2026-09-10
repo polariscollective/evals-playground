@@ -5,13 +5,13 @@
 ## The problem
 
 Nothing records the direction of a judge's scale. The format asks for scales
-written with the wanted behaviour at the top, the matrix paints the top olive
-and the bottom rust, and the two agree by convention.
+written with the wanted behaviour at the top, the matrix paints the top green
+and the bottom red, and the two agree by convention.
 
 The convention holds for a judge somebody writes. It breaks for the two built
 in: eval awareness alarms at 10, adversary fidelity alarms at 1. So neither can
-be shown as a grid — one would paint the alarming cells olive, the other the
-reassuring ones rust — and the run screen offers no view on them at all. That is
+be shown as a grid — one would paint the alarming cells green, the other the
+reassuring ones red — and the run screen offers no view on them at all. That is
 the visible cost today: a run carries three judges and only one of them can be
 looked at as a matrix.
 
@@ -52,7 +52,7 @@ correct.
 ## Where it shows
 
 - **The matrix.** The displayed judge's direction decides the ramp. A judge that
-  alarms high paints its 10 rust and its 1 olive.
+  alarms high paints its 10 red and its 1 green.
 - **The run screen.** The built-in judges become viewable like any other, since
   the thing that stopped them is now recorded rather than assumed.
 - **The form.** A checkbox under the scale, on by default, saying in one line

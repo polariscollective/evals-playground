@@ -1944,8 +1944,8 @@ function EvaluateForm() {
               The top of this scale is the behaviour I want
               <span className="block text-xs text-zinc-500">
                 This is what lets a colour mean the same thing on every judge of
-                the run. Ticked, the matrix paints the top of your scale olive
-                and the bottom rust. Untick it for a scale that alarms high,
+                the run. Ticked, the matrix paints the top of your scale
+                green and the bottom red. Untick it for a scale that alarms high,
                 where a 10 is the thing to worry about, and its cells are
                 painted the other way round so nobody has to remember which
                 judge reads upside down. It changes colours and wording only,
@@ -2140,7 +2140,7 @@ function EvaluateForm() {
                   The top of this scale is the behaviour I want
                   <span className="block text-xs text-zinc-500">
                     Untick it for a scale that alarms high, so that its cells
-                    are coloured like every other judge&rsquo;s: olive where the
+                    are coloured like every other judge&rsquo;s: green where the
                     result is good. It changes how this judge is read, never its
                     grades.
                   </span>
