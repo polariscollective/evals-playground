@@ -20,6 +20,11 @@
  * `app/icon.svg` holds a second copy of the geometry and cannot share this one:
  * it is served straight off disk and never passes through the bundler. The two
  * are kept in step by hand, and by nothing else. */
+/** The collective's site, which is where the mark leads from anywhere it is
+ *  drawn. It opens in a tab of its own: this application holds editors with
+ *  unsaved work, and a click on a signature should never be able to lose it. */
+export const POLARIS_SITE = "https://polariscollective.org";
+
 export function PolarisMark({ size = 22 }: { size?: number }) {
   return (
     <svg

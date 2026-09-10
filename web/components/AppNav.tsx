@@ -11,7 +11,7 @@ import { ensureTagsLoaded } from "@/lib/tags-store";
 import { ensureProfileLoaded } from "@/lib/profile-store";
 import { ensureConnectionsLoaded } from "@/lib/connections-store";
 import { ensureJudgesLoaded } from "@/lib/judges-store";
-import { PolarisMark } from "@/components/PolarisMark";
+import { POLARIS_SITE, PolarisMark } from "@/components/PolarisMark";
 
 /** The private application's navigation, absent from `/shared`.
  *
@@ -109,16 +109,25 @@ export function AppNav() {
     // `z-40` puts it above the content without passing in front of the modals,
     // which are at `z-50`.
     <nav className="sticky top-0 z-40 flex flex-wrap items-center gap-x-6 gap-y-3 bg-olive-deep px-6 py-3 text-paper md:fixed md:inset-y-0 md:left-0 md:h-screen md:w-56 md:flex-col md:flex-nowrap md:items-stretch md:gap-y-8 md:overflow-y-auto md:px-5 md:py-6">
-      {/* The mark and the collective's name. On an olive-deep surface the mark is
-          gold, which is the one place the framework allows gold at all. It is not
-          a link: the application has no home page other than "Evaluate", and a
-          mark leading to the first tab would give two paths to the same thing. */}
-      <span className="flex items-center gap-2.5">
-        <span className="text-gold">
+      {/* The mark and the collective's name, leading to the collective's site.
+          Not to a page of this application: there is no home here other than
+          "Evaluate", and a mark leading to the first tab would give two paths to
+          the same thing.
+
+          On an olive-deep surface the mark is gold, which is the one place the
+          framework allows gold at all, and it turns chartreuse under the cursor.
+          The name does not change colour: chartreuse never carries text. */}
+      <a
+        href={POLARIS_SITE}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group flex items-center gap-2.5"
+      >
+        <span className="text-gold transition-colors duration-150 group-hover:text-chartreuse">
           <PolarisMark size={26} />
         </span>
         <span className="font-display text-base leading-tight">Polaris Collective</span>
-      </span>
+      </a>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 md:flex-1 md:flex-col md:items-stretch md:gap-y-1">
         {LINKS.map(({ href, label }) => {
