@@ -9,7 +9,7 @@
 // somebody adds a caller to `configProblem`, it will not inherit a refusal that
 // only makes sense through MCP.
 import { notFavouriteProblem } from "./favorite-models.ts";
-import type { EvalRunConfig, ExtendRequest } from "./types";
+import type { ExtendRequest, WrittenRunConfig } from "./types";
 
 /** The first model outside the favourites in a list, put into words, or
  *  `null`.
@@ -30,7 +30,7 @@ function firstProblem(
 /** What, among a run's models, is not in the favourites of
  *  l'appelant — ou `null`. */
 export function configFavouritesProblem(
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   favorites: readonly string[],
 ): string | null {
   return firstProblem(

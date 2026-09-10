@@ -43,6 +43,7 @@ import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { JudgeTarget } from "@/lib/types";
 import {
+  ConfigProblem,
   NotFound,
   createRun,
   extendRun,
@@ -56,6 +57,7 @@ import {
   planExtension,
   recordLaunch,
   recordStart,
+  reusedJudges,
   saveAnalysis,
   saveNotes,
 } from "@/lib/runs";
@@ -92,6 +94,7 @@ import type {
   JudgeSystemTypeColumn,
   Profile,
   RunDetail,
+  WrittenRunConfig,
 } from "@/lib/types";
 
 /** The run behind a tool input's `run_id`, or the error response to return as it
@@ -227,6 +230,26 @@ function documentRefusal(message: string) {
       "with the complete document.\n\n"
     : "";
   return { content: [{ type: "text" as const, text: `${prefix}${message}` }], isError: true as const };
+}
+
+/** A configuration whose named judges cannot be resolved, said the way this
+ *  server says everything else: a tool error carrying the sentence.
+ *
+ * Called wherever a configuration is accepted — on deposit and on edit, not only
+ * at launch — because that is what this server promises: `submit_draft_run`
+ * validates for free, and a handle nothing answers to is exactly the kind of
+ * mistake worth hearing about before a document is written rather than after it
+ * is paid for. Returns null when there is nothing to say. */
+async function namedJudgesProblem(
+  config: WrittenRunConfig,
+): Promise<string | null> {
+  try {
+    await reusedJudges(config);
+    return null;
+  } catch (error) {
+    if (error instanceof ConfigProblem) return error.message;
+    throw error;
+  }
 }
 
 // --- Multiple judges: what three tools return of one judge ----------------
@@ -1038,6 +1061,8 @@ const handler = createMcpHandler((server) => {
       const profile = await profileOf(caller);
       const outside = configFavouritesProblem(config, favoriteModels(profile));
       if (outside) return toolError(outside);
+      const named = await namedJudgesProblem(config);
+      if (named) return toolError(named);
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
 
@@ -1118,6 +1143,8 @@ const handler = createMcpHandler((server) => {
       // deposit spares it a draft it could not launch.
       const outside = configFavouritesProblem(config, favoriteModels(profile));
       if (outside) return toolError(outside);
+      const named = await namedJudgesProblem(config);
+      if (named) return toolError(named);
       const draftId = await createDraft(config, null, caller, "mcp");
       if (tags && tags.length > 0) {
         // After the creation, never before: a refused document writes neither a

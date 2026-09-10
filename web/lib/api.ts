@@ -6,7 +6,7 @@ import type {
   CostEstimate,
   Draft,
   DraftRead,
-  EvalRunConfig,
+  WrittenRunConfig,
   ExpectedCsv,
   ExtendRequest,
   JudgeSpec,
@@ -51,14 +51,14 @@ export const getCatalog = () => request<ProviderInfo[]>("/api/catalog");
  * stays out of the browser bundle, and the validation applied is the one used
  * at launch. */
 export const importConfigFile = (text: string) =>
-  request<{ config: EvalRunConfig; csv: ExpectedCsv | null }>("/api/config", {
+  request<{ config: WrittenRunConfig; csv: ExpectedCsv | null }>("/api/config", {
     method: "POST",
     body: JSON.stringify({ text }),
   });
 
 /** Writes the form's configuration in YAML, the format the prompt asks the
  *  agent for — one format for both directions. */
-export const exportConfigFile = (config: EvalRunConfig) =>
+export const exportConfigFile = (config: WrittenRunConfig) =>
   request<{ text: string }>("/api/config", {
     method: "PUT",
     body: JSON.stringify({ config }),
@@ -98,7 +98,7 @@ export const getRun = (
 /** `draftId` says where the run comes from, when the form was open on a draft.
  *  It opens no right — it only attributes a provenance. */
 export const createRun = (
-  config: EvalRunConfig,
+  config: WrittenRunConfig,
   csvText?: string | null,
   draftId?: string | null,
 ) =>
@@ -196,7 +196,7 @@ export const getDrafts = (withLaunched = false) =>
   request<Draft[]>(`/api/runs/drafts${withLaunched ? "?launched=1" : ""}`);
 
 /** Sets the form aside, valid or not. Returns the draft's identifier. */
-export const saveDraft = (config: EvalRunConfig, csvText: string | null) =>
+export const saveDraft = (config: WrittenRunConfig, csvText: string | null) =>
   request<{ id: string }>("/api/runs/drafts", {
     method: "POST",
     body: JSON.stringify({ config, csv_text: csvText }),
@@ -209,7 +209,7 @@ export const saveDraft = (config: EvalRunConfig, csvText: string | null) =>
  *  kind from the one it has in the database. */
 export const updateDraft = (
   draftId: string,
-  config: EvalRunConfig | ExtendRequest,
+  config: WrittenRunConfig | ExtendRequest,
   csvText: string | null,
 ) =>
   request<{ ok: true; forked: boolean; draft_id: string }>(
@@ -288,7 +288,7 @@ export const setDraftTags = (draftId: string, tagIds: number[]) =>
   });
 
 /** Estimates a run. The assumed length travels in the config. */
-export const estimateRun = (config: EvalRunConfig) =>
+export const estimateRun = (config: WrittenRunConfig) =>
   request<CostEstimate>("/api/estimate", {
     method: "POST",
     body: JSON.stringify(config),

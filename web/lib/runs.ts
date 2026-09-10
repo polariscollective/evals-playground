@@ -42,6 +42,13 @@ import {
   judgesForLaunch,
   judgeScoresForSamples,
 } from "./launch-judges.ts";
+import {
+  namedJudgeProblem,
+  reuseProblem,
+  settleReusedJudges,
+  type ReusedJudges,
+} from "./judge-reuse.ts";
+import { judgeHandlesIn } from "./validate.ts";
 import { classifyRunJudgesRefusal } from "./run-judges-refusal";
 import type { TakenNames } from "./judge-name";
 import { withoutIdentity } from "./public-run";
@@ -65,6 +72,7 @@ import type {
   Judge,
   JudgeScore,
   JudgeSpec,
+  JudgeSystemType,
   JudgeSystemTypeColumn,
   JudgeVerdictEntry,
   RunDetail,
@@ -77,6 +85,8 @@ import type {
   SampleStatus,
   TemperatureSpec,
   ToolSpec,
+  WrittenJudgeSpec,
+  WrittenRunConfig,
 } from "./types";
 
 /** A cell's columns, transcript aside.
@@ -607,6 +617,70 @@ export async function sourceCsv(runId: string): Promise<string | null> {
   return rows[0]?.source_csv ?? null;
 }
 
+/** A judge's row, whole. Named rather than `*`: the same discipline as
+ *  `SAMPLE_COLUMNS` above, and it is the shape `Judge` promises. */
+const JUDGE_COLUMNS =
+  "id,label,slug,criterion,rubric,grades,sees_adversary_goals,system_type," +
+  "sees_system_prompt,created_by,created_at";
+
+/** A configuration the database refuses, in words a person can act on.
+ *
+ * Thrown where `configProblem` would have returned a sentence, had it been able
+ * to see the judges table: a handle nothing answers to, a built-in judge named
+ * where a checkbox is meant, a target expressed on a scale the named judge does
+ * not have. The routes turn it into the same 422 as a configuration refused on
+ * its shape, because from a caller's side it is the same failure — one that
+ * happened to need a read to be seen. */
+export class ConfigProblem extends Error {}
+
+/** The judges a configuration does not describe, read from the database: the
+ *  ones it names by handle, and the two seeded system rows.
+ *
+ * Two reads whatever the configuration holds. The seeded rows are fetched even
+ * when neither checkbox is on, rather than branching on two fields that would
+ * then have to be kept in step with `judgesForLaunch` forever: it is one
+ * indexed read of two rows.
+ *
+ * Throws `ConfigProblem` as soon as `reuseProblem` has something to say, so
+ * that nothing downstream ever holds a half-resolved configuration. The
+ * handles are filtered on their shape before they reach the query: they have
+ * been validated by then, and a filter here is what keeps that a fact rather
+ * than a habit. */
+export async function reusedJudges(
+  config: WrittenRunConfig,
+): Promise<ReusedJudges> {
+  const handles = judgeHandlesIn(config).filter((handle) =>
+    /^[a-z0-9-]+$/.test(handle),
+  );
+  const found = new Map<string, Judge>();
+  if (handles.length > 0) {
+    const rows = await select<Judge>(JUDGES, {
+      slug: `in.(${handles.join(",")})`,
+      select: JUDGE_COLUMNS,
+    });
+    for (const row of rows) found.set(row.slug, row);
+  }
+  const problem = reuseProblem(config, found);
+  if (problem) throw new ConfigProblem(problem);
+
+  const system: Partial<Record<JudgeSystemType, Judge>> = {};
+  const seeded = await select<Judge>(JUDGES, {
+    system_type: "neq.ordinary",
+    select: JUDGE_COLUMNS,
+  });
+  for (const row of seeded) {
+    if (row.system_type !== "ordinary") system[row.system_type] = row;
+  }
+
+  return {
+    principal: (config.judge && found.get(config.judge)) || null,
+    secondary: (config.judges ?? []).map(
+      (spec) => (spec.judge && found.get(spec.judge)) || null,
+    ),
+    system,
+  };
+}
+
 /** Creates a run and its whole matrix, pending.
  *
  * The cells are written at launch, not by the job: it is what makes the progress
@@ -618,12 +692,19 @@ export async function sourceCsv(runId: string): Promise<string | null> {
  * what they already wrote. Only the MCP tool `launch_draft` passes `'mcp'`, the
  * only value `mcp-budget.ts`'s budget counts. */
 export async function createRun(
-  config: EvalRunConfig,
+  written: WrittenRunConfig,
   userEmail: string,
   csvText: string | null,
   draftId: string | null = null,
   launchedVia: "ui" | "mcp" = "ui",
 ): Promise<EvalRun> {
+  // Resolved first, and settled into the configuration before anything is
+  // written: what a run stores is the complete photograph, never a handle. See
+  // `settleReusedJudges` for why the engine and every reader afterwards depend
+  // on that.
+  const reused = await reusedJudges(written);
+  const config = settleReusedJudges(written, reused);
+
   const total =
     config.scenarios.length * config.models.targets.length * config.repetitions;
 
@@ -677,6 +758,7 @@ export async function createRun(
     userEmail,
     samples.map((sample) => sample.id),
     await takenJudgeNames(),
+    reused,
   );
   await insert(JUDGES, judges);
   await insert(RUN_JUDGES, runJudges);
@@ -1047,9 +1129,57 @@ export async function startCatchupPass(runId: string): Promise<void> {
  * Throws:
  *   NotFound: if no run carries this identifier.
  */
+/** The judge a written spec names, checked against the run it is joining.
+ *
+ * Everything `reuseProblem` says at launch, said here for a single judge, plus
+ * the one rule that only exists on a run already launched: a judge already
+ * grading this run cannot be added to it a second time. Two columns of the same
+ * verdicts is never what somebody meant, and the matrix has no way to tell them
+ * apart.
+ *
+ * Throws `ConfigProblem`, which the route turns into a 422 like any other
+ * refusal of what was written. */
+async function namedJudgeFor(
+  spec: WrittenJudgeSpec,
+  config: EvalRunConfig,
+  runId: string,
+): Promise<Judge> {
+  const handle = spec.judge as string;
+  const rows = /^[a-z0-9-]+$/.test(handle)
+    ? await select<Judge>(JUDGES, {
+        slug: `eq.${handle}`,
+        select: JUDGE_COLUMNS,
+        limit: 1,
+      })
+    : [];
+  const problem = namedJudgeProblem(
+    rows[0],
+    handle,
+    spec,
+    config.scenarios.length,
+    config.turns,
+    "the new judge",
+  );
+  if (problem) throw new ConfigProblem(problem);
+
+  const already = await select<{ id: string }>(RUN_JUDGES, {
+    run_id: `eq.${runId}`,
+    judge_id: `eq.${rows[0].id}`,
+    deleted_at: "is.null",
+    select: "id",
+    limit: 1,
+  });
+  if (already.length > 0) {
+    throw new ConfigProblem(
+      `the new judge: "${handle}" already grades this run`,
+    );
+  }
+  return rows[0];
+}
+
 export async function addJudge(
   runId: string,
-  spec: JudgeSpec,
+  spec: WrittenJudgeSpec,
   createdBy: string,
 ): Promise<{ runJudgeId: string }> {
   const runs = await select<{ id: string; config: EvalRunConfig }>(RUNS, {
@@ -1070,10 +1200,14 @@ export async function addJudge(
     select: "id",
   });
 
-  const judge = judgeRowFromSpec(spec, createdBy, await takenJudgeNames());
+  // Named, the judge is linked as it stands; described, it is created. The
+  // same two ways as at launch — see `judgesForLaunch` — reduced to the one
+  // judge this gesture adds.
+  const named = spec.judge ? await namedJudgeFor(spec, run.config, runId) : null;
+  const judge = named ?? judgeRowFromSpec(spec as JudgeSpec, createdBy, await takenJudgeNames());
   const runJudgeId = randomUUID();
 
-  await insert(JUDGES, judge);
+  if (!named) await insert(JUDGES, judge);
   await insert(RUN_JUDGES, {
     id: runJudgeId,
     run_id: runId,

@@ -23,7 +23,7 @@
  * kept must still be a form that works.
  */
 
-import type { EvalRunConfig } from "./types";
+import type { WrittenRunConfig } from "./types";
 
 const KEY = "evals-playground:evaluate-form-v1";
 
@@ -38,7 +38,7 @@ export type SavedAttachment =
   | { kind: "relaunch"; runId: string; note: string | null };
 
 export interface SavedForm {
-  config: EvalRunConfig;
+  config: WrittenRunConfig;
   /** Kept beside the config because `config.label` is trimmed and nulled on
    *  the way in — restoring from it would eat a space someone just typed. */
   label: string;
@@ -102,7 +102,7 @@ function parseWantedColumns(raw: unknown): SavedForm["wantedColumns"] {
 export function parseSaved(raw: unknown): SavedForm | null {
   if (!isObject(raw) || !isObject(raw.config)) return null;
   return {
-    config: raw.config as unknown as EvalRunConfig,
+    config: raw.config as unknown as WrittenRunConfig,
     label: asString(raw.label),
     csvText: typeof raw.csvText === "string" ? raw.csvText : null,
     attached: parseAttachment(raw.attached),

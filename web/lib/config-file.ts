@@ -13,11 +13,11 @@ import { parse, stringify } from "yaml";
 import { served, writesWorld } from "./tools.ts";
 import { configProblem } from "./validate.ts";
 import type {
-  EvalRunConfig,
+  WrittenJudgeSpec,
+  WrittenRunConfig,
   EvalScenario,
   ExpectedCsv,
   JudgeGrades,
-  JudgeSpec,
   JudgeTarget,
   RubricLevel,
   SeededTurn,
@@ -26,8 +26,13 @@ import type {
 } from "./types";
 
 export interface ImportedConfig {
-  /** The scenarios are empty when the file announces a CSV. */
-  config: EvalRunConfig;
+  /** The scenarios are empty when the file announces a CSV.
+   *
+   * `WrittenRunConfig` and not `EvalRunConfig`: a file may NAME its judges
+   * rather than describe them, and what it then holds has no criterion and no
+   * scale until the launch resolves them — see `settleReusedJudges`
+   * (`lib/launch-judges.ts`). */
+  config: WrittenRunConfig;
   csv: ExpectedCsv | null;
 }
 
@@ -255,7 +260,7 @@ function rubricDocument(rubric: RubricLevel[]): unknown[] {
  * counted levels) is left to `configProblem`, called at the end of
  * `readConfigFile` — exactly as for the principal and for the tools: what is
  * read here only gives a shape, never a judgement. */
-function readJudges(value: unknown): JudgeSpec[] {
+function readJudges(value: unknown): WrittenJudgeSpec[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     throw new ConfigFileError("judges must be a list.");
@@ -272,6 +277,18 @@ function readJudges(value: unknown): JudgeSpec[] {
       // default model without anyone having asked for it.
     if (model !== undefined && model !== null && typeof model !== "string") {
       throw new ConfigFileError(`judge ${position + 1}: model must be text.`);
+    }
+    // An entry that NAMES a judge describes none: its question and its scale
+    // live on the judge it names, and reading a scale that is not there would
+    // refuse the file before `configProblem` could say what is really wrong —
+    // which, for a handle, is a sentence about handles. What stays read here is
+    // what belongs to the link.
+    if (typeof row.judge === "string") {
+      return {
+        judge: row.judge,
+        ...(typeof model === "string" ? { model } : {}),
+        ...readTargets(row.targets, `judge ${position + 1}`),
+      };
     }
     return {
       criterion: asString(row.criterion),
@@ -386,9 +403,13 @@ export function readConfigFile(text: string): ImportedConfig {
     | null
     | undefined;
 
-  const config: EvalRunConfig = {
+  // The principal may name a judge as well, and then describes none — the same
+  // rule as an entry of `judges`, see `readJudges`.
+  const named = typeof file.judge === "string" ? file.judge : null;
+
+  const config: WrittenRunConfig = {
     scenarios,
-    criterion: asString(file.criterion),
+    ...(named ? { judge: named } : { criterion: asString(file.criterion) }),
       // The principal's name. Absent derives one from the criterion; read as a
       // string or not at all, for the same reason as a secondary's.
     ...(typeof file.judge_label === "string"
@@ -400,7 +421,7 @@ export function readConfigFile(text: string): ImportedConfig {
     ...(typeof file.sees_adversary_goals === "boolean"
       ? { sees_adversary_goals: file.sees_adversary_goals }
       : {}),
-    rubric: readRubric(file.rubric),
+    ...(named ? {} : { rubric: readRubric(file.rubric) }),
     // The PRINCIPAL's targets, at the top level like its criterion and its
     // scale. The secondaries' travel inside `judges`.
     ...readTargets(file.targets, "the principal judge"),
@@ -501,7 +522,7 @@ export function readConfigFile(text: string): ImportedConfig {
  *
  * The provenance survives as a comment: it is not read back, but it answers
  * "where do these thirty scenarios come from" six months later. */
-export function writeConfigFile(config: EvalRunConfig): string {
+export function writeConfigFile(config: WrittenRunConfig): string {
   const source = config.source;
   // The keys in the order the prompt presents them, and not the object's: a
   // template read from top to bottom must begin with what identifies the run,
@@ -516,11 +537,19 @@ export function writeConfigFile(config: EvalRunConfig): string {
       ? { grades: config.grades }
       : {}),
     ...(config.sees_adversary_goals ? { sees_adversary_goals: true } : {}),
-    criterion: config.criterion,
-      // `excluded: false` on every level would be noise: it is the reader's
-      // default, and a file that writes it everywhere teaches a field where it
-      // serves no purpose.
-    rubric: rubricDocument(config.rubric),
+    // A principal that NAMES a judge writes the handle and nothing else: the
+    // question and the scale it would print are the named judge's, and printing
+    // them would turn a file that reuses a judge into one that copies it the
+    // next time it is laid down.
+    ...(config.judge
+      ? { judge: config.judge }
+      : {
+          criterion: config.criterion,
+          // `excluded: false` on every level would be noise: it is the reader's
+          // default, and a file that writes it everywhere teaches a field where
+          // it serves no purpose.
+          rubric: rubricDocument(config.rubric ?? []),
+        }),
     ...(config.targets ? { targets: targetsDocument(config.targets) } : {}),
     ...(config.sees_system_prompt === false ? { sees_system_prompt: false } : {}),
       // A block of its own, conditioned on itself alone — never shared with
@@ -538,8 +567,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
             ...(judge.sees_adversary_goals
               ? { sees_adversary_goals: true }
               : {}),
-            criterion: judge.criterion,
-            rubric: rubricDocument(judge.rubric),
+            ...(judge.judge
+              ? { judge: judge.judge }
+              : {
+                  criterion: judge.criterion,
+                  rubric: rubricDocument(judge.rubric ?? []),
+                }),
             ...(judge.model ? { model: judge.model } : {}),
             ...(judge.targets ? { targets: targetsDocument(judge.targets) } : {}),
             // Written only when it differs from the default: a key laid

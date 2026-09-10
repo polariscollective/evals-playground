@@ -29,6 +29,89 @@ function isFilled(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
 }
 
+/** The shape of a judge's handle, copied from `judges_slug_shape_check` in the
+ *  database. Checked here so that a typo comes back as a sentence about a
+ *  handle rather than as a lookup that finds nothing. */
+const JUDGE_HANDLE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** The fields that describe a judge, and that therefore may not be written
+ *  beside a handle: naming a judge takes all of them from it.
+ *
+ * `model` and `targets` are absent from this list on purpose. They belong to the
+ * link, not to the judge, and stay writable on every run — see `RunJudge`.
+ *
+ * The name is the one field whose key differs between the two shapes, and
+ * mixing them up costs a false refusal: at the top level `label` is the RUN's
+ * title and has nothing to do with any judge, the principal's name being
+ * `judge_label`. Hence the parameter rather than one list covering both. */
+function describesAJudge(nameField: "label" | "judge_label"): string[] {
+  return [
+    "criterion",
+    "rubric",
+    nameField,
+    "grades",
+    "sees_adversary_goals",
+    "sees_system_prompt",
+  ];
+}
+
+/** What is wrong with a judge named by its handle, or null if the naming holds.
+ *
+ * Shared by the principal, at the top level of a configuration, and by every
+ * entry of `judges`: the two shapes name a judge the same way, and the message
+ * only differs by what it calls the offender.
+ *
+ * Says nothing about whether the handle exists. That question needs the
+ * database and is answered on the launch path — see `reusedJudges`
+ * (`lib/runs.ts`), which reads the judges and hands them to `reuseProblem`
+ * (`lib/launch-judges.ts`). */
+export function judgeHandleProblem(
+  written: Record<string, unknown>,
+  label: string,
+  nameField: "label" | "judge_label" = "label",
+): string | null {
+  const handle = written.judge;
+  if (handle === undefined || handle === null) return null;
+  if (!isFilled(handle)) {
+    return `${label}: judge must be the handle of an existing judge, as text`;
+  }
+  if (!JUDGE_HANDLE.test(handle)) {
+    return (
+      `${label}: "${handle}" is not the shape of a handle — lowercase letters, ` +
+      "digits and single hyphens, as shown on the judges page"
+    );
+  }
+  const described = describesAJudge(nameField).filter(
+    (field) => written[field] !== undefined && written[field] !== null,
+  );
+  if (described.length > 0) {
+    return (
+      `${label} names a judge and describes one: drop ${described.join(", ")}, ` +
+      "or drop judge and write the question out. A named judge brings its own " +
+      "question, scale and visibility; only model and targets stay yours"
+    );
+  }
+  return null;
+}
+
+/** Every handle a configuration names, principal first, in the order they are
+ *  written. Exported for `judgeReuseProblem`, which reads them from the
+ *  database in one go. */
+export function judgeHandlesIn(config: {
+  judge?: unknown;
+  judges?: unknown;
+}): string[] {
+  const handles: string[] = [];
+  if (isFilled(config.judge)) handles.push(config.judge);
+  if (Array.isArray(config.judges)) {
+    for (const entry of config.judges) {
+      const handle = (entry as { judge?: unknown } | null)?.judge;
+      if (isFilled(handle)) handles.push(handle);
+    }
+  }
+  return handles;
+}
+
 /** What is wrong with a model identifier, or null.
  *
  * Checked here for the reason that has the tool names checked just below:
@@ -175,21 +258,32 @@ export function judgeSpecProblem(
 ): string | null {
   if (!spec || typeof spec !== "object") return `${label} is not a mapping`;
   const judge = spec as JudgeSpec;
-  if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
-  const rubric = rubricProblem(judge.rubric);
-  if (rubric) return `${label}: ${rubric}`;
-  if (judge.sees_system_prompt !== undefined && typeof judge.sees_system_prompt !== "boolean") {
-    return `${label}: sees_system_prompt must be true or false`;
+  const named = judgeHandleProblem(spec as Record<string, unknown>, label);
+  if (named) return named;
+  // A named judge brings its question, its scale, whose turns it grades and
+  // what it is shown: none of that is checked here, because none of it is
+  // written here. What it cannot bring is the run it is about to grade, so the
+  // rules that cross the two — a scale the targets must be expressed in, an
+  // adversary to grade at a single turn — are checked once the judge is
+  // resolved, in `judgeReuseProblem` (`lib/runs.ts`).
+  const reuses = isFilled((spec as { judge?: unknown }).judge);
+  if (!reuses) {
+    if (!isFilled(judge.criterion)) return `${label} needs something to look at`;
+    const rubric = rubricProblem(judge.rubric);
+    if (rubric) return `${label}: ${rubric}`;
+    if (judge.sees_system_prompt !== undefined && typeof judge.sees_system_prompt !== "boolean") {
+      return `${label}: sees_system_prompt must be true or false`;
+    }
+    const whose = judgeGradesProblem(judge, turns ?? 2, label);
+    if (whose) return whose;
+    const targets = targetsProblem(
+      judge.targets,
+      scenarioCount ?? judge.targets?.length ?? 0,
+      judge.rubric,
+      label,
+    );
+    if (targets) return targets;
   }
-  const whose = judgeGradesProblem(judge, turns ?? 2, label);
-  if (whose) return whose;
-  const targets = targetsProblem(
-    judge.targets,
-    scenarioCount ?? judge.targets?.length ?? 0,
-    judge.rubric,
-    label,
-  );
-  if (targets) return targets;
   // Absent inherits the run's model — see `JudgeSpec.model`. Present, it must
   // be a non-empty text: a different type is not guessed, and letting it through
   // would run this judge under the default model without anyone having asked
@@ -445,27 +539,50 @@ export function configProblem(config: unknown): string | null {
     if (asked) return asked;
   }
 
-  if (!isFilled(c.criterion)) return "the judge needs something to look at";
-
-  const rubric = rubricProblem(c.rubric);
-  if (rubric) return rubric;
-
-  if (c.sees_system_prompt !== undefined && typeof c.sees_system_prompt !== "boolean") {
-    return "sees_system_prompt must be true or false";
-  }
-  // The principal describes itself at the top level, like `criterion` and
-  // `rubric` — hence this check here rather than in `judgesProblem`, which only
-  // ever sees the secondaries.
-  const principalTargets = targetsProblem(
-    c.targets,
-    c.scenarios.length,
-    c.rubric,
-    "the principal judge",
+  // The principal may name an existing judge rather than describe one, exactly
+  // as an entry of `judges` may — see `WrittenRunConfig.judge`. Named, it brings
+  // its own question and scale, and the block below has nothing left to check.
+  const namedPrincipal = judgeHandleProblem(
+    config as Record<string, unknown>,
+    "the judge",
+    "judge_label",
   );
-  if (principalTargets) return principalTargets;
+  if (namedPrincipal) return namedPrincipal;
+  const reusesPrincipal = isFilled((config as { judge?: unknown }).judge);
+
+  if (!reusesPrincipal) {
+    if (!isFilled(c.criterion)) return "the judge needs something to look at";
+
+    const rubric = rubricProblem(c.rubric);
+    if (rubric) return rubric;
+
+    if (c.sees_system_prompt !== undefined && typeof c.sees_system_prompt !== "boolean") {
+      return "sees_system_prompt must be true or false";
+    }
+    // The principal describes itself at the top level, like `criterion` and
+    // `rubric` — hence this check here rather than in `judgesProblem`, which only
+    // ever sees the secondaries.
+    const principalTargets = targetsProblem(
+      c.targets,
+      c.scenarios.length,
+      c.rubric,
+      "the principal judge",
+    );
+    if (principalTargets) return principalTargets;
+  }
 
   const judges = judgesProblem(c.judges, c.scenarios.length, c.turns);
   if (judges) return judges;
+
+  // One link per judge per run. Naming the same judge twice would ask for two
+  // columns holding the same verdicts, and the second insert would fail on the
+  // link's own uniqueness anyway: better said here, where the message can name
+  // the handle.
+  const handles = judgeHandlesIn(config as { judge?: unknown; judges?: unknown });
+  const twice = handles.find((handle, index) => handles.indexOf(handle) !== index);
+  if (twice) {
+    return `the judge "${twice}" is named twice: one run links a judge once`;
+  }
 
   if (!Number.isInteger(c.turns) || c.turns < MIN_TURNS || c.turns > MAX_TURNS) {
     return `turns must be between ${MIN_TURNS} and ${MAX_TURNS}`;

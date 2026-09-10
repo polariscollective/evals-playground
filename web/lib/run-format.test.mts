@@ -54,7 +54,7 @@ for (const { name, prompt } of CHANNELS) {
     // It is the only field of the example whose effect is invisible on reading:
     // if it did not hold, the grade -1 would drag every cell down.
     const { config } = readConfigFile(exampleFrom(prompt));
-    const notApplicable = config.rubric.find((level) => level.value === -1);
+    const notApplicable = config.rubric!.find((level) => level.value === -1);
     assert.equal(notApplicable?.excluded, true);
   });
 
@@ -215,6 +215,28 @@ test("the MCP prompt no longer says update_draft_run refuses another's draft", (
   assert.match(prompt, /forks/);
 });
 
+// --- Reusing a judge --------------------------------------------------------
+
+for (const { name, prompt } of CHANNELS) {
+  test(`${name}: the prompt says a judge can be named instead of described`, () => {
+    // An agent that cannot find this section writes a new judge every time, and
+    // the library fills up with copies of the same question.
+    assert.match(prompt, /Reusing a judge instead of writing one/);
+    // Where the handles come from matters as much as the field: there is no
+    // tool listing judges, so a handle is read off a run.
+    assert.match(prompt, /get_run_metadata/);
+    assert.match(prompt, /slug/);
+  });
+
+  test(`${name}: the template names no judge, so it stays launchable as it stands`, () => {
+    // A handle in the template would be a handle nothing answers to on a fresh
+    // installation, refused at launch after the whole document was written.
+    const { config } = readConfigFile(exampleFrom(prompt));
+    assert.equal((config as { judge?: string }).judge, undefined);
+    assert.ok(config.judges?.every((judge) => !("judge" in judge)));
+  });
+}
+
 // --- Multiple judges ------------------------------------------------------
 
 for (const { name, prompt } of CHANNELS) {
@@ -224,7 +246,7 @@ for (const { name, prompt } of CHANNELS) {
     const { config } = readConfigFile(exampleFrom(prompt));
     assert.equal(config.judges?.length, 1);
     assert.ok(config.judges?.[0].criterion);
-    assert.equal(config.judges?.[0].rubric.length, 2);
+    assert.equal(config.judges?.[0].rubric?.length, 2);
   });
 }
 

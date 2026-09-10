@@ -37,6 +37,9 @@ import type {
   RunJudge,
 } from "./types";
 
+/** What an identifier looks like, as opposed to a handle. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Everything on a judge's row except its name: the columns the list shows. */
 const SUMMARY_COLUMNS =
   "id,label,slug,system_type,grades,sees_system_prompt,sees_adversary_goals";
@@ -98,12 +101,24 @@ export async function loadJudgeSummaries(): Promise<JudgeSummary[]> {
  * just listed, so that is a race rather than an ordinary case, and answering
  * "not found" is better than throwing on it. */
 export async function loadJudge(id: string): Promise<JudgeDetail | null> {
-  const [judges, links] = await Promise.all([
-    select<Judge>(JUDGES, { id: `eq.${id}`, select: "*", limit: 1 }),
-    select<RunJudge>(RUN_JUDGES, { judge_id: `eq.${id}`, select: "*" }),
-  ]);
+  // An identifier or a handle. The library's rows are opened by identifier;
+  // the launch form knows only the handle, which is the name a configuration
+  // uses and the one thing about a judge that never moves. Told apart by shape
+  // rather than by a second route: a handle can never look like a UUID, since
+  // `judges_slug_shape_check` forbids the length as much as the punctuation.
+  const byId = UUID.test(id);
+  const judges = await select<Judge>(JUDGES, {
+    ...(byId ? { id: `eq.${id}` } : { slug: `eq.${id}` }),
+    select: "*",
+    limit: 1,
+  });
   const judge = judges[0];
   if (!judge) return null;
+
+  const links = await select<RunJudge>(RUN_JUDGES, {
+    judge_id: `eq.${judge.id}`,
+    select: "*",
+  });
 
   const runIds = [...new Set(links.map((link) => link.run_id))];
   const [runs, graded] = await Promise.all([
