@@ -106,11 +106,13 @@ export function judgeRowFromSpec(
     slug,
     criterion: spec.criterion,
     rubric: spec.rubric,
-    // Written by the form's own field once it exists. Until then every judge
-    // written by hand grades the assistant, which is what all of them did
-    // before this column.
-    grades: "assistant",
-    sees_adversary_goals: false,
+    // Absent grades the assistant, which is what every judge written before
+    // these fields did. A judge grading the adversary is given its objective
+    // whatever the second field says: it has nothing to compare against
+    // otherwise, and `configProblem` has already refused the other pairing.
+    grades: spec.grades ?? "assistant",
+    sees_adversary_goals:
+      spec.grades === "adversary" || spec.sees_adversary_goals === true,
     system_type: "ordinary",
     // Absent means `true` — the behaviour from before this field, so that adding
     // a judge without thinking about it changes nothing.
@@ -188,8 +190,9 @@ export function judgesForLaunch(
       ...nameJudge(config.judge_label, config.criterion, "ordinary", taken),
       criterion: config.criterion,
       rubric: config.rubric,
-      grades: "assistant",
-      sees_adversary_goals: false,
+      grades: config.grades ?? "assistant",
+      sees_adversary_goals:
+        config.grades === "adversary" || config.sees_adversary_goals === true,
         // A sentinel, never `null`: see `JudgeSystemTypeColumn` in `types.ts`.
         // "Is this judge a system one?" is now read by comparing this value to
         // `"ordinary"`, never again by testing an absence — a nullity test

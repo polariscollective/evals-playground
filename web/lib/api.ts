@@ -1,6 +1,7 @@
 // The browser's access to the application. Everything goes through the `/api`
 // routes of this same application: the browser never talks to Supabase, and
 // therefore never sees the service key.
+import type { JudgeCard } from "./types";
 import type {
   CostEstimate,
   Draft,
@@ -371,6 +372,10 @@ export interface McpGrant {
    *  `refresh_token`: born of a rotation, hence of a chain that lives on. */
   born: "authorization_code" | "refresh_token";
 }
+
+/** The judge library. The page reads it through a cache the bar warms — see
+ *  `lib/judges-store.ts`. */
+export const listJudges = () => request<JudgeCard[]>("/api/judges");
 
 export const listMcpConnections = () => request<McpGrant[]>("/api/mcp/connections");
 

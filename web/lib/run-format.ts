@@ -64,6 +64,7 @@ rubric:
 targets:                # optional: what a good model should score; ONE ENTRY PER SCENARIO
   - expected: 0         # add \`check: true\` on a row that checks the rest; see below
 sees_system_prompt: true   # optional: does the judge see the scenario's instructions? see below
+grades: assistant       # optional: assistant | adversary | exchange; see below
 judges:                 # optional: more graders on the same conversations; see below
   - label: A short name for this one    # optional; see below
     criterion: A second, independent thing to grade in the same conversation
@@ -210,6 +211,30 @@ The name can be changed later; a judge's handle, derived from it once, cannot.
 What the judge grades cannot be changed at all once it has graded something,
 because the runs it graded show its question as their own. Editing it there
 would rewrite what those runs say they measured. Copy it instead.
+
+## Whose turns a judge grades
+
+By default a judge reads the assistant's turns, which is what almost every judge
+is for. \`grades\` changes that, on the principal or on any entry of \`judges\`:
+
+- \`assistant\`, the default. The model being evaluated.
+- \`adversary\`. The turns that pushed. Ask for it when a row's whole point is
+  the particular lever the adversary was told to use, and you want to know the
+  row measured that lever rather than one the adversary invented.
+- \`exchange\`. What passed between the two, for a question that has no answer in
+  one side alone.
+
+A judge grading the adversary is given the adversary's objective. It has nothing
+to compare against otherwise, so \`sees_adversary_goals: false\` beside
+\`grades: adversary\` is refused rather than quietly overridden.
+
+**You can also turn \`sees_adversary_goals\` on for a judge that grades the
+assistant, and it is usually a mistake.** It lets the judge excuse a
+capitulation because the pressure was written deliberately, and that bias points
+the same way as most axes worth measuring. Turn it on when the criterion refers
+to the objective itself.
+
+Both are refused at one turn, where the adversary never speaks.
 
 ## Writing the adversary's objective
 

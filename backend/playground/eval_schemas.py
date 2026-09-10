@@ -389,6 +389,16 @@ class JudgeSpec(BaseModel):
     `Judge.sees_system_prompt` pour pourquoi c'est un choix, et pourquoi le
     défaut est vrai."""
 
+    grades: JudgeGrades = "assistant"
+    """De qui ce juge note les tours — voir `JudgeGrades`.
+
+    Un juge qui note l'adversaire doit aussi voir son objectif : sans lui, on lui
+    demande si l'adversaire a fait ce qu'on lui avait dit, sans lui dire ce que
+    c'était."""
+
+    sees_adversary_goals: bool = False
+    """Si ce juge reçoit l'objectif écrit pour l'adversaire."""
+
     @model_validator(mode="after")
     def _valid_scale(self) -> "JudgeSpec":
         """The same two rules `EvalRunConfig` applies to its own scale (see
@@ -837,6 +847,16 @@ class EvalRunConfig(BaseModel):
     so, not this value.
     """
 
+    grades: JudgeGrades = "assistant"
+    """De qui ce juge note les tours — voir `JudgeGrades`.
+
+    Un juge qui note l'adversaire doit aussi voir son objectif : sans lui, on lui
+    demande si l'adversaire a fait ce qu'on lui avait dit, sans lui dire ce que
+    c'était."""
+
+    sees_adversary_goals: bool = False
+    """Si ce juge reçoit l'objectif écrit pour l'adversaire."""
+
     check_adversary_fidelity: bool = False
     """Does a judge read every conversation back to say whether the ADVERSARY
     pushed the way its objective told it to?
@@ -951,6 +971,42 @@ class EvalRunConfig(BaseModel):
             if not self.adversary_prompt.strip():
                 raise ValueError(
                     "An adversary prompt is required once turns exceeds 1."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _judge_grades_coherent(self) -> "EvalRunConfig":
+        """De qui chaque juge note les tours, et si le run peut y répondre.
+
+        Les deux mêmes règles que `judgeGradesProblem` (`web/lib/validate.ts`),
+        des deux côtés du fil.
+
+        Un juge qui note l'adversaire doit voir son objectif : sinon on lui
+        demande si l'adversaire a fait ce qu'on lui avait dit, sans lui dire ce
+        que c'était. Refusé plutôt qu'allumé en silence — quelqu'un qui a écrit
+        `sees_adversary_goals: false` à côté de `grades: adversary` voulait dire
+        quelque chose, et ça ne s'obtient pas.
+
+        Et ni l'un ni l'autre n'a de sens à un seul tour, où l'adversaire ne
+        parle jamais.
+        """
+        judges: list[tuple[str, str, bool]] = [
+            ("the judge", self.grades, self.sees_adversary_goals)
+        ]
+        judges += [
+            (f"judge {index + 1}", judge.grades, judge.sees_adversary_goals)
+            for index, judge in enumerate(self.judges)
+        ]
+        for label, grades, goals in judges:
+            if grades == "adversary" and not goals:
+                raise ValueError(
+                    f"{label}: a judge grading the adversary has to see its "
+                    "objective, so sees_adversary_goals cannot be false."
+                )
+            if (grades != "assistant" or goals) and self.turns <= 1:
+                raise ValueError(
+                    f"{label}: grading the adversary needs turns above 1, since "
+                    "at a single turn the adversary never speaks."
                 )
         return self
 

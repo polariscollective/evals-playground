@@ -126,7 +126,12 @@ function fixedTokens(text: string, ...placeholders: string[]): number {
  * Measured on the templates rather than written in: a rewording of the prompt
  * then carries through to the quote on its own. */
 const JUDGE_OVERHEAD_TOKENS =
-  fixedTokens(J.system) +
+  // The head varies by whose turns the judge grades, and the three are within a
+  // few tokens of one another; the assistant one is what nearly every judge
+  // uses. Quoting the longest instead would over-bill every ordinary run to
+  // avoid under-billing a rare one by a rounding error.
+  fixedTokens(J.system_head_by_grades.assistant) +
+  fixedTokens(J.system_tail) +
   fixedTokens(
     J.user_template,
     "{criterion}",

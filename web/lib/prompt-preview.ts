@@ -10,13 +10,13 @@
 // Rendered from the same shared templates the Python sends (`shared/*.json`),
 // which is the only way a preview stays a preview: one that described a prompt
 // no longer leaving would be a lie nobody could see.
-import { JUDGE_SYSTEM, fill, renderTranscript, scorePrompt } from "./judge-prompt.ts";
+import { fill, judgeSystem, renderTranscript, scorePrompt } from "./judge-prompt.ts";
 import {
   SHARED_ADVERSARY_PROMPT,
   SHARED_AWARENESS_PROMPT,
   SHARED_FIDELITY_PROMPT,
 } from "./shared.ts";
-import type { RubricLevel } from "./types";
+import type { JudgeGrades, RubricLevel } from "./types";
 
 export interface PromptPreview {
   system: string;
@@ -64,18 +64,30 @@ export function judgePreview(
     criterion: string;
     rubric: RubricLevel[];
     sees_system_prompt?: boolean | null;
+    /** Whose turns it grades. Absent grades the assistant, which is what every
+     *  judge written before this field did. */
+    grades?: JudgeGrades | null;
+    sees_adversary_goals?: boolean | null;
   },
   systemPrompt?: string | null,
+  /** The run's objective, for a judge allowed to see it. Absent stands it in,
+   *  so the preview shows the block rather than hiding a whole section of what
+   *  the judge receives. */
+  adversaryPrompt?: string | null,
 ): PromptPreview {
   const head = headFor(judge.sees_system_prompt !== false, systemPrompt);
+  const objective = judge.sees_adversary_goals
+    ? adversaryPrompt?.trim() || PROMPT_PLACEHOLDER.adversaryObjective
+    : "";
   return {
-    system: JUDGE_SYSTEM,
+    system: judgeSystem(judge.grades ?? "assistant"),
     // Tolerant of an incomplete scale: one previews while writing, not only
     // once the form would pass validation.
     user: scorePrompt(
       renderTranscript(PLACEHOLDER_TRANSCRIPT, head),
       judge.criterion,
       (judge.rubric ?? []).filter((level) => Number.isFinite(level?.value)),
+      objective,
     ),
   };
 }

@@ -53,7 +53,13 @@ def test_the_template_carries_its_four_slots():
 
 
 def test_the_system_message_comes_from_the_file():
-    assert JUDGE_SYSTEM == load("judge-prompt")["system"]
+    shared = load("judge-prompt")
+    # A head plus a shared tail, since a judge can grade the user's turns rather
+    # than the assistant's. `JUDGE_SYSTEM` is the ordinary case, kept as a name
+    # because most callers grade the assistant.
+    assert JUDGE_SYSTEM == (
+        shared["system_head_by_grades"]["assistant"] + "\n\n" + shared["system_tail"]
+    )
 
 
 def test_the_rendering_puts_each_thing_in_its_place():

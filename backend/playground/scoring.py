@@ -27,7 +27,12 @@ from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import Tool, ToolFunction, tool
 
-from playground.eval_schemas import EvalRunConfig, JudgeSystemType, RubricLevel
+from playground.eval_schemas import (
+    EvalRunConfig,
+    JudgeGrades,
+    JudgeSystemType,
+    RubricLevel,
+)
 from playground.tool_calls import tool_call_arguments
 from playground.shared_data import load
 
@@ -109,6 +114,24 @@ class LiveJudge:
     criterion: str | None = None
     rubric: list[RubricLevel] | None = None
 
+    grades: JudgeGrades = "assistant"
+    """De qui ce juge note les tours.
+
+    Orthogonal à `system_type` : un juge système est un juge dont le TEXTE vit
+    dans le code, ce qui ne dit rien de qui il regarde. C'est ce champ qui permet
+    à un juge ordinaire, portant la question de l'utilisateur, de noter
+    l'adversaire.
+
+    Absent vaut `"assistant"` : c'est ce que faisait tout juge écrit avant ce
+    champ, donc une métadonnée d'avant ne change pas de note."""
+
+    sees_adversary_goals: bool = False
+    """Si ce juge reçoit l'objectif écrit pour l'adversaire.
+
+    Obligatoire pour un juge qui note l'adversaire : sans lui, il n'a rien contre
+    quoi comparer. Éteint par défaut pour un juge qui note l'assistant, où il
+    invite à excuser une capitulation parce que la pression était voulue."""
+
     sees_system_prompt: bool = True
     """Whether this judge is handed the scenario's system prompt at the top of
     the transcript.
@@ -149,6 +172,9 @@ def judge_from_metadata(raw: dict[str, Any]) -> LiveJudge:
         # existed describes a judge that saw the prompt, and taking it away
         # silently would change its grades.
         sees_system_prompt=raw.get("sees_system_prompt", True) is not False,
+        # Absent vaut le comportement d'avant ces champs, pour la même raison.
+        grades=raw.get("grades") or "assistant",
+        sees_adversary_goals=raw.get("sees_adversary_goals") is True,
     )
 
 
@@ -196,7 +222,26 @@ class ScoredSample:
     in the order they were called."""
 
 
-JUDGE_SYSTEM = _SHARED["system"]
+def judge_system(grades: JudgeGrades = "assistant") -> str:
+    """The system message an ordinary judge receives, for whose turns it grades.
+
+    A head plus a shared tail. The head says who is being graded; the tail
+    carries the rules that hold whoever it is — the seeded turns, the tool
+    turns, the system prompt block. Three copies of that tail would drift, and
+    it is the half where drifting changes grades.
+
+    An unknown value falls back on `assistant` rather than raising: the column
+    has a CHECK constraint and Pydantic has a Literal, so this cannot happen
+    from either door — and a judge refusing to run because somebody added a
+    fourth value to one side only would cost a whole run.
+    """
+    heads = _SHARED["system_head_by_grades"]
+    head = heads.get(grades, heads["assistant"])
+    return f"{head}\n\n{_SHARED['system_tail']}"
+
+
+JUDGE_SYSTEM = judge_system()
+"""The ordinary case, kept as a name because most callers grade the assistant."""
 
 
 def format_value(value: float) -> str:
@@ -282,7 +327,10 @@ def render_transcript(
 
 
 def score_prompt(
-    transcript_text: str, criterion: str, rubric: list[RubricLevel]
+    transcript_text: str,
+    criterion: str,
+    rubric: list[RubricLevel],
+    adversary_prompt: str = "",
 ) -> str:
     """The user message sent to the judge.
 
@@ -290,9 +338,22 @@ def score_prompt(
     about them: that is the whole point of the scale. The template merely lays
     out the question, the conversation, the levels, and demands a choice among
     them.
+
+    `adversary_prompt` is prepended, as its own named block, only for a judge
+    whose `sees_adversary_goals` is on — and the caller is what decides that,
+    never this function. Every other judge is kept from that text on purpose, so
+    a grade on the assistant's behaviour cannot turn on knowing the pressure was
+    written deliberately. Empty means the block is absent entirely rather than
+    present and blank: an empty `<objective>` reads as "there was no objective",
+    which is a different thing from "you were not shown it".
     """
+    objective = (
+        _SHARED["objective_block"].format(adversary_prompt=adversary_prompt)
+        if adversary_prompt
+        else ""
+    )
     ordered = sorted(rubric, key=lambda level: level.value)
-    return _SHARED["user_template"].format(
+    return objective + _SHARED["user_template"].format(
         criterion=criterion,
         transcript=transcript_text,
         rubric=render_rubric(rubric),
@@ -623,9 +684,9 @@ async def judge_conversation(
     calls `judge_awareness` and `"faithful_adversary"` calls
     `judge_adversary_fidelity`, neither of which reads `judge.criterion` or
     `judge.rubric` — those two fields are null in the database for a system judge
-    anyway (see `LiveJudge`). An ordinary judge receives `JUDGE_SYSTEM` (the
-    shared system prompt, written once and for all) and its own question/scale,
-    the ones the user wrote.
+    anyway (see `LiveJudge`). An ordinary judge receives the shared system prompt
+    for whose turns it grades (`judge_system(judge.grades)`) and its own
+    question/scale, the ones the user wrote.
 
     `adversary_prompt` is read by exactly one branch, `"faithful_adversary"`, and
     reaches no other judge. Keeping ordinary judges from it is deliberate: a
@@ -693,10 +754,14 @@ async def judge_conversation(
         # `Judge._ordinary_or_system` in Python, guarantees it.
         output = await get_model(judge.model, **(model_args or {})).generate(
             input=[
-                ChatMessageSystem(content=JUDGE_SYSTEM),
+                ChatMessageSystem(content=judge_system(judge.grades)),
                 ChatMessageUser(
                     content=score_prompt(
-                        transcript_text, judge.criterion or "", judge.rubric or []
+                        transcript_text,
+                        judge.criterion or "",
+                        judge.rubric or [],
+                        # Only this judge's own setting opens that door.
+                        adversary_prompt if judge.sees_adversary_goals else "",
                     )
                 ),
             ],

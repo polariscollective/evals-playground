@@ -470,6 +470,47 @@ export interface RunJudgeView {
   targets: JudgeTarget[] | null;
 }
 
+// --- The library ------------------------------------------------------------
+//
+// A judge read on its own rather than through a run. The loader lives in
+// `lib/judges.ts`, which is `server-only`; the shapes live here so the client
+// cache and the page can name them without pulling the database read with them.
+
+/** One run this judge has been attached to. */
+export interface JudgeUse {
+  run_judge_id: string;
+  run_id: string;
+  /** What the run calls itself, for a link somebody can recognise. `null` on a
+   *  run that was never given a label. */
+  run_label: string | null;
+  is_principal: boolean;
+  /** The model that graded here. On the link, so the same judge can appear
+   *  twice in this list under two models — which is exactly the pair that gets
+   *  calibrated. */
+  model: string;
+  /** The link was cut. The judge stays: this row says the run was judged by it
+   *  at some moment, which unlinking does not undo. */
+  unlinked: boolean;
+  /** Conversations this judge actually returned a grade on, here. */
+  graded: number;
+}
+
+/** A judge and everything the library page says about it. */
+export interface JudgeCard {
+  judge: Judge;
+  uses: JudgeUse[];
+  /** It has returned at least one grade somewhere, so its question, scale,
+   *  visibility and target are frozen — enforced by the trigger
+   *  `judges_freeze_graded_trigger` in the database, not only here.
+   *
+   * The label and the handle are not covered: they graded nothing. */
+  frozen: boolean;
+  /** Never linked to anything, or linked only to runs since unlinked. Written
+   *  and never used, or used and then let go. Worth showing rather than hiding:
+   *  it is the pile you look at when the list has grown too long. */
+  unused: boolean;
+}
+
 /** A run's secondary judge, on top of the principal — an entry of
  *  `EvalRunConfig.judges`.
  *
@@ -502,6 +543,17 @@ export interface JudgeSpec {
    *  writing: a derived name is the first seventy characters of a question, and
    *  it is what a person will scan a list of judges by. */
   label?: string;
+  /** Whose turns this judge grades — see `JudgeGrades`. Absent grades the
+   *  assistant, which is what every judge written before this field did.
+   *
+   * A judge grading the adversary must also see its objective: without it there
+   * is nothing to compare against, and `configProblem` refuses the pair. */
+  grades?: JudgeGrades;
+  /** Whether this judge is handed the objective written for the adversary.
+   *
+   * Off by default on a judge grading the assistant, where it invites excusing
+   * a capitulation because the pressure was deliberate. */
+  sees_adversary_goals?: boolean;
 }
 
 export interface TemperatureSpec {
@@ -589,6 +641,17 @@ export interface EvalRunConfig {
    *  (`lib/judge-name.ts`). Worth writing: it is what a person scans a list of
    *  judges by, and a derived name is the opening of a question. */
   judge_label?: string;
+  /** Whose turns this judge grades — see `JudgeGrades`. Absent grades the
+   *  assistant, which is what every judge written before this field did.
+   *
+   * A judge grading the adversary must also see its objective: without it there
+   * is nothing to compare against, and `configProblem` refuses the pair. */
+  grades?: JudgeGrades;
+  /** Whether this judge is handed the objective written for the adversary.
+   *
+   * Off by default on a judge grading the assistant, where it invites excusing
+   * a capitulation because the pressure was deliberate. */
+  sees_adversary_goals?: boolean;
   /** Does a judge say whether the ADVERSARY pushed the way its objective told
    *  it to?
    *

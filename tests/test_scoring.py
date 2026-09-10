@@ -21,6 +21,7 @@ from playground.scoring import (
     fidelity_prompt,
     format_value,
     judge_from_metadata,
+    judge_system,
     judges_scorer,
     parse_fidelity,
     parse_score,
@@ -515,7 +516,12 @@ def test_the_judge_prompt_warns_it_about_seeded_turns():
     # The flag is useless if the judge does not know what it means.
     from playground.shared_data import load
 
-    assert "given as context" in load("judge-prompt")["system"]
+    # In the shared TAIL, so every variant of the head carries it: a judge
+    # grading the adversary must be told about the seeded turns exactly as one
+    # grading the assistant is.
+    assert "given as context" in load("judge-prompt")["system_tail"]
+    for grades in ("assistant", "adversary", "exchange"):
+        assert "given as context" in judge_system(grades)
 
 
 # --- render_transcript: the system prompt, for whoever asks -----------------

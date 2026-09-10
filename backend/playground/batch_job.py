@@ -130,6 +130,11 @@ def judge_metadata(link: dict[str, Any]) -> dict[str, Any]:
         "system_type": judge.get("system_type"),
         "criterion": judge.get("criterion"),
         "rubric": judge.get("rubric"),
+        # De qui ce juge note les tours, et s'il reçoit l'objectif de
+        # l'adversaire. Les deux décident du prompt qui part : sans eux, un juge
+        # réglé pour noter l'adversaire noterait l'assistant en silence.
+        "grades": judge.get("grades"),
+        "sees_adversary_goals": judge.get("sees_adversary_goals"),
         # Decides whether the transcript handed to THIS judge carries the
         # scenario's system prompt. Absent means true — the behaviour from
         # before this field.

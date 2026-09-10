@@ -21,42 +21,13 @@ import "server-only";
 // would make a judge that has graded look like one that never has. The state is
 // carried on each use instead — see `JudgeUse.unlinked`.
 import { JUDGES, JUDGE_SCORES, RUNS, RUN_JUDGES, select } from "./supabase";
-import type { Judge, JudgeScore, RunJudge } from "./types";
-
-/** One run this judge has been attached to. */
-export interface JudgeUse {
-  run_judge_id: string;
-  run_id: string;
-  /** What the run calls itself, for a link somebody can recognise. `null` on a
-   *  run that was never given a label. */
-  run_label: string | null;
-  is_principal: boolean;
-  /** The model that graded here. On the link, so the same judge can appear
-   *  twice in this list under two models — which is exactly the pair that gets
-   *  calibrated. */
-  model: string;
-  /** The link was cut. The judge stays: this row says the run was judged by it
-   *  at some moment, which unlinking does not undo. */
-  unlinked: boolean;
-  /** Conversations this judge actually returned a grade on, here. */
-  graded: number;
-}
-
-/** A judge and everything the library page says about it. */
-export interface JudgeCard {
-  judge: Judge;
-  uses: JudgeUse[];
-  /** It has returned at least one grade somewhere, so its question, scale,
-   *  visibility and target are frozen — enforced by the trigger
-   *  `judges_freeze_graded_trigger` in the database, not only here.
-   *
-   * The label and the handle are not covered: they graded nothing. */
-  frozen: boolean;
-  /** Never linked to anything, or linked only to runs since unlinked. Written
-   *  and never used, or used and then let go. Worth showing rather than hiding:
-   *  it is the pile you look at when the list has grown too long. */
-  unused: boolean;
-}
+import type {
+  Judge,
+  JudgeCard,
+  JudgeScore,
+  JudgeUse,
+  RunJudge,
+} from "./types";
 
 /** Every judge in the library, newest first.
  *

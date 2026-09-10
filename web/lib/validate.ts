@@ -111,6 +111,46 @@ export function rubricProblem(rubric: unknown): string | null {
   return null;
 }
 
+/** Whose turns a judge grades, and whether the run can answer for it.
+ *
+ * Two rules, and they are the same on both sides of the wire — see
+ * `_judge_grades_coherent` (`backend/playground/eval_schemas.py`).
+ *
+ * **A judge grading the adversary must see its objective.** Otherwise it is
+ * asked whether the adversary did what it was told, without being told what
+ * that was. Refused rather than quietly turned on: somebody who wrote
+ * `sees_adversary_goals: false` next to `grades: adversary` meant something,
+ * and it cannot be had.
+ *
+ * **Neither has any meaning at one turn.** The adversary never speaks there, so
+ * a judge reading its turns finds none and answers anyway, and an objective
+ * shown to a judge is an objective nobody acted on. */
+export function judgeGradesProblem(
+  judge: { grades?: unknown; sees_adversary_goals?: unknown },
+  turns: number,
+  label: string,
+): string | null {
+  const { grades, sees_adversary_goals: goals } = judge;
+  if (goals !== undefined && typeof goals !== "boolean") {
+    return `${label}: sees_adversary_goals must be true or false`;
+  }
+  if (grades === undefined || grades === null) {
+    return goals === true && turns <= 1
+      ? `${label}: sees_adversary_goals needs turns above 1, since at a single turn the adversary never speaks`
+      : null;
+  }
+  if (grades !== "assistant" && grades !== "adversary" && grades !== "exchange") {
+    return `${label}: grades must be assistant, adversary or exchange`;
+  }
+  if (grades === "adversary" && goals === false) {
+    return `${label}: a judge grading the adversary has to see its objective, so sees_adversary_goals cannot be false`;
+  }
+  if ((grades !== "assistant" || goals === true) && turns <= 1) {
+    return `${label}: grading the adversary needs turns above 1, since at a single turn the adversary never speaks`;
+  }
+  return null;
+}
+
 /** What is wrong with ONE `JudgeSpec`, or null if it holds — whether it is an
  *  entry of `config.judges` at launch (see `judgesProblem`, just below, which
  *  calls it for each) or the body posted to `.../judges` to add a judge
@@ -128,6 +168,10 @@ export function judgeSpecProblem(
   spec: unknown,
   label: string,
   scenarioCount?: number,
+  /** The run's depth, for the rules that depend on there being an adversary at
+   *  all — see `judgeGradesProblem`. Optional like `scenarioCount` above: a
+   *  caller that does not hold it gets the shape checks and not that one. */
+  turns?: number,
 ): string | null {
   if (!spec || typeof spec !== "object") return `${label} is not a mapping`;
   const judge = spec as JudgeSpec;
@@ -137,6 +181,8 @@ export function judgeSpecProblem(
   if (judge.sees_system_prompt !== undefined && typeof judge.sees_system_prompt !== "boolean") {
     return `${label}: sees_system_prompt must be true or false`;
   }
+  const whose = judgeGradesProblem(judge, turns ?? 2, label);
+  if (whose) return whose;
   const targets = targetsProblem(
     judge.targets,
     scenarioCount ?? judge.targets?.length ?? 0,
@@ -169,12 +215,19 @@ export function judgeSpecProblem(
 export function judgesProblem(
   judges: unknown,
   scenarioCount?: number,
+  /** The run's depth, passed straight down — see `judgeSpecProblem`. */
+  turns?: number,
 ): string | null {
   if (judges === undefined || judges === null) return null;
   if (!Array.isArray(judges)) return "judges must be a list";
 
   for (const [index, entry] of judges.entries()) {
-    const problem = judgeSpecProblem(entry, `judge ${index + 1}`, scenarioCount);
+    const problem = judgeSpecProblem(
+      entry,
+      `judge ${index + 1}`,
+      scenarioCount,
+      turns,
+    );
     if (problem) return problem;
   }
   return null;
@@ -361,6 +414,13 @@ export function configProblem(config: unknown): string | null {
     return "check_eval_awareness must be true or false";
   }
 
+  const whose = judgeGradesProblem(
+    { grades: c.grades, sees_adversary_goals: c.sees_adversary_goals },
+    c.turns,
+    "the judge",
+  );
+  if (whose) return whose;
+
   const fidelity = c.check_adversary_fidelity;
   if (fidelity !== undefined && typeof fidelity !== "boolean") {
     return "check_adversary_fidelity must be true or false";
@@ -404,7 +464,7 @@ export function configProblem(config: unknown): string | null {
   );
   if (principalTargets) return principalTargets;
 
-  const judges = judgesProblem(c.judges, c.scenarios.length);
+  const judges = judgesProblem(c.judges, c.scenarios.length, c.turns);
   if (judges) return judges;
 
   if (!Number.isInteger(c.turns) || c.turns < MIN_TURNS || c.turns > MAX_TURNS) {

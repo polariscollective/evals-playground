@@ -29,7 +29,7 @@ import {
   judgePreview,
 } from "@/lib/prompt-preview";
 import { formatValue, sortedRubric } from "@/lib/rubric";
-import type { JudgeCard } from "@/lib/judges";
+import type { JudgeCard } from "@/lib/types";
 
 type Shelf = "all" | "system" | "used" | "unused";
 
@@ -62,7 +62,12 @@ export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return judges.filter((card) => {
+    // Built in first, always. They are the two rows whose meaning is the same
+    // on every run, so they are the ones somebody is checking against when they
+    // come here to compare; sorted by creation date they sank into the middle
+    // of a list that only grows. The rest keeps the newest-first order the
+    // loader gives.
+    const shelved = judges.filter((card) => {
       if (!onShelf(card, shelf)) return false;
       if (!needle) return true;
       // The name and the question, because those are the two things somebody
@@ -73,6 +78,8 @@ export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
         (card.judge.criterion ?? "").toLowerCase().includes(needle)
       );
     });
+    const builtIn = (card: JudgeCard) => card.judge.system_type !== "ordinary";
+    return [...shelved.filter(builtIn), ...shelved.filter((c) => !builtIn(c))];
   }, [judges, shelf, query]);
 
   const counts = useMemo(
@@ -126,7 +133,9 @@ export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
             : "No judge matches."}
         </p>
       ) : (
-        <div className="space-y-2">
+        // Rules, not gaps: the rows carry a bottom rule each, and the list needs
+        // a top one to close the first of them.
+        <div className="border-t border-zinc-200">
           {shown.map((card) => (
             <JudgeRow
               key={card.judge.id}
@@ -156,7 +165,7 @@ function Badge({
 }) {
   const style =
     tone === "system"
-      ? "bg-zinc-900 text-white"
+      ? "bg-olive-deep text-paper"
       : tone === "warn"
         ? "bg-amber-100 text-amber-900"
         : "bg-zinc-100 text-zinc-600";
@@ -187,7 +196,7 @@ function JudgeRow({
   const graded = uses.reduce((total, use) => total + use.graded, 0);
 
   return (
-    <div className="rounded border border-zinc-300">
+    <div className="border-b border-zinc-200">
       <button
         onClick={onToggle}
         className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 p-3 text-left hover:bg-zinc-50"
@@ -202,6 +211,26 @@ function JudgeRow({
         {GRADES_LABEL[judge.grades] && (
           <Badge tone="warn" title="Whose turns this judge reads. Most judges read the assistant's.">
             {GRADES_LABEL[judge.grades]}
+          </Badge>
+        )}
+        {/* Only when they differ from the ordinary answer. Both states on
+            every row would be four badges saying what is true of nearly
+            everything, and the one judge that is set up differently would stop
+            standing out. */}
+        {!judge.sees_system_prompt && (
+          <Badge
+            tone="warn"
+            title="This judge is not shown the scenario's instructions. Turned off when the system prompt states the thing being graded, which would hand the judge the answer before it read a turn."
+          >
+            no system prompt
+          </Badge>
+        )}
+        {judge.sees_adversary_goals && (
+          <Badge
+            tone="warn"
+            title="This judge is handed the objective written for the adversary. Required to grade the adversary; on a judge grading the assistant it invites excusing a capitulation because the pressure was deliberate."
+          >
+            sees the objective
           </Badge>
         )}
         {frozen && (
@@ -219,8 +248,8 @@ function JudgeRow({
           {live.length > 0
             ? `${live.length} run${live.length > 1 ? "s" : ""}`
             : "no live run"}
-          {graded > 0 && ` · ${graded} graded`}
-          {models.length > 0 && ` · ${models.map(shortModel).join(", ")}`}
+          {graded > 0 && `, ${graded} graded`}
+          {models.length > 0 && `, ${models.map(shortModel).join(", ")}`}
         </span>
         <span className="text-zinc-400">{open ? "−" : "+"}</span>
       </button>
@@ -307,7 +336,7 @@ function JudgeRow({
                       className={
                         use.unlinked
                           ? "text-zinc-400 line-through hover:text-zinc-600"
-                          : "text-teal-700 underline underline-offset-2 hover:text-teal-900"
+                          : " link-underline"
                       }
                     >
                       {use.run_label ?? use.run_id.slice(0, 8)}

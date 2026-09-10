@@ -16,6 +16,7 @@ import type {
   EvalRunConfig,
   EvalScenario,
   ExpectedCsv,
+  JudgeGrades,
   JudgeSpec,
   JudgeTarget,
   RubricLevel,
@@ -281,6 +282,14 @@ function readJudges(value: unknown): JudgeSpec[] {
       // string, and the judge would be named after its question without anyone
       // seeing that the name they wrote was thrown away.
       ...(typeof row.label === "string" ? { label: row.label } : {}),
+      // Read as they are written, never coerced: `configProblem` is what
+      // refuses a wrong value, and guessing here would hide the mistake.
+      ...(row.grades === undefined || row.grades === null
+        ? {}
+        : { grades: row.grades as JudgeGrades }),
+      ...(typeof row.sees_adversary_goals === "boolean"
+        ? { sees_adversary_goals: row.sees_adversary_goals }
+        : {}),
       ...readTargets(row.targets, `judge ${position + 1}`),
       ...(typeof row.sees_system_prompt === "boolean"
         ? { sees_system_prompt: row.sees_system_prompt }
@@ -384,6 +393,12 @@ export function readConfigFile(text: string): ImportedConfig {
       // string or not at all, for the same reason as a secondary's.
     ...(typeof file.judge_label === "string"
       ? { judge_label: file.judge_label }
+      : {}),
+    ...(file.grades === undefined || file.grades === null
+      ? {}
+      : { grades: file.grades as JudgeGrades }),
+    ...(typeof file.sees_adversary_goals === "boolean"
+      ? { sees_adversary_goals: file.sees_adversary_goals }
       : {}),
     rubric: readRubric(file.rubric),
     // The PRINCIPAL's targets, at the top level like its criterion and its
@@ -495,6 +510,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
     label: config.label ?? "",
     notes: config.notes ?? "",
     ...(config.judge_label ? { judge_label: config.judge_label } : {}),
+      // Written only when they leave the ordinary answer. A key on every
+      // document would teach a setting where there is nothing to decide.
+    ...(config.grades && config.grades !== "assistant"
+      ? { grades: config.grades }
+      : {}),
+    ...(config.sees_adversary_goals ? { sees_adversary_goals: true } : {}),
     criterion: config.criterion,
       // `excluded: false` on every level would be noise: it is the reader's
       // default, and a file that writes it everywhere teaches a field where it
@@ -511,6 +532,12 @@ export function writeConfigFile(config: EvalRunConfig): string {
       ? {
           judges: config.judges.map((judge) => ({
             ...(judge.label ? { label: judge.label } : {}),
+            ...(judge.grades && judge.grades !== "assistant"
+              ? { grades: judge.grades }
+              : {}),
+            ...(judge.sees_adversary_goals
+              ? { sees_adversary_goals: true }
+              : {}),
             criterion: judge.criterion,
             rubric: rubricDocument(judge.rubric),
             ...(judge.model ? { model: judge.model } : {}),

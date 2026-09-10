@@ -26,6 +26,7 @@ import type {
   CostEstimate,
   EvalRunConfig,
   EvalScenario,
+  JudgeGrades,
   JudgeSpec,
   JudgeTarget,
   ProviderInfo,
@@ -48,6 +49,7 @@ import { servesTools } from "@/lib/tools";
 import { worldWarnings } from "@/lib/world-warnings";
 import { RubricEditor } from "@/components/RubricEditor";
 import { JudgeTargets } from "@/components/JudgeTargets";
+import { JudgeScope } from "@/components/JudgeScope";
 import { PromptPreview } from "@/components/PromptPreview";
 import {
   adversaryPreview,
@@ -272,6 +274,10 @@ function EvaluateForm() {
   // On by default, like the field's absence in a saved configuration: it is the
   // same rule `configProblem` reads, `!== false` and never `=== true`, and the
   // form must hold to it just as much as an imported file or an agent's draft.
+  // Whose turns the principal grades, and whether it sees the adversary's
+  // objective. The two travel together — see `JudgeScope`.
+  const [grades, setGrades] = useState<JudgeGrades>("assistant");
+  const [seesAdversaryGoals, setSeesAdversaryGoals] = useState(false);
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
   // Off by default, unlike the awareness check: it grades a text the
   // experimenter wrote rather than the model under test, and it is refused
@@ -389,6 +395,8 @@ function EvaluateForm() {
       // which reopening a draft where an agent had explicitly turned the judge off
       // would turn it back on here, and "Save as draft" would rewrite the switch
       // in the database without them: exactly the flaw this field fixes.
+      setGrades(config.grades ?? "assistant");
+      setSeesAdversaryGoals(config.sees_adversary_goals === true);
       setCheckEvalAwareness(config.check_eval_awareness !== false);
       // The opposite default, `=== true`: absent means nobody asked for it.
       setCheckAdversaryFidelity(config.check_adversary_fidelity === true);
@@ -669,6 +677,11 @@ function EvaluateForm() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       average_output_tokens: averageOutputTokens ?? undefined,
+      grades,
+      // Never sent true on a one-turn run, where `configProblem` refuses it:
+      // the control is not even rendered there, and the depth can be lowered
+      // after it was ticked.
+      sees_adversary_goals: turns > 1 && (grades === "adversary" || seesAdversaryGoals),
       check_eval_awareness: checkEvalAwareness,
       // Never sent as true on a one-turn run: `configProblem` refuses the
       // pair, and the box below is not even rendered there. Belt and braces,
@@ -716,6 +729,8 @@ function EvaluateForm() {
       worldModel,
       adversaryPrompt,
       averageOutputTokens,
+      grades,
+      seesAdversaryGoals,
       checkEvalAwareness,
       checkAdversaryFidelity,
       tools,
@@ -942,6 +957,8 @@ function EvaluateForm() {
     // An imported file is the only way a human has of turning this judge off from
     // the screen; not reading it here would throw it away on arrival, when the
     // form has only just learned how to show it.
+    setGrades(config.grades ?? "assistant");
+    setSeesAdversaryGoals(config.sees_adversary_goals === true);
     setCheckEvalAwareness(config.check_eval_awareness !== false);
     setCheckAdversaryFidelity(config.check_adversary_fidelity === true);
 
@@ -1125,6 +1142,8 @@ function EvaluateForm() {
     setTemperatureMin(1);
     setTemperatureMax(1);
     setAverageOutputTokens(null);
+    setGrades("assistant");
+    setSeesAdversaryGoals(false);
     setCheckEvalAwareness(true);
     setCheckAdversaryFidelity(false);
 
@@ -1807,14 +1826,30 @@ function EvaluateForm() {
 
         </div>
 
+        <JudgeScope
+          grades={grades}
+          seesAdversaryGoals={seesAdversaryGoals}
+          turns={turns}
+          onChange={(patch) => {
+            setGrades(patch.grades);
+            setSeesAdversaryGoals(patch.sees_adversary_goals);
+          }}
+        />
+
         <PromptPreview
           label="See the exact prompt this judge receives"
-          note="Your question and your scale sit inside a prompt that already tells the judge to grade the assistant and not the user. The transcript is stood in for here, since no conversation has been played yet."
-          preview={judgePreview({
-            criterion,
-            rubric,
-            sees_system_prompt: seesSystemPrompt,
-          })}
+          note="Your question and your scale sit inside a prompt that already says whose turns to grade. The transcript is stood in for here, since no conversation has been played yet."
+          preview={judgePreview(
+            {
+              criterion,
+              rubric,
+              sees_system_prompt: seesSystemPrompt,
+              grades,
+              sees_adversary_goals: grades === "adversary" || seesAdversaryGoals,
+            },
+            null,
+            adversaryPrompt,
+          )}
         />
       </section>
 
@@ -1908,10 +1943,17 @@ function EvaluateForm() {
               </span>
             </label>
 
+            <JudgeScope
+              grades={entry.grades}
+              seesAdversaryGoals={entry.sees_adversary_goals}
+              turns={turns}
+              onChange={(patch) => updateSecondaryJudge(index, patch)}
+            />
+
             <PromptPreview
               label="See the exact prompt this judge receives"
-              note="Your question and your scale sit inside a prompt that already tells the judge to grade the assistant and not the user."
-              preview={judgePreview(entry)}
+              note="Your question and your scale sit inside a prompt that already says whose turns to grade."
+              preview={judgePreview(entry, null, adversaryPrompt)}
             />
 
             <div className="space-y-1">

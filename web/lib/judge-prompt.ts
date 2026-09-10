@@ -2,9 +2,26 @@
 // actually sends it — see `shared/judge-prompt.json`. A preview describing a
 // prompt that is no longer the one that leaves would be a lie nobody would see.
 import { SHARED_JUDGE_PROMPT } from "./shared.ts";
-import type { RubricLevel } from "./types";
+import type { JudgeGrades, RubricLevel } from "./types";
 
-export const JUDGE_SYSTEM = SHARED_JUDGE_PROMPT.system;
+/** The system message an ordinary judge receives, for whose turns it grades.
+ *
+ * A head plus a shared tail. The head says who is being graded; the tail
+ * carries the rules that hold whoever it is — the seeded turns, the tool turns,
+ * the system prompt block. Three copies of that tail would drift, and it is the
+ * half where drifting changes grades.
+ *
+ * Mirrors `judge_system` (`backend/playground/scoring.py`), which is what
+ * really sends it. */
+export function judgeSystem(grades: JudgeGrades = "assistant"): string {
+  const heads = SHARED_JUDGE_PROMPT.system_head_by_grades;
+  const head = heads[grades] ?? heads.assistant;
+  return `${head}\n\n${SHARED_JUDGE_PROMPT.system_tail}`;
+}
+
+/** The ordinary case, kept as a name because most callers grade the
+ *  assistant. */
+export const JUDGE_SYSTEM = judgeSystem();
 
 /** The grade as it is written to the judge and on screen.
  *
@@ -79,12 +96,25 @@ export function renderTranscript(
   return lines.join("\n\n");
 }
 
+/** The user message.
+ *
+ * `adversaryPrompt` is prepended as its own named block, and only for a judge
+ * whose `sees_adversary_goals` is on: the caller decides that, never this
+ * function. Empty means the block is absent rather than present and blank — an
+ * empty `<objective>` reads as "there was no objective", which is not the same
+ * as "you were not shown it". */
 export function scorePrompt(
   transcriptText: string,
   criterion: string,
   rubric: RubricLevel[],
+  adversaryPrompt = "",
 ): string {
-  return fill(SHARED_JUDGE_PROMPT.user_template, {
+  const objective = adversaryPrompt
+    ? fill(SHARED_JUDGE_PROMPT.objective_block, {
+        adversary_prompt: adversaryPrompt,
+      })
+    : "";
+  return objective + fill(SHARED_JUDGE_PROMPT.user_template, {
     criterion,
     transcript: transcriptText,
     rubric: renderRubric(rubric),
