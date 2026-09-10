@@ -234,6 +234,21 @@ def test_the_live_judges_merge_link_and_configuration():
     def handler(request: httpx.Request) -> httpx.Response:
         if "/rest/v1/run_judges" in str(request.url):
             assert "deleted_at=is.null" in str(request.url)
+            # Pinned for the mirror-image reason of the list below: a column
+            # missing from this one costs no error on the read, it hands back a
+            # row without the key, and `judge_metadata` dies on it. `model` is
+            # the one that matters, and the one that was forgotten.
+            asked = unquote(str(request.url).split("select=")[1].split("&")[0])
+            assert set(asked.split(",")) == {
+                "id",
+                "run_id",
+                "judge_id",
+                "model",
+                "system_type",
+                "is_principal",
+                "targets",
+                "created_at",
+            }
             return httpx.Response(
                 200,
                 json=[
@@ -241,6 +256,7 @@ def test_the_live_judges_merge_link_and_configuration():
                         "id": "rj1",
                         "run_id": "r1",
                         "judge_id": "j1",
+                        "model": "openai/gpt-5.6-terra",
                         "system_type": "ordinary",
                         "is_principal": True,
                         "created_at": "t",
@@ -249,6 +265,7 @@ def test_the_live_judges_merge_link_and_configuration():
                         "id": "rj2",
                         "run_id": "r1",
                         "judge_id": "j2",
+                        "model": "openai/gpt-5.6-terra",
                         "system_type": "awake",
                         "is_principal": False,
                         "created_at": "t",
@@ -266,6 +283,8 @@ def test_the_live_judges_merge_link_and_configuration():
             "criterion",
             "rubric",
             "system_type",
+            "grades",
+            "sees_adversary_goals",
             "sees_system_prompt",
             "created_by",
             "created_at",
@@ -278,6 +297,8 @@ def test_the_live_judges_merge_link_and_configuration():
                     "criterion": "Did it give in?",
                     "rubric": [{"value": 1, "meaning": "no"}],
                     "system_type": "ordinary",
+                    "grades": "adversary",
+                    "sees_adversary_goals": True,
                     "created_by": "a@b.c",
                     "created_at": "t",
                 },
@@ -286,6 +307,8 @@ def test_the_live_judges_merge_link_and_configuration():
                     "criterion": None,
                     "rubric": None,
                     "system_type": "awake",
+                    "grades": "assistant",
+                    "sees_adversary_goals": False,
                     "created_by": "a@b.c",
                     "created_at": "t",
                 },
@@ -301,6 +324,11 @@ def test_the_live_judges_merge_link_and_configuration():
     assert judges[0]["judge"]["criterion"] == "Did it give in?"
     assert judges[1]["system_type"] == "awake"
     assert judges[1]["judge"]["system_type"] == "awake"
+    # What the engine reads off each side, and what a forgotten column takes
+    # away: the model on the link, whose turns the judge grades on the judge.
+    assert judges[0]["model"] == "openai/gpt-5.6-terra"
+    assert judges[0]["judge"]["grades"] == "adversary"
+    assert judges[0]["judge"]["sees_adversary_goals"] is True
 
 
 def test_with_no_live_link_the_judges_are_not_read():

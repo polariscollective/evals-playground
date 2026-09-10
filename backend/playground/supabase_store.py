@@ -408,7 +408,14 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
         # The only place in the repository that filters on deleted_at for this
         # table.
         deleted_at="is.null",
-        select="id,run_id,judge_id,system_type,is_principal,targets,created_at",
+        # `model` is on the LINK and read from here: the model that grades left
+        # `judges` the day judges became a library, and `judge_metadata`
+        # (batch_job.py) has read it here since. A select that forgets it does
+        # not fail on the read — it hands back a row without the key, and the
+        # job dies on `KeyError: 'model'` before its first cell. That is what
+        # killed the run of 10 September 2026. `tests/test_supabase_store.py`
+        # pins this list, and `FakeSupabase` now projects on it.
+        select="id,run_id,judge_id,model,system_type,is_principal,targets,created_at",
         order="created_at",
     )
     if not links:
@@ -424,7 +431,14 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
         # the migration `20260910100000_drop_dead_judges_model.sql` — the model
         # that grades belongs to the LINK, read just above, since judges became
         # a library. `tests/test_supabase_store.py` pins this list.
-        select="id,criterion,rubric,system_type,sees_system_prompt,created_by,created_at",
+        # `grades` and `sees_adversary_goals` are read by `judge_metadata` too,
+        # through `.get`: forgetting them costs no error at all, it silently
+        # sends every judge back to grading the assistant without the
+        # adversary's objective, whatever the judge was written to do.
+        select=(
+            "id,criterion,rubric,system_type,grades,sees_adversary_goals,"
+            "sees_system_prompt,created_by,created_at"
+        ),
     )
     by_id = {judge["id"]: judge for judge in judges}
 
