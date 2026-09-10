@@ -48,7 +48,7 @@ const TOP = heatStyle(1);
 test("the bottom of the scale is the red end and the top the other one", () => {
   assert.equal(heatPosition(0, RUBRIC, PLAIN_VIEW), 0);
   assert.equal(heatPosition(3, RUBRIC, PLAIN_VIEW), 1);
-  assert.match(heatStyle(heatPosition(0, RUBRIC, PLAIN_VIEW)), /bg-red/);
+  assert.equal(heatStyle(heatPosition(0, RUBRIC, PLAIN_VIEW)), BOTTOM);
   assert.equal(heatStyle(heatPosition(3, RUBRIC, PLAIN_VIEW)), TOP);
   assert.notEqual(TOP, BOTTOM);
 });
@@ -76,8 +76,8 @@ test("on target is olive, and either way off it is rust", () => {
   assert.equal(heatPosition(-1, RUBRIC, RELATIVE), 0);
   assert.equal(heatPosition(1, RUBRIC, RELATIVE), 0);
   assert.equal(heatStyle(heatPosition(0, RUBRIC, RELATIVE)), TOP);
-  assert.match(heatStyle(heatPosition(-1, RUBRIC, RELATIVE)), /bg-red/);
-  assert.match(heatStyle(heatPosition(1, RUBRIC, RELATIVE)), /bg-red/);
+  assert.equal(heatStyle(heatPosition(-1, RUBRIC, RELATIVE)), BOTTOM);
+  assert.equal(heatStyle(heatPosition(1, RUBRIC, RELATIVE)), BOTTOM);
 });
 
 test("the deviation ramp ignores the run's own scale", () => {
@@ -137,7 +137,7 @@ test("a position outside 0-1 is clamped rather than left uncoloured", () => {
 test("a judge that alarms high paints its top rust and its bottom olive", () => {
   assert.equal(heatPosition(3, RUBRIC, PLAIN_VIEW, false), 0);
   assert.equal(heatPosition(0, RUBRIC, PLAIN_VIEW, false), 1);
-  assert.match(heatStyle(heatPosition(3, RUBRIC, PLAIN_VIEW, false)), /bg-red/);
+  assert.equal(heatStyle(heatPosition(3, RUBRIC, PLAIN_VIEW, false)), BOTTOM);
   assert.equal(heatStyle(heatPosition(0, RUBRIC, PLAIN_VIEW, false)), TOP);
 });
 

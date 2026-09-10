@@ -80,6 +80,39 @@
   --color-amber-900: #5a421a;
   --color-amber-950: #3a2b10;
 
+  /* --- The heat ramp, and the one place this application leaves the palette ---
+
+     A matrix cell is not a status badge. It is read by the hundred, at a glance,
+     and the question asked of it is "where does this sit between worst and
+     best". Olive to rust does that badly: both are dark, both are muted, and
+     four of the seven steps read as the same brownish mid-tone. Painted in
+     olive the tool was, by its readers' account, not clear.
+
+     So the ramp is red to green, in ordinary red and green, and it is the only
+     thing on any Polaris surface that is. It is a deliberate exception, asked
+     for by name, and it is written here rather than inline so that the
+     departure has one address instead of seven. Everything else on this screen
+     stays inside the framework: the status colours, the rules, the bands, the
+     buttons.
+
+     Seven steps, each with the text colour that holds on it. The ink values are
+     the dark end of their own hue, so every step passes AA with the text it
+     carries. */
+  --color-heat-1: #b3261e;
+  --color-heat-1-ink: #ffffff;
+  --color-heat-2: #f0a09a;
+  --color-heat-2-ink: #611711;
+  --color-heat-3: #f6c667;
+  --color-heat-3-ink: #5c3d05;
+  --color-heat-4: #f7e3a1;
+  --color-heat-4-ink: #5c4405;
+  --color-heat-5: #b7e2a8;
+  --color-heat-5-ink: #17471b;
+  --color-heat-6: #74c47c;
+  --color-heat-6-ink: #10361a;
+  --color-heat-7: #1e7a3c;
+  --color-heat-7-ink: #ffffff;
+
   /* The rust of `--fail` at `500`, and nothing warmer than it anywhere. It is
      the only warm colour the framework permits, and only for status. */
   --color-red-50: #f8eae2;

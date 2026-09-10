@@ -83,7 +83,7 @@ export function heatPosition(
   if (!(max > min)) return null;
   const position = (value - min) / (max - min);
   // A judge that alarms high — the eval-awareness one, whose 10 says the model
-  // knew it was being tested — paints its top rust and its bottom olive. The
+  // knew it was being tested — paints its top red and its bottom green. The
   // grade is untouched; only where it sits on the ramp moves.
   return higherIsBetter ? position : 1 - position;
 }
@@ -94,30 +94,32 @@ export function heatPosition(
 const HATCHED =
   "bg-[repeating-linear-gradient(45deg,#e8e5d5,#e8e5d5_4px,#d3d5c2_4px,#d3d5c2_8px)] text-zinc-500";
 
-/** The one heat ramp on this screen: rust at the bottom, olive at the top.
+/** The one heat ramp on this screen: red at the bottom, green at the top.
  *
  * One ramp for every reading, so a colour means the same thing wherever it is
- * seen: olive is the good end, rust the bad one, always. Which end of a scale
+ * seen: green is the good end, red the bad one, always. Which end of a scale
  * that is, is the judge's own answer (`higher_is_better`), and `heatPosition`
- * is where it is applied — under the deviation reading the target is olive and
- * both ways off it are rust, whichever way the scale runs.
+ * is where it is applied — under the deviation reading the target is green and
+ * both ways off it are red, whichever way the scale runs.
  *
- * The ramp is made of the framework's own colours: `--fail` at the bottom,
- * `--warn` through the middle, chartreuse and olive at the top. There is no
- * green here that is not olive and no orange that is not the permitted rust.
+ * **The one place this application leaves the palette**, deliberately and by
+ * request. A cell is read by the hundred at a glance, and the olive-to-rust
+ * ramp the framework's colours give had four of its seven steps landing on the
+ * same brownish mid-tone. The values live in `globals.css`, under `--heat-*`,
+ * with the reasoning; nothing else on this screen departs.
  *
  * Seven steps rather than a computed gradient: the classes stay readable in the
  * markup, and each step carries a text colour that holds on its own ground. */
 export function heatStyle(position: number | null): string {
   if (position === null) return HATCHED;
   const t = Math.min(1, Math.max(0, position));
-  if (t < 0.125) return "bg-red-600 text-red-50";
-  if (t < 0.3) return "bg-red-200 text-red-950";
-  if (t < 0.45) return "bg-amber-200 text-amber-950";
-  if (t < 0.55) return "bg-amber-100 text-amber-950";
-  if (t < 0.7) return "bg-teal-200 text-teal-950";
-  if (t < 0.875) return "bg-teal-400 text-teal-950";
-  return "bg-teal-700 text-teal-50";
+  if (t < 0.125) return "bg-heat-1 text-heat-1-ink";
+  if (t < 0.3) return "bg-heat-2 text-heat-2-ink";
+  if (t < 0.45) return "bg-heat-3 text-heat-3-ink";
+  if (t < 0.55) return "bg-heat-4 text-heat-4-ink";
+  if (t < 0.7) return "bg-heat-5 text-heat-5-ink";
+  if (t < 0.875) return "bg-heat-6 text-heat-6-ink";
+  return "bg-heat-7 text-heat-7-ink";
 }
 
 /** A matrix cell's ground, under the reading currently on screen. */

@@ -568,11 +568,11 @@ above, one entry per extra judge:
 
 \`higher_is_better\` says whether the top of a judge's scale is the behaviour you
 want. True by default, which is what \`## Writing the scale\` above asks you to
-write, and what the matrix assumes when it paints the top olive.
+write, and what the matrix assumes when it paints the top green.
 
 Set it to \`false\` for a scale that alarms high: one whose 10 is the thing to
 worry about rather than the thing to hope for. The matrix then paints that
-judge's top rust and its bottom olive, so a colour means the same thing on every
+judge's top red and its bottom green, so a colour means the same thing on every
 judge of the run.
 
 **It changes a reading, never a measurement.** A grade stays what the judge

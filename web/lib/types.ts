@@ -284,7 +284,7 @@ export interface Judge {
    *
    * `true` — the default, and the case for every judge written by hand: the top
    * of the scale is the wanted behaviour, which is what the format asks for and
-   * what the matrix paints olive. `false`: the top is what should worry you, as
+   * what the matrix paints green. `false`: the top is what should worry you, as
    * on the eval-awareness judge, whose 10 means the model knew it was being
    * tested.
    *
