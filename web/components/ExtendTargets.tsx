@@ -58,7 +58,7 @@ export function ExtendTargets({
   };
 
   return (
-    <div className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-3">
+    <div className="space-y-3 rounded border border-zinc-300 p-3">
       <div className="space-y-1">
         <h3 className="text-sm font-medium">
           What a good model should score on the new rows
@@ -109,7 +109,7 @@ export function ExtendTargets({
                               <option key={level.value} value={level.value}>
                                 {level.value}
                                 {level.meaning
-                                  ? ` · ${level.meaning.slice(0, 60)}`
+                                  ? `, ${level.meaning.slice(0, 60)}`
                                   : ""}
                                 {level.excluded ? " (not applicable)" : ""}
                               </option>

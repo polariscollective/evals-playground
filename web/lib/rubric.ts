@@ -82,14 +82,18 @@ export function heatPosition(
  *  graded is not a cell at the bottom of the scale, and confusing the two would
  *  be the worst misreading this screen allows. */
 const HATCHED =
-  "bg-[repeating-linear-gradient(45deg,#f4f4f5,#f4f4f5_4px,#e4e4e7_4px,#e4e4e7_8px)] text-zinc-400";
+  "bg-[repeating-linear-gradient(45deg,#e8e5d5,#e8e5d5_4px,#d3d5c2_4px,#d3d5c2_8px)] text-zinc-500";
 
-/** The one heat ramp on this screen: red at the bottom, green at the top.
+/** The one heat ramp on this screen: rust at the bottom, olive at the top.
  *
  * One ramp for every reading, so a colour means the same thing wherever it is
- * seen. Under the plain reading the top of the scale is green, which is why the
+ * seen. Under the plain reading the top of the scale is olive, which is why the
  * format asks for scales written with the wanted behaviour at the top; under
- * the deviation reading the target is green and both ways off it are red.
+ * the deviation reading the target is olive and both ways off it are rust.
+ *
+ * The ramp is made of the framework's own colours: `--fail` at the bottom,
+ * `--warn` through the middle, chartreuse and olive at the top. There is no
+ * green here that is not olive and no orange that is not the permitted rust.
  *
  * Seven steps rather than a computed gradient: the classes stay readable in the
  * markup, and each step carries a text colour that holds on its own ground. */
@@ -98,11 +102,11 @@ export function heatStyle(position: number | null): string {
   const t = Math.min(1, Math.max(0, position));
   if (t < 0.125) return "bg-red-600 text-red-50";
   if (t < 0.3) return "bg-red-200 text-red-950";
-  if (t < 0.45) return "bg-orange-200 text-orange-950";
+  if (t < 0.45) return "bg-amber-200 text-amber-950";
   if (t < 0.55) return "bg-amber-100 text-amber-950";
-  if (t < 0.7) return "bg-lime-200 text-lime-950";
-  if (t < 0.875) return "bg-emerald-300 text-emerald-950";
-  return "bg-emerald-600 text-emerald-50";
+  if (t < 0.7) return "bg-teal-200 text-teal-950";
+  if (t < 0.875) return "bg-teal-400 text-teal-950";
+  return "bg-teal-700 text-teal-50";
 }
 
 /** A matrix cell's ground, under the reading currently on screen. */

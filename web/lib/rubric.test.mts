@@ -39,11 +39,18 @@ function cell(mean: number | null): Cell {
 
 // --- the plain reading --------------------------------------------------------
 
-test("the bottom of the scale is the red end and the top the green one", () => {
+// The assertions below name the ENDS of the ramp, not the hues at them. Red at
+// the bottom is the rule and is worth naming; which green sits at the top is a
+// palette decision, and a test that pins it turns every retint into a failure.
+const BOTTOM = heatStyle(0);
+const TOP = heatStyle(1);
+
+test("the bottom of the scale is the red end and the top the other one", () => {
   assert.equal(heatPosition(0, RUBRIC, PLAIN_VIEW), 0);
   assert.equal(heatPosition(3, RUBRIC, PLAIN_VIEW), 1);
   assert.match(heatStyle(heatPosition(0, RUBRIC, PLAIN_VIEW)), /bg-red/);
-  assert.match(heatStyle(heatPosition(3, RUBRIC, PLAIN_VIEW)), /bg-emerald/);
+  assert.equal(heatStyle(heatPosition(3, RUBRIC, PLAIN_VIEW)), TOP);
+  assert.notEqual(TOP, BOTTOM);
 });
 
 test("a grade outside the mean does not stretch the scale", () => {
@@ -55,20 +62,20 @@ test("a grade outside the mean does not stretch the scale", () => {
 
 test("a remap moves the top of the scale, and the colour follows", () => {
   // 0 and 1 fold onto 0, 2 and 3 onto 1: the scale now runs 0-1, so a cell at 1
-  // is at the top and must be green. Against the raw 0-3 rubric it would have
+  // is at the top and must be olive. Against the raw 0-3 rubric it would have
   // come out a third of the way up.
   const folded = withRemap(PLAIN_VIEW, { 0: 0, 1: 0, 2: 1, 3: 1 });
   assert.equal(heatPosition(1, RUBRIC, folded), 1);
-  assert.match(heatStyle(heatPosition(1, RUBRIC, folded)), /bg-emerald/);
+  assert.equal(heatStyle(heatPosition(1, RUBRIC, folded)), TOP);
 });
 
 // --- the deviation reading ----------------------------------------------------
 
-test("on target is green, and either way off it is red", () => {
+test("on target is olive, and either way off it is rust", () => {
   assert.equal(heatPosition(0, RUBRIC, RELATIVE), 1);
   assert.equal(heatPosition(-1, RUBRIC, RELATIVE), 0);
   assert.equal(heatPosition(1, RUBRIC, RELATIVE), 0);
-  assert.match(heatStyle(heatPosition(0, RUBRIC, RELATIVE)), /bg-emerald/);
+  assert.equal(heatStyle(heatPosition(0, RUBRIC, RELATIVE)), TOP);
   assert.match(heatStyle(heatPosition(-1, RUBRIC, RELATIVE)), /bg-red/);
   assert.match(heatStyle(heatPosition(1, RUBRIC, RELATIVE)), /bg-red/);
 });

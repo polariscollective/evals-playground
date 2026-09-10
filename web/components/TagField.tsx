@@ -205,7 +205,7 @@ export function TagField({
                     type="button"
                     onClick={() => addTag(tag)}
                     disabled={busy}
-                    className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-zinc-100 disabled:opacity-40"
+                    className="flex w-full items-center gap-1.5 rounded-full px-2 py-1 text-left text-xs hover:bg-zinc-100 disabled:opacity-40"
                   >
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${colorClasses(tag.color)}`}
@@ -218,7 +218,7 @@ export function TagField({
                     type="button"
                     onClick={() => void createAndAdd()}
                     disabled={busy}
-                    className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-zinc-100 disabled:opacity-40"
+                    className="block w-full rounded-full px-2 py-1 text-left text-xs hover:bg-zinc-100 disabled:opacity-40"
                   >
                     Create “{trimmed}”
                   </button>

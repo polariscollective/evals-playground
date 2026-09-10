@@ -45,7 +45,7 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="cursor-pointer text-zinc-600 underline hover:text-zinc-900"
+        className="cursor-pointer link-underline"
       >
         How to have an agent write it
       </button>
@@ -63,13 +63,13 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
             <div className="flex gap-2">
               <button
                 onClick={() => setOpen(false)}
-                className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+                className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
               >
                 Close
               </button>
               <button
                 onClick={() => copy(text, "Copied.")}
-                className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700"
+                className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink"
               >
                 {/* An icon alone would be mute about what this button really
                     does: it carries off two pages of text, not a link. */}
@@ -96,9 +96,9 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
             <button
               key={mode}
               onClick={() => setView(mode)}
-              className={`cursor-pointer rounded px-3 py-1 ${
+              className={`cursor-pointer rounded-full px-3 py-1 ${
                 view === mode
-                  ? "bg-zinc-900 text-white"
+                  ? "bg-olive-deep text-paper"
                   : "text-zinc-600 hover:bg-zinc-100"
               }`}
             >
@@ -108,7 +108,7 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
         </div>
         {view === "read" ? (
           <div
-            className="notes-prose max-h-[55vh] overflow-y-auto rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
+            className="notes-prose max-h-[55vh] overflow-y-auto rounded border border-zinc-200 p-4 text-sm text-zinc-700"
             // Safe: `renderMarkdown` escapes every bit of incoming HTML before
             // producing the only tags it builds itself. `reflow`: the document
             // is written wrapped at 78 columns, a writing convenience rather
@@ -119,7 +119,7 @@ export function FormatGuide({ providers }: { providers: ProviderInfo[] }) {
           // What Copy carries off, character for character. A page showing
           // something other than what leaves would be a silent lie, the same
           // one the judge prompt's preview already avoids.
-          <pre className="max-h-[55vh] overflow-auto rounded border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+          <pre className="max-h-[55vh] overflow-auto rounded border border-zinc-200 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {text}
           </pre>
         )}

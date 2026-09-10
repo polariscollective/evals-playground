@@ -113,7 +113,7 @@ export function FilterBar({
   // already at the starting setting.
   const cleared = sameFilter(state, OPEN);
   const atDefault = sameFilter(state, defaults);
-  const LINK = "text-xs underline";
+  const LINK = "text-xs link-underline";
   const LIVE = `${LINK} text-zinc-500 hover:text-zinc-900`;
   const DEAD = `${LINK} cursor-default text-zinc-300`;
 
@@ -132,7 +132,7 @@ export function FilterBar({
             aria-pressed={mode === value}
             className={`rounded-full px-3 py-1 capitalize ${
               mode === value
-                ? "bg-zinc-900 text-white"
+                ? "bg-olive-deep text-paper"
                 : "text-zinc-500 hover:text-zinc-900"
             }`}
           >
@@ -255,7 +255,7 @@ export function FilterBar({
           <button
             type="button"
             onClick={() => onQuery("")}
-            className="text-xs text-zinc-500 underline hover:text-zinc-900"
+            className="text-xs link-underline"
           >
             clear search
           </button>

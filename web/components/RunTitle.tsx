@@ -133,7 +133,7 @@ export function RunTitle({
         type="button"
         onClick={() => void save()}
         disabled={busy}
-        className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-40"
+        className="rounded-full border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-40"
       >
         {busy ? "Saving…" : "Save"}
       </button>
@@ -141,7 +141,7 @@ export function RunTitle({
         type="button"
         onClick={() => setEditing(false)}
         disabled={busy}
-        className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-40"
+        className="rounded-full border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-40"
       >
         Cancel
       </button>

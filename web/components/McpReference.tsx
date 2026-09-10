@@ -14,7 +14,7 @@ import { MCP_INSTRUCTIONS, MCP_TOOLS } from "@/lib/mcp-catalogue";
 function CopyableUrl({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex items-center gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
+    <div className="flex items-center gap-2 rounded border border-zinc-200 p-2">
       <code className="grow truncate font-mono text-xs">{url}</code>
       <button
         onClick={() => {
@@ -23,7 +23,7 @@ function CopyableUrl({ url }: { url: string }) {
             setTimeout(() => setCopied(false), 2000);
           });
         }}
-        className="shrink-0 cursor-pointer rounded border border-olive bg-paper px-2 py-0.5 text-xs hover:bg-zinc-50"
+        className="shrink-0 cursor-pointer rounded-full border border-olive bg-paper px-2 py-0.5 text-xs hover:bg-zinc-50"
       >
         {copied ? "Copied" : "⧉ Copy"}
       </button>
@@ -56,7 +56,7 @@ export function McpReference({ origin }: { origin: string }) {
           The one text an agent reads ahead of choosing a tool. This is it,
           exactly — the page shows the same string the server sends.
         </p>
-        <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+        <pre className="overflow-x-auto rounded border border-zinc-200 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
           {MCP_INSTRUCTIONS}
         </pre>
       </div>
@@ -74,16 +74,16 @@ export function McpReference({ origin }: { origin: string }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+                <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                   Tool
                 </th>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+                <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                   What it does
                 </th>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+                <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                   Takes
                 </th>
-                <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+                <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                   Returns
                 </th>
               </tr>

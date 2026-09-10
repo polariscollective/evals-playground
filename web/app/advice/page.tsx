@@ -197,7 +197,7 @@ function AdviceDocuments() {
                   setEditing(true);
                 }}
                 disabled={busy}
-                className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+                className="rounded-full border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
               >
                 Edit
               </button>
@@ -206,7 +206,7 @@ function AdviceDocuments() {
               <button
                 onClick={() => write(null)}
                 disabled={busy}
-                className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+                className="rounded-full border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
               >
                 Back to default
               </button>
@@ -267,7 +267,7 @@ function AdviceDocuments() {
                 <button
                   onClick={() => write(normalizedDraft())}
                   disabled={busy}
-                  className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+                  className="rounded-full border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
                 >
                   {busy ? "Saving…" : "Save"}
                 </button>
@@ -278,7 +278,7 @@ function AdviceDocuments() {
                     setSaveError(null);
                   }}
                   disabled={busy}
-                  className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+                  className="rounded-full border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -288,7 +288,7 @@ function AdviceDocuments() {
             <div
               // Scrolls inside its own frame, so the tab strip stays put while
               // a long document moves under it.
-              className="notes-prose max-h-[calc(100vh-26rem)] w-full overflow-y-auto rounded border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700"
+              className="notes-prose max-h-[calc(100vh-26rem)] w-full overflow-y-auto rounded border border-zinc-200 p-4 text-sm text-zinc-700"
               // Safe: `renderMarkdown` escapes all the input HTML before producing
               // the only tags it builds itself.
               // `reflow`: this document is stored wrapped at 78 columns, and those

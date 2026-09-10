@@ -52,10 +52,10 @@ export function PromptPreview({
 
   const link = dark
     ? "text-sm text-red-300 underline hover:text-red-100"
-    : "text-sm text-teal-700 underline hover:text-teal-900";
+    : "text-sm link-underline";
   const panel = dark
     ? "space-y-2 rounded border border-zinc-700 bg-zinc-900 p-3"
-    : "space-y-2 rounded border border-zinc-300 bg-zinc-50 p-3";
+    : "space-y-2 rounded border border-zinc-300 p-3";
   const muted = dark ? "text-zinc-400" : "text-zinc-500";
 
   if (!open) {
@@ -76,13 +76,13 @@ export function PromptPreview({
           <CopyButton
             value={full}
             title="Copy this prompt"
-            className={`text-xs underline ${muted}`}
+            className={`text-xs link-underline ${muted}`}
           >
             {(copied) => (copied ? "copied" : "copy")}
           </CopyButton>
           <button
             onClick={() => setOpen(false)}
-            className={`text-xs underline ${muted}`}
+            className={`text-xs link-underline ${muted}`}
           >
             close
           </button>

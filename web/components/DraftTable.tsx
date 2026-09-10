@@ -100,7 +100,7 @@ export function DraftTable({
     <div className="max-h-[70vh] overflow-y-auto">
       <table className="w-full table-fixed text-sm">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b border-zinc-300 text-left text-xs text-zinc-500">
+          <tr className="border-b border-olive text-left text-xs font-semibold text-zinc-500">
             <th className="py-3 pr-8 font-medium">Draft</th>
             <th className="w-40 py-3 pr-8 font-medium">Creation</th>
             <th className="relative w-24 py-3 pr-8 font-medium">

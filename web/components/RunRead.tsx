@@ -309,12 +309,12 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
 
   return (
     <Collapsible
-      className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4"
+      className="space-y-3 rounded border border-zinc-300 p-4"
       bodyClassName="space-y-3"
       title={<h2 className="eyebrow">Tools the evaluated model could call</h2>}
       aside={
         <span className="text-xs text-zinc-500">
-          nothing was executed · up to{" "}
+          nothing was executed, up to{" "}
           {config.max_tool_calls_per_turn ?? 5} consecutive calls per turn
         </span>
       }
@@ -367,7 +367,7 @@ export function ToolsBlock({ detail }: { detail: PublicRunDetail }) {
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <code className="text-sm font-medium">{tool.name}</code>
               <span className="text-xs text-zinc-500">
-                offered to {offeredTo} of {config.scenarios.length} scenarios ·
+                offered to {offeredTo} of {config.scenarios.length} scenarios,
                 called {callCount(tool.name)}×
               </span>
             </div>
@@ -450,7 +450,7 @@ export function ScenarioModal({
         <div className="flex justify-end">
           <button
             onClick={onClose}
-            className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
           >
             Close
           </button>
@@ -498,7 +498,7 @@ export function ScenarioModal({
               This row&rsquo;s world — added to the run&rsquo;s, and winning
               over it where the two disagree
             </p>
-            <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs whitespace-pre-wrap">
+            <pre className="overflow-x-auto rounded border border-zinc-200 p-3 text-xs whitespace-pre-wrap">
               {scenario.world}
             </pre>
           </div>
@@ -506,7 +506,7 @@ export function ScenarioModal({
 
         <div>
           <p className="mb-1 text-xs text-zinc-500">System prompt</p>
-          <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs whitespace-pre-wrap">
+          <pre className="overflow-x-auto rounded border border-zinc-200 p-3 text-xs whitespace-pre-wrap">
             {scenario.system_prompt}
           </pre>
         </div>
@@ -534,7 +534,7 @@ export function ScenarioModal({
 
         <div>
           <p className="mb-1 text-xs text-zinc-500">Opening message</p>
-          <pre className="overflow-x-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs whitespace-pre-wrap">
+          <pre className="overflow-x-auto rounded border border-zinc-200 p-3 text-xs whitespace-pre-wrap">
             {scenario.opening_message}
           </pre>
         </div>
@@ -572,7 +572,7 @@ export function ScenarioModal({
  *   unlinked judge no longer figures there. */
 function UnlinkConsequences() {
   return (
-    <ul className="list-disc space-y-1 pl-4">
+    <ul className="bullets space-y-1">
       <li>This cannot be undone — there is no way to link it back.</li>
       <li>
         Its grades stop showing anywhere: the matrix, the trajectories, the
@@ -648,7 +648,7 @@ function OtherJudgeRow({
           </span>
         )}
         {isPrincipal && (
-          <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-white">
+          <span className="ml-1 rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-paper">
             principal
           </span>
         )}
@@ -692,13 +692,13 @@ function OtherJudgeRow({
         <div className="flex items-center gap-2">
           {onView && judge.system_type === "ordinary" && (
             viewing ? (
-              <span className="rounded bg-zinc-900 px-2 py-0.5 text-xs text-white">
+              <span className="rounded bg-zinc-900 px-2 py-0.5 text-xs text-paper">
                 Viewing
               </span>
             ) : (
               <button
                 onClick={() => onView(judge.run_judge_id)}
-                className="cursor-pointer rounded border px-2 py-0.5 text-xs hover:bg-zinc-100"
+                className="cursor-pointer rounded-full border px-2 py-0.5 text-xs hover:bg-zinc-100"
               >
                 View
               </button>
@@ -708,7 +708,7 @@ function OtherJudgeRow({
             <button
               onClick={() => setAsking(true)}
               disabled={busy}
-              className="cursor-pointer rounded border border-red-300 px-2 py-0.5 text-xs text-red-800 hover:bg-red-50 disabled:opacity-50"
+              className="cursor-pointer rounded-full border border-red-300 px-2 py-0.5 text-xs text-red-800 hover:bg-red-50 disabled:opacity-50"
             >
               {busy ? "Working…" : "Unlink"}
             </button>
@@ -780,7 +780,7 @@ function MakePrincipalButton({
       <button
         onClick={run}
         disabled={busy}
-        className="cursor-pointer rounded border border-amber-400 bg-paper px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+        className="cursor-pointer rounded-full border border-amber-400 bg-paper px-2 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
       >
         {busy ? "Working…" : "Make principal"}
       </button>
@@ -848,7 +848,7 @@ function PrincipalUnlink({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="cursor-pointer text-xs text-zinc-500 underline hover:text-zinc-900"
+        className="cursor-pointer text-xs link-underline"
       >
         Unlink this judge…
       </button>
@@ -883,13 +883,13 @@ function PrincipalUnlink({
         <button
           onClick={confirm}
           disabled={busy}
-          className="cursor-pointer rounded bg-zinc-900 px-2 py-1 text-xs text-white hover:bg-zinc-700 disabled:opacity-50"
+          className="cursor-pointer rounded-full bg-zinc-900 px-2 py-1 text-xs text-paper hover:bg-chartreuse hover:text-ink disabled:opacity-50"
         >
           {busy ? "Working…" : "Unlink and hand over"}
         </button>
         <button
           onClick={() => setOpen(false)}
-          className="cursor-pointer text-xs underline"
+          className="cursor-pointer text-xs link-underline"
         >
           cancel
         </button>
@@ -1033,7 +1033,7 @@ export function JudgeBlock({
   return (
     <>
       <Collapsible
-        className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-4"
+        className="space-y-3 rounded border border-zinc-300 p-4"
         bodyClassName="space-y-3"
         title={<h2 className="eyebrow">What the judge was asked</h2>}
         aside={
@@ -1041,8 +1041,8 @@ export function JudgeBlock({
             {viewingPrincipal ? "judged by " : "viewing "}
             {shortModel(judgeModel)}
             {!viewingPrincipal && " — not the principal"}
-            {detail.run.rejudged_at && " · re-judged since the run"}
-            {detail.run.awareness_judged_at && " · eval-awareness added after the run"}
+            {detail.run.rejudged_at && ", re-judged since the run"}
+            {detail.run.awareness_judged_at && ", eval-awareness added after the run"}
           </span>
         }
       >
@@ -1132,7 +1132,7 @@ export function JudgeBlock({
           <div className="border-t border-zinc-200 pt-2">
             <button
               onClick={() => setShowOthers((visible) => !visible)}
-              className="cursor-pointer text-xs text-zinc-600 underline hover:text-zinc-900"
+              className="cursor-pointer text-xs link-underline"
             >
               {showOthers ? "Hide" : "Show all"} {judges?.length ?? 0} judge
               {(judges?.length ?? 0) > 1 ? "s" : ""}
@@ -1241,13 +1241,13 @@ export function DetailModal({
           <div>
             <h2 className="text-lg font-semibold">{scenario?.title}</h2>
             <p className="text-sm text-zinc-600">
-              {shortModel(target)} · {attempts.length} attempt
+              {shortModel(target)}, {attempts.length} attempt
               {attempts.length > 1 ? "s" : ""}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-sm underline hover:text-zinc-900"
+            className="text-sm link-underline"
           >
             close
           </button>
@@ -1481,7 +1481,7 @@ export function AttemptView({
         )}
         <span className="ml-auto text-xs text-zinc-500">
           {attempt.cost_usd !== null && attempt.cost_usd > 0 && (
-            <>${attempt.cost_usd.toFixed(4)} · </>
+            <>${attempt.cost_usd.toFixed(4)}, </>
           )}
           {attempt.messages.length} message
           {attempt.messages.length > 1 ? "s" : ""}
@@ -1767,7 +1767,7 @@ export function RunMatrix({
                   <button
                     onClick={() => onOpenScenario(index)}
                     title="What this scenario is, and why"
-                    className="cursor-pointer text-left underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-900"
+                    className="cursor-pointer text-left link-underline decoration-zinc-300 hover:decoration-zinc-900"
                   >
                     {scenario.title}
                   </button>
@@ -1831,16 +1831,16 @@ export function RunMatrix({
                     cell?.mean != null
                       ? `${distribution(scoresOf(index, target))} — average of ${cell.judged} of ${run.config.repetitions}` +
                         (cell.excluded > 0
-                          ? ` · ${cell.excluded} not applicable`
+                          ? `, ${cell.excluded} not applicable`
                           : "") +
                         (cell.unjudged > 0
-                          ? ` · ${cell.unjudged} not judged`
+                          ? `, ${cell.unjudged} not judged`
                           : "") +
                         (cell.cancelled > 0
-                          ? ` · ${cell.cancelled} never ran`
+                          ? `, ${cell.cancelled} never ran`
                           : "") +
                         (cell.cost_usd > 0
-                          ? ` · $${cell.cost_usd.toFixed(4)}`
+                          ? `, $${cell.cost_usd.toFixed(4)}`
                           : "")
                       : waiting
                         ? `${cell?.pending} still to run`
@@ -1854,7 +1854,7 @@ export function RunMatrix({
                         className={`w-full rounded p-2 text-center text-sm ${cellStyle(cell, rubric, view)}`}
                         title={
                           flagged > 0
-                            ? `${baseTitle} · ${flagged} attempt${flagged > 1 ? "s" : ""} showed signs of knowing it was a test`
+                            ? `${baseTitle}, ${flagged} attempt${flagged > 1 ? "s" : ""} showed signs of knowing it was a test`
                             : baseTitle
                         }
                       >

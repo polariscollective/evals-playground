@@ -44,7 +44,7 @@ export function Menu({
         aria-haspopup="menu"
         aria-label={label}
         title={label}
-        className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm leading-5 hover:bg-zinc-50"
+        className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm leading-5 hover:bg-zinc-50"
       >
         ⋯
       </button>

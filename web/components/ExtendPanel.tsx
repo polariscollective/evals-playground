@@ -496,13 +496,13 @@ export function ExtendPanel({
                 onClick={() =>
                   setIndices(config.scenarios.map((_, index) => index))
                 }
-                className="cursor-pointer underline hover:text-zinc-800"
+                className="cursor-pointer link-underline"
               >
                 all
               </button>
               <button
                 onClick={() => setIndices([])}
-                className="cursor-pointer underline hover:text-zinc-800"
+                className="cursor-pointer link-underline"
               >
                 none
               </button>
@@ -531,7 +531,7 @@ export function ExtendPanel({
                       setLooking(index);
                     }}
                     title="What this scenario is, and why"
-                    className="shrink-0 cursor-pointer rounded px-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                    className="shrink-0 cursor-pointer rounded-full px-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
                   >
                     view
                   </button>
@@ -575,7 +575,7 @@ export function ExtendPanel({
                                     }`),
                           ]
                             .filter(Boolean)
-                            .join(" · ")}
+                            .join(", ")}
                         </span>
                       )}
                     </span>
@@ -584,7 +584,7 @@ export function ExtendPanel({
                         setByHand((c) => c.filter((_, i) => i !== index))
                       }
                       title={`Remove ${scenario.title}`}
-                      className="shrink-0 cursor-pointer rounded px-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                      className="shrink-0 cursor-pointer rounded-full px-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
                     >
                       Remove
                     </button>
@@ -662,7 +662,7 @@ export function ExtendPanel({
                       opening_message: "",
                     });
                   }}
-                  className="cursor-pointer rounded border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
+                  className="cursor-pointer rounded-full border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
                 >
                   Add this scenario
                 </button>
@@ -671,7 +671,7 @@ export function ExtendPanel({
 
             {!csv ? (
               <label className="block cursor-pointer text-sm text-zinc-600">
-                <span className="underline hover:text-zinc-900">
+                <span className="link-underline">
                   Upload a CSV
                 </span>
                 <input
@@ -691,7 +691,7 @@ export function ExtendPanel({
                   <span className="grow font-medium">{csv.name}</span>
                   <button
                     onClick={() => setCsv(null)}
-                    className="shrink-0 cursor-pointer rounded px-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                    className="shrink-0 cursor-pointer rounded-full px-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
                   >
                     Remove file
                   </button>
@@ -721,8 +721,8 @@ export function ExtendPanel({
                 <p className="text-xs text-zinc-600">
                   {fromCsv.length} scenario{fromCsv.length === 1 ? "" : "s"} read
                   {incomplete > 0 &&
-                    ` · ${incomplete} row${incomplete === 1 ? "" : "s"} skipped, a chosen column was empty`}
-                  {csv.skipped > 0 && ` · ${csv.skipped} malformed row(s)`}
+                    `, ${incomplete} row${incomplete === 1 ? "" : "s"} skipped, a chosen column was empty`}
+                  {csv.skipped > 0 && `, ${csv.skipped} malformed row(s)`}
                 </p>
                 {fromCsv[0] && (
                   <p className="truncate text-xs text-zinc-500">
@@ -787,7 +787,7 @@ export function ExtendPanel({
                   .filter((model) => model.favorite && !targets.includes(model.id))
                   .map((model) => (
                     <option key={model.id} value={model.id}>
-                      {provider.label} · {model.label}
+                      {provider.label}, {model.label}
                     </option>
                   )),
               )}
@@ -853,7 +853,7 @@ export function ExtendPanel({
             <dd>
               {sortedRubric(config.rubric)
                 .map((level) => `${formatValue(level.value)} = ${level.meaning}`)
-                .join(" · ")}
+                .join(", ")}
             </dd>
           </div>
           {/* At a single turn the adversary is never called: showing it then would
@@ -1129,9 +1129,9 @@ export function ExtendPanel({
                   <button
                     type="button"
                     onClick={() => setForExisting(true)}
-                    className={`cursor-pointer rounded border px-2 py-1 text-xs ${
+                    className={`cursor-pointer rounded-full border px-2 py-1 text-xs ${
                       forExisting === true
-                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        ? "border-zinc-900 bg-olive-deep text-paper"
                         : "border-amber-400 hover:bg-amber-100"
                     }`}
                   >
@@ -1140,9 +1140,9 @@ export function ExtendPanel({
                   <button
                     type="button"
                     onClick={() => setForExisting(false)}
-                    className={`cursor-pointer rounded border px-2 py-1 text-xs ${
+                    className={`cursor-pointer rounded-full border px-2 py-1 text-xs ${
                       forExisting === false
-                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        ? "border-zinc-900 bg-olive-deep text-paper"
                         : "border-amber-400 hover:bg-amber-100"
                     }`}
                   >
@@ -1157,7 +1157,7 @@ export function ExtendPanel({
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={onCancel}
-            className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
           >
             Cancel
           </button>
@@ -1168,7 +1168,7 @@ export function ExtendPanel({
           <button
             onClick={saveAsDraft}
             disabled={savingDraft}
-            className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
+            className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
           >
             {savingDraft
               ? "Saving…"
@@ -1212,7 +1212,7 @@ export function ExtendPanel({
               // refusal — `extendProblem` demands it in exactly that case.
               (needsWorldModel && !worldModel)
             }
-            className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700 disabled:cursor-default disabled:opacity-40"
+            className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink disabled:cursor-default disabled:opacity-40"
           >
             {busy
               ? "Adding…"

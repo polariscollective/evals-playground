@@ -275,7 +275,7 @@ textarea {
 .notes-prose p { margin: 0.4em 0; }
 .notes-prose ul,
 .notes-prose ol { margin: 0.4em 0; padding-left: 1.3em; }
-.notes-prose ul { list-style: disc; }
+.notes-prose ul { padding-left: 0.4em; }
 .notes-prose ol { list-style: decimal; }
 .notes-prose li { margin: 0.15em 0; }
 .notes-prose blockquote {
@@ -363,6 +363,27 @@ textarea {
 .link-underline:hover {
   background: var(--color-chartreuse);
   color: var(--color-ink);
+}
+
+/* A bullet is a 6px chartreuse circle. `::marker` takes a colour but not a
+   size, so the disc is drawn as a pseudo-element and the marker removed. */
+.bullets > li,
+.notes-prose ul > li {
+  list-style: none;
+  position: relative;
+  padding-left: 1.1em;
+}
+
+.bullets > li::before,
+.notes-prose ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-chartreuse);
 }
 
 /* One ambient animation per surface, and this application has none. What is left

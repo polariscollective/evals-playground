@@ -48,7 +48,7 @@ import { refreshTags, useTags } from "@/lib/tags-store";
 const STATUS_STYLE: Record<string, string> = {
   triggered: "bg-zinc-100 text-zinc-700",
   running: "bg-teal-100 text-teal-900",
-  done: "bg-zinc-900 text-white",
+  done: "bg-olive-deep text-paper",
   error: "bg-red-100 text-red-800",
   cancelled: "bg-amber-100 text-amber-900",
 };
@@ -335,9 +335,9 @@ export default function RunsPage() {
                 ? "Could not tell who you are — showing everything"
                 : `Yours: ${me}`
             }
-            className={`rounded border px-3 py-1.5 text-sm disabled:opacity-40 ${
+            className={`rounded-full border px-3 py-1.5 text-sm disabled:opacity-40 ${
                 mine
-                ? "border-zinc-900 bg-zinc-900 text-white"
+                ? "border-zinc-900 bg-olive-deep text-paper"
                 : "border-zinc-300 hover:bg-zinc-50"
             }`}
           >
@@ -407,7 +407,7 @@ export default function RunsPage() {
                 out of seven were, and the eye going down the table stumbled on
                 them. A consistent table is worth more here than a typographic
                 convention applied twice. */}
-            <tr className="border-b border-zinc-300 text-left text-xs text-zinc-500">
+            <tr className="border-b border-olive text-left text-xs font-semibold text-zinc-500">
               <th className="py-3 pr-8 font-medium">Run</th>
               <th className="w-40 py-3 pr-8 font-medium">Launched</th>
               <th className="relative w-24 py-3 pr-8 font-medium">

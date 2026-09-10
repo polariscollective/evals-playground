@@ -22,14 +22,14 @@ export function EmptyTable({
       <button
         type="button"
         onClick={onClear}
-        className="rounded border border-zinc-300 px-3 py-1 text-xs hover:bg-zinc-50"
+        className="rounded-full border border-zinc-300 px-3 py-1 text-xs hover:bg-zinc-50"
       >
         clear filters
       </button>
       <button
         type="button"
         onClick={onDefault}
-        className="rounded border border-zinc-300 px-3 py-1 text-xs hover:bg-zinc-50"
+        className="rounded-full border border-zinc-300 px-3 py-1 text-xs hover:bg-zinc-50"
       >
         default filters
       </button>

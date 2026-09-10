@@ -32,7 +32,7 @@ export function ConfirmDialog({
   const confirmStyle =
     tone === "warning"
       ? "border border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100"
-      : "bg-zinc-900 text-white hover:bg-zinc-700";
+      : "bg-olive-deep text-paper hover:bg-chartreuse hover:text-ink";
 
   return (
     <Dialog
@@ -43,14 +43,14 @@ export function ConfirmDialog({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+            className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={busy}
-            className={`cursor-pointer rounded px-3 py-1 text-sm disabled:opacity-50 ${confirmStyle}`}
+            className={`cursor-pointer rounded-full px-3 py-1 text-sm disabled:opacity-50 ${confirmStyle}`}
           >
             {busy ? "Working…" : confirmLabel}
           </button>

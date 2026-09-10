@@ -10,6 +10,7 @@ import { ensureRunsLoaded } from "@/lib/runs-store";
 import { ensureTagsLoaded } from "@/lib/tags-store";
 import { ensureProfileLoaded } from "@/lib/profile-store";
 import { ensureConnectionsLoaded } from "@/lib/connections-store";
+import { ensureJudgesLoaded } from "@/lib/judges-store";
 import { PolarisMark } from "@/components/PolarisMark";
 
 /** The private application's navigation, absent from `/shared`.
@@ -90,6 +91,7 @@ export function AppNav() {
     ensureTagsLoaded();
     ensureProfileLoaded();
     ensureConnectionsLoaded();
+    ensureJudgesLoaded();
   }, [isPublic]);
 
   useEffect(() => {

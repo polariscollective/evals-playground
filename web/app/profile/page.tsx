@@ -200,7 +200,7 @@ export default function ProfilePage() {
             <button
               onClick={save}
               disabled={disabled || saving}
-              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:opacity-40"
+              className="rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:opacity-40"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -264,7 +264,7 @@ export default function ProfilePage() {
                 </span>
                 {model.input_per_mtok !== null && model.output_per_mtok !== null && (
                   <span className="font-mono text-xs text-zinc-500">
-                    in ${model.input_per_mtok.toFixed(2)} · out $
+                    in ${model.input_per_mtok.toFixed(2)}, out $
                     {model.output_per_mtok.toFixed(2)} /Mtok
                   </span>
                 )}
@@ -291,7 +291,7 @@ export default function ProfilePage() {
             <button
               onClick={saveFavorites}
               disabled={favoritesProblemText !== null || savingFavorites}
-              className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:opacity-40"
+              className="rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:opacity-40"
             >
               {savingFavorites ? "Saving…" : "Save"}
             </button>

@@ -174,7 +174,7 @@ function ExtensionsHistory({ run }: { run: EvalRun }) {
                       onClick={() => setOpen(open === index ? null : index)}
                       aria-expanded={open === index}
                       aria-label={`What the extension of ${formatDate(extension.at)} did`}
-                      className="rounded px-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
+                      className="rounded-full px-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
                     >
                       {open === index ? "▾" : "▸"}
                     </button>
@@ -312,7 +312,7 @@ function AddJudgePanel({
         </div>
         <button
           onClick={onClose}
-          className="text-sm underline hover:text-zinc-900"
+          className="text-sm link-underline"
         >
           cancel
         </button>
@@ -441,7 +441,7 @@ function CatchUpButton({
       <button
         onClick={launch}
         disabled={busy}
-        className="rounded border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
+        className="rounded-full border px-3 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50"
       >
         {busy ? "Starting…" : "Catch up"}
       </button>
@@ -773,15 +773,15 @@ export default function EvalRunPage({
             </RunTitle>
           </h1>
           <p className="text-sm text-zinc-600">
-            <CopyId value={run.id} /> · {run.config.scenarios.length} scenario
-            {run.config.scenarios.length > 1 ? "s" : ""} ·{" "}
+            <CopyId value={run.id} />, {run.config.scenarios.length} scenario
+            {run.config.scenarios.length > 1 ? "s" : ""},{" "}
             {run.config.models.targets.length} model
-            {run.config.models.targets.length > 1 ? "s" : ""} · {run.config.repetitions} repetition
-            {run.config.repetitions > 1 ? "s" : ""} · {run.config.turns} turn
+            {run.config.models.targets.length > 1 ? "s" : ""}, {run.config.repetitions} repetition
+            {run.config.repetitions > 1 ? "s" : ""}, {run.config.turns} turn
             {run.config.turns > 1 ? "s" : ""}
             {run.cost_usd !== null && (
               <>
-                {" · "}
+                {", "}
                 <span
                   className="font-medium text-zinc-900"
                   title={Object.entries(run.usage)
@@ -834,7 +834,7 @@ export default function EvalRunPage({
               onClick={() => setConfirming("stop")}
               disabled={stopping}
                 title="The job reads the request before each cell. The one under way will run to its end."
-              className="cursor-pointer rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+              className="cursor-pointer rounded-full border border-amber-400 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100 disabled:opacity-50"
             >
               {stopping ? "Stopping…" : "Stop"}
             </button>
@@ -971,7 +971,7 @@ export default function EvalRunPage({
       {run.draft_id && (
         <p className="text-sm text-zinc-500">
           Launched from{" "}
-          <Link href={`/?draft=${run.draft_id}`} className="underline">
+          <Link href={`/?draft=${run.draft_id}`} className="link-underline">
             the draft it came from
           </Link>
           .
@@ -1041,15 +1041,15 @@ export default function EvalRunPage({
         <p className="rounded border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
           <strong>Stopped.</strong> {progress.done} of {progress.total} cells
           finished
-          {progress.cancelled > 0 && ` · ${progress.cancelled} never ran (∅)`}
-          {progress.errored > 0 && ` · ${progress.errored} failed`}. A cell
+          {progress.cancelled > 0 && `, ${progress.cancelled} never ran (∅)`}
+          {progress.errored > 0 && `, ${progress.errored} failed`}. A cell
           already in flight when you stopped was let finish — what was paid for
           is kept. Extend to finish what was left, or Duplicate to start over.
         </p>
       )}
 
       {notice && (
-        <p className="rounded border border-zinc-300 bg-zinc-50 p-2 text-sm text-zinc-700">
+        <p className="rounded border border-zinc-300 p-2 text-sm text-zinc-700">
           {notice}
         </p>
       )}
@@ -1152,9 +1152,9 @@ export default function EvalRunPage({
           render, rather than the gesture that opens it, that must stop the two
           coexisting. */}
       {appliedAt && !extending && (
-        <div className="rounded border border-zinc-300 bg-zinc-50 p-3 text-sm text-zinc-700">
+        <div className="rounded border border-zinc-300 p-3 text-sm text-zinc-700">
           This extension was applied on {formatDate(appliedAt)}.{" "}
-          <a href="#extensions" className="underline">
+          <a href="#extensions" className="link-underline">
             See what it did
           </a>
           .

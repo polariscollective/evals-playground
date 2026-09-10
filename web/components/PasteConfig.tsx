@@ -60,7 +60,7 @@ export function PasteConfig({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="cursor-pointer rounded border border-olive bg-paper px-3 py-1 hover:bg-zinc-50"
+        className="cursor-pointer rounded-full border border-olive bg-paper px-3 py-1 hover:bg-zinc-50"
       >
         Paste a config
       </button>
@@ -78,14 +78,14 @@ export function PasteConfig({
             <div className="flex gap-2">
               <button
                 onClick={() => setOpen(false)}
-                className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+                className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void load()}
                 disabled={busy || text.trim() === ""}
-                className="cursor-pointer rounded bg-zinc-900 px-3 py-1 text-sm text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
                 {busy ? "Reading…" : "Load"}
               </button>

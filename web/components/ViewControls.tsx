@@ -70,8 +70,8 @@ export function ViewControls({
               <button
                 key={entry.id}
                 onClick={() => onChange({ ...view, aggregate: entry.id })}
-                className={`cursor-pointer rounded px-3 py-1 ${
-                  view.aggregate === entry.id ? "bg-zinc-900 text-white" : ""
+                className={`cursor-pointer rounded-full px-3 py-1 ${
+                  view.aggregate === entry.id ? "bg-olive-deep text-paper" : ""
                 }`}
               >
                 {entry.label}
@@ -135,7 +135,7 @@ export function ViewControls({
                           </span>
                           <button
                             onClick={() => setRemap(level.value, level.value)}
-                            className="cursor-pointer rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+                            className="cursor-pointer rounded-full border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
                           >
                             count it
                           </button>
@@ -160,7 +160,7 @@ export function ViewControls({
                           />
                           <button
                             onClick={() => setRemap(level.value, null)}
-                            className="cursor-pointer rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+                            className="cursor-pointer rounded-full border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
                           >
                             leave out
                           </button>
@@ -191,7 +191,7 @@ export function ViewControls({
           <button
             onClick={() => onChange(PLAIN_VIEW)}
             disabled={isPlainView(view)}
-            className="shrink-0 cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
+            className="shrink-0 cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-default disabled:opacity-40"
           >
             Reset
           </button>

@@ -29,7 +29,7 @@ export function MessageView({
       }
     >
       <div className="mb-1 text-xs font-medium text-zinc-600">
-        turn {index + 1} ·{" "}
+        turn {index + 1},{" "}
         {message.role === "tool"
           ? `tool ${message.tool_name ?? ""} returned`
           : message.role === "assistant"

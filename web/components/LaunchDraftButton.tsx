@@ -26,7 +26,7 @@ export function LaunchDraftButton({ draftId }: { draftId: string }) {
       <button
         onClick={launch}
         disabled={pending}
-        className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-paper disabled:opacity-50"
       >
         {pending ? "Launching…" : "Launch"}
       </button>

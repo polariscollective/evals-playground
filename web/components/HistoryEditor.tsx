@@ -59,7 +59,7 @@ export function HistoryEditor({
             <button
               onClick={() => onChange(history.slice(0, -1))}
               title="Remove this turn"
-              className="mt-1 h-6 shrink-0 cursor-pointer rounded border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
+              className="mt-1 h-6 shrink-0 cursor-pointer rounded-full border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
             >
               Remove
             </button>
@@ -72,7 +72,7 @@ export function HistoryEditor({
           onClick={() =>
             onChange([...history, { role: nextRole(history), content: "" }])
           }
-          className="cursor-pointer rounded border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50"
+          className="cursor-pointer rounded-full border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50"
         >
           Add a {nextRole(history)} turn
         </button>

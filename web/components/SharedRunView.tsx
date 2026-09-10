@@ -70,13 +70,13 @@ export function SharedRunView({
             {run.label ?? "Evaluation run"}
           </h1>
           <p className="text-sm text-zinc-600">
-            {new Date(run.created_at).toISOString().slice(0, 10)} ·{" "}
+            {new Date(run.created_at).toISOString().slice(0, 10)},{" "}
             {run.config.scenarios.length} scenario
-            {run.config.scenarios.length > 1 ? "s" : ""} ·{" "}
+            {run.config.scenarios.length > 1 ? "s" : ""},{" "}
             {run.config.models.targets.length} model
-            {run.config.models.targets.length > 1 ? "s" : ""} ·{" "}
+            {run.config.models.targets.length > 1 ? "s" : ""},{" "}
             {low === high ? low : `${low}–${high}`} repetition
-            {high > 1 ? "s" : ""} · {run.config.turns} turn
+            {high > 1 ? "s" : ""}, {run.config.turns} turn
             {run.config.turns > 1 ? "s" : ""}
           </p>
           {inspectLogs && (
@@ -85,7 +85,7 @@ export function SharedRunView({
                 href={inspectViewUrl(run.id)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+                className="link-underline"
               >
                 View Inspect AI logs
               </a>

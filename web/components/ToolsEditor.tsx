@@ -66,7 +66,7 @@ export function ToolsEditor({
             />
             <button
               onClick={() => onChange(tools.filter((_, p) => p !== index))}
-              className="shrink-0 cursor-pointer rounded border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
+              className="shrink-0 cursor-pointer rounded-full border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
             >
               Remove
             </button>
@@ -142,7 +142,7 @@ export function ToolsEditor({
                       parameters: tool.parameters.filter((_, p) => p !== at),
                     })
                   }
-                  className="shrink-0 cursor-pointer rounded border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
+                  className="shrink-0 cursor-pointer rounded-full border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
                 >
                   ×
                 </button>
@@ -158,7 +158,7 @@ export function ToolsEditor({
                   ],
                 })
               }
-              className="cursor-pointer rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50"
+              className="cursor-pointer rounded-full border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50"
             >
               Add a parameter
             </button>
@@ -240,7 +240,7 @@ export function ToolsEditor({
       <div className="flex items-center gap-3">
         <button
           onClick={() => onChange([...tools, emptyTool()])}
-          className="cursor-pointer rounded border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50"
+          className="cursor-pointer rounded-full border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-50"
         >
           Add a tool
         </button>
@@ -286,8 +286,8 @@ export function ScenarioTools({
           <button
             key={id}
             onClick={() => onChange(value as string[] | null)}
-            className={`cursor-pointer rounded px-3 py-1 ${
-              mode === id ? "bg-zinc-900 text-white" : ""
+            className={`cursor-pointer rounded-full px-3 py-1 ${
+              mode === id ? "bg-olive-deep text-paper" : ""
             }`}
           >
             {label}

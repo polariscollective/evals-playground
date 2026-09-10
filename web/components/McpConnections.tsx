@@ -23,7 +23,7 @@ function history(grant: McpGrant): string {
   const used = grant.last_used_at
     ? `last used ${when(grant.last_used_at)}`
     : "never used since";
-  return `${born} ${when(grant.created_at)} · ${used}`;
+  return `${born} ${when(grant.created_at)}, ${used}`;
 }
 
 export function McpConnections() {
@@ -87,7 +87,7 @@ export function McpConnections() {
           </p>
           <button
             onClick={revokeAll}
-            className="rounded border px-3 py-1 text-sm text-red-700"
+            className="rounded-full border px-3 py-1 text-sm text-red-700"
           >
             Disconnect all
           </button>
@@ -110,7 +110,7 @@ export function McpConnections() {
             </div>
             <button
               onClick={() => revoke(grant.access_token_hash)}
-              className="shrink-0 rounded border px-3 py-1 text-red-700"
+              className="shrink-0 rounded-full border px-3 py-1 text-red-700"
             >
               Revoke
             </button>

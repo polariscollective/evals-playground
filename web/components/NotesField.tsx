@@ -77,7 +77,7 @@ export function NotesField({
             type="button"
             onClick={save}
             disabled={saving}
-            className="rounded border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-40"
+            className="rounded-full border border-zinc-300 px-2 py-0.5 text-xs disabled:opacity-40"
           >
             {saving ? "Saving…" : "Save"}
           </button>
@@ -85,7 +85,7 @@ export function NotesField({
           <button
             type="button"
             onClick={() => setChosen(true)}
-            className="rounded border border-zinc-300 px-2 py-0.5 text-xs"
+            className="rounded-full border border-zinc-300 px-2 py-0.5 text-xs"
           >
             Edit
           </button>

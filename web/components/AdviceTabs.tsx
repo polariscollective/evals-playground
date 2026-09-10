@@ -31,9 +31,9 @@ export function AdviceTabs({
             onClick={() => onSelect(entry)}
             disabled={disabled}
             aria-current={entry === topic ? "page" : undefined}
-            className={`cursor-pointer rounded px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`cursor-pointer rounded-full px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
               entry === topic
-                ? "bg-zinc-900 text-white"
+                ? "bg-olive-deep text-paper"
                 : "text-zinc-600 hover:bg-zinc-100"
             }`}
           >

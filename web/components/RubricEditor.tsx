@@ -97,7 +97,7 @@ export function RubricEditor({
                 : "Remove this grade"
             }
             aria-label={`Remove grade ${index + 1}`}
-            className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent"
+            className="shrink-0 rounded-full border border-zinc-300 px-3 py-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent"
           >
             ×
           </button>
@@ -107,7 +107,7 @@ export function RubricEditor({
       <div className="flex items-center gap-3">
         <button
           onClick={add}
-          className="rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
+          className="rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50"
         >
           + Add a grade
         </button>
@@ -115,7 +115,7 @@ export function RubricEditor({
           <button
             onClick={addExcluded}
             title="For conversations the question does not apply to. The judge can pick it, and it stays out of the average."
-            className="rounded border border-dashed border-zinc-400 px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-50"
+            className="rounded-full border border-dashed border-zinc-400 px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-50"
           >
             + Add “not applicable”
           </button>

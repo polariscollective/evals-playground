@@ -50,7 +50,7 @@ export function JudgeTargets({
             onChange(scenarios.map(() => ({ expected: opening })))
           }
           disabled={scenarios.length === 0}
-          className="cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="cursor-pointer rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Say what a good model should score
         </button>
@@ -86,7 +86,7 @@ export function JudgeTargets({
                 ),
               )
             }
-            className="cursor-pointer rounded border border-amber-700 bg-paper px-2 py-0.5"
+            className="cursor-pointer rounded-full border border-amber-700 bg-paper px-2 py-0.5"
           >
             Fill the missing rows
           </button>
@@ -97,13 +97,13 @@ export function JudgeTargets({
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+              <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                 Scenario
               </th>
-              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+              <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                 A good model scores
               </th>
-              <th className="border-b border-zinc-300 bg-zinc-50 p-2 text-left text-[10px] font-semibold text-zinc-500">
+              <th className="border-b border-olive p-2 text-left text-xs font-semibold text-zinc-500">
                 Control
               </th>
             </tr>
@@ -135,7 +135,7 @@ export function JudgeTargets({
                       {usable.map((level) => (
                         <option key={level.value} value={level.value}>
                           {level.value}
-                          {level.meaning ? ` · ${level.meaning.slice(0, 60)}` : ""}
+                          {level.meaning ? `, ${level.meaning.slice(0, 60)}` : ""}
                           {level.excluded ? " (not applicable)" : ""}
                         </option>
                       ))}
@@ -175,7 +175,7 @@ export function JudgeTargets({
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => onChange(null)}
-          className="cursor-pointer rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+          className="cursor-pointer rounded-full border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
         >
           Drop the targets
         </button>

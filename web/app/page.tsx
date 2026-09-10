@@ -1214,7 +1214,7 @@ function EvaluateForm() {
         price:
           model.input_per_mtok === null || model.output_per_mtok === null
             ? null
-            : `in $${model.input_per_mtok.toFixed(2)} · out $${model.output_per_mtok.toFixed(2)} /Mtok`,
+            : `in $${model.input_per_mtok.toFixed(2)}, out $${model.output_per_mtok.toFixed(2)} /Mtok`,
       })),
   );
 
@@ -1303,7 +1303,7 @@ function EvaluateForm() {
             in are on this same bar. */}
         <button
           onClick={() => setClearing(true)}
-          className="cursor-pointer rounded border border-olive bg-paper px-3 py-1 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+          className="cursor-pointer rounded-full border border-olive bg-paper px-3 py-1 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
         >
           Clear evaluation config
         </button>
@@ -1312,7 +1312,7 @@ function EvaluateForm() {
           <FormatGuide providers={providers} />
           <button
             onClick={() => void downloadConfig()}
-            className="cursor-pointer text-zinc-600 underline hover:text-zinc-900"
+            className="cursor-pointer link-underline"
           >
             Download this form as YAML
           </button>
@@ -1472,13 +1472,13 @@ function EvaluateForm() {
           <div className="flex gap-1 rounded border border-zinc-300 p-0.5 text-sm">
             <button
               onClick={() => setSource("manual")}
-              className={`rounded px-3 py-1 ${source === "manual" ? "bg-zinc-900 text-white" : ""}`}
+              className={`rounded-full px-3 py-1 ${source === "manual" ? "bg-olive-deep text-paper" : ""}`}
             >
               Type one
             </button>
             <button
               onClick={() => setSource("csv")}
-              className={`rounded px-3 py-1 ${source === "csv" ? "bg-zinc-900 text-white" : ""}`}
+              className={`rounded-full px-3 py-1 ${source === "csv" ? "bg-olive-deep text-paper" : ""}`}
             >
               Import CSV
             </button>
@@ -1589,14 +1589,14 @@ function EvaluateForm() {
               className="block text-sm"
             />
             {csvColumns.length > 0 && (
-              <div className="space-y-3 rounded border border-zinc-300 bg-zinc-50 p-3">
+              <div className="space-y-3 rounded border border-zinc-300 p-3">
                 <p className="text-sm text-zinc-700">
                   <strong>{csvName}</strong> — {csvRows.length} row
                   {csvRows.length > 1 ? "s" : ""}
                   {csvSkipped > 0 && (
                     <span className="text-amber-700">
                       {" "}
-                      · {csvSkipped} malformed row
+                     , {csvSkipped} malformed row
                       {csvSkipped > 1 ? "s" : ""} skipped
                     </span>
                   )}
@@ -1824,7 +1824,7 @@ function EvaluateForm() {
           <h2 className="eyebrow">Additional judges</h2>
           <button
             onClick={addSecondaryJudge}
-            className="text-sm text-teal-700 underline hover:text-teal-900"
+            className="text-sm link-underline"
           >
             + Add another judge
           </button>
@@ -1954,7 +1954,7 @@ function EvaluateForm() {
           </span>
           <p className="text-sm text-zinc-600">
             Only your favourite models are listed.{" "}
-            <a href="/profile" className="underline hover:text-zinc-900">
+            <a href="/profile" className="link-underline">
               Change which models you see
             </a>
             .
@@ -2059,7 +2059,7 @@ function EvaluateForm() {
       </section>
 
       {/* ---------------- Volume & cost ---------------- */}
-      <section className="space-y-2 rounded border border-zinc-300 bg-zinc-50 p-4">
+      <section className="space-y-2 rounded border border-zinc-300 p-4">
         <p className="text-sm">
           <strong>{scenarios.length || 0}</strong> scenario
           {scenarios.length > 1 ? "s" : ""} ×{" "}
@@ -2303,7 +2303,7 @@ function EvaluateForm() {
               ? "Give the run a name first — it is how you will find this draft again"
               : undefined
           }
-          className="rounded border border-zinc-300 px-4 py-2 hover:bg-zinc-50 disabled:opacity-40"
+          className="rounded-full border border-zinc-300 px-4 py-2 hover:bg-zinc-50 disabled:opacity-40"
         >
           {savingDraft
             ? "Saving…"
