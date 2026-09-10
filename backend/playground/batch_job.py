@@ -123,7 +123,10 @@ def judge_metadata(link: dict[str, Any]) -> dict[str, Any]:
     judge = link["judge"]
     return {
         "run_judge_id": str(link["id"]),
-        "model": judge["model"],
+        # Sur la LIAISON, jamais sur le juge : le modèle en est sorti le jour où
+        # les juges sont devenus une bibliothèque, et le lire encore là ne
+        # trouverait plus rien.
+        "model": link["model"],
         "system_type": judge.get("system_type"),
         "criterion": judge.get("criterion"),
         "rubric": judge.get("rubric"),

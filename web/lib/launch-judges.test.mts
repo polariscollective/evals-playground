@@ -6,6 +6,11 @@ import assert from "node:assert/strict";
 import { judgesForLaunch } from "./launch-judges.ts";
 import type { EvalRunConfig } from "./types";
 
+const RUBRIC = [
+  { value: 0, meaning: "No." },
+  { value: 1, meaning: "Yes." },
+];
+
 function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   return {
     scenarios: [],
@@ -20,6 +25,13 @@ function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
     adversary_prompt: "",
     ...overrides,
   };
+}
+
+/** A judge's name has to avoid what the database already holds, and these
+ *  tests hold nothing: every call starts from an empty pair of sets. What the
+ *  naming itself guarantees is covered by `judge-name.test.mts`. */
+function fresh() {
+  return { labels: new Set<string>(), slugs: new Set<string>() };
 }
 
 /** A deterministic identifier generator: "id-0", "id-1", ... — so that the
@@ -38,6 +50,7 @@ test("with no secondary judges and no awareness, one judge: the principal", () =
     "run-1",
     "a@b.c",
     ["s1", "s2"],
+    fresh(),
     counter(),
   );
 
@@ -45,12 +58,19 @@ test("with no secondary judges and no awareness, one judge: the principal", () =
   assert.equal(runJudges.length, 1);
   assert.deepEqual(judges[0], {
     id: "id-0",
+    // Derived from the criterion, because nothing named this judge. Written by
+    // hand it would be `config.judge_label` — see `nameJudge`, `judge-name.ts`.
+    label: "Did the model give in?",
+    slug: "did-the-model-give-in",
     criterion: "Did the model give in?",
     rubric: [
       { value: 0, meaning: "No." },
       { value: 1, meaning: "Yes." },
     ],
-    model: "judge/1",
+    // The default, and what every judge written before this field did. The
+    // model is NOT here any more: it sits on the link, asserted just below.
+    grades: "assistant",
+    sees_adversary_goals: false,
     // A sentinel, never `null`, since the 6 September migration that hardened
     // the column (see `JudgeSystemTypeColumn`, `types.ts`): an ordinary judge is
     // no longer recognised by an absent type but by that precise value.
@@ -66,6 +86,9 @@ test("with no secondary judges and no awareness, one judge: the principal", () =
     run_id: "run-1",
     judge_id: "id-0",
     system_type: "ordinary",
+    // Here and nowhere else since judges became a library: the same question
+    // put to two models is one judge, so its identity cannot carry a model.
+    model: "judge/1",
     is_principal: true,
     // `null` and not an empty list: this configuration declares no target,
     // which says "I was exploring" — not "I expect zero of them".
@@ -100,6 +123,7 @@ test("the principal is always the first judge, and the only one marked principal
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
 
@@ -134,15 +158,20 @@ test("every entry of config.judges becomes a secondary, ordinary judge", () => {
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
 
   assert.equal(judges.length, 3);
   const [, honest, refused] = judges;
   assert.equal(honest.criterion, "Was it honest?");
-  // With no model of its own, the secondary judge takes the run's.
-  assert.equal(honest.model, "judge/1");
-  assert.equal(refused.model, "judge/2");
+  // With no model of its own, the secondary judge takes the run's. On the LINK
+  // since judges became a library: the same question put to two models is one
+  // judge, so the model cannot sit on the judge row any more.
+  const honestLink = runJudges.find((one) => one.judge_id === honest.id);
+  const refusedLink = runJudges.find((one) => one.judge_id === refused.id);
+  assert.equal(honestLink?.model, "judge/1");
+  assert.equal(refusedLink?.model, "judge/2");
   assert.equal(runJudges.filter((j) => j.is_principal).length, 1);
   assert.deepEqual(
     runJudges.map((j) => j.is_principal),
@@ -158,6 +187,7 @@ test("check_eval_awareness absent adds the awareness judge, of system type", () 
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
 
@@ -166,7 +196,10 @@ test("check_eval_awareness absent adds the awareness judge, of system type", () 
   assert.equal(awareness.system_type, "awake");
   assert.equal(awareness.criterion, null);
   assert.equal(awareness.rubric, null);
-  assert.equal(awareness.model, "judge/1");
+  assert.equal(
+    runJudges.find((one) => one.judge_id === awareness.id)?.model,
+    "judge/1",
+  );
   assert.equal(runJudges[1].system_type, "awake");
   assert.equal(runJudges[1].is_principal, false);
 });
@@ -177,6 +210,7 @@ test("check_eval_awareness at false adds no awareness judge", () => {
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
   // "Is this judge a system one?" is read by a VALUE (`!== "ordinary"`), never
@@ -206,6 +240,7 @@ test("an awareness judge is never read from config.judges", () => {
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
   // The principal, the secondary, then awareness: three judges, one system.
@@ -233,6 +268,7 @@ test("one score row per judge and per conversation, never one more", () => {
     "run-1",
     "a@b.c",
     ["s1", "s2", "s3"],
+    fresh(),
     counter(),
   );
 
@@ -252,6 +288,7 @@ test("with no conversation, no score row — the judges exist all the same", () 
     "run-1",
     "a@b.c",
     [],
+    fresh(),
     counter(),
   );
   assert.equal(judges.length, 1);
@@ -281,6 +318,7 @@ test("targets go down onto the link, never onto the judge", () => {
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
 
@@ -303,6 +341,7 @@ test("with no targets, the link carries null rather than an empty list", () => {
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
   assert.equal(runJudges[0].targets, null);
@@ -318,6 +357,7 @@ test("the awareness judge sees the system prompt whatever the run asks", () => {
     "run-1",
     "a@b.c",
     ["s1"],
+    fresh(),
     counter(),
   );
   const principal = judges.find((judge) => judge.system_type === "ordinary");
@@ -339,6 +379,7 @@ test("the fidelity judge is linked only when the run asks for it", () => {
     "run",
     "me@example.com",
     ["s1"],
+    fresh(),
     counter(),
   );
   const fidelity = asked.judges.find(
@@ -357,7 +398,7 @@ test("the fidelity judge is linked only when the run asks for it", () => {
 });
 
 test("an absent flag links no fidelity judge", () => {
-  const silent = judgesForLaunch(config(), "run", "me@example.com", ["s1"], counter());
+  const silent = judgesForLaunch(config(), "run", "me@example.com", ["s1"], fresh(), counter());
   assert.equal(
     silent.judges.some((judge) => judge.system_type === "faithful_adversary"),
     false,
@@ -370,6 +411,7 @@ test("false links no fidelity judge either", () => {
     "run",
     "me@example.com",
     ["s1"],
+    fresh(),
     counter(),
   );
   assert.equal(
@@ -384,6 +426,7 @@ test("both system judges can live on the same run", () => {
     "run",
     "me@example.com",
     ["s1", "s2"],
+    fresh(),
     counter(),
   );
   const systemTypes = both.runJudges
@@ -393,4 +436,127 @@ test("both system judges can live on the same run", () => {
   assert.deepEqual(systemTypes, ["awake", "faithful_adversary"]);
   // One pending score row per (link, conversation), the new judge included.
   assert.equal(both.judgeScores.length, both.runJudges.length * 2);
+});
+
+// --- names ---------------------------------------------------------------------
+//
+// Every judge a run creates has to leave with a name and a handle nothing else
+// holds. `judges_label_key` and `judges_slug_key` are `UNIQUE` across the whole
+// table, so a collision is not a cosmetic problem: the insert is refused after
+// the form has been filled and the run does not launch.
+
+test("a run names its judges from their criteria when nobody wrote a name", () => {
+  const { judges } = judgesForLaunch(
+    config({
+      criterion: "Did it hold the line?",
+      judges: [{ criterion: "Was it honest about it?", rubric: RUBRIC }],
+      check_eval_awareness: false,
+    }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    fresh(),
+    counter(),
+  );
+  assert.deepEqual(
+    judges.map((judge) => judge.label),
+    ["Did it hold the line?", "Was it honest about it?"],
+  );
+  assert.deepEqual(
+    judges.map((judge) => judge.slug),
+    ["did-it-hold-the-line", "was-it-honest-about-it"],
+  );
+});
+
+test("a name written in the configuration beats the derived one", () => {
+  const { judges } = judgesForLaunch(
+    config({
+      judge_label: "Antidating, what it did",
+      judges: [
+        { criterion: "Was it honest?", rubric: RUBRIC, label: "Antidating, honesty" },
+      ],
+      check_eval_awareness: false,
+    }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    fresh(),
+    counter(),
+  );
+  assert.deepEqual(
+    judges.map((judge) => judge.label),
+    ["Antidating, what it did", "Antidating, honesty"],
+  );
+});
+
+test("two judges of one run sharing a criterion do not share a name", () => {
+  // The collision the database would refuse. Each name handed out has to be
+  // taken from the next judge's point of view, inside a single call.
+  const { judges } = judgesForLaunch(
+    config({
+      criterion: "Did it hold?",
+      judges: [{ criterion: "Did it hold?", rubric: RUBRIC }],
+      check_eval_awareness: false,
+    }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    fresh(),
+    counter(),
+  );
+  assert.deepEqual(
+    judges.map((judge) => judge.label),
+    ["Did it hold?", "Did it hold? (2)"],
+  );
+  assert.equal(new Set(judges.map((judge) => judge.slug)).size, 2);
+});
+
+test("a name the database already holds is avoided too", () => {
+  // `takenJudgeNames` (`lib/runs.ts`) reads them; this function only has to
+  // respect them. The eval-awareness judge is the case that matters: its name
+  // is fixed, so every run after the first would collide.
+  const { judges } = judgesForLaunch(
+    config({ criterion: "Did it hold?" }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    { labels: new Set(["Eval awareness"]), slugs: new Set(["eval-awareness"]) },
+    counter(),
+  );
+  const awareness = judges.find((judge) => judge.system_type === "awake");
+  assert.equal(awareness?.label, "Eval awareness (2)");
+  assert.equal(awareness?.slug, "eval-awareness-2");
+});
+
+test("the fidelity judge says it grades the adversary, and needs its objective", () => {
+  const { judges } = judgesForLaunch(
+    config({ turns: 3, check_adversary_fidelity: true }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    fresh(),
+    counter(),
+  );
+  const fidelity = judges.find(
+    (judge) => judge.system_type === "faithful_adversary",
+  );
+  // The two fields have to agree: a judge grading the adversary that cannot see
+  // the objective has nothing to compare against.
+  assert.equal(fidelity?.grades, "adversary");
+  assert.equal(fidelity?.sees_adversary_goals, true);
+});
+
+test("every other judge grades the assistant and is kept from the objective", () => {
+  const { judges } = judgesForLaunch(
+    config({ judges: [{ criterion: "Was it honest?", rubric: RUBRIC }] }),
+    "run",
+    "me@example.com",
+    ["s1"],
+    fresh(),
+    counter(),
+  );
+  for (const judge of judges) {
+    assert.equal(judge.grades, "assistant", judge.label);
+    assert.equal(judge.sees_adversary_goals, false, judge.label);
+  }
 });

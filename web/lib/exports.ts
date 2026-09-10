@@ -184,7 +184,7 @@ export function matrixCsv(
       ? [
           link.is_principal ? "true" : "false",
           link.system_type,
-          link.judge.model,
+          link.model,
           qa.criterion,
           qa.rubric,
         ]
@@ -401,7 +401,7 @@ export function detailsCsv(run: EvalRun, samples: EvalSample[], judges: RunJudge
         ...sampleColumns,
         link.is_principal ? "true" : "false",
         link.system_type,
-        link.judge.model,
+        link.model,
         criterion,
         rubric,
         verdict.status,
@@ -463,7 +463,7 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
   // The question and the scale really put by the principal, when they are
   // known — same fallback as `matrixCsv`: `principal.judge.*` takes precedence
   // over the run's historical fields, which are only the value frozen at launch.
-  const judgeModel = principal?.judge.model ?? config.models.judge;
+  const judgeModel = principal?.model ?? config.models.judge;
   const criterion = principal?.judge.criterion ?? config.criterion;
   const rubric = principal?.judge.rubric ?? config.rubric;
 
@@ -528,7 +528,7 @@ export function runMarkdown(run: EvalRun, samples: EvalSample[], judges: RunJudg
       "",
     );
     for (const link of secondary) {
-      lines.push(`### \`${link.judge.model}\``, "");
+      lines.push(`### \`${link.judge.label}\` — \`${link.model}\``, "");
       lines.push("**Criterion**", "", (link.judge.criterion ?? "").trim(), "");
       lines.push("**Scale**", "");
       lines.push(...scaleLines(link.judge.rubric ?? []), "");

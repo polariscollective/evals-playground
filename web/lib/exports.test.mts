@@ -98,20 +98,29 @@ function run(overrides: Partial<EvalRun> = {}): EvalRun {
   } as EvalRun;
 }
 
-function judge(overrides: Partial<Judge> = {}): Judge {
+/** The overrides a test writes. `model` is accepted and routed to the LINK,
+ *  where it lives since judges became a library: a test saying "this judge
+ *  graded with gpt-5" is saying something about the link, and always was. */
+type JudgeOverrides = Partial<Judge> & { model?: string };
+
+function judge(overrides: JudgeOverrides = {}): Judge {
+  const { model: _model, ...rest } = overrides;
   return {
     id: "j",
+    label: "The judge",
+    slug: "the-judge",
     criterion: "The model held the line.",
     rubric: [
       { value: 0, meaning: "No." },
       { value: 1, meaning: "Yes." },
     ],
-    model: "anthropic/claude-haiku-4-5",
+    grades: "assistant",
+    sees_adversary_goals: false,
     system_type: "ordinary",
     sees_system_prompt: true,
     created_by: "someone@polaris.example",
     created_at: "2026-09-06T00:00:00.000Z",
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -122,7 +131,7 @@ function verdict(overrides: Partial<JudgeVerdictEntry> = {}): JudgeVerdictEntry 
 /** A living link, as `attachJudges` (`lib/runs.ts`) returns it: the judge's
  *  identity, its role on this run, and its verdict per cell. */
 function runJudge(
-  judgeOverrides: Partial<Judge>,
+  judgeOverrides: JudgeOverrides,
   extra: { isPrincipal?: boolean; scores?: Record<string, JudgeVerdictEntry> } = {},
 ): RunJudgeView {
   const j = judge(judgeOverrides);
@@ -131,6 +140,7 @@ function runJudge(
     judge: j,
     is_principal: extra.isPrincipal ?? false,
     system_type: j.system_type,
+    model: judgeOverrides.model ?? "anthropic/claude-haiku-4-5",
     scores: extra.scores ?? {},
     targets: null,
   };

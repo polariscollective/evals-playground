@@ -94,9 +94,9 @@ export const MCP_TOOLS: McpTool[] = [
     name: "get_run_metadata",
     summary:
       "What a run is: its label, its state, its models, every judge still attached with its " +
-      "question and scale, and what the eval-awareness check found.",
+      "name, handle, question, scale and what it grades, and what the eval-awareness check found.",
     input: ["run_id"],
-    output: "The run's identity and its judges.",
+    output: "The run's identity and its judges, each with the `slug` that names it.",
   },
   {
     name: "get_run_results",

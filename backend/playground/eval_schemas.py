@@ -52,6 +52,17 @@ class RubricLevel(BaseModel):
 # what a run carries in its configuration, before any row exists.
 
 JudgeSystemType = Literal["ordinary", "awake", "faithful_adversary"]
+
+JudgeGrades = Literal["assistant", "adversary", "exchange"]
+"""De qui un juge note les tours.
+
+**Orthogonal à `system_type`.** Un juge système est un juge dont le TEXTE
+vit dans le code, ce qui ne dit rien de qui il regarde. C'est ce champ qui
+permet à un juge ordinaire, portant la question de l'utilisateur, de noter
+l'adversaire.
+
+`"exchange"` n'est ni l'un ni l'autre des deux locuteurs mais ce qui a passé
+entre eux : pour une question qui n'a de réponse qu'en lisant les deux côtés."""
 """The exact domain of the `system_type` column, in `judges` as in
 `run_judges` — that of the `judges_system_type_check` CHECK in the database.
 
@@ -107,6 +118,20 @@ class Judge(BaseModel):
     """
 
     id: str
+
+    label: str
+    """Le nom qu'on lit.
+
+    Unique dans toute la base : MCP résout un juge par sa poignée, et un nom
+    ambigu entre deux comptes serait une erreur silencieuse. Modifiable à tout
+    moment, y compris sur un juge qui a noté cent conversations — un nom n'a
+    jamais rien noté, donc le renommer ne réécrit aucun résultat."""
+
+    slug: str
+    """La poignée : ce par quoi MCP et une URL désignent ce juge. Dérivée du
+    label à la création, puis immuable — renommer ne doit pas casser les liens
+    qui nomment le juge."""
+
     criterion: str | None = None
     """The question put to the judge, as the user wrote it. `None` for a
     system judge — see the class docstring."""
@@ -115,8 +140,16 @@ class Judge(BaseModel):
     """The judge's scale, as the user wrote it. `None` for a system judge —
     see the class docstring."""
 
-    model: str
-    """The model that grades."""
+    grades: JudgeGrades = "assistant"
+    """De qui ce juge note les tours — voir `JudgeGrades`. `"assistant"` est le
+    défaut en base et ce que faisait tout juge écrit avant ce champ."""
+
+    sees_adversary_goals: bool = False
+    """Si ce juge reçoit l'objectif écrit pour l'adversaire.
+
+    Obligatoire pour un juge qui note l'adversaire : sans lui, il n'a rien contre
+    quoi comparer. Éteint par défaut pour un juge qui note l'assistant, où il
+    invite à excuser une capitulation parce que la pression était voulue."""
 
     system_type: JudgeSystemType
     """`"ordinary"` for an ordinary judge — a sentinel, never absent: the
@@ -205,6 +238,16 @@ class RunJudge(BaseModel):
     id: str
     run_id: str
     judge_id: str
+
+    model: str
+    """Le modèle qui a noté ce run-là.
+
+    Sur la liaison et non sur le juge, depuis la migration
+    `20260910090000_judges_become_a_library.sql` (dépôt polaris-supabase). Tant
+    qu'il vivait sur le juge, il faisait partie de son identité : la même
+    question posée à trois modèles faisait trois juges, et rien ne dédoublonnait
+    jamais. C'est aussi ce qui rend la calibration exprimable — on ne calibre pas
+    un juge, on calibre un couple."""
 
     system_type: JudgeSystemType
     """A copy of `Judge.system_type` at the moment of linking. `"ordinary"`

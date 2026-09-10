@@ -43,6 +43,9 @@ export interface JudgeForConfig {
   judge: Judge;
   is_principal: boolean;
   system_type: JudgeSystemTypeColumn;
+  /** The model that graded, read from the LINK since judges became a library:
+   *  the same question put to two models is one judge, not two. */
+  model: string;
 }
 
 /** A run's configuration, with its judges replaced by those really living
@@ -93,7 +96,7 @@ export function withLiveJudges(
     rubric: principal?.judge.rubric ?? config.rubric,
     models: {
       ...config.models,
-      judge: principal?.judge.model ?? config.models.judge,
+      judge: principal?.model ?? config.models.judge,
     },
     judges: secondaries.map((entry) => ({
         // Not null in practice: a judge with `system_type === "ordinary"`
@@ -103,7 +106,7 @@ export function withLiveJudges(
         // reached.
       criterion: entry.judge.criterion ?? "",
       rubric: entry.judge.rubric ?? [],
-      model: entry.judge.model,
+      model: entry.model,
     })),
     check_eval_awareness: awakeStillLinked,
     check_adversary_fidelity: fidelityStillLinked,

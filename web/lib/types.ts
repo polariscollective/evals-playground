@@ -198,6 +198,17 @@ export interface JudgeTarget {
  * place where it is written. */
 export type JudgeSystemTypeColumn = JudgeSystemType | "ordinary";
 
+/** Whose turns a judge grades.
+ *
+ * **Orthogonal to `system_type`.** A system judge is one whose TEXT lives in the
+ * code, which says nothing about who it looks at. This field is what lets an
+ * ordinary judge, carrying the user's own question, grade the adversary.
+ *
+ * `"exchange"` is neither of the two speakers but what passed between them: it
+ * is for a question that only has an answer when both sides are read, such as
+ * whether the pressure ever landed at all. */
+export type JudgeGrades = "assistant" | "adversary" | "exchange";
+
 /** A row of `judges`: a judge's configuration, independent of the runs that use
  *  it — see `RunJudge` for the link to a given run.
  *
@@ -211,12 +222,34 @@ export type JudgeSystemTypeColumn = JudgeSystemType | "ordinary";
  * `judges_ordinary_or_system_check` in the database. */
 export interface Judge {
   id: string;
+  /** The name a person reads.
+   *
+   * Unique across the whole database, because MCP resolves a judge by handle
+   * and a name ambiguous between two accounts would be a silent mistake.
+   * Changeable at any time, on a judge that has graded a hundred conversations
+   * included: a name has never graded anything, so renaming rewrites no result.
+   * See `lib/judge-name.ts`. */
+  label: string;
+  /** The handle: what MCP and a URL use to name this judge.
+   *
+   * Derived from the label when the judge is created, then immutable. Renaming
+   * must not break the links that name the judge. */
+  slug: string;
   /** The question put to the judge, as the user wrote it. `null` for a system
    *  judge. */
   criterion: string | null;
   /** The judge's scale, as the user wrote it. `null` for a system judge. */
   rubric: RubricLevel[] | null;
-  model: string;
+  /** Whose turns this judge grades — see `JudgeGrades`. `"assistant"` is the
+   *  column's default and what every judge written before this field did. */
+  grades: JudgeGrades;
+  /** Whether this judge is handed the objective written for the adversary.
+   *
+   * Required for a judge that grades the adversary: without it there is nothing
+   * to compare against. Off by default for a judge that grades the assistant,
+   * where it invites excusing a capitulation because the pressure was
+   * deliberate. */
+  sees_adversary_goals: boolean;
   /** `"ordinary"` for an ordinary judge — a sentinel, never `null` since the 6
    *  September migration cited on `JudgeSystemTypeColumn`. `"awake"`: the
    *  awareness check — did the evaluated model show it knew it was being tested?
@@ -268,6 +301,20 @@ export interface RunJudge {
   id: string;
   run_id: string;
   judge_id: string;
+  /** The model that graded this run.
+   *
+   * On the link and not on the judge, since the migration
+   * `20260910090000_judges_become_a_library.sql` (polaris-supabase repository).
+   * While it sat on the judge it was part of a judge's identity, so the same
+   * question put to three models made three judges and nothing ever deduplicated
+   * — measured on 9 September 2026: 34 judge rows, 34 links, not one judge
+   * shared by two runs, and eight copies of the eval-awareness judge differing
+   * only by this column.
+   *
+   * It is also what makes calibration expressible. One does not calibrate a
+   * judge, one calibrates a pair: the same question put to Haiku and to Opus are
+   * two different graders. */
+  model: string;
   /** A copy of `Judge.system_type` at the moment of the link, pinned in the
    *  database by a composite foreign key `(judge_id, system_type) -> judges (id,
    *  system_type)` that forbids any divergence between the two. It exists here
@@ -404,6 +451,10 @@ export interface RunJudgeView {
   judge: Judge;
   is_principal: boolean;
   system_type: JudgeSystemTypeColumn;
+  /** The model that graded this run — on the view and not on `judge`, because
+   *  it lives on the link: the same judge reused elsewhere may have been graded
+   *  there by another model. See `RunJudge.model`. */
+  model: string;
   /** This judge's verdict on each conversation, by `sample_id` — empty for a
    *  judge of which the screen asked only the identity, not the grade: see
    *  `attachJudges` (`runs.ts`), which brings back the complete verdicts of every
@@ -446,6 +497,11 @@ export interface JudgeSpec {
   /** Whether this judge sees the scenario's system prompt — see
    *  `Judge.sees_system_prompt`. Absent means `true`, today's behaviour. */
   sees_system_prompt?: boolean;
+  /** What to call this judge. Absent derives one from the criterion, and
+   *  collisions are numbered — see `nameJudge` (`lib/judge-name.ts`). Worth
+   *  writing: a derived name is the first seventy characters of a question, and
+   *  it is what a person will scan a list of judges by. */
+  label?: string;
 }
 
 export interface TemperatureSpec {
@@ -528,6 +584,11 @@ export interface EvalRunConfig {
    * this field do not carry it and must stay readable. Read
    * `config.check_eval_awareness !== false`, never `=== true`. */
   check_eval_awareness?: boolean;
+  /** What to call the principal judge. Absent derives a name from `criterion`,
+   *  cut to seventy characters, and numbers a collision — see `nameJudge`
+   *  (`lib/judge-name.ts`). Worth writing: it is what a person scans a list of
+   *  judges by, and a derived name is the opening of a question. */
+  judge_label?: string;
   /** Does a judge say whether the ADVERSARY pushed the way its objective told
    *  it to?
    *

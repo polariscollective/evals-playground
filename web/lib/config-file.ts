@@ -276,6 +276,11 @@ function readJudges(value: unknown): JudgeSpec[] {
       criterion: asString(row.criterion),
       rubric: readRubric(row.rubric, `judge ${position + 1}: rubric`),
       ...(typeof model === "string" ? { model } : {}),
+      // Absent derives a name from the criterion. Read like `model` above and
+      // not through `asString`: a number slipped in here would become an empty
+      // string, and the judge would be named after its question without anyone
+      // seeing that the name they wrote was thrown away.
+      ...(typeof row.label === "string" ? { label: row.label } : {}),
       ...readTargets(row.targets, `judge ${position + 1}`),
       ...(typeof row.sees_system_prompt === "boolean"
         ? { sees_system_prompt: row.sees_system_prompt }
@@ -375,6 +380,11 @@ export function readConfigFile(text: string): ImportedConfig {
   const config: EvalRunConfig = {
     scenarios,
     criterion: asString(file.criterion),
+      // The principal's name. Absent derives one from the criterion; read as a
+      // string or not at all, for the same reason as a secondary's.
+    ...(typeof file.judge_label === "string"
+      ? { judge_label: file.judge_label }
+      : {}),
     rubric: readRubric(file.rubric),
     // The PRINCIPAL's targets, at the top level like its criterion and its
     // scale. The secondaries' travel inside `judges`.
@@ -484,6 +494,7 @@ export function writeConfigFile(config: EvalRunConfig): string {
   const document = {
     label: config.label ?? "",
     notes: config.notes ?? "",
+    ...(config.judge_label ? { judge_label: config.judge_label } : {}),
     criterion: config.criterion,
       // `excluded: false` on every level would be noise: it is the reader's
       // default, and a file that writes it everywhere teaches a field where it
@@ -499,6 +510,7 @@ export function writeConfigFile(config: EvalRunConfig): string {
     ...(config.judges && config.judges.length > 0
       ? {
           judges: config.judges.map((judge) => ({
+            ...(judge.label ? { label: judge.label } : {}),
             criterion: judge.criterion,
             rubric: rubricDocument(judge.rubric),
             ...(judge.model ? { model: judge.model } : {}),

@@ -627,7 +627,7 @@ function OtherJudgeRow({
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 py-2 text-sm first:border-t-0">
       <div className="space-y-1">
         <span className="font-mono text-xs text-zinc-500">
-          {shortModel(judge.judge.model)}
+          {shortModel(judge.model)}
         </span>{" "}
         <span className="text-zinc-700">{judgeLabel(judge.judge)}</span>
         {judge.system_type !== "ordinary" && (
@@ -722,7 +722,7 @@ function OtherJudgeRow({
       >
         <p className="mb-2">
           <span className="font-mono text-xs text-zinc-500">
-            {shortModel(judge.judge.model)}
+            {shortModel(judge.model)}
           </span>{" "}
           <span className="text-zinc-700">{judgeLabel(judge.judge)}</span>
         </p>
@@ -863,7 +863,7 @@ function PrincipalUnlink({
       >
         {ordinaryOthers.map((other) => (
           <option key={other.run_judge_id} value={other.run_judge_id}>
-            {shortModel(other.judge.model)} — {judgeLabel(other.judge)}
+            {shortModel(other.model)} — {judgeLabel(other.judge)}
           </option>
         ))}
       </select>
@@ -968,7 +968,7 @@ export function JudgeBlock({
   // if another judge has taken over the title since the launch, or if one chose to
   // look at another. Without it, `config` stays the only source, as before the
   // multiple judges.
-  const judgeModel = displayedJudge?.judge.model ?? config.models.judge;
+  const judgeModel = displayedJudge?.model ?? config.models.judge;
   const criterion = displayedJudge?.judge.criterion ?? config.criterion;
   const rubric = displayedJudge?.judge.rubric ?? config.rubric;
 
@@ -1086,7 +1086,7 @@ export function JudgeBlock({
         {!viewingPrincipal && displayedJudge && (
           <div className="space-y-1 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
             <p>
-              You are viewing {shortModel(displayedJudge.judge.model)}, not
+              You are viewing {shortModel(displayedJudge.model)}, not
               this run&apos;s principal — the matrix below follows what you
               view, but the export and the MCP tools still follow the
               principal.
@@ -1529,7 +1529,7 @@ export function AttemptView({
               <div key={judge.run_judge_id} className="space-y-0.5 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs text-zinc-500">
-                    {shortModel(judge.judge.model)}
+                    {shortModel(judge.model)}
                   </span>
                   <ScoreBadge
                     status={attempt.status}

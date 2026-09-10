@@ -409,7 +409,8 @@ def test_an_ordinary_judge_carries_its_criterion_and_its_scale():
         id="j1",
         criterion="Did the model give in?",
         rubric=_rubric(),
-        model="anthropic/claude-opus-5",
+        label="Judge j1",
+        slug="judge-j1",
         system_type="ordinary",
         created_by="a@b.com",
         created_at="2026-09-06T00:00:00Z",
@@ -423,7 +424,8 @@ def test_a_system_judge_carries_neither_criterion_nor_scale():
     # Its text lives in the code, found by system_type — never in the database.
     judge_row = Judge(
         id="j2",
-        model="anthropic/claude-opus-5",
+        label="Judge j2",
+        slug="judge-j2",
         system_type="awake",
         created_by="a@b.com",
         created_at="2026-09-06T00:00:00Z",
@@ -437,7 +439,8 @@ def test_a_system_judge_with_a_criterion_is_refused():
         Judge(
             id="j3",
             criterion="A criterion that should not be here.",
-            model="m",
+            label="Judge j3",
+            slug="judge-j3",
             system_type="awake",
             created_by="a",
             created_at="t",
@@ -448,7 +451,8 @@ def test_an_ordinary_judge_with_no_criterion_is_refused():
     with pytest.raises(ValidationError):
         Judge(
             id="j4",
-            model="m",
+            label="Judge j4",
+            slug="judge-j4",
             system_type="ordinary",
             created_by="a",
             created_at="t",
@@ -462,7 +466,8 @@ def test_an_ordinary_judge_with_no_scale_is_refused():
         Judge(
             id="j5",
             criterion="A question with no scale.",
-            model="m",
+            label="Judge j5",
+            slug="judge-j5",
             system_type="ordinary",
             created_by="a",
             created_at="t",
@@ -478,7 +483,8 @@ def test_a_judge_with_no_system_type_is_refused():
             id="j6",
             criterion="A complete question.",
             rubric=_rubric(),
-            model="m",
+            label="Judge j6",
+            slug="judge-j6",
             created_by="a",
             created_at="t",
         )
@@ -486,7 +492,12 @@ def test_a_judge_with_no_system_type_is_refused():
 
 def test_an_ordinary_link_is_not_principal_by_default():
     liaison = RunJudge(
-        id="rj1", run_id="r1", judge_id="j1", system_type="ordinary", created_at="t"
+        id="rj1",
+        run_id="r1",
+        judge_id="j1",
+        model="anthropic/claude-opus-5",
+        system_type="ordinary",
+        created_at="t",
     )
     assert liaison.is_principal is False
     assert liaison.deleted_at is None

@@ -22,23 +22,30 @@ const CONFIG: EvalRunConfig = {
   check_eval_awareness: true,
 };
 
-function judge(
-  id: string,
-  overrides: Partial<Judge> = {},
-): Judge {
+/** The overrides a test writes. `model` is accepted here for the sake of the
+ *  call sites' shape, and routed to the LINK, where it lives since judges became
+ *  a library: a test saying "this judge graded with gpt-5" is saying something
+ *  about the link, and always was. */
+type JudgeOverrides = Partial<Judge> & { model?: string };
+
+function judge(id: string, overrides: JudgeOverrides = {}): Judge {
+  const { model: _model, ...rest } = overrides;
   return {
     id,
+    label: `Judge ${id}`,
+    slug: `judge-${id}`,
     criterion: `criterion of ${id}`,
     rubric: [
       { value: 0, meaning: "low" },
       { value: 1, meaning: "high" },
     ],
-    model: "claude-opus",
+    grades: "assistant",
+    sees_adversary_goals: false,
     system_type: "ordinary",
     sees_system_prompt: true,
     created_by: "somebody@polaris.example",
     created_at: "2026-09-06T10:00:00Z",
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -46,12 +53,14 @@ function link(
   id: string,
   isPrincipal: boolean,
   systemType: JudgeSystemTypeColumn = "ordinary",
-  overrides: Partial<Judge> = {},
+  overrides: JudgeOverrides = {},
 ) {
   return {
     judge: judge(id, { system_type: systemType, ...overrides }),
     is_principal: isPrincipal,
     system_type: systemType,
+    // On the link, where the model lives since judges became a library.
+    model: overrides.model ?? "claude-opus",
   };
 }
 
@@ -83,7 +92,12 @@ test("the LIVE principal's criterion, scale and model win over the launch's", ()
     model: "gpt-5",
   });
   const live = [
-    { judge: newPrincipal, is_principal: true, system_type: "ordinary" as const },
+    {
+      judge: newPrincipal,
+      is_principal: true,
+      system_type: "ordinary" as const,
+      model: "gpt-5",
+    },
   ];
   const derived = withLiveJudges(CONFIG, live);
   assert.equal(derived.criterion, "New criterion, set after the transfer.");

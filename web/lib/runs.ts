@@ -43,6 +43,7 @@ import {
   judgeScoresForSamples,
 } from "./launch-judges.ts";
 import { classifyRunJudgesRefusal } from "./run-judges-refusal";
+import type { TakenNames } from "./judge-name";
 import { withoutIdentity } from "./public-run";
 import type { PublicRunDetail } from "./public-run";
 // `AWAKE_TYPE`: the only thing borrowed from `awareness.ts` to find a run's
@@ -524,6 +525,7 @@ async function attachJudges(
     judge: link.judge,
     is_principal: link.is_principal,
     system_type: link.system_type,
+    model: link.model,
     scores: byJudge.get(link.id) ?? {},
   }));
 }
@@ -674,6 +676,7 @@ export async function createRun(
     run.id,
     userEmail,
     samples.map((sample) => sample.id),
+    await takenJudgeNames(),
   );
   await insert(JUDGES, judges);
   await insert(RUN_JUDGES, runJudges);
@@ -689,6 +692,28 @@ export async function createRun(
  *  rereading `judges` beside it. */
 export interface LiveRunJudge extends RunJudge {
   judge: Judge;
+}
+
+/** Every judge name and handle already taken, for `nameJudge`
+ *  (`lib/judge-name.ts`).
+ *
+ * Both columns are unique across the whole table, so a name is chosen against
+ * everything that exists rather than against this user's own judges. One round
+ * trip per launch, never one per judge.
+ *
+ * A race remains, named rather than papered over: two launches choosing the same
+ * name between this read and their inserts. The second insert is refused by
+ * `judges_label_key` and the launch fails saying so, which is the right outcome
+ * for a tool with two users. A retry belongs here the day it happens to
+ * somebody. */
+export async function takenJudgeNames(): Promise<TakenNames> {
+  const rows = await select<{ label: string; slug: string }>(JUDGES, {
+    select: "label,slug",
+  });
+  return {
+    labels: new Set(rows.map((row) => row.label)),
+    slugs: new Set(rows.map((row) => row.slug)),
+  };
 }
 
 /** THE function that loads a run's judges — the only one allowed to filter
@@ -755,6 +780,8 @@ export interface SampleJudgeVerdict {
   judge: Judge;
   is_principal: boolean;
   system_type: JudgeSystemTypeColumn;
+  /** The model that graded — from the link, see `RunJudge.model`. */
+  model: string;
   verdict: JudgeVerdictEntry;
 }
 
@@ -793,6 +820,7 @@ export async function judgeVerdictsForSample(
     judge: link.judge,
     is_principal: link.is_principal,
     system_type: link.system_type,
+    model: link.model,
     verdict: byJudge.get(link.id) ?? {
       status: "pending",
       score: null,
@@ -1042,7 +1070,7 @@ export async function addJudge(
     select: "id",
   });
 
-  const judge = judgeRowFromSpec(spec, run.config.models.judge, createdBy);
+  const judge = judgeRowFromSpec(spec, createdBy, await takenJudgeNames());
   const runJudgeId = randomUUID();
 
   await insert(JUDGES, judge);
@@ -1051,6 +1079,9 @@ export async function addJudge(
     run_id: runId,
     judge_id: judge.id,
     system_type: judge.system_type,
+    // Absent takes the run's, exactly as `JudgeSpec.model` says: adding a judge
+    // should not force repeating a model that really is the run's.
+    model: spec.model ?? run.config.models.judge,
     is_principal: false,
     // On the link and not on the judge — see `RunJudge.targets`. A judge placed
     // on a twelve-row run has to say what it expects of the twelve, which

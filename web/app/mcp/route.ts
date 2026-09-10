@@ -281,12 +281,20 @@ function judgeIdentity(view: {
   judge: Judge;
   is_principal: boolean;
   system_type: JudgeSystemTypeColumn;
+  /** From the LINK, never from the judge: since judges became a library the
+   *  same question graded by two models is one judge, not two. */
+  model: string;
   targets?: JudgeTarget[] | null;
 }) {
   const system =
     view.system_type === "ordinary" ? null : SYSTEM_JUDGES[view.system_type];
   return {
     judge_id: view.judge.id,
+    // The handle, and the name a person reads. An agent that has read a run's
+    // results and wants the judge itself asks by `slug`, which never moves;
+    // `label` can be renamed and is there to be shown, not to address by.
+    slug: view.judge.slug,
+    label: view.judge.label,
     // L'identifiant de la LIAISON, distinct de `judge_id` : c'est lui que
     // `submit_draft_extension` expects in `new_targets`, one judge being able to
     // be linked to several runs. Absent when the caller does not hold it — a
@@ -294,12 +302,17 @@ function judgeIdentity(view: {
     ...(view.run_judge_id ? { run_judge_id: view.run_judge_id } : {}),
     is_principal: view.is_principal,
     system_type: view.system_type,
-    model: view.judge.model,
+    model: view.model,
     criterion: system ? system.criterion : view.judge.criterion,
     rubric: system ? null : view.judge.rubric,
     // `null` for an ordinary judge: its scale is `rubric`, above, never this
     // field — so the two are never both filled in.
     scale: system ? system.scale : null,
+    // Whose turns this judge looks at. Orthogonal to `system_type`: an ordinary
+    // judge carrying the user's own question can grade the adversary.
+    grades: view.judge.grades,
+    sees_system_prompt: view.judge.sees_system_prompt,
+    sees_adversary_goals: view.judge.sees_adversary_goals,
     // What this judge expected of each scenario, in row order. `null` means it
     // declares none: the run was written as an exploration, and its matrix is
     // not meant to be quoted. Never returned to the evaluated model nor to the

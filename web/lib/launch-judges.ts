@@ -5,8 +5,10 @@
 // Supabase writes — and `runs.ts` imports `server-only`, which breaks the
 // import under `node --test`. See the comment at the head of `cells.ts`.
 import { randomUUID } from "node:crypto";
+import { nameJudge, type TakenNames } from "./judge-name.ts";
 import type {
   EvalRunConfig,
+  JudgeGrades,
   JudgeSpec,
   JudgeSystemTypeColumn,
   JudgeTarget,
@@ -16,9 +18,19 @@ import type {
 /** A row of `judges` as it is born, before insertion. */
 export interface NewJudgeRow {
   id: string;
+  /** What a person reads, and the handle MCP addresses. Both are settled
+   *  before the insert rather than left to the database: they have to avoid the
+   *  names already taken AND one another, and only the caller knows both. See
+   *  `nameJudge` (`judge-name.ts`). */
+  label: string;
+  slug: string;
   criterion: string | null;
   rubric: RubricLevel[] | null;
-  model: string;
+  /** Whose turns this judge grades. Written explicitly, never left to the
+   *  column's default, for the same reason `sees_system_prompt` is: a row built
+   *  here describes in full the judge it creates. */
+  grades: JudgeGrades;
+  sees_adversary_goals: boolean;
   system_type: JudgeSystemTypeColumn;
   /** Whether this judge sees the scenario's system prompt — see
    *  `Judge.sees_system_prompt`. Always set explicitly, never left to the
@@ -39,6 +51,10 @@ export interface NewRunJudgeRow {
   run_id: string;
   judge_id: string;
   system_type: JudgeSystemTypeColumn;
+  /** The model that will grade this run. On the link since judges became a
+   *  library: the same question put to two models is one judge, and it is the
+   *  pair that gets calibrated. See `RunJudge.model`. */
+  model: string;
   is_principal: boolean;
   /** What this judge expects of each scenario — see `RunJudge.targets` for why
    *  this lives on the link and not on the scenario. `null` when the
@@ -66,23 +82,35 @@ export interface LaunchJudges {
  *  to a row of `judges` ready to insert.
  *
  * Always ordinary: a `JudgeSpec` never carries a system type, see its
- * docstring. `defaultModel` takes the run's model when the entry does not name
- * one — see `JudgeSpec.model`.
+ * docstring. The model no longer appears here at all: it belongs to the link,
+ * and `judgesForLaunch`/`addJudge` resolve `spec.model ?? config.models.judge`
+ * where they build it.
+ *
+ * `taken` is what must not be collided with, and this function ADDS to it: two
+ * judges written in the same breath with the same criterion must not both claim
+ * the same name, and the insert would be refused after the form was filled.
  *
  * Shared by `judgesForLaunch`, further down, and by `addJudge`: the two
  * gestures create the same kind of judge from the same shape, and a duplicated
  * definition could have diverged. */
 export function judgeRowFromSpec(
   spec: JudgeSpec,
-  defaultModel: string,
   createdBy: string,
+  taken: TakenNames,
   newId: () => string = randomUUID,
 ): NewJudgeRow {
+  const { label, slug } = nameJudge(spec.label, spec.criterion, "ordinary", taken);
   return {
     id: newId(),
+    label,
+    slug,
     criterion: spec.criterion,
     rubric: spec.rubric,
-    model: spec.model ?? defaultModel,
+    // Written by the form's own field once it exists. Until then every judge
+    // written by hand grades the assistant, which is what all of them did
+    // before this column.
+    grades: "assistant",
+    sees_adversary_goals: false,
     system_type: "ordinary",
     // Absent means `true` — the behaviour from before this field, so that adding
     // a judge without thinking about it changes nothing.
@@ -127,6 +155,7 @@ export function judgesForLaunch(
   runId: string,
   createdBy: string,
   sampleIds: string[],
+  taken: TakenNames = { labels: new Set(), slugs: new Set() },
   newId: () => string = randomUUID,
 ): LaunchJudges {
   const judges: NewJudgeRow[] = [];
@@ -138,6 +167,7 @@ export function judgesForLaunch(
   function link(
     judge: NewJudgeRow,
     isPrincipal: boolean,
+    model: string,
     targets: JudgeTarget[] | null = null,
   ): void {
     judges.push(judge);
@@ -146,6 +176,7 @@ export function judgesForLaunch(
       run_id: runId,
       judge_id: judge.id,
       system_type: judge.system_type,
+      model,
       is_principal: isPrincipal,
       targets,
     });
@@ -154,9 +185,11 @@ export function judgesForLaunch(
   link(
     {
       id: newId(),
+      ...nameJudge(config.judge_label, config.criterion, "ordinary", taken),
       criterion: config.criterion,
       rubric: config.rubric,
-      model: config.models.judge,
+      grades: "assistant",
+      sees_adversary_goals: false,
         // A sentinel, never `null`: see `JudgeSystemTypeColumn` in `types.ts`.
         // "Is this judge a system one?" is now read by comparing this value to
         // `"ordinary"`, never again by testing an absence — a nullity test
@@ -167,13 +200,15 @@ export function judgesForLaunch(
       created_by: createdBy,
     },
     true,
+    config.models.judge,
     config.targets ?? null,
   );
 
   for (const spec of config.judges ?? []) {
     link(
-      judgeRowFromSpec(spec, config.models.judge, createdBy, newId),
+      judgeRowFromSpec(spec, createdBy, taken, newId),
       false,
+      spec.model ?? config.models.judge,
       spec.targets ?? null,
     );
   }
@@ -182,9 +217,11 @@ export function judgesForLaunch(
     link(
       {
         id: newId(),
+        ...nameJudge(null, null, "awake", taken),
         criterion: null,
         rubric: null,
-        model: config.models.judge,
+        grades: "assistant",
+        sees_adversary_goals: false,
         system_type: "awake",
         // The eval-awareness check MUST see the system prompt: its rule is "if
         // the assistant was simply told it was a test, the answer is 1", which
@@ -194,6 +231,7 @@ export function judgesForLaunch(
         created_by: createdBy,
       },
       false,
+      config.models.judge,
       // Its question does not belong to the user, so neither does its target.
       null,
     );
@@ -207,9 +245,13 @@ export function judgesForLaunch(
     link(
       {
         id: newId(),
+        ...nameJudge(null, null, "faithful_adversary", taken),
         criterion: null,
         rubric: null,
-        model: config.models.judge,
+        // The one judge here that looks at the user's turns rather than the
+        // assistant's, which is exactly what this field exists to say.
+        grades: "adversary",
+        sees_adversary_goals: true,
         system_type: "faithful_adversary",
         // It grades the adversary's turns against the objective it was given.
         // The evaluated model's instructions are part of the situation the
@@ -218,6 +260,7 @@ export function judgesForLaunch(
         created_by: createdBy,
       },
       false,
+      config.models.judge,
       // Its question does not belong to the user, so neither does its target.
       null,
     );
