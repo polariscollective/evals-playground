@@ -125,6 +125,26 @@ def _without_prefix(value: str | None) -> str | None:
     return value.removeprefix("eq.") if value is not None else None
 
 
+def _projected(rows: list[dict], select: str | None) -> list[dict]:
+    """The rows as PostgREST hands them back: the columns asked for, and those
+    only.
+
+    Without this, the fake returns whole rows, and a `select` that forgets a
+    column the engine then reads passes here while it kills the job in
+    production. That is exactly what happened to `run_judges.model`: the reader
+    moved to the link, the select never followed, and the first run launched
+    afterwards died with `KeyError: 'model'` before its first cell.
+
+    A column the row does not carry is simply absent from the projection, as it
+    would be from a row of a table that has just lost it. Naming a column that
+    exists nowhere is a different fault, and `tests/test_supabase_store.py`
+    pins the lists against it."""
+    if select is None or select == "*":
+        return rows
+    columns = [column.strip() for column in select.split(",")]
+    return [{column: row[column] for column in columns if column in row} for row in rows]
+
+
 class FakeSupabase(Supabase):
     """An in-memory database that keeps the order of the writes.
 
@@ -165,7 +185,8 @@ class FakeSupabase(Supabase):
             return [{**self.run, "status": self.status}]
         if table == "judges":
             ids = _parse_in(params.get("id"))
-            return [j for j in self.judges if ids is None or j["id"] in ids]
+            rows = [j for j in self.judges if ids is None or j["id"] in ids]
+            return _projected(rows, params.get("select"))
         if table == "run_judges":
             rows = [
                 rj
@@ -174,7 +195,7 @@ class FakeSupabase(Supabase):
             ]
             if params.get("deleted_at") == "is.null":
                 rows = [rj for rj in rows if rj.get("deleted_at") is None]
-            return rows
+            return _projected(rows, params.get("select"))
         if table == JUDGE_SCORES:
             run_id = _without_prefix(params.get("run_id"))
             rows = [s for s in self.judge_scores if s["run_id"] == run_id]
