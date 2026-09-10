@@ -495,20 +495,40 @@ export interface JudgeUse {
   graded: number;
 }
 
-/** A judge and everything the library page says about it. */
-export interface JudgeCard {
+/** A judge as the LIST shows it: what fits on one line, and nothing else.
+ *
+ * The criterion is a paragraph and the uses are one row per run. Sending both
+ * for every judge meant the list grew with the library rather than with what is
+ * on screen, for text nobody reads until they open a row. `loadJudge` fetches
+ * that when a row is opened. */
+export interface JudgeSummary {
+  id: string;
+  label: string;
+  slug: string;
+  system_type: JudgeSystemTypeColumn;
+  grades: JudgeGrades;
+  sees_system_prompt: boolean;
+  sees_adversary_goals: boolean;
+  /** It has returned at least one grade, so its question, scale, visibility and
+   *  target are frozen — enforced by `judges_freeze_graded_trigger` in the
+   *  database, not only here. The label and the handle are not covered: they
+   *  graded nothing. */
+  frozen: boolean;
+  /** Never linked to anything, or linked only to runs since unlinked. */
+  unused: boolean;
+  /** Runs that still count it. */
+  live_runs: number;
+  /** Conversations graded, across every run it has touched. */
+  graded: number;
+  /** Every model it has graded under, which is more than one when the same
+   *  question was put to two. */
+  models: string[];
+}
+
+/** A judge as an OPEN row shows it: what the list deliberately left out. */
+export interface JudgeDetail {
   judge: Judge;
   uses: JudgeUse[];
-  /** It has returned at least one grade somewhere, so its question, scale,
-   *  visibility and target are frozen — enforced by the trigger
-   *  `judges_freeze_graded_trigger` in the database, not only here.
-   *
-   * The label and the handle are not covered: they graded nothing. */
-  frozen: boolean;
-  /** Never linked to anything, or linked only to runs since unlinked. Written
-   *  and never used, or used and then let go. Worth showing rather than hiding:
-   *  it is the pile you look at when the list has grown too long. */
-  unused: boolean;
 }
 
 /** A run's secondary judge, on top of the principal — an entry of

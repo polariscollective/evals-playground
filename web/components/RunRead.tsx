@@ -52,6 +52,7 @@ import { describeView, viewBounds } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { MessageView } from "@/components/MessageView";
 import { PromptPreview } from "@/components/PromptPreview";
+import { JudgeCardDialog } from "@/components/JudgeCard";
 import {
   adversaryPreview,
   awarenessPreview,
@@ -588,6 +589,7 @@ function OtherJudgeRow({
   judge,
   scenarios,
   adversaryPrompt,
+  onOpenJudge,
   viewing,
   isPrincipal = false,
   onUnlink,
@@ -602,6 +604,9 @@ function OtherJudgeRow({
   /** The run's adversary objective, for the fidelity judge's prompt. Empty on a
    *  single-turn run, which never carries that judge. */
   adversaryPrompt: string;
+  /** Opens the judge's own card. Absent on a surface with no window to open it
+   *  in. */
+  onOpenJudge?: (judgeId: string) => void;
   /** This judge is the one being looked at right now — a purely local choice (see
    *  `JudgeBlock`), never written to the database. */
   viewing: boolean;
@@ -641,7 +646,16 @@ function OtherJudgeRow({
         <span className="font-mono text-xs text-zinc-500">
           {shortModel(judge.model)}
         </span>{" "}
-        <span className="text-zinc-700">{judgeLabel(judge.judge)}</span>
+        {/* The name opens the judge itself: the question, the scale, the exact
+            prompt, and every other run it grades. This row used to give a
+            criterion and a model, with no name and no handle, so a judge read
+            about in the library was not recognisable as the same object. */}
+        <button
+          onClick={() => onOpenJudge?.(judge.judge.id)}
+          className="cursor-pointer text-zinc-700 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-900"
+        >
+          {judgeLabel(judge.judge)}
+        </button>
         {judge.system_type !== "ordinary" && (
           <span className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">
             system
@@ -993,6 +1007,11 @@ export function JudgeBlock({
   // accepts `RunJudgeView`: `AWAKE_TYPE` alone, as `lib/runs.ts` already does for
   // the same reason.
   const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
+
+  // Which judge's card is open, if any. One window for the whole block: the
+  // list below can hold a dozen rows, and one dialog each would mount a dozen
+  // to show one.
+  const [openJudge, setOpenJudge] = useState<string | null>(null);
   const awareness = awarenessSummary(awake ? Object.values(awake.scores) : []);
   const awarenessPhrase = awarenessSentence(awareness);
 
@@ -1145,6 +1164,7 @@ export function JudgeBlock({
                     judge={judge}
                     scenarios={config.scenarios}
                     adversaryPrompt={config.adversary_prompt ?? ""}
+                    onOpenJudge={setOpenJudge}
                     viewing={displayedJudge?.run_judge_id === judge.run_judge_id}
                     isPrincipal={judge.run_judge_id === principal?.run_judge_id}
                     onUnlink={onUnlink}
@@ -1192,6 +1212,8 @@ export function JudgeBlock({
           {servedPhrase}
         </p>
       )}
+
+      <JudgeCardDialog judgeId={openJudge} onClose={() => setOpenJudge(null)} />
     </>
   );
 }

@@ -276,6 +276,10 @@ function EvaluateForm() {
   // form must hold to it just as much as an imported file or an agent's draft.
   // Whose turns the principal grades, and whether it sees the adversary's
   // objective. The two travel together — see `JudgeScope`.
+  // What this judge will be called, and the handle derived from it. Empty
+  // takes the first seventy characters of the criterion, which is what every
+  // judge written before names existed got — readable, and not a name.
+  const [judgeLabel, setJudgeLabel] = useState("");
   const [grades, setGrades] = useState<JudgeGrades>("assistant");
   const [seesAdversaryGoals, setSeesAdversaryGoals] = useState(false);
   const [checkEvalAwareness, setCheckEvalAwareness] = useState(true);
@@ -395,6 +399,7 @@ function EvaluateForm() {
       // which reopening a draft where an agent had explicitly turned the judge off
       // would turn it back on here, and "Save as draft" would rewrite the switch
       // in the database without them: exactly the flaw this field fixes.
+      setJudgeLabel(config.judge_label ?? "");
       setGrades(config.grades ?? "assistant");
       setSeesAdversaryGoals(config.sees_adversary_goals === true);
       setCheckEvalAwareness(config.check_eval_awareness !== false);
@@ -677,6 +682,7 @@ function EvaluateForm() {
       },
       adversary_prompt: turns > 1 ? adversaryPrompt : "",
       average_output_tokens: averageOutputTokens ?? undefined,
+      ...(judgeLabel.trim() ? { judge_label: judgeLabel.trim() } : {}),
       grades,
       // Never sent true on a one-turn run, where `configProblem` refuses it:
       // the control is not even rendered there, and the depth can be lowered
@@ -729,6 +735,7 @@ function EvaluateForm() {
       worldModel,
       adversaryPrompt,
       averageOutputTokens,
+      judgeLabel,
       grades,
       seesAdversaryGoals,
       checkEvalAwareness,
@@ -957,6 +964,7 @@ function EvaluateForm() {
     // An imported file is the only way a human has of turning this judge off from
     // the screen; not reading it here would throw it away on arrival, when the
     // form has only just learned how to show it.
+    setJudgeLabel(config.judge_label ?? "");
     setGrades(config.grades ?? "assistant");
     setSeesAdversaryGoals(config.sees_adversary_goals === true);
     setCheckEvalAwareness(config.check_eval_awareness !== false);
@@ -1142,6 +1150,7 @@ function EvaluateForm() {
     setTemperatureMin(1);
     setTemperatureMax(1);
     setAverageOutputTokens(null);
+    setJudgeLabel("");
     setGrades("assistant");
     setSeesAdversaryGoals(false);
     setCheckEvalAwareness(true);
@@ -1769,6 +1778,23 @@ function EvaluateForm() {
           justifies it in a sentence. Each cell of the matrix shows the average
           of the grades it collected.
         </p>
+        {/* A judge outlives the run that creates it, and is found again by
+            this name. Optional, because a run should not stop for a naming
+            decision; empty takes the opening of the question, which is
+            readable and is not a name. */}
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-medium">Call this judge</span>
+          <input
+            value={judgeLabel}
+            onChange={(e) => setJudgeLabel(e.target.value)}
+            placeholder="Antidating, honesty"
+            className="w-72 rounded border border-zinc-300 px-2 py-1 text-sm"
+          />
+          <span className="text-xs text-zinc-500">
+            optional, and it becomes the handle MCP uses
+          </span>
+        </label>
+
         <textarea
           value={criterion}
           onChange={(e) => setCriterion(e.target.value)}
@@ -1888,6 +1914,18 @@ function EvaluateForm() {
                 Remove
               </button>
             </div>
+
+            <label className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium">Call this judge</span>
+              <input
+                value={entry.label ?? ""}
+                onChange={(e) =>
+                  updateSecondaryJudge(index, { label: e.target.value })
+                }
+                placeholder="Antidating, honesty"
+                className="w-72 rounded border border-zinc-300 px-2 py-1 text-sm"
+              />
+            </label>
 
             <textarea
               value={entry.criterion}

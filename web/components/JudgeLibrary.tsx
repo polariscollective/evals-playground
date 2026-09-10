@@ -19,17 +19,9 @@
 // filter tab. Nearly every judge that has ever run is frozen; a tab that
 // selects almost everything selects nothing.
 import { useMemo, useState } from "react";
-import Link from "next/link";
-import { PromptPreview } from "@/components/PromptPreview";
 import { shortModel } from "@/components/RunRead";
-import {
-  PROMPT_PLACEHOLDER,
-  awarenessPreview,
-  fidelityPreview,
-  judgePreview,
-} from "@/lib/prompt-preview";
-import { formatValue, sortedRubric } from "@/lib/rubric";
-import type { JudgeCard } from "@/lib/types";
+import { Badge, JudgeCardDialog } from "@/components/JudgeCard";
+import type { JudgeSummary } from "@/lib/types";
 
 type Shelf = "all" | "system" | "used" | "unused";
 
@@ -40,9 +32,9 @@ const SHELVES: { id: Shelf; label: string }[] = [
   { id: "unused", label: "Unused" },
 ];
 
-function onShelf(card: JudgeCard, shelf: Shelf): boolean {
+function onShelf(card: JudgeSummary, shelf: Shelf): boolean {
   if (shelf === "all") return true;
-  if (shelf === "system") return card.judge.system_type !== "ordinary";
+  if (shelf === "system") return card.system_type !== "ordinary";
   if (shelf === "unused") return card.unused;
   return !card.unused;
 }
@@ -55,7 +47,7 @@ const GRADES_LABEL: Record<string, string> = {
   exchange: "grades the exchange",
 };
 
-export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
+export function JudgeLibrary({ judges }: { judges: JudgeSummary[] }) {
   const [shelf, setShelf] = useState<Shelf>("all");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -74,11 +66,14 @@ export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
       // is trying to find a judge by. Not the scale: its words are "Yes" and
       // "No" on half the judges here.
       return (
-        card.judge.label.toLowerCase().includes(needle) ||
-        (card.judge.criterion ?? "").toLowerCase().includes(needle)
+        // The name only. The criterion is no longer in the list — it is a
+        // paragraph per judge, fetched when a row opens — and searching what is
+        // not there would quietly return nothing for a word that IS in a
+        // criterion. Naming judges well is what makes this enough.
+        card.label.toLowerCase().includes(needle)
       );
     });
-    const builtIn = (card: JudgeCard) => card.judge.system_type !== "ordinary";
+    const builtIn = (card: JudgeSummary) => card.system_type !== "ordinary";
     return [...shelved.filter(builtIn), ...shelved.filter((c) => !builtIn(c))];
   }, [judges, shelf, query]);
 
@@ -138,85 +133,56 @@ export function JudgeLibrary({ judges }: { judges: JudgeCard[] }) {
         <div className="border-t border-zinc-200">
           {shown.map((card) => (
             <JudgeRow
-              key={card.judge.id}
+              key={card.id}
               card={card}
-              open={open === card.judge.id}
-              onToggle={() =>
-                setOpen((current) =>
-                  current === card.judge.id ? null : card.judge.id,
-                )
-              }
+              onOpen={() => setOpen(card.id)}
             />
           ))}
         </div>
       )}
-    </main>
-  );
-}
 
-function Badge({
-  children,
-  tone = "plain",
-  title,
-}: {
-  children: React.ReactNode;
-  tone?: "plain" | "system" | "warn";
-  title?: string;
-}) {
-  const style =
-    tone === "system"
-      ? "bg-olive-deep text-paper"
-      : tone === "warn"
-        ? "bg-amber-100 text-amber-900"
-        : "bg-zinc-100 text-zinc-600";
-  return (
-    <span
-      title={title}
-      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${style}`}
-    >
-      {children}
-    </span>
+      {/* One window, driven by which row was clicked. The same card a run's
+          page opens, so a judge met while reading results and a judge looked up
+          here are visibly the same object. */}
+      <JudgeCardDialog judgeId={open} onClose={() => setOpen(null)} />
+    </main>
   );
 }
 
 function JudgeRow({
   card,
-  open,
-  onToggle,
+  onOpen,
 }: {
-  card: JudgeCard;
-  open: boolean;
-  onToggle: () => void;
+  card: JudgeSummary;
+  onOpen: () => void;
 }) {
-  const { judge, uses, frozen, unused } = card;
-  const live = uses.filter((use) => !use.unlinked);
-  // The same judge can have graded under two models. That pair is what gets
-  // calibrated, so both are worth showing rather than the first one found.
-  const models = [...new Set(uses.map((use) => use.model))];
-  const graded = uses.reduce((total, use) => total + use.graded, 0);
-
+  const judge = card;
   return (
-    <div className="border-b border-zinc-200">
-      <button
-        onClick={onToggle}
-        className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 p-3 text-left hover:bg-zinc-50"
-      >
+    <button
+      onClick={onOpen}
+      className="w-full rounded border border-zinc-300 p-3 text-left hover:bg-zinc-50"
+    >
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="font-medium">{judge.label}</span>
-        <code className="text-xs text-zinc-400">{judge.slug}</code>
         {judge.system_type !== "ordinary" && (
-          <Badge tone="system" title="Its question and its scale live in the code, never in the database.">
+          <Badge
+            tone="system"
+            title="Its question and its scale live in the code, never in the database."
+          >
             built in
           </Badge>
         )}
         {GRADES_LABEL[judge.grades] && (
-          <Badge tone="warn" title="Whose turns this judge reads. Most judges read the assistant's.">
+          <Badge
+            tone="warn"
+            title="Whose turns this judge reads. Most judges read the assistant's."
+          >
             {GRADES_LABEL[judge.grades]}
           </Badge>
         )}
-        {/* Only when they differ from the ordinary answer. Both states on
-            every row would be four badges saying what is true of nearly
-            everything, and the one judge that is set up differently would stop
-            standing out. */}
+        {/* Only when they differ from the ordinary answer. Both states on every
+            row would be four badges saying what is true of nearly everything,
+            and the one judge set up differently would stop standing out. */}
         {!judge.sees_system_prompt && (
           <Badge
             tone="warn"
@@ -233,139 +199,29 @@ function JudgeRow({
             sees the objective
           </Badge>
         )}
-        {frozen && (
+        {judge.frozen && (
           <Badge title="It has returned a grade, so its question, scale and visibility cannot change. Copy it to make a variant.">
             frozen
           </Badge>
         )}
-        {unused && uses.length > 0 && (
-          <Badge title="Every run that used it has unlinked it since.">
-            unlinked everywhere
+        {judge.graded === 0 && judge.live_runs === 0 && (
+          <Badge title="Never attached to a run that graded anything.">
+            never run
           </Badge>
         )}
-        {uses.length === 0 && <Badge title="Never attached to a run.">never run</Badge>}
         <span className="ml-auto text-xs text-zinc-500">
-          {live.length > 0
-            ? `${live.length} run${live.length > 1 ? "s" : ""}`
+          {judge.live_runs > 0
+            ? `${judge.live_runs} run${judge.live_runs > 1 ? "s" : ""}`
             : "no live run"}
-          {graded > 0 && `, ${graded} graded`}
-          {models.length > 0 && `, ${models.map(shortModel).join(", ")}`}
+          {judge.graded > 0 && ` · ${judge.graded} graded`}
+          {judge.models.length > 0 &&
+            ` · ${judge.models.map(shortModel).join(", ")}`}
         </span>
-        <span className="text-zinc-400">{open ? "−" : "+"}</span>
-      </button>
-
-      {open && (
-        <div className="space-y-4 border-t border-zinc-200 p-3">
-          {judge.criterion ? (
-            <div className="space-y-2">
-              <p className="whitespace-pre-wrap text-sm text-zinc-800">
-                {judge.criterion}
-              </p>
-              <table className="text-sm">
-                <tbody>
-                  {sortedRubric(judge.rubric ?? []).map((level) => (
-                    <tr key={level.value}>
-                      <td className="py-0.5 pr-3 text-right align-top font-mono text-xs text-zinc-500">
-                        {formatValue(level.value)}
-                      </td>
-                      <td className="py-0.5 align-top">
-                        {level.meaning}
-                        {level.excluded && (
-                          <span className="ml-2 text-xs text-zinc-500">
-                            (outside the mean)
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-zinc-600">
-              A built-in judge. Its question and its scale come from the tool and
-              are the same in every run, which is what makes its figures
-              comparable across them.
-            </p>
-          )}
-
-          <p className="text-xs text-zinc-500">
-            Sees the scenario&rsquo;s system prompt:{" "}
-            <strong>{judge.sees_system_prompt ? "yes" : "no"}</strong>. Sees the
-            adversary&rsquo;s objective:{" "}
-            <strong>{judge.sees_adversary_goals ? "yes" : "no"}</strong>.
-          </p>
-
-          {/* The whole text, not only the part somebody typed. It is what
-              answers "why did it grade like that" months later, when the
-              criterion above looks unimpeachable. The per-scenario parts are
-              stood in for: a judge in the library belongs to no single run. */}
-          <PromptPreview
-            label="See the exact prompt this judge receives"
-            note="The per-scenario parts are stood in for here, since a judge belongs to no single run. Open a run to read them filled in."
-            preview={
-              judge.system_type === "awake"
-                ? awarenessPreview(judge.sees_system_prompt)
-                : judge.system_type === "faithful_adversary"
-                  ? fidelityPreview(
-                      PROMPT_PLACEHOLDER.adversaryObjective,
-                      judge.sees_system_prompt,
-                    )
-                  : judgePreview({
-                      criterion: judge.criterion ?? "",
-                      rubric: judge.rubric ?? [],
-                      sees_system_prompt: judge.sees_system_prompt,
-                    })
-            }
-          />
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-zinc-500">
-              Used by
-            </p>
-            {uses.length === 0 ? (
-              <p className="text-sm text-zinc-500">
-                Nothing yet. It exists, and no run counts it.
-              </p>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {uses.map((use) => (
-                  <li key={use.run_judge_id} className="flex flex-wrap items-baseline gap-2">
-                    <Link
-                      href={`/eval/${use.run_id}`}
-                      className={
-                        use.unlinked
-                          ? "text-zinc-400 line-through hover:text-zinc-600"
-                          : " link-underline"
-                      }
-                    >
-                      {use.run_label ?? use.run_id.slice(0, 8)}
-                    </Link>
-                    <span className="font-mono text-xs text-zinc-500">
-                      {shortModel(use.model)}
-                    </span>
-                    {use.is_principal && !use.unlinked && (
-                      <Badge title="The judge this run's matrix follows.">
-                        principal
-                      </Badge>
-                    )}
-                    {use.unlinked && (
-                      <Badge title="Unlinked since. The run was judged by it at some moment, which unlinking does not undo.">
-                        unlinked
-                      </Badge>
-                    )}
-                    <span className="text-xs text-zinc-500">
-                      {use.graded > 0
-                        ? `${use.graded} graded`
-                        : "nothing graded"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
+      {/* On its own line, under the name. It is the handle MCP and a URL use, so
+          it is worth reading; beside the label it competed with the name for the
+          first glance. */}
+      <code className="mt-0.5 block text-xs text-zinc-400">{judge.slug}</code>
+    </button>
   );
 }
