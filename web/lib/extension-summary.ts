@@ -77,9 +77,12 @@ export function summariseExtension(
     }
     lines.push({
       label: "Judges",
-      values: judges.map((judge) =>
-        judge.model ? `${judge.criterion} (${judge.model})` : judge.criterion,
-      ),
+      // A judge named rather than described shows its handle: it is the only
+      // thing the request carries about it, and the question lives on the judge.
+      values: judges.map((judge) => {
+        const asked = judge.criterion ?? `the judge "${judge.judge}"`;
+        return judge.model ? `${asked} (${judge.model})` : asked;
+      }),
     });
     return { headlines, lines };
   }

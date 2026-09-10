@@ -199,6 +199,14 @@ function JudgeRow({
             sees the objective
           </Badge>
         )}
+        {!judge.higher_is_better && (
+          <Badge
+            tone="warn"
+            title="Higher is worse on this judge: the top of its scale is what should worry you, so the matrix paints that end rust. It changes how its grades are read, never the grades."
+          >
+            higher is worse
+          </Badge>
+        )}
         {judge.frozen && (
           <Badge title="It has returned a grade, so its question, scale and visibility cannot change. Copy it to make a variant.">
             frozen
