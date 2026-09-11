@@ -122,9 +122,11 @@ test("asking for the same depth is allowed, it is the common case", () => {
 
 test("going beyond one turn demands an adversary", () => {
   // The engine refuses to play out more than one turn with nobody to push.
-  // Saying so here rather than at the first billed call.
+  // Saying so here rather than at the first billed call. The refusal now says
+  // what to do about it — the extension may define one, see the section at the
+  // end of this file — where it used to be a dead end.
   const problem = extendProblem(REQUEST({ turns: 4 }), 1, [], 1, null);
-  assert.match(problem ?? "", /adversary model is required/);
+  assert.match(problem ?? "", /has to define one/);
 });
 
 test("deepening \"all\" is accepted", () => {
@@ -375,6 +377,44 @@ test("a laid judge is checked like any judge", () => {
   assert.match(unknownModel ?? "", /is not a model this tool can run/);
 });
 
+test("a judge laid on a single-turn run cannot claim to grade the adversary", () => {
+  // The hole this project closes on the way: `extendProblem` validated a laid
+  // judge without telling `judgeSpecProblem` the run's depth, so the check fell
+  // back on its default of two turns. A judge grading turns that do not exist
+  // was accepted, and would have returned verdicts meaning nothing on a
+  // conversation holding nothing it was meant to read. Refused when the run is
+  // written; refused now when a judge is laid on it afterwards.
+  const problem = extendProblem(
+    {
+      scenario_indices: [],
+      new_scenarios: [],
+      targets: [],
+      repetitions: 0,
+      new_judges: [{ ...JUDGE, grades: "adversary", sees_adversary_goals: true }],
+    },
+    1,
+    [],
+    1,
+    null,
+  );
+  assert.match(problem ?? "", /turns above 1/);
+
+  const deepEnough = extendProblem(
+    {
+      scenario_indices: [],
+      new_scenarios: [],
+      targets: [],
+      repetitions: 0,
+      new_judges: [{ ...JUDGE, grades: "adversary", sees_adversary_goals: true }],
+    },
+    1,
+    [],
+    4,
+    "grok/grok-4.6",
+  );
+  assert.equal(deepEnough, null);
+});
+
 test("an entirely empty extension stays refused", () => {
   const problem = extendProblem(
     { scenario_indices: [], new_scenarios: [], targets: [], repetitions: 0 },
@@ -501,4 +541,105 @@ test("a tool added by an extension can declare what it changes", () => {
     [],
   );
   assert.equal(problem, null);
+});
+
+// --- the adversary, at extension time: three cases -------------------------
+//
+// See docs/superpowers/specs/2026-09-10-an-adversary-and-the-turns-it-needs-design.md.
+// The world model's rule, transposed. `extendProblem`'s fifth parameter is the
+// run's adversary as it stands BEFORE this extension — `null` for a run of one
+// turn, which never had one to name.
+//
+// Until this project a single-turn run could never be deepened at all: the
+// depth above one demanded an adversary, and nothing could define one. The only
+// way out was to write the run again and pay for the whole matrix twice.
+
+test("a single-turn run taken to two turns has to define an adversary", () => {
+  const problem = extendProblem(REQUEST({ turns: 2 }), 1, [], 1, null);
+  assert.match(problem ?? "", /has to define one/);
+});
+
+test("a single-turn run taken to two turns, adversary defined: accepted", () => {
+  const problem = extendProblem(
+    REQUEST({
+      turns: 2,
+      adversary: "anthropic/claude-haiku-4-5",
+      adversary_prompt: "You play a customer in a hurry.",
+    }),
+    1,
+    [],
+    1,
+    null,
+  );
+  assert.equal(problem, null);
+});
+
+test("a model with no objective is not a definition, and neither is the reverse", () => {
+  const noPrompt = extendProblem(
+    REQUEST({ turns: 2, adversary: "anthropic/claude-haiku-4-5" }),
+    1,
+    [],
+    1,
+    null,
+  );
+  assert.match(noPrompt ?? "", /has to define one/);
+
+  const noModel = extendProblem(
+    REQUEST({ turns: 2, adversary_prompt: "You play a customer in a hurry." }),
+    1,
+    [],
+    1,
+    null,
+  );
+  assert.match(noModel ?? "", /has to define one/);
+});
+
+test("an extension that leaves the run at one turn cannot define an adversary", () => {
+  // It would never speak, and a setting with no effect is worse than an absent
+  // one — the very fault this project closes on the other side.
+  const problem = extendProblem(
+    REQUEST({
+      adversary: "anthropic/claude-haiku-4-5",
+      adversary_prompt: "You play a customer in a hurry.",
+    }),
+    1,
+    [],
+    1,
+    null,
+  );
+  assert.match(problem ?? "", /never speak/);
+});
+
+test("a run that already has an adversary: an extension cannot touch it", () => {
+  const problem = extendProblem(
+    REQUEST({
+      turns: 6,
+      adversary: "anthropic/claude-haiku-4-5",
+      adversary_prompt: "You play a customer in a hurry.",
+    }),
+    1,
+    [],
+    4,
+    "grok/grok-4.6",
+  );
+  assert.match(problem ?? "", /incomparable/);
+});
+
+test("a run that already has an adversary: naming nothing passes, it is inherited", () => {
+  assert.equal(extendProblem(REQUEST({ turns: 6 }), 1, [], 4, "grok/grok-4.6"), null);
+});
+
+test("an adversary outside the catalogue is refused before anything is paid for", () => {
+  const problem = extendProblem(
+    REQUEST({
+      turns: 2,
+      adversary: "acme/does-not-exist",
+      adversary_prompt: "You play a customer in a hurry.",
+    }),
+    1,
+    [],
+    1,
+    null,
+  );
+  assert.match(problem ?? "", /is not a model this tool can run/);
 });

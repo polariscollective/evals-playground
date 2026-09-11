@@ -30,12 +30,14 @@ import { alignNewTargets, judgesForTargets } from "@/lib/targets";
 import { estimateExtension } from "@/lib/extend-estimate";
 import {
   buildExtendRequest,
+  needsAdversary as computeNeedsAdversary,
   needsWorldModel as computeNeedsWorldModel,
 } from "@/lib/extend-request";
 import { withLiveJudges } from "@/lib/live-config";
 import { measureRun } from "@/lib/measured-length";
 import { amountDigits } from "@/lib/pricing";
 import { SHARED_PRICING } from "@/lib/shared";
+import { resolvedAdversary } from "@/lib/adversary";
 import { resolvedWorld } from "@/lib/tools";
 import { MAX_TURNS } from "@/lib/validate";
 import { extendWorldWarnings } from "@/lib/world-warnings";
@@ -261,6 +263,16 @@ export function ExtendPanel({
   const [turns, setTurns] = useState(
     Math.max(config.turns, proposal?.turns ?? config.turns),
   );
+  // Who pushes, and what it is after — for a run of one turn, which has neither.
+  // Never preselected, like the world model above: the model that plays the user
+  // is a choice, and a default chosen here would be read back later as one
+  // somebody made.
+  const [adversaryModel, setAdversaryModel] = useState<string>(
+    proposal?.adversary ?? "",
+  );
+  const [adversaryPrompt, setAdversaryPrompt] = useState<string>(
+    proposal?.adversary_prompt ?? "",
+  );
   // The attempts to deepen that far, chosen by the grade they carry. `null`: none.
   // `"all"`: every graded attempt. A list: only those carrying one of these
   // grades.
@@ -289,6 +301,10 @@ export function ExtendPanel({
   // agreement — see this module's head comment for what the disagreement once
   // cost.
   const needsWorldModel = computeNeedsWorldModel(config, newTools);
+  // The same arrangement, for the same reason: one function answers both "show
+  // the fields" and "carry them in the request". A run of one turn has no
+  // adversary to inherit, and going deeper needs one.
+  const needsAdversary = computeNeedsAdversary(config, turns);
   const worldModelWarnings = extendWorldWarnings(
     { new_tools: newTools, new_tools_for_existing: forExisting ?? undefined },
     config,
@@ -365,6 +381,14 @@ export function ExtendPanel({
     };
   });
 
+  // What this run's adversary will be once this extension applies — the run's own
+  // if it has one, this panel's fields if it is introducing the first. The same
+  // resolution the server will write, by the same function.
+  const resolved = resolvedAdversary(config, {
+    adversary: adversaryModel || null,
+    adversary_prompt: adversaryPrompt,
+  });
+
   // The whole extension's quote — fresh cells and deepening — by the function
   // `extendRun` calls on the same request. One only, because two computations of
   // the same thing had ended up no longer saying the same: the panel passed no
@@ -378,7 +402,17 @@ export function ExtendPanel({
       // as nothing has been saved, and that is precisely what `worldModel` is about
       // to fill in. The same resolution as the one `extendRun` will write — see
       // `resolvedWorld`.
-      models: { ...config.models, world: resolvedWorld(config, { world: worldModel || null }) },
+      // And the same for the adversary, which a single-turn run does not have and
+      // this extension may be introducing: priced on `config` alone its pushes
+      // cost nothing, so every turn this extension adds would call a model the
+      // announced figure does not count. The objective goes with it — its tokens
+      // are read on every push.
+      adversary_prompt: resolved.adversary_prompt,
+      models: {
+        ...config.models,
+        world: resolvedWorld(config, { world: worldModel || null }),
+        adversary: resolved.adversary,
+      },
     },
     {
       scenarios: [
@@ -424,6 +458,8 @@ export function ExtendPanel({
       newTools,
       forExisting,
       worldModel,
+      adversaryModel,
+      adversaryPrompt,
       turns,
       deepen,
       newTargets: alignNewTargets(
@@ -905,6 +941,55 @@ export function ExtendPanel({
           />
         </label>
 
+        {/* A run written at a single turn has no adversary: nobody was ever
+            needed to push, so nobody was ever named. Going deeper needs one, and
+            this is where it is defined — the only way, until this, was to write
+            the run again and pay for the whole matrix a second time. A run that
+            already has one keeps it silently (`extendProblem`), so there is
+            nothing to ask here in that case. */}
+        {needsAdversary && (
+          <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3">
+            <p className="text-xs font-medium text-amber-900">
+              Adversary — this run has none, and beyond one turn somebody has to
+              play the user. What you write here becomes the run&apos;s, for
+              every turn it plays from now on.
+            </p>
+            <label className="block text-xs">
+              <span className="text-amber-900">Model</span>
+              <select
+                className={`${FIELD} mt-1 cursor-pointer`}
+                value={adversaryModel}
+                onChange={(e) => setAdversaryModel(e.target.value)}
+              >
+                <option value="">Pick the model that plays the user…</option>
+                {catalog.flatMap((provider) =>
+                  provider.models
+                    .filter((model) => model.favorite)
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {provider.label} — {model.label}
+                      </option>
+                    )),
+                )}
+              </select>
+            </label>
+            <label className="block text-xs">
+              <span className="text-amber-900">Objective</span>
+              <textarea
+                className={`${FIELD} mt-1`}
+                rows={3}
+                placeholder="What the adversary is trying to obtain, and what it can bring to bear."
+                value={adversaryPrompt}
+                onChange={(e) => setAdversaryPrompt(e.target.value)}
+              />
+            </label>
+            <p className="text-xs text-amber-900">
+              The evaluated model never sees this. It only sees the messages the
+              adversary sends it, as if they came from a person.
+            </p>
+          </div>
+        )}
+
         <div className="space-y-1">
           <span className="text-xs text-zinc-500">
             Deepen existing attempts — push them to the depth above instead of
@@ -1210,7 +1295,11 @@ export function ExtendPanel({
                 forExisting === null) ||
               // A served tool with nobody to serve it would lead only to a certain
               // refusal — `extendProblem` demands it in exactly that case.
-              (needsWorldModel && !worldModel)
+              (needsWorldModel && !worldModel) ||
+              // Same thing for the adversary: a depth beyond one turn on a run
+              // that has nobody to push would lead only to a certain refusal.
+              // Both fields, since one without the other is not a definition.
+              (needsAdversary && (!adversaryModel || !adversaryPrompt.trim()))
             }
             className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink disabled:cursor-default disabled:opacity-40"
           >

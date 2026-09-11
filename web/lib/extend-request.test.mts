@@ -7,7 +7,11 @@
 // meant.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildExtendRequest, needsWorldModel } from "./extend-request.ts";
+import {
+  buildExtendRequest,
+  needsAdversary,
+  needsWorldModel,
+} from "./extend-request.ts";
 import type { ExtendPanelValues } from "./extend-request.ts";
 import type { EvalModels, EvalRunConfig, EvalScenario, ToolSpec } from "./types";
 
@@ -60,6 +64,8 @@ const VALUES = (overrides: Partial<ExtendPanelValues> = {}): ExtendPanelValues =
   newTools: [],
   forExisting: null,
   worldModel: "",
+  adversaryModel: "",
+  adversaryPrompt: "",
   turns: 3,
   deepen: null,
   ...overrides,
@@ -216,4 +222,75 @@ test("the plain fields travel through as they are", () => {
   assert.deepEqual(request.new_scenarios, [SCENARIO]);
   assert.deepEqual(request.targets, ["anthropic/claude-sonnet-5", "grok/grok-4.3"]);
   assert.equal(request.repetitions, 4);
+});
+
+// --- needsAdversary ----------------------------------------------------
+//
+// See docs/superpowers/specs/2026-09-10-an-adversary-and-the-turns-it-needs-design.md.
+// One predicate for two questions that must stay one, exactly as
+// `needsWorldModel` above: the panel shows the two fields by it, and the request
+// carries them by it. When those answers came from two expressions, the screen
+// demanded a field it then left out of the request, and the server refused with
+// the very message that had sent the person there.
+
+test("needsAdversary: a single-turn run taken beyond one turn needs one", () => {
+  assert.equal(needsAdversary(CONFIG({ models: MODELS() }), 2), true);
+});
+
+test("needsAdversary: a run that already has one never asks again", () => {
+  const config = CONFIG({
+    models: { ...MODELS(), adversary: "grok/grok-4.6" },
+  });
+  assert.equal(needsAdversary(config, 6), false);
+});
+
+test("needsAdversary: staying at one turn asks for nothing", () => {
+  assert.equal(needsAdversary(CONFIG({ models: MODELS() }), 1), false);
+});
+
+test("the request carries the pair exactly when it is needed", () => {
+  const config = CONFIG({ models: MODELS(), turns: 1 });
+  const request = buildExtendRequest(
+    config,
+    VALUES({
+      turns: 2,
+      adversaryModel: "anthropic/claude-haiku-4-5",
+      adversaryPrompt: "You play a customer in a hurry.",
+    }),
+  );
+  assert.equal(request.adversary, "anthropic/claude-haiku-4-5");
+  assert.equal(request.adversary_prompt, "You play a customer in a hurry.");
+});
+
+test("a run that already has an adversary is never sent one back", () => {
+  // `extendProblem` refuses the pair outright on such a run: sending what the
+  // panel happens to be holding would turn a legitimate deepening into a
+  // refusal.
+  const config = CONFIG({
+    models: { ...MODELS(), adversary: "grok/grok-4.6" },
+    turns: 4,
+  });
+  const request = buildExtendRequest(
+    config,
+    VALUES({
+      turns: 6,
+      adversaryModel: "anthropic/claude-haiku-4-5",
+      adversaryPrompt: "Something else.",
+    }),
+  );
+  assert.equal("adversary" in request, false);
+  assert.equal("adversary_prompt" in request, false);
+});
+
+test("an extension that stays at one turn carries no adversary", () => {
+  const config = CONFIG({ models: MODELS(), turns: 1 });
+  const request = buildExtendRequest(
+    config,
+    VALUES({
+      turns: 1,
+      adversaryModel: "anthropic/claude-haiku-4-5",
+      adversaryPrompt: "You play a customer in a hurry.",
+    }),
+  );
+  assert.equal("adversary" in request, false);
 });

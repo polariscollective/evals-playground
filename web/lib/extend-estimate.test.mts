@@ -30,6 +30,7 @@ import {
   type PrincipalVerdict,
 } from "./deepen-counts.ts";
 import { measureRun, type MeasurableCell } from "./measured-length.ts";
+import { resolvedAdversary } from "./adversary.ts";
 import { resolvedWorld } from "./tools.ts";
 import type {
   EvalRunConfig,
@@ -161,6 +162,12 @@ function asPanel(
      *  (`resolvedWorld`, `tools.ts`): a run that has no `models.world` yet would
      *  otherwise cost its served part on the empty model. */
     worldModel: string;
+    /** What the panel's two "Adversary" fields carry. Merged as
+     *  `ExtendPanel.tsx` merges them (`resolvedAdversary`, `adversary.ts`): a run
+     *  written at a single turn has no adversary, and a quote that took it
+     *  deeper without this would price its pushes on the empty model. */
+    adversaryModel?: string;
+    adversaryPrompt?: string;
   },
 ) {
   const measured = measureRun(samples, config.models, config.turns);
@@ -169,9 +176,18 @@ function asPanel(
   // See `ExtendPanel.tsx:362`: without this resolution, a quote that introduces
   // a run's first served tool would cost its served calls at the empty model
   // rather than at the one the "World model" field offers.
+  const adversary = resolvedAdversary(config, {
+    adversary: ui.adversaryModel || null,
+    adversary_prompt: ui.adversaryPrompt ?? "",
+  });
   const resolvedConfig: EvalRunConfig = {
     ...config,
-    models: { ...config.models, world: resolvedWorld(config, { world: ui.worldModel || null }) },
+    adversary_prompt: adversary.adversary_prompt,
+    models: {
+      ...config.models,
+      world: resolvedWorld(config, { world: ui.worldModel || null }),
+      adversary: adversary.adversary,
+    },
   };
   return estimateExtension(
     resolvedConfig,
@@ -269,9 +285,15 @@ function asServer(
 
   // See `runs.ts:1383`: the same resolution as on the panel side, on what the
   // request carries this time rather than on the state of a screen field.
+  const resolvedAdv = resolvedAdversary(config, request);
   const resolvedConfig: EvalRunConfig = {
     ...config,
-    models: { ...config.models, world: resolvedWorld(config, request) },
+    adversary_prompt: resolvedAdv.adversary_prompt,
+    models: {
+      ...config.models,
+      world: resolvedWorld(config, request),
+      adversary: resolvedAdv.adversary,
+    },
   };
 
   return estimateExtension(
@@ -311,6 +333,8 @@ function bothSides(
       // What the request carries is what the field would have carried on screen:
       // both languages say the same extension.
       worldModel: request.world ?? "",
+      adversaryModel: request.adversary ?? "",
+      adversaryPrompt: request.adversary_prompt ?? "",
     }),
     server: asServer(config, samples, request),
   };
@@ -473,4 +497,42 @@ test("a run that already serves without naming a world: the request's world ente
     (world!.usd ?? 0) > 0,
     "the served part should have a price, not be counted as zero",
   );
+});
+
+// --- the resolved adversary enters the quote, on both sides ----------------
+//
+// The same trap as the world just above, and it costs more: a run written at a
+// single turn names no adversary, and an extension taking it deeper introduces
+// the first. Without the merge on either side, `pricing.ts` reads
+// `config.models.adversary` as `null` and prices every push at nothing — the
+// quote announced before confirming would then miss one model call per added
+// turn, on every cell.
+
+test("a single-turn run taken deeper: the adversary it defines enters the quote", () => {
+  const config: EvalRunConfig = {
+    ...CONFIG,
+    turns: 1,
+    models: { ...CONFIG.models, adversary: null },
+    adversary_prompt: "",
+  };
+  const request: ExtendRequest = {
+    scenario_indices: [0],
+    new_scenarios: [],
+    targets: ["anthropic/claude-sonnet-5"],
+    repetitions: 1,
+    turns: 3,
+    adversary: "anthropic/claude-haiku-4-5",
+    adversary_prompt: "Get the password.",
+  };
+
+  const { panel, server } = bothSides(config, PLAYED, request);
+  assert.deepEqual(panel, server);
+
+  // What falls to zero if either merge disappears: the pushes must be costed on
+  // the model the extension names.
+  const pushes = panel!.per_model.find(
+    (entry) => entry.model === "anthropic/claude-haiku-4-5",
+  );
+  assert.ok(pushes, "the adversary must appear in the quote");
+  assert.ok(pushes!.output_tokens > 0);
 });

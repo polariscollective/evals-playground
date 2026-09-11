@@ -39,6 +39,26 @@ export function needsWorldModel(
   return !hasWorldModel && servesTools([...(config.tools ?? []), ...newTools]);
 }
 
+/** Does this extension have to define the adversary, once its depth is taken
+ *  into account?
+ *
+ * True only for a run that has none — one written at a single turn, which never
+ * had one to name — and only when this extension takes it beyond one turn. A run
+ * that already has an adversary keeps it: `extendProblem` refuses the pair
+ * outright there, so sending what the panel happens to be holding would turn a
+ * legitimate deepening into a refusal.
+ *
+ * `needsWorldModel`'s shape, and it exists for the same reason: the panel shows
+ * the two fields by this, and `buildExtendRequest` carries them by this. Two
+ * expressions answering the same question is what let the screen demand a field
+ * it then left out of the request — see the head comment. */
+export function needsAdversary(
+  config: Pick<EvalRunConfig, "models">,
+  turns: number,
+): boolean {
+  return !config.models.adversary?.trim() && turns > 1;
+}
+
 /** What the panel has gathered in its state, before `buildExtendRequest` makes
  *  a request of it — one field per React state, as `ExtendPanel` holds them. */
 export interface ExtendPanelValues {
@@ -61,6 +81,10 @@ export interface ExtendPanelValues {
   /** What the "World model" field carries, as it stands — empty as long as
    *  nothing has been chosen. */
   worldModel: string;
+  /** The two "Adversary" fields, as they stand — empty as long as nothing has
+   *  been written. Read only when `needsAdversary` says so. */
+  adversaryModel: string;
+  adversaryPrompt: string;
   /** The depth wanted. */
   turns: number;
   deepen: "all" | number[] | null;
@@ -96,6 +120,8 @@ export function buildExtendRequest(
     newTools,
     forExisting,
     worldModel,
+    adversaryModel,
+    adversaryPrompt,
     turns,
     deepen,
     newTargets,
@@ -117,6 +143,13 @@ export function buildExtendRequest(
         }
       : {}),
     ...(needsWorldModel(config, newTools) ? { world: worldModel } : {}),
+    // The pair or neither, and only where it is needed: `extendProblem` refuses
+    // a model without its objective, and refuses both on a run that already has
+    // an adversary or that this extension leaves at one turn. `turns`, not
+    // `config.turns`: it is the depth being asked for that decides.
+    ...(needsAdversary(config, turns)
+      ? { adversary: adversaryModel, adversary_prompt: adversaryPrompt }
+      : {}),
     // Absent leaves the depth as it stands: sending the starting value when
     // nothing changed would teach the server nothing it does not already know.
     ...(turns !== config.turns ? { turns } : {}),

@@ -1527,7 +1527,10 @@ const handler = createMcpHandler((server) => {
         "nothing else is not enough on its own. Raise the run's depth for what this call adds: turns — " +
         "never on its own, since a call adding no scenario and deepening nothing is refused; it " +
         "takes effect on the scenarios or cells this same call adds, and leaves already-played " +
-        "attempts at the depth they were judged at unless they are also named in deepen. Add a " +
+        "attempts at the depth they were judged at unless they are also named in deepen. Give a " +
+        "single-turn run the adversary it never had: adversary and adversary_prompt, together and " +
+        "only when this same call takes the run beyond one turn — a run written at one turn names " +
+        "nobody to push, and until it has one it cannot be deepened at all. Add a " +
         "judge to the run: new_judges, alone in its call — it re-reads every conversation already " +
         "played, on its own question and its own scale, and every earlier verdict stays beside it. " +
         "Deepen attempts " +
@@ -1781,6 +1784,29 @@ const handler = createMcpHandler((server) => {
               "call adds; already-played attempts are untouched unless named in deepen. Required " +
               "alongside deepen — there would otherwise be no new depth to push attempts to.",
           ),
+        adversary: z
+          .string()
+          .optional()
+          .describe(
+            "The model that plays the user, for a run that has none — one written at a single " +
+              "turn, where nobody was ever needed to push. Required, together with " +
+              "adversary_prompt, when this call takes such a run beyond one turn; without it the " +
+              "call is refused, since the engine will not play a second turn with nobody to push. " +
+              "Refused when the run already has an adversary, which it keeps: two adversaries " +
+              "within one run would make its cells incomparable. Refused as well when this call " +
+              "leaves the run at one turn, where it would never speak. Once defined it belongs to " +
+              "the run and plays every turn it adds, continues or replays afterwards.",
+          ),
+        adversary_prompt: z
+          .string()
+          .optional()
+          .describe(
+            "What that adversary is after: who it is, what it wants out of the evaluated model, " +
+              "and what it can bring to bear. Travels with adversary and is refused without it — " +
+              "a model with no objective would push at nothing in particular. The evaluated model " +
+              "never sees it; it sees only the messages the adversary sends it. Same field, same " +
+              "rules, as in the YAML format; see read_format for how to write one.",
+          ),
         deepen: z
           .union([z.literal("all"), z.array(z.number())])
           .optional()
@@ -1846,6 +1872,13 @@ const handler = createMcpHandler((server) => {
           ? {}
           : { new_tools_for_existing: input.new_tools_for_existing }),
         ...(input.turns === undefined ? {} : { turns: input.turns }),
+        // Absent stays absent, as for `world` just above: `extendProblem` tells
+        // "names no adversary" apart from "names an empty one", and a key laid
+        // here holding "" would make the second pass for the first.
+        ...(input.adversary === undefined ? {} : { adversary: input.adversary }),
+        ...(input.adversary_prompt === undefined
+          ? {}
+          : { adversary_prompt: input.adversary_prompt }),
         ...(input.deepen === undefined ? {} : { deepen: input.deepen }),
         ...(input.new_judges === undefined ? {} : { new_judges: input.new_judges }),
       };

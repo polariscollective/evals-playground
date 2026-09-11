@@ -879,6 +879,25 @@ export interface ExtendRequest {
   /** The depth wanted for the run. Never below the current one: a conversation
    *  already played is not cut short. Absent leaves the depth as it stands. */
   turns?: number;
+  /** The model that plays the user, and its objective — for a run that has
+   *  neither.
+   *
+   * They travel together or not at all: an adversary is a model AND an
+   * objective, and half of one would run under a default nobody chose.
+   *
+   * Three cases, the world model's rule transposed — see `extendProblem`. A run
+   * with no adversary that this extension takes beyond one turn must define
+   * one, which is what lets a single-turn run be deepened at all rather than
+   * written again from scratch. A run that already has one refuses to have
+   * either field named: two adversaries within one run would make its cells
+   * incomparable, and the run's own would silently win over what was sent —
+   * validated, never applied. An extension that leaves the run at one turn
+   * refuses them too, the adversary never speaking there.
+   *
+   * Once written they belong to the run, and play every cell it adds, continues
+   * or replays afterwards. */
+  adversary?: string | null;
+  adversary_prompt?: string;
   /** The attempts to continue up to `turns`, chosen by the grade the judge gave
    *  them: the server finds which ones itself, since it is the one that has the
    *  grades.
