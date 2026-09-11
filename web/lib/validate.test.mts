@@ -525,10 +525,15 @@ test("the fidelity check passes beyond one turn", () => {
 });
 
 test("false at one turn is not a problem: nothing was asked for", () => {
+  // The adversary goes with the turn: a single-turn document that still names
+  // one is now refused for that instead — see the section below. What is being
+  // read here is that `check_adversary_fidelity: false` adds nothing to it.
   assert.equal(
     configProblem(
       withPatch((c) => {
         c.turns = 1;
+        c.models.adversary = null;
+        c.adversary_prompt = "";
         c.check_adversary_fidelity = false;
       }),
     ),
@@ -544,6 +549,49 @@ test("a string in place of the boolean is refused, not read as on", () => {
     }),
   );
   assert.equal(problem, "check_adversary_fidelity must be true or false");
+});
+
+// --- the adversary, and the turns it needs ------------------------------------
+//
+// See docs/superpowers/specs/2026-09-10-an-adversary-and-the-turns-it-needs-design.md.
+// The other half of the rule right above it: above one turn an adversary is
+// required, and at a single turn it is refused, since it is never called. The
+// form has always sent `null` and `""` there — see `app/page.tsx` — so this
+// refusal takes nothing away from it. It closes the door the connector and a
+// pasted document left open: a run stored with an objective carefully written
+// for somebody who never speaks.
+
+test("an adversary model at a single turn is refused", () => {
+  const problem = configProblem(
+    withPatch((c) => {
+      c.turns = 1;
+      c.adversary_prompt = "";
+    }),
+  );
+  assert.match(problem ?? "", /single turn/);
+});
+
+test("an adversary prompt at a single turn is refused", () => {
+  const problem = configProblem(
+    withPatch((c) => {
+      c.turns = 1;
+      c.models.adversary = null;
+    }),
+  );
+  assert.match(problem ?? "", /single turn/);
+});
+
+test("a single turn that names no adversary at all passes", () => {
+  assert.equal(
+    configProblem(
+      withPatch((c) => {
+        c.turns = 1;
+        c.models.adversary = null;
+        c.adversary_prompt = "";
+      }),
+    ),
+    null,
+  );
 });
 
 // --- naming a judge instead of describing one ---------------------------------

@@ -23,14 +23,17 @@ function config(models: Partial<EvalRunConfig["models"]>): EvalRunConfig {
       judge: "anthropic/claude-opus-5",
       ...models,
     },
-    turns: 1,
+    // Two turns and a written objective, because an adversary at a single turn
+    // is now refused by `configProblem` — and the last test of this file reads
+    // exactly that this document passes it.
+    turns: 2,
     repetitions: 1,
     criterion: "x",
     rubric: [
       { value: 0, meaning: "bad" },
       { value: 1, meaning: "good" },
     ],
-    adversary_prompt: "",
+    adversary_prompt: "You play a customer in a hurry.",
     average_output_tokens: 100,
   } as unknown as EvalRunConfig;
 }
@@ -146,4 +149,19 @@ test("configProblem, for its part, knows nothing of the favourites", () => {
   const outsideButReal = config({ judge: "openai/gpt-4o" });
   assert.equal(configProblem(outsideButReal), null);
   assert.notEqual(configFavouritesProblem(outsideButReal, FAVOURITES), null);
+});
+
+test("an extension's adversary outside the favourites is refused", () => {
+  // The two fields `submit_draft_extension` gains in order to deepen a
+  // single-turn run: without this check the model that plays the user would
+  // escape the bounding every other model already undergoes.
+  const problem = extendFavouritesProblem(
+    {
+      targets: [],
+      adversary: "openai/gpt-4o",
+      adversary_prompt: "You play a customer in a hurry.",
+    } as unknown as ExtendRequest,
+    FAVOURITES,
+  );
+  assert.ok(problem?.includes("openai/gpt-4o"));
 });

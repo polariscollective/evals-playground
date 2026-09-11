@@ -218,3 +218,35 @@ test("an entry that asked for nothing: no sentence, no line", () => {
     lines: [],
   });
 });
+
+test("an extension that gave the run its adversary says so", () => {
+  // A run of one turn has nobody to push, and an extension that takes it deeper
+  // lays down the first adversary — a change to the run's setting, not just to
+  // its size. The record carries it; the history has only to read it.
+  const { lines } = summariseExtension(
+    ENTRY(
+      REQUEST({
+        scenario_indices: [0],
+        targets: ["anthropic/claude-sonnet-5"],
+        repetitions: 1,
+        turns: 4,
+        adversary: "grok/grok-4.6",
+        adversary_prompt: "You play a customer in a hurry.",
+      }),
+    ),
+    [],
+  );
+  const adversary = lines.find((line) => line.label === "Adversary");
+  assert.deepEqual(adversary?.values, ["grok/grok-4.6"]);
+});
+
+test("an extension that touched no adversary says nothing about one", () => {
+  const { lines } = summariseExtension(
+    ENTRY(REQUEST({ scenario_indices: [0], targets: ["m"], repetitions: 1 })),
+    [],
+  );
+  assert.equal(
+    lines.some((line) => line.label === "Adversary"),
+    false,
+  );
+});

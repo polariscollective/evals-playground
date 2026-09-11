@@ -626,12 +626,33 @@ export function configProblem(config: unknown): string | null {
 
   // At a single turn the adversary is never called: not requiring it avoids
   // making someone fill in a useless field for a simple round trip.
+  //
+  // And refusing it there, which is the other half of the same rule. The form
+  // has always sent `null` and `""` at one turn (`app/page.tsx`), so it looked
+  // as though the rule was held; it was held by one door out of four. A document
+  // arriving through the connector, pasted, or read from a file kept both
+  // fields, and they were written onto a run where nobody ever pushes — a
+  // setting with no effect, which is worse than an absent one, and which reads
+  // back a month later as if it had counted for something.
   if (c.turns > 1) {
     if (!isFilled(c.models?.adversary)) {
       return "an adversary model is required once turns exceeds 1";
     }
     if (!isFilled(c.adversary_prompt)) {
       return "an adversary prompt is required once turns exceeds 1";
+    }
+  } else {
+    if (isFilled(c.models?.adversary)) {
+      return (
+        "an adversary model is refused at a single turn, where it would never be " +
+        "called: either raise turns above 1, or leave it out"
+      );
+    }
+    if (isFilled(c.adversary_prompt)) {
+      return (
+        "an adversary prompt is refused at a single turn, where the adversary " +
+        "never speaks: either raise turns above 1, or leave it out"
+      );
     }
   }
 
@@ -794,9 +815,40 @@ export function extendProblem(
       // A conversation already played is not cut short.
     return `turns cannot go below the ${currentTurns} turns already played`;
   }
-  if (depth > 1 && !isFilled(adversary)) {
-      // The engine refuses to play out more than one turn with nobody to push.
-    return "an adversary model is required once turns exceeds 1";
+  // The adversary, three cases — the world model's rule a few lines above,
+  // transposed. The run's own always wins, so an extension may only fill a gap,
+  // and only when there is a gap to fill.
+  //
+  // The engine refuses to play out more than one turn with nobody to push, and
+  // until this project that was the end of it: a single-turn run could never be
+  // deepened, since the depth demanded an adversary and nothing could define
+  // one. Writing the run again and paying for the whole matrix a second time was
+  // the only way through.
+  const namedAdversary = isFilled(r.adversary);
+  const namedObjective = isFilled(r.adversary_prompt);
+  const adversaryModel = modelProblem(r.adversary, "adversary");
+  if (adversaryModel) return adversaryModel;
+  if (isFilled(adversary)) {
+    if (namedAdversary || namedObjective) {
+      return (
+        `adversary: this run is already pushed by "${adversary}". An extension ` +
+        "cannot change it — two adversaries within one run would make its cells " +
+        "incomparable, which is the one thing a matrix cannot survive."
+      );
+    }
+  } else if (depth > 1) {
+    if (!namedAdversary || !namedObjective) {
+      return (
+        "this run has no adversary and this extension takes it beyond one turn, " +
+        "so it has to define one: an adversary model and an adversary prompt, both. " +
+        "A model with no objective would push at nothing in particular."
+      );
+    }
+  } else if (namedAdversary || namedObjective) {
+    return (
+      "adversary: this extension leaves the run at one turn, where the adversary " +
+      "would never speak, so defining one here would have no effect."
+    );
   }
 
   const toDeepen = r.deepen;
@@ -827,7 +879,20 @@ export function extendProblem(
     // The run's count, not that of the list sent: a judge placed on a
     // twelve-row run has to say what it expects of the twelve. Without this
     // third argument, a list of three went through.
-    const problem = judgeSpecProblem(spec, `new judge ${index + 1}`, scenarioCount);
+    //
+    // And the run's depth, for the same reason: without this fourth argument
+    // `judgeGradesProblem` fell back on its default of two turns, and a judge
+    // laid on a single-turn run could declare that it grades the adversary — on
+    // a conversation where the adversary never speaks. It would have read
+    // nothing it was meant to grade and returned a verdict all the same. The
+    // depth the run has, not the one this request asks for: a request carrying
+    // `new_judges` may carry nothing else, `turns` included.
+    const problem = judgeSpecProblem(
+      spec,
+      `new judge ${index + 1}`,
+      scenarioCount,
+      currentTurns,
+    );
     if (problem) return problem;
   }
   if (freshJudges.length > 0) {

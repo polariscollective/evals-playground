@@ -86,7 +86,7 @@ temperature:
   max: 0.8              # omit max to use one fixed temperature
 models:
   targets: [{{TARGET}}]   # the models being evaluated, one column each
-  adversary: {{ADVERSARY}}   # plays the user, required as soon as turns > 1
+  adversary: {{ADVERSARY}}   # plays the user; required above 1 turn, refused at 1
   judge: {{JUDGE}}   # reads the transcripts and grades them
   world: {{WORLD}}   # serves the tools with retrieval_rules; required as soon as one has them
 adversary_prompt: |
@@ -155,7 +155,9 @@ scenarios:
 - \`turns\` is a whole number between 1 and 100; \`repetitions\` is at least 1.
 - At least one target model, no duplicates.
 - A judge is always required. An adversary model **and** an adversary prompt are
-  required as soon as \`turns\` is above 1.
+  required as soon as \`turns\` is above 1, and refused at a single turn, where
+  the adversary never speaks: leave both out of a one-turn run rather than
+  writing an objective nobody will ever read.
 - Each entry in \`judges\`, if you add any, needs its own non-empty \`criterion\`
   and a rubric that holds by the two rules above; \`model\` is optional text and
   falls back to \`models.judge\`.

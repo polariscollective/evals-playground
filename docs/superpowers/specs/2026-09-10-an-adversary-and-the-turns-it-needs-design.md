@@ -63,17 +63,23 @@ the one worth stating:
 
 - **The run has no adversary and this extension raises the depth above 1.** Both
   fields are required. This is the case the whole work exists for.
-- **The run already has an adversary.** It is not changed. Repeating the same
-  model and the same objective passes, a harmless repetition; naming a different
-  one is refused. Two adversaries inside one run would make its cells
-  incomparable, which is the one thing a matrix cannot survive.
+- **The run already has an adversary.** It is not changed, and naming either
+  field is refused outright — not only a different one. Two adversaries inside
+  one run would make its cells incomparable, which is the one thing a matrix
+  cannot survive, and the run's own would silently win over what was sent:
+  validated, never applied, which is the failure this repository has already met.
+  The world model allows the harmless repetition because the panel may send it;
+  here the panel never does, `needsAdversary` being false in exactly that case.
 - **The run has no adversary and this extension does not raise the depth above
   1.** Naming one is refused. It would never be called, and a setting with no
   effect is worse than an absent one.
 
-`resolvedAdversary(config, request)` lands beside `resolvedWorld` and carries
-the rule once, for the three callers that need the answer: the write, the quote,
-and the screen. The run's own always wins; the request only ever fills a gap.
+`resolvedAdversary(config, request)` carries the rule once, for the three
+callers that need the answer: the write, the quote, and the screen. The run's own
+always wins; the request only ever fills a gap. It lives in `lib/adversary.ts`,
+the counterpart of what `resolvedWorld` is to `lib/tools.ts`, and it resolves the
+model and the objective as a **pair** — the run's model beside the request's
+objective would push at something nobody ever set it to push at.
 
 ### What the extension writes
 

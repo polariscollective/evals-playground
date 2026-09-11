@@ -31,6 +31,7 @@ import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing
 import { estimateExtension } from "./extend-estimate";
 import { extendedTargets } from "./targets";
 import { resolvedWorld } from "./tools";
+import { resolvedAdversary } from "./adversary";
 import type { JobMode } from "./trigger";
 import { withLiveJudges } from "./live-config";
 import { measureRun, type MeasurableCell } from "./measured-length";
@@ -1550,10 +1551,23 @@ export async function planExtension(
   // as `world` is elsewhere — see `resolvedWorld`. Merged onto `.models` already
   // repaired by `withLiveJudges`, not onto the launch's: without that, a living
   // judge different from the launch's would become that of back then again.
+  // The adversary has the same gap as the world, and it costs more: a run of one
+  // turn names none, and an extension that takes it beyond one turn introduces
+  // the first. Costed on `config` alone, its pushes are priced at the empty
+  // model — every added turn calls a model the quote does not count, and the
+  // figure shown before confirming is too low. The objective travels with it:
+  // `estimateCost` counts its tokens on every push, so an objective missing from
+  // the priced configuration understates the input of every adversary call.
   const withJudges = withLiveJudges(config, liveJudges);
+  const adversary = resolvedAdversary(withJudges, request);
   const liveConfig = {
     ...withJudges,
-    models: { ...withJudges.models, world: resolvedWorld(withJudges, request) },
+    adversary_prompt: adversary.adversary_prompt,
+    models: {
+      ...withJudges.models,
+      world: resolvedWorld(withJudges, request),
+      adversary: adversary.adversary,
+    },
   };
 
   // Laying a judge plays no conversation: it rereads those already finished. Its
@@ -1734,6 +1748,7 @@ export async function extendRun(
   if (cases.length === 0 && continued === 0) return { added: 0, mode: "run" };
 
   const config = run.config;
+  const adversary = resolvedAdversary(config, request);
 
   // The history entry joins the writing of the configuration rather than opening
   // a request of its own: both describe the run itself, and a breakdown that left
@@ -1749,9 +1764,18 @@ export async function extendRun(
         tools: allTools,
         turns: request.turns ?? config.turns,
         scenarios,
+          // Who pushes, written in the same breath as the depth that needs
+          // somebody to push. A run of one turn names no adversary, so this is
+          // where the first one is laid down; `extendProblem` refuses to change
+          // one that exists, so the run's own always wins — see
+          // `resolvedAdversary`. Separating the two writes would leave `turns`
+          // advanced with nothing saying who now speaks, which is half a piece
+          // of information.
+        adversary_prompt: adversary.adversary_prompt,
         models: {
           ...config.models,
           targets,
+          adversary: adversary.adversary,
             // The world model is laid only once. `extendProblem` refuses to
             // change one that exists — two servers within one run would make its
             // cells incomparable — so the run's always wins, and the extension

@@ -78,6 +78,10 @@ export function extendFavouritesProblem(
       // launched — the same remark as for `new_judges` above.
       // `notFavouriteProblem` lets the empty string pass.
       { id: request.world, where: "world" },
+      // And the adversary an extension may be introducing on a run that had
+      // none. Same remark again: absent, the run's own plays, and it is already
+      // launched.
+      { id: request.adversary, where: "adversary" },
     ],
     favorites,
   );

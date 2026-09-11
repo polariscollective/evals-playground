@@ -172,6 +172,14 @@ export function summariseExtension(
       values: [max == null || max === min ? `${min}` : `${min} – ${max}`],
     });
   }
+  // Who pushes, when this extension is what gave the run somebody. A run written
+  // at a single turn has no adversary, and an extension taking it deeper lays
+  // down the first: that changes the run's setting, not only its size, and the
+  // history is where one comes to find out when. Absent on every other
+  // extension, which inherits the run's silently.
+  if (request.adversary) {
+    lines.push({ label: "Adversary", values: [request.adversary] });
+  }
   // The depth only when no sentence has already said it: an extension may raise
   // the turns for its new cells without deepening anything existing.
   if (request.turns != null && request.deepen === undefined) {
