@@ -122,6 +122,34 @@ export function heatStyle(position: number | null): string {
   return "bg-heat-7 text-heat-7-ink";
 }
 
+/** What a cell writes, under the reading currently on screen.
+ *
+ * Two ways of saying the same number. Plainly, it is the grade itself — the
+ * mean of the cell's grades, or whatever the aggregate asked for. As a
+ * percentage, it is where that number sits between the two ends: how far
+ * towards the good end of the scale under the plain reading, how far off the
+ * target under the deviation one, keeping its sign there because a miss above
+ * and a miss below are not the same finding even though they colour alike.
+ *
+ * The percentage is what makes two judges comparable at a glance: 3 out of 4
+ * and 8 out of 10 are the same result and do not look it.
+ *
+ * `null` when the cell has nothing to show, and when the scale has no width to
+ * express a share of — a percentage of a single point is not a number, it is a
+ * division by zero dressed up as one. */
+export function formatCell(
+  mean: number | null,
+  rubric: RubricLevel[] | undefined,
+  view: MatrixView,
+  higherIsBetter = true,
+): string | null {
+  if (mean === null) return null;
+  if (!view.percent) return formatMean(mean);
+  if (view.relative) return `${Math.round(mean * 100)}%`;
+  const position = heatPosition(mean, rubric, view, higherIsBetter);
+  return position === null ? formatMean(mean) : `${Math.round(position * 100)}%`;
+}
+
 /** A matrix cell's ground, under the reading currently on screen. */
 export function cellStyle(
   cell: Cell | undefined,

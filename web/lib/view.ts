@@ -44,6 +44,18 @@ export interface MatrixView {
    * targets were written against: the distance would be measured from a target
    * that has moved. */
   relative?: boolean;
+  /** Show each cell as a percentage rather than as a number on the scale.
+   *
+   * Composes with everything: under the plain reading it is how far the cell
+   * got towards the good end of its scale, under the deviation reading it is
+   * how far off the target it landed, as a share of the widest miss the scale
+   * allows. Either way a cell becomes comparable with a cell of another judge,
+   * which two scales of different lengths otherwise are not.
+   *
+   * **A display, and nothing else.** It changes no computation: the same
+   * number is written differently, which is why it does not travel with the
+   * view into an export — see `viewToQuery`. */
+  percent?: boolean;
 }
 
 export const PLAIN_VIEW: MatrixView = { aggregate: "mean", remap: {} };
@@ -52,16 +64,25 @@ export function isPlainView(view: MatrixView): boolean {
   return (
     view.aggregate === "mean" &&
     Object.keys(view.remap).length === 0 &&
-    !view.relative
+    !view.relative &&
+    !view.percent
   );
 }
 
 /** Switches the deviation reading on or off, dropping the remap if there was
  *  one. The two cannot coexist — see `MatrixView.relative`. */
 export function withRelative(view: MatrixView, relative: boolean): MatrixView {
+  // The percentage survives both ways: it is how the number is written, not
+  // what is computed, and somebody who asked for percentages does not want them
+  // taken away by switching reading.
   return relative
-    ? { aggregate: view.aggregate, remap: {}, relative: true }
-    : { aggregate: view.aggregate, remap: {} };
+    ? { aggregate: view.aggregate, remap: {}, relative: true, percent: view.percent }
+    : { aggregate: view.aggregate, remap: {}, percent: view.percent };
+}
+
+/** Switches the percentage display on or off, leaving the reading alone. */
+export function withPercent(view: MatrixView, percent: boolean): MatrixView {
+  return { ...view, percent };
 }
 
 /** Sets a remap, turning the deviation reading off if it was on. Symmetric
@@ -70,7 +91,7 @@ export function withRemap(
   view: MatrixView,
   remap: Record<number, number | null>,
 ): MatrixView {
-  return { aggregate: view.aggregate, remap };
+  return { aggregate: view.aggregate, remap, percent: view.percent };
 }
 
 /** What a grade becomes, or `null` if it leaves the computation.
@@ -158,6 +179,10 @@ export function describeView(
 
 export function viewToQuery(view: MatrixView): string {
   const params = new URLSearchParams();
+  // `percent` is deliberately absent. The export writes numbers for a
+  // spreadsheet, where a percentage is one formula away and a raw grade is what
+  // every other column is expressed in; and `cell_meaning`, which describes the
+  // view, would have to describe a formatting it cannot show.
   if (view.aggregate !== "mean") params.set("agg", view.aggregate);
   if (view.relative) params.set("rel", "1");
   const pairs = Object.entries(view.remap).map(
