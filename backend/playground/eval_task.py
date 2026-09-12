@@ -177,6 +177,11 @@ def conversation_solver(
                         # field existed: their journal is then rebuilt with no
                         # declared effect, which is exactly what they lived.
                         world_change=turn.get("world_change") or "",
+                        # Likewise absent before the blocks were stored, and
+                        # absent for good on those rows: a signature cannot be
+                        # invented after the fact. Such a conversation replays
+                        # as it did before, which is what it lived too.
+                        reasoning=turn.get("reasoning") or [],
                         tool_calls=[
                             ToolCallRecord(
                                 id=call["id"],
@@ -237,6 +242,11 @@ def conversation_solver(
                 # to the judge, which read only `content`.
                 "world_change": turn.world_change,
                 "stop_reason": turn.stop_reason,
+                # The provider's own reasoning blocks, stored because a cell
+                # deepened later has to hand back to the model what it signed
+                # today — see `Turn.reasoning` (`conversation.py`). Empty for
+                # every turn that carries none, which is most of them.
+                "reasoning": turn.reasoning,
             }
             for turn in transcript
         ]

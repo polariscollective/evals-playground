@@ -1,7 +1,14 @@
 import asyncio
 
 import pytest
-from inspect_ai.model import ChatMessageSystem, ModelOutput, get_model
+from inspect_ai.model import (
+    ChatMessageSystem,
+    ContentReasoning,
+    ContentText,
+    ModelOutput,
+    get_model,
+)
+from inspect_ai.tool import ToolCall
 
 from playground.conversation import (
     MAX_TOOL_CALLS_PER_TURN,
@@ -1027,3 +1034,153 @@ def test_a_tool_the_configuration_no_longer_knows_is_ignored():
         Turn(role="tool", content="Deleted.", tool_call_id="a1", tool_name="disparu"),
     ]
     assert journal_from(transcript, {}) == []
+
+
+# --- what the provider signed, handed back ------------------------------------
+
+
+def _signing_model(signature: str, reply: str, seen: list, call: dict | None = None):
+    """A model that answers the way Gemini 3 does: a redacted reasoning block
+    carrying a signature, then its text, and optionally a tool call.
+
+    Through the real `mockllm/model` provider, like every other model in this
+    file, so that a message this loop could not build would fail here too."""
+    from inspect_ai.model import ChatCompletionChoice, ChatMessageAssistant
+    from inspect_ai.model import ContentReasoning, ContentText
+
+    def outputs(input, tools, tool_choice, config):
+        seen.append({"messages": list(input)})
+        return ModelOutput(
+            model="mockllm",
+            choices=[
+                ChatCompletionChoice(
+                    message=ChatMessageAssistant(
+                        content=[
+                            ContentReasoning(reasoning=signature, redacted=True),
+                            ContentText(text=reply),
+                        ],
+                        tool_calls=(
+                            [
+                                ToolCall(
+                                    id=call["id"],
+                                    function=call["name"],
+                                    arguments=call["arguments"],
+                                )
+                            ]
+                            if call
+                            else None
+                        ),
+                        model="mockllm",
+                    ),
+                    stop_reason="stop",
+                )
+            ],
+        )
+
+    return get_model("mockllm/model", custom_outputs=outputs)
+
+
+def test_a_played_turn_keeps_the_block_the_provider_signed():
+    """Without this, the signature dies with the answer that carried it."""
+    seen = []
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt=SYSTEM,
+            opening_message=OPENING,
+            turns=1,
+            target=_signing_model("c2lnbmF0dXJl", "Looking into it.", seen),
+        )
+    )
+
+    answer = transcript[-1]
+    assert answer.role == "assistant"
+    assert answer.content == "Looking into it."
+    assert [block["reasoning"] for block in answer.reasoning] == ["c2lnbmF0dXJl"]
+    assert answer.reasoning[0]["redacted"] is True
+
+
+def test_the_signed_block_comes_back_on_the_next_call():
+    """The whole point. Gemini 3 signs each function call and refuses the next
+    request when the signature does not come back with it, which is what killed
+    every Gemini conversation that touched a tool."""
+    transcript = [
+        Turn(role="user", content=OPENING),
+        Turn(
+            role="assistant",
+            content="Reading the record.",
+            reasoning=[
+                {
+                    "type": "reasoning",
+                    "reasoning": "c2lnbmF0dXJl",
+                    "summary": None,
+                    "signature": None,
+                    "redacted": True,
+                    "internal": {"function_call_id": "call_1"},
+                }
+            ],
+            tool_calls=[
+                ToolCallRecord(id="call_1", name="get_record", arguments={"id": "RA-1"})
+            ],
+        ),
+        Turn(
+            role="tool",
+            content="{}",
+            tool_call_id="call_1",
+            tool_name="get_record",
+        ),
+    ]
+
+    answer = target_view(SYSTEM, transcript)[2]
+    blocks = [
+        block for block in answer.content if isinstance(block, ContentReasoning)
+    ]
+    assert len(blocks) == 1
+    assert blocks[0].reasoning == "c2lnbmF0dXJl"
+    assert blocks[0].redacted is True
+    # The anchor pairing a signature with its call: dropping it would hand the
+    # signature back for the wrong call.
+    assert blocks[0].internal == {"function_call_id": "call_1"}
+    assert [
+        block.text for block in answer.content if isinstance(block, ContentText)
+    ] == ["Reading the record."]
+
+
+def test_a_turn_that_signed_nothing_stays_a_plain_string():
+    """Every run played before this field, and every provider that signs
+    nothing: the shape they are sent must not move, or their grades could."""
+    transcript = [
+        Turn(role="user", content=OPENING),
+        Turn(role="assistant", content="Sure."),
+    ]
+    assert target_view(SYSTEM, transcript)[2].content == "Sure."
+
+
+def test_a_silent_turn_carries_its_block_without_an_empty_text():
+    """A model that only called a tool said nothing, and an empty part is not
+    the same thing as a silence."""
+    transcript = [
+        Turn(role="user", content=OPENING),
+        Turn(
+            role="assistant",
+            content="",
+            reasoning=[{"type": "reasoning", "reasoning": "c2ln", "redacted": True}],
+            tool_calls=[ToolCallRecord(id="c1", name="get_record", arguments={})],
+        ),
+    ]
+    content = target_view(SYSTEM, transcript)[2].content
+    assert [type(block).__name__ for block in content] == ["ContentReasoning"]
+
+
+def test_the_block_never_reaches_the_judge_s_side_of_the_turn():
+    """It is protocol, not speech: `content` stays what the model said, which is
+    what the judge, the export and the screen read."""
+    seen = []
+    transcript = asyncio.run(
+        run_conversation(
+            system_prompt=SYSTEM,
+            opening_message=OPENING,
+            turns=1,
+            target=_signing_model("c2lnbmF0dXJl", "Looking into it.", seen),
+        )
+    )
+    assert "c2lnbmF0dXJl" not in " ".join(turn.content for turn in transcript)
