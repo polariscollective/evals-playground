@@ -24,6 +24,9 @@ from inspect_ai.model import (
     ChatMessageSystem,
     ChatMessageTool,
     ChatMessageUser,
+    Content,
+    ContentReasoning,
+    ContentText,
     GenerateConfig,
     Model,
 )
@@ -67,6 +70,33 @@ class Turn:
 
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     """The tools this assistant turn decided to call."""
+
+    reasoning: list[dict[str, Any]] = field(default_factory=list)
+    """The provider's own reasoning blocks on this assistant turn, kept exactly
+    as they came back and handed back untouched on the next call.
+
+    **This is what a model needs in order to carry on its own thought**, and on
+    Gemini 3 it is not optional: the provider signs every function call it
+    emits, and refuses the next request outright when the signature does not
+    come back with it — `400 INVALID_ARGUMENT, Function call is missing a
+    thought_signature in functionCall parts`. Rebuilding an assistant turn from
+    its text and its calls alone, which is what this loop did, therefore killed
+    every Gemini conversation that touched a tool, on its second call.
+
+    Opaque on purpose. Inspect puts each provider's block into a
+    `ContentReasoning` — the signature base64'd in `reasoning` with `redacted`
+    set for Gemini, the thinking text with its signature for Anthropic — and
+    unrolls it back into the provider's own shape on the way out. Nothing here
+    reads inside it, and nothing here makes one up: what was never returned is
+    never replayed.
+
+    Kept as dictionaries rather than as objects because a turn is stored as JSON
+    in `eval_samples.messages`, and a conversation deepened a week later has to
+    replay what it played today. `model_dump` on one side, `model_validate` on
+    the other, and no shape of our own in between.
+
+    It never reaches a judge, an export or a screen: those read `content`, which
+    stays the text the model actually said."""
 
     tool_call_id: str | None = None
     """On a `tool` turn: the call this result answers."""
@@ -174,7 +204,7 @@ def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]
         else:
             messages.append(
                 ChatMessageAssistant(
-                    content=turn.content,
+                    content=assistant_content(turn),
                     tool_calls=[
                         ToolCall(id=call.id, function=call.name, arguments=call.arguments)
                         for call in turn.tool_calls
@@ -183,6 +213,48 @@ def target_view(system_prompt: str, transcript: list[Turn]) -> list[ChatMessage]
                 )
             )
     return messages
+
+
+def reasoning_blocks(message: ChatMessageAssistant) -> list[dict[str, Any]]:
+    """The reasoning blocks of an answer, ready to be stored.
+
+    Empty for a model that returned none, and for every answer inspect gives
+    back as plain text — which is most of them.
+
+    `model_dump` rather than a shape of our own: what is in there belongs to the
+    provider, changes with it, and is read by nobody here. Naming its fields
+    would mean maintaining a copy of a schema we do not own, and losing whatever
+    it gains."""
+    content = message.content
+    if isinstance(content, str):
+        return []
+    return [
+        block.model_dump() for block in content if isinstance(block, ContentReasoning)
+    ]
+
+
+def assistant_content(turn: Turn) -> str | list[Content]:
+    """What an assistant turn is made of when it goes back to the model: its
+    reasoning blocks, then what it said.
+
+    A plain string as long as there is no block, which is every turn of every
+    run played before this field and every answer from a model that signs
+    nothing. The shape then does not move for them, and neither do their grades.
+
+    The blocks come first, in the order the provider returned them: that is
+    where it puts them, and Gemini pairs each signature with the call that
+    follows it. Reordering them would hand back a signature for the wrong call.
+
+    An empty text yields no `ContentText`: a model that only called a tool said
+    nothing, and an empty part is not the same thing as a silence."""
+    if not turn.reasoning:
+        return turn.content
+    blocks: list[Content] = [
+        ContentReasoning.model_validate(block) for block in turn.reasoning
+    ]
+    if turn.content:
+        blocks.append(ContentText(text=turn.content))
+    return blocks
 
 
 _SHARED = load("adversary-prompt")
@@ -465,6 +537,7 @@ async def run_conversation(
                 Turn(
                     role="assistant",
                     content=target_output.completion,
+                    reasoning=reasoning_blocks(target_output.message),
                     stop_reason=(
                         target_output.choices[0].stop_reason
                         if target_output.choices
