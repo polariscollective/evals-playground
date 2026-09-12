@@ -69,6 +69,7 @@ import { served, toolsFor, writesWorld } from "@/lib/tools";
 import {
   cellStyle,
   distribution,
+  formatCell,
   formatMean,
   formatValue,
   heatPosition,
@@ -1990,7 +1991,8 @@ export function RunMatrix({
                       >
                         {cell?.mean != null ? (
                           <>
-                            {formatMean(cell.mean)}
+                            {formatCell(cell.mean, rubric, view, higherIsBetter) ??
+                              formatMean(cell.mean)}
                             {cell.judged < run.config.repetitions && (
                               // The average does not rest on every repetition: say
                               // so, otherwise one reads it as if it were worth as

@@ -11,6 +11,7 @@ import {
   describeView,
   isPlainView,
   mapScore,
+  withPercent,
   withRemap,
 } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
@@ -54,6 +55,7 @@ export function ViewControls({
         Cells show{" "}
         <span className="font-medium text-zinc-900">
           {describeView(view, rubric)}
+          {view.percent && ", as a percentage"}
         </span>
         {!isPlainView(view) && (
           <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">
@@ -63,6 +65,29 @@ export function ViewControls({
       </summary>
 
       <div className="space-y-4 border-t border-zinc-200 px-3 py-3">
+        {/* Beside the aggregate rather than in the panel below, because it
+            applies to both readings: the deviation one hides that panel, and a
+            toggle living inside it would disappear with it. */}
+        <label className="flex cursor-pointer items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!!view.percent}
+            onChange={(event) => onChange(withPercent(view, event.target.checked))}
+            className="mt-1 cursor-pointer accent-teal-700"
+          />
+          <span>
+            Show cells as percentages
+            <span className="block text-xs text-zinc-500">
+              {view.relative
+                ? "How far off the target, as a share of the widest miss the scale allows. 0% is on target."
+                : "How far towards the good end of this judge's scale. 100% is the best grade it can give, whichever end that is."}{" "}
+              It changes how the number is written, never what was computed, and
+              it makes two judges with scales of different lengths comparable at
+              a glance. Exports keep the grades themselves.
+            </span>
+          </span>
+        </label>
+
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-zinc-600">Combine the grades of a cell by:</span>
           <div className="flex gap-1 rounded border border-zinc-300 p-0.5">

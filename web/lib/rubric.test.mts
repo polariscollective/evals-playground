@@ -8,8 +8,14 @@
 // included.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cellStyle, heatPosition, heatStyle } from "./rubric.ts";
-import { PLAIN_VIEW, withRelative, withRemap } from "./view.ts";
+import { cellStyle, formatCell, heatPosition, heatStyle } from "./rubric.ts";
+import {
+  PLAIN_VIEW,
+  viewToQuery,
+  withPercent,
+  withRelative,
+  withRemap,
+} from "./view.ts";
 import type { Cell, RubricLevel } from "./types.ts";
 
 const RUBRIC: RubricLevel[] = [
@@ -163,4 +169,51 @@ test("a cell is coloured by the direction of the judge whose grade it shows", ()
     cellStyle(cell, RUBRIC, PLAIN_VIEW, true),
     cellStyle(cell, RUBRIC, PLAIN_VIEW, false),
   );
+});
+
+// --- cells as percentages -----------------------------------------------------
+//
+// One toggle over both readings. It changes how a number is written, never what
+// was computed: 3 out of 4 and 8 out of 10 are the same result and do not look
+// it until they are written the same way.
+
+test("a percentage says how far towards the good end of the scale", () => {
+  const percent = withPercent(PLAIN_VIEW, true);
+  assert.equal(formatCell(3, RUBRIC, percent), "100%");
+  assert.equal(formatCell(0, RUBRIC, percent), "0%");
+  assert.equal(formatCell(1.5, RUBRIC, percent), "50%");
+});
+
+test("on a judge that alarms high, 100% is still the good end", () => {
+  // Its best grade is its lowest. A percentage that followed the scale rather
+  // than the judge would read 100% on the cell the matrix paints red.
+  const percent = withPercent(PLAIN_VIEW, true);
+  assert.equal(formatCell(0, RUBRIC, percent, false), "100%");
+  assert.equal(formatCell(3, RUBRIC, percent, false), "0%");
+});
+
+test("under the deviation reading a percentage keeps its sign", () => {
+  // A miss above and a miss below colour alike and are not the same finding.
+  const percent = withPercent(RELATIVE, true);
+  assert.equal(formatCell(0, RUBRIC, percent), "0%");
+  assert.equal(formatCell(-0.25, RUBRIC, percent), "-25%");
+  assert.equal(formatCell(0.5, RUBRIC, percent), "50%");
+});
+
+test("without the toggle a cell writes the grade it always wrote", () => {
+  assert.equal(formatCell(1.5, RUBRIC, PLAIN_VIEW), "1.50");
+  assert.equal(formatCell(3, RUBRIC, PLAIN_VIEW), "3");
+  assert.equal(formatCell(null, RUBRIC, PLAIN_VIEW), null);
+});
+
+test("switching reading keeps the percentages somebody asked for", () => {
+  assert.equal(withRelative(withPercent(PLAIN_VIEW, true), true).percent, true);
+  assert.equal(withRemap(withPercent(PLAIN_VIEW, true), {}).percent, true);
+});
+
+test("the export keeps the grades: the percentage does not travel", () => {
+  // A spreadsheet wants the number every other column is expressed in, and
+  // `cell_meaning` could not describe a formatting it does not carry.
+  assert.equal(viewToQuery(withPercent(PLAIN_VIEW, true)), "");
+  assert.match(viewToQuery(withRelative(withPercent(PLAIN_VIEW, true), true)), /rel=1/);
 });
