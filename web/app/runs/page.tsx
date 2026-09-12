@@ -11,8 +11,9 @@ import {
   softDeleteRun,
 } from "@/lib/api";
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
-import { CopyId, PublicIcon } from "@/components/CopyButton";
+import { CopyButton, CopyIcon, CopyId, PublicIcon } from "@/components/CopyButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Dialog } from "@/components/Dialog";
 import { TagField } from "@/components/TagField";
 import { Refreshing } from "@/components/Loading";
 import { InfoDot } from "@/components/InfoDot";
@@ -141,6 +142,16 @@ export default function RunsPage() {
   /** The identifier of the run whose publication is in flight, so as to turn off
    *  its button only — not the other thirteen. */
   const [publishing, setPublishing] = useState<string | null>(null);
+  /** The run that has just been published, and the address it now answers on.
+   *
+   * The address is what one came for: publishing is never the goal, sending the
+   * link is. Closing the window on success would leave it to be hunted for on
+   * the run's own page, one click further, which is where it used to live. The
+   * confirmation therefore stays open and becomes the place the link is copied
+   * from. Unpublishing has nothing to show and closes as before. */
+  const [justPublished, setJustPublished] = useState<
+    { label: string; url: string } | null
+  >(null);
 
   // On every arrival at the tab: we check again, indicator lit. The rows already
   // in cache stay displayed meanwhile — that is the whole point, one does not
@@ -187,12 +198,16 @@ export default function RunsPage() {
   /** Publish or unpublish, then read the list again. Silent: the button already
    *  says it is working, and a second indicator at the top of the page would say
    *  nothing more. */
-  const setPublished = async (runId: string, next: boolean) => {
+  const setPublished = async (runId: string, next: boolean, label: string) => {
     setPublishing(runId);
     try {
-      await publishRun(runId, next);
+      const { url } = await publishRun(runId, next);
       await refreshRuns({ silent: true });
       setConfirmingPublish(null);
+      // On publication only, and only if the route really gave an address: a
+      // window announcing a link it does not hold would be worse than the one
+      // that closes.
+      if (next && url) setJustPublished({ label, url });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -651,7 +666,11 @@ export default function RunsPage() {
         busy={publishing !== null}
         onConfirm={() =>
           confirmingPublish &&
-          void setPublished(confirmingPublish.id, confirmingPublish.next)
+          void setPublished(
+            confirmingPublish.id,
+            confirmingPublish.next,
+            confirmingPublish.label,
+          )
         }
         onCancel={() => setConfirmingPublish(null)}
       >
@@ -673,6 +692,55 @@ export default function RunsPage() {
           </p>
         )}
       </ConfirmDialog>
+
+      {/* What the confirmation becomes once the run is published. A `Dialog`
+          rather than a `ConfirmDialog`: there is nothing left to confirm or to
+          cancel, and a Cancel button beside a link already minted would read as
+          a way to take it back. */}
+      <Dialog
+        open={justPublished !== null}
+        title="Run published"
+        onClose={() => setJustPublished(null)}
+        footer={
+          <div className="flex justify-end">
+            <button
+              onClick={() => setJustPublished(null)}
+              className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink"
+            >
+              Done
+            </button>
+          </div>
+        }
+      >
+        <p className="text-sm">
+          <strong>{justPublished?.label}</strong> now answers on this link.
+          Anyone holding it can read the run without signing in. Unpublishing
+          kills it.
+        </p>
+        <p className="mt-3 flex items-center gap-1">
+          <code className="grow truncate rounded bg-zinc-100 px-1 font-mono text-xs">
+            {justPublished?.url}
+          </code>
+          {/* The same gesture as on a run's own page, and the same reason for
+              the address being built on click: what is copied has to be
+              absolute, since whoever receives it has none of this window's
+              context, and `window.location.origin` does not exist while the
+              page is rendered server-side. */}
+          <CopyButton
+            value={() => `${window.location.origin}${justPublished?.url ?? ""}`}
+            title="Copy the public link"
+            className="shrink-0 cursor-pointer rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            {(copied) =>
+              copied ? (
+                <span className="text-xs text-teal-700">copied</span>
+              ) : (
+                <CopyIcon />
+              )
+            }
+          </CopyButton>
+        </p>
+      </Dialog>
 
       <ConfirmDialog
         open={confirming !== null}
