@@ -1,4 +1,4 @@
-"""Models reached through OpenRouter, and the one host each is held to."""
+"""Models reached through OpenRouter, and the short list of hosts each is held to."""
 
 import pytest
 
@@ -11,16 +11,28 @@ CATALOGUE = [
 ]
 
 
-def test_every_model_reached_through_openrouter_names_its_host():
-    # Without a host, OpenRouter picks one per call among fifteen to thirty,
+def test_every_model_reached_through_openrouter_names_its_hosts():
+    # Without a list, OpenRouter picks one per call among fifteen to thirty,
     # at different prices and precisions: two repetitions of one cell could
     # then be answered by two different builds of the model.
     hostless = [
         model["id"]
         for model in CATALOGUE
-        if model["id"].startswith("openrouter/") and not model.get("openrouter_host")
+        if model["id"].startswith("openrouter/") and not model.get("openrouter_hosts")
     ]
     assert hostless == []
+
+
+def test_every_model_reached_through_openrouter_has_a_second_host():
+    # One host alone stalls every cell the day OpenRouter's shared pool with it
+    # runs dry, as Fireworks' did for three of these models on 22 September.
+    alone = [
+        model["id"]
+        for model in CATALOGUE
+        if model["id"].startswith("openrouter/")
+        and len(set(model["openrouter_hosts"])) < 2
+    ]
+    assert alone == []
 
 
 def test_a_model_called_directly_names_no_host():
@@ -29,23 +41,24 @@ def test_a_model_called_directly_names_no_host():
     stray = [
         model["id"]
         for model in CATALOGUE
-        if not model["id"].startswith("openrouter/") and "openrouter_host" in model
+        if not model["id"].startswith("openrouter/") and "openrouter_hosts" in model
     ]
     assert stray == []
 
 
-def test_a_model_reached_through_openrouter_is_held_to_its_host_alone():
+def test_a_model_reached_through_openrouter_is_held_to_its_hosts_in_order():
+    # `allow_fallbacks: False` with an `order` means: these hosts, in this
+    # order, and none other. Checked live: with Fireworks saturated, the call
+    # went to Together; with Fireworks alone, it failed rather than go further.
     assert route("openrouter/z-ai/glm-5.3") == {
-        "provider": {"only": ["fireworks"], "allow_fallbacks": False}
+        "provider": {"order": ["fireworks", "together"], "allow_fallbacks": False}
     }
 
 
-def test_deepseek_v3_2_is_held_to_novita():
+def test_deepseek_v3_2_starts_with_novita():
     # The model ai-character-index seats; Fireworks does not serve it, and
     # Novita bills the price that index prices it at.
-    assert route("openrouter/deepseek/deepseek-v3.2") == {
-        "provider": {"only": ["novita"], "allow_fallbacks": False}
-    }
+    assert route("openrouter/deepseek/deepseek-v3.2")["provider"]["order"][0] == "novita"
 
 
 def test_a_model_called_directly_receives_nothing():
@@ -76,7 +89,7 @@ def test_the_route_reaches_the_model_built(built):
     assert built == [
         (
             "openrouter/moonshotai/kimi-k3",
-            {"provider": {"only": ["moonshotai"], "allow_fallbacks": False}},
+            {"provider": {"order": ["moonshotai", "together"], "allow_fallbacks": False}},
         )
     ]
 
@@ -86,7 +99,7 @@ def test_the_arguments_passed_in_travel_with_the_route(built):
     # swallow them.
     routed_model("openrouter/z-ai/glm-5.2", {"custom_outputs": ["x"]})
     assert built[0][1] == {
-        "provider": {"only": ["fireworks"], "allow_fallbacks": False},
+        "provider": {"order": ["fireworks", "together"], "allow_fallbacks": False},
         "custom_outputs": ["x"],
     }
 

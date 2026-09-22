@@ -14,7 +14,7 @@ assumptions here, then: only counters reported by the providers.
 
 The prices are those read on 19 August 2026 from the four providers'
 documentation, and on 22 September 2026 from OpenRouter for the models reached
-through it (the price of the one host each is held to, see
+through it (the highest price of the hosts each is held to, see
 `playground.routing`). They change: `shared/pricing.json` is the only place to
 update.
 """

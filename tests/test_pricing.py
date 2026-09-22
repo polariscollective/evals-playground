@@ -5,14 +5,14 @@ from playground.pricing import CACHE_READ_MULTIPLIER, PRICES, actual_cost
 
 
 def test_a_model_with_its_own_cache_price_is_billed_at_it():
-    # DeepSeek V4 Pro reads its cache at 0.044 $/Mtok, 3 % of its input price:
-    # the shared 10 % would bill that line three times over.
-    name = "openrouter/deepseek/deepseek-v4-pro-0813"
+    # DeepSeek V4.1 Flash reads its cache at 0.007 $/Mtok, 3 % of its input
+    # price: the shared 10 % would bill that line three times over.
+    name = "openrouter/deepseek/deepseek-v4.1-flash"
     cost, unpriced = actual_cost(
         {name: ModelUsage(input_tokens_cache_read=1_000_000)}
     )
     assert unpriced == []
-    assert cost == PRICES[name].cache_read_per_mtok == 0.044
+    assert cost == PRICES[name].cache_read_per_mtok == 0.007
 
 
 def test_a_model_without_one_keeps_the_shared_multiplier():

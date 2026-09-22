@@ -2,11 +2,13 @@
 
 Only the models reached through OpenRouter carry a route. OpenRouter serves each
 of them from many hosts, at different prices and precisions, and by default
-picks one per call; a matrix then compares whichever builds answered, not the
-model. `openrouter_host` in `shared/pricing.json` names the one host each model
-is held to, and `allow_fallbacks: False` makes an unavailable host fail the call
-loudly rather than hand it to another. The price in the same file is that
-host's, which is what makes `actual_cost` exact for these models.
+picks any of them per call; a matrix then compares whichever builds answered,
+not the model. `openrouter_hosts` in `shared/pricing.json` names the hosts each
+model is held to, each one checked against the catalogue's entry rule, and sent
+as an `order` with `allow_fallbacks: False`: the first, then the second when the
+first is saturated, and never a third. With every listed host down, the call
+fails loudly rather than reach one nobody checked. The price in the same file is
+the highest of the listed hosts', so `actual_cost` never falls short of the bill.
 
 Every model the job builds goes through `routed_model`: a call site that went
 back to `get_model` would silently lose the route, and nothing would say so
@@ -21,11 +23,11 @@ from playground.shared_data import load
 
 ROUTES: dict[str, dict[str, Any]] = {
     model["id"]: {
-        "provider": {"only": [model["openrouter_host"]], "allow_fallbacks": False}
+        "provider": {"order": model["openrouter_hosts"], "allow_fallbacks": False}
     }
     for provider in load("pricing")["providers"]
     for model in provider["models"]
-    if model.get("openrouter_host")
+    if model.get("openrouter_hosts")
 }
 """The construction arguments each routed model receives, by identifier."""
 
