@@ -87,10 +87,17 @@ image pushed onto a broken engine would be deployed before anybody noticed.
 The job and its secrets are described in `polaris-tf`
 (`environments/app/evals_playground_batch.tf`), not here.
 
-Four provider keys are mounted there: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`XAI_API_KEY` and `GEMINI_API_KEY`. The last arrived with the widened catalogue;
-like the others, `polaris-tf` creates the container and never the value — and the
-trap recalled below applies to it first.
+Five provider keys are mounted there: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`XAI_API_KEY`, `GEMINI_API_KEY` and `OPENROUTER_API_KEY`. Like the others,
+`polaris-tf` creates the container and never the value, and the trap recalled
+below applies to each new one first.
+
+`OPENROUTER_API_KEY` carries DeepSeek, Kimi and GLM. It is not this
+application's own: the secret was created for ai-character-index's job, and
+both jobs mount the same one, so both spend on the same OpenRouter account.
+That account's data policy decides which hosts a request may reach; it is why
+DeepSeek is served by Fireworks rather than by DeepSeek (see
+`docs/superpowers/specs/2026-09-22-open-models-through-openrouter-design.md`).
 
 ## The schema — polaris-supabase
 

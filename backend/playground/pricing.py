@@ -13,7 +13,10 @@ which prices the tokens actually consumed once the run has played. No
 assumptions here, then: only counters reported by the providers.
 
 The prices are those read on 19 August 2026 from the four providers'
-documentation. They change: `shared/pricing.json` is the only place to update.
+documentation, and on 22 September 2026 from OpenRouter for the models reached
+through it (the price of the one host each is held to, see
+`playground.routing`). They change: `shared/pricing.json` is the only place to
+update.
 """
 
 from dataclasses import dataclass
@@ -32,14 +35,24 @@ Changing them is done in `shared/pricing.json`.
 
 @dataclass(frozen=True)
 class ModelPrice:
-    """A model's price, in dollars per million tokens."""
+    """A model's price, in dollars per million tokens.
+
+    `cache_read_per_mtok` is set only where the shared multiplier would be
+    wrong: the models reached through OpenRouter, whose hosts read their cache at
+    3 % to 20 % of input rather than 10 %. Absent, the multiplier applies.
+    """
 
     input_per_mtok: float
     output_per_mtok: float
+    cache_read_per_mtok: float | None = None
 
 
 PRICES: dict[str, ModelPrice] = {
-    name: ModelPrice(price["input_per_mtok"], price["output_per_mtok"])
+    name: ModelPrice(
+        price["input_per_mtok"],
+        price["output_per_mtok"],
+        price.get("cache_read_per_mtok"),
+    )
     for name, price in _SHARED["prices"].items()
 }
 
@@ -93,11 +106,14 @@ def actual_cost(usage: dict[str, ModelUsage]) -> tuple[float, list[str]]:
         if price is None:
             unpriced.append(model)
             continue
+        cache_read = (
+            price.cache_read_per_mtok
+            if price.cache_read_per_mtok is not None
+            else price.input_per_mtok * CACHE_READ_MULTIPLIER
+        )
         total += (
             counts.input_tokens * price.input_per_mtok
-            + counts.input_tokens_cache_read
-            * price.input_per_mtok
-            * CACHE_READ_MULTIPLIER
+            + counts.input_tokens_cache_read * cache_read
             + counts.input_tokens_cache_write
             * price.input_per_mtok
             * CACHE_WRITE_MULTIPLIER
