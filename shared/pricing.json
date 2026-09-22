@@ -2,7 +2,7 @@
   "_comment": "Read by Python (backend/playground/pricing.py) and by TypeScript (web/lib/pricing.ts). One single source so that the quote shown before a run and the cost computed afterwards cannot drift apart. The two no longer read the same part: Python takes `prices` and the two cache multipliers from it, for `actual_cost`, and each model's `openrouter_host`, for routing; every assumed length (`*_response_tokens`, `chars_per_token`) serves the quote alone, which lives in TypeScript only since the Python estimator was deleted — see docs/superpowers/specs/2026-09-08-devis-par-role-design.md.",
   "_comment_catalogue": "Rule of entry: a text model, that accepts tools, whose price is published, and that really answered a tooled call made through inspect_ai. See docs/superpowers/specs/2026-09-07-catalogue-et-favoris-design.md for what stayed out and why.",
   "_comment_temperature": "honours_temperature absent means true. false says the provider throws the parameter away: Claude 4.7 and beyond run in adaptive thinking and refuse it, inspect_ai strips it and logs. The call succeeds — that is what makes the trap treacherous, and why it is written here.",
-  "_comment_openrouter": "Models whose id starts with `openrouter/` travel through OpenRouter, on the one key OPENROUTER_API_KEY. OpenRouter serves each of them from fifteen to thirty hosts, at prices that vary twofold and precisions that vary too, and by default picks one per call: two repetitions of one cell could then be answered by two different builds of the model, and billed at two prices. `openrouter_host` holds each one to a single host, with no fallback (backend/playground/routing.py): the maker's own when it passes the entry rule, otherwise Fireworks. DeepSeek's own servers are refused by the account's data policy (they train on paid traffic), and Z.ai's refuse a forced tool choice, which every judge sends. The prices are that host's, and `cache_read_per_mtok` its cache read, which runs from 3 % to 20 % of input here rather than the shared 10 %. See docs/superpowers/specs/2026-09-22-open-models-through-openrouter-design.md.",
+  "_comment_openrouter": "Models whose id starts with `openrouter/` travel through OpenRouter, on the one key OPENROUTER_API_KEY. OpenRouter serves each of them from fifteen to thirty hosts, at prices that vary twofold and precisions that vary too, and by default picks one per call: two repetitions of one cell could then be answered by two different builds of the model, and billed at two prices. `openrouter_host` holds each one to a single host, with no fallback (backend/playground/routing.py): the maker's own when it passes the entry rule, otherwise Fireworks, or Novita for DeepSeek V3.2, which Fireworks does not serve. DeepSeek's own servers are refused by the account's data policy (they train on paid traffic), and Z.ai's refuse a forced tool choice, which every judge sends. The prices are that host's, and `cache_read_per_mtok` its cache read, which runs from 3 % to 50 % of input here rather than the shared 10 %. See docs/superpowers/specs/2026-09-22-open-models-through-openrouter-design.md.",
   "chars_per_token": 2.5,
   "default_response_tokens": 1100,
   "short_response_tokens": 200,
@@ -188,6 +188,11 @@
       "input_per_mtok": 0.22,
       "output_per_mtok": 0.66,
       "cache_read_per_mtok": 0.007
+    },
+    "openrouter/deepseek/deepseek-v3.2": {
+      "input_per_mtok": 0.269,
+      "output_per_mtok": 0.4,
+      "cache_read_per_mtok": 0.1345
     },
     "openrouter/moonshotai/kimi-k3": {
       "input_per_mtok": 3.0,
@@ -441,6 +446,11 @@
           "id": "openrouter/deepseek/deepseek-v4.1-flash",
           "label": "DeepSeek V4.1 Flash",
           "openrouter_host": "fireworks"
+        },
+        {
+          "id": "openrouter/deepseek/deepseek-v3.2",
+          "label": "DeepSeek V3.2",
+          "openrouter_host": "novita"
         }
       ]
     },

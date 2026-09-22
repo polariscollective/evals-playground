@@ -4,7 +4,7 @@
 
 ## What changes
 
-The catalogue gains DeepSeek, Kimi and GLM: seven models, reached through
+The catalogue gains DeepSeek, Kimi and GLM: eight models, reached through
 OpenRouter on one key, `OPENROUTER_API_KEY`. That key already exists in
 Secret Manager (polaris-dev), created for ai-character-index's job; this job now
 mounts it too.
@@ -31,8 +31,9 @@ The same build answers every repetition, and the price in the catalogue is the
 price billed. When that host is down, the cell fails loudly with OpenRouter's
 error, rather than being answered somewhere else in silence.
 
-The host is the maker's own when it passes the entry rule, Fireworks otherwise.
-The maker's own failed twice:
+The host is the maker's own when it passes the entry rule, Fireworks otherwise,
+and Novita for DeepSeek V3.2, which Fireworks does not serve. The maker's own
+failed twice:
 
 | maker | what happened |
 |---|---|
@@ -62,6 +63,7 @@ Prices in $/Mtok, read from OpenRouter's endpoint list on 22 September 2026:
 |---|---|---|---|---|---|---|
 | `openrouter/deepseek/deepseek-v4-pro-0813` | DeepSeek V4 Pro (0813) | fireworks | 1.32 | 3.96 | 0.044 | honoured |
 | `openrouter/deepseek/deepseek-v4.1-flash` | DeepSeek V4.1 Flash | fireworks | 0.22 | 0.66 | 0.007 | honoured |
+| `openrouter/deepseek/deepseek-v3.2` | DeepSeek V3.2 | novita | 0.269 | 0.40 | 0.1345 | honoured, see below |
 | `openrouter/moonshotai/kimi-k3` | Kimi K3 | moonshotai | 3 | 15 | 0.30 | ignored |
 | `openrouter/moonshotai/kimi-k2.6` | Kimi K2.6 | moonshotai | 0.95 | 4 | 0.16 | ignored |
 | `openrouter/z-ai/glm-5.3` | GLM 5.3 | fireworks | 1.40 | 4.40 | 0.26 | honoured |
@@ -85,6 +87,24 @@ then one at 2.
 - Kimi wrote four unrelated sentences at 0 and a sound one at 2. It discards the
   parameter without refusing the call: exactly the trap `honours_temperature:
   false` exists to name, and it now marks nine models instead of seven.
+- DeepSeek V3.2 depends on its host. At 0, Novita, Atlas Cloud and GMICloud all
+  vary somewhat from call to call; at 2, Novita and Atlas Cloud still write sound
+  sentences (the top of the range is likely capped), and GMICloud refuses the
+  value outright (`invalid_value`), which would fail every cell of a sweep that
+  reaches 2. It stays marked as honouring the parameter, since the low end moves;
+  a sweep on it is worth keeping below 1.
+
+### DeepSeek V3.2, and the host it is held to
+
+V3.2 is the model ai-character-index seats on its published panel. That index
+reaches it through OpenRouter without naming a host, and prices it at 0.269 /
+0.40, which is Novita's price. Every fp8 host tried (Novita, GMICloud, Atlas
+Cloud, SiliconFlow) and DeepInfra's fp4 build passed the three shapes; Novita
+was kept so the two products price the model alike, and for fp8, V3.2's native
+precision. Its cache read is half its input price, the highest ratio here.
+
+Unlike the other seven, V3.2 does not reason by default: it answered with no
+reasoning tokens at all.
 
 ### What stayed out
 
@@ -100,9 +120,10 @@ then one at 2.
 ## Cache reads
 
 `actual_cost` bills a cache read at 10 % of the input price, for every model.
-Here the hosts bill from 3 % (DeepSeek on Fireworks) to 20 % (GLM 5.3 Flash):
-the shared multiplier would bill DeepSeek's cache three times over and GLM's at
-half. Each of these prices therefore carries its own `cache_read_per_mtok`, which
+Here the hosts bill from 3 % (DeepSeek V4 on Fireworks) to 50 % (DeepSeek V3.2 on
+Novita):
+the shared multiplier would bill DeepSeek V4's cache three times over and GLM's
+at half. DeepSeek V3.2 on Novita reads at 50 %. Each of these prices therefore carries its own `cache_read_per_mtok`, which
 `actual_cost` uses when present; absent, the multiplier applies as before. None
 of these hosts bills cache writes.
 
@@ -132,14 +153,19 @@ The secret stays declared in `ai_character_index_batch.tf`, where it was born.
 
 Order: merge the polaris-tf PR and let the dev apply finish before this
 repository's change reaches `main`. The other way round, the catalogue offers
-the seven models while the job has no key, and every cell on them fails.
+the eight models while the job has no key, and every cell on them fails.
 
 ## What is not done
 
-- **The default favourites are unchanged.** The seven models appear in
-  `/profile`, to tick.
-- **Reasoning is not in the quote.** All seven reason before answering by
-  default, and those tokens are billed as output. The quote does not model them
+- **Only four join the default favourites**: the open models ai-character-index
+  judges with. DeepSeek V3.2 holds a seat of its panel; Kimi K3 is the declared
+  stand-in that took the Fable seat 14 times on 15 September 2026, when every
+  Anthropic model was refused; Kimi K2.6 and GLM 5.2 are the stand-ins its
+  configuration names for those two. The other four are in `/profile`, to tick.
+  A profile with its own list keeps it: the default reaches only those who never
+  chose.
+- **Reasoning is not in the quote.** Seven of the eight reason before answering
+  by default, and those tokens are billed as output. The quote does not model them
   for any model (Opus 5 already reasons), so the real cost of a run on these
   will sit above its quote.
 - **The provider "family" is still the identifier's first segment**
@@ -157,5 +183,7 @@ the seven models while the job has no key, and every cell on them fails.
 - A model with its own cache price is billed at it, one without keeps the
   multiplier (`tests/test_pricing.py`).
 - Seven groups in order, the three OpenRouter ones on `OPENROUTER_API_KEY`,
-  forty-eight models, nine that discard temperature (`web/lib/catalog.test.mts`).
+  forty-nine models, nine that discard temperature (`web/lib/catalog.test.mts`).
+- The default favourites end on ai-character-index's four open models
+  (`web/lib/favorite-models.test.mts`).
 - The live calls above, which are the entry rule itself.

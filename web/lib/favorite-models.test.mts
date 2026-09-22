@@ -26,8 +26,22 @@ test("the default names only models from the catalogue", () => {
   assert.deepEqual(DEFAULT_FAVORITE_MODELS.filter((id) => !known.has(id)), []);
 });
 
-test("the default carries ten models", () => {
-  assert.equal(DEFAULT_FAVORITE_MODELS.length, 10);
+test("the default carries fourteen models", () => {
+  assert.equal(DEFAULT_FAVORITE_MODELS.length, 14);
+});
+
+test("the default offers the open models ai-character-index judges with", () => {
+  // Its panel's seat, and the stand-ins its configuration names for a seat
+  // that cannot answer: the same models, offered here without asking.
+  assert.deepEqual(
+    DEFAULT_FAVORITE_MODELS.filter((id) => id.startsWith("openrouter/")),
+    [
+      "openrouter/deepseek/deepseek-v3.2",
+      "openrouter/moonshotai/kimi-k3",
+      "openrouter/moonshotai/kimi-k2.6",
+      "openrouter/z-ai/glm-5.2",
+    ],
+  );
 });
 
 test("NULL returns the code's default", () => {

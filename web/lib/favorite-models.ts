@@ -33,7 +33,12 @@ export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5";
  * plus Fable 5.1. Lives in the code and not in the database: a `profiles` row
  * that copied this list would never again receive what gets added to it — see
  * the migration `profiles_favorite_models`, which carries the same reasoning as
- * `scenario_advice` before it. */
+ * `scenario_advice` before it.
+ *
+ * Then the open models ai-character-index judges with, as of September 2026:
+ * DeepSeek V3.2 holds a seat of its panel, Kimi K3 is the declared stand-in
+ * that took the Fable seat when Anthropic's models were refused, and Kimi K2.6
+ * and GLM 5.2 are the stand-ins its configuration names for those two. */
 export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "anthropic/claude-fable-5-1",
   "anthropic/claude-opus-5",
@@ -45,6 +50,10 @@ export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "grok/grok-4.6",
   "grok/grok-4.5",
   "grok/grok-4.3",
+  "openrouter/deepseek/deepseek-v3.2",
+  "openrouter/moonshotai/kimi-k3",
+  "openrouter/moonshotai/kimi-k2.6",
+  "openrouter/z-ai/glm-5.2",
 ];
 
 /** The models to offer this person.

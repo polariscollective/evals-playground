@@ -40,6 +40,14 @@ def test_a_model_reached_through_openrouter_is_held_to_its_host_alone():
     }
 
 
+def test_deepseek_v3_2_is_held_to_novita():
+    # The model ai-character-index seats; Fireworks does not serve it, and
+    # Novita bills the price that index prices it at.
+    assert route("openrouter/deepseek/deepseek-v3.2") == {
+        "provider": {"only": ["novita"], "allow_fallbacks": False}
+    }
+
+
 def test_a_model_called_directly_receives_nothing():
     assert route("anthropic/claude-opus-5") == {}
     assert route("mockllm/model") == {}

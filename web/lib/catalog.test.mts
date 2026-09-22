@@ -45,8 +45,8 @@ test("the three groups reached through OpenRouter share its key", () => {
   );
 });
 
-test("the catalogue carries forty-eight models", () => {
-  assert.equal(knownModelIds().size, 48);
+test("the catalogue carries forty-nine models", () => {
+  assert.equal(knownModelIds().size, 49);
 });
 
 test("the nine models that discard temperature are marked", () => {

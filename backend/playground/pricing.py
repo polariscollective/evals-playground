@@ -39,7 +39,7 @@ class ModelPrice:
 
     `cache_read_per_mtok` is set only where the shared multiplier would be
     wrong: the models reached through OpenRouter, whose hosts read their cache at
-    3 % to 20 % of input rather than 10 %. Absent, the multiplier applies.
+    3 % to 50 % of input rather than 10 %. Absent, the multiplier applies.
     """
 
     input_per_mtok: float
