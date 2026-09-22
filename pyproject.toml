@@ -7,7 +7,15 @@ dependencies = [
     # 0.3.263 and no less: in 0.3.259, `gpt-6-astra` leaves through Chat
     # Completions with `max_tokens` and OpenAI refuses it ("use
     # max_completion_tokens").
-    "inspect-ai>=0.3.263",
+    #
+    # And no more, for now. From 0.3.266 a `mockllm` call is counted in a
+    # sample's usage, where it used to count nothing, and five tests of
+    # tests/test_batch_job.py rest on that nothing: CI failed on main on 22
+    # September 2026 and the deploy was skipped. The engine itself is not
+    # concerned (a real provider was always counted), but those tests must be
+    # rewritten before the bound goes. 0.3.263 is also the version the
+    # OpenRouter models were checked live on.
+    "inspect-ai==0.3.263",
     # Inspect's providers: each one demands its SDK, without which the model
     # fails silently on the first call — an empty column in the matrix, with no
     # error message.
