@@ -21,7 +21,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from inspect_ai.model import ChatMessageSystem, ChatMessageUser, get_model
+from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 from inspect_ai.model._model import sample_model_usage
 from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
@@ -33,6 +33,7 @@ from playground.eval_schemas import (
     JudgeSystemType,
     RubricLevel,
 )
+from playground.routing import routed_model
 from playground.tool_calls import tool_call_arguments
 from playground.shared_data import load
 
@@ -593,7 +594,7 @@ async def judge_adversary_fidelity(
         always empty when the third is not.
     """
     try:
-        output = await get_model(model, **(model_args or {})).generate(
+        output = await routed_model(model, model_args).generate(
             input=[
                 ChatMessageSystem(content=FIDELITY_SYSTEM),
                 ChatMessageUser(
@@ -646,7 +647,7 @@ async def judge_awareness(
         always empty when the third is not.
     """
     try:
-        output = await get_model(model, **(model_args or {})).generate(
+        output = await routed_model(model, model_args).generate(
             input=[
                 ChatMessageSystem(content=AWARENESS_SYSTEM),
                 ChatMessageUser(content=awareness_prompt(transcript_text)),
@@ -752,7 +753,7 @@ async def judge_conversation(
         # `None` here — the exclusion laid down by
         # `judges_ordinary_or_system_check` in the database, and by
         # `Judge._ordinary_or_system` in Python, guarantees it.
-        output = await get_model(judge.model, **(model_args or {})).generate(
+        output = await routed_model(judge.model, model_args).generate(
             input=[
                 ChatMessageSystem(content=judge_system(judge.grades)),
                 ChatMessageUser(

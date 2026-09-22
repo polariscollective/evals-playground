@@ -9,11 +9,11 @@ repetition lets each carry its own.
 from typing import Any, Callable
 
 from inspect_ai.dataset import MemoryDataset, Sample
-from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from playground.conversation import ToolCallRecord, Turn, run_conversation
 from playground.eval_schemas import EvalRunConfig, tools_for
+from playground.routing import routed_model
 
 
 def pending_dataset(
@@ -137,7 +137,7 @@ def conversation_solver(
         scenario = config.scenarios[int(state.metadata.get("scenario_index", 0))]
         target_name = state.metadata.get("target") or config.models.targets[0]
         adversary = (
-            get_model(config.models.adversary, **(model_args or {}))
+            routed_model(config.models.adversary, model_args)
             if config.turns > 1 and config.models.adversary
             else None
         )
@@ -151,7 +151,7 @@ def conversation_solver(
             system_prompt=scenario.system_prompt,
             opening_message=scenario.opening_message,
             turns=remaining,
-            target=get_model(target_name, **(model_args or {})),
+            target=routed_model(target_name, model_args),
             adversary=adversary,
             adversary_prompt=config.adversary_prompt,
             temperature=state.metadata.get("temperature"),

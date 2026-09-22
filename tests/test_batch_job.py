@@ -1395,7 +1395,7 @@ def test_a_check_that_raises_says_why_instead_of_staying_silent(monkeypatch):
     silent row pass for calm."""
     config = _config_with_a_served_tool()
     supabase = _SupabaseToCheck([_ROW_TO_CHECK])
-    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.routed_model", lambda *a, **k: object())
 
     async def raises(**kwargs):
         raise RuntimeError("invalid key")
@@ -1417,7 +1417,7 @@ def test_the_written_reason_is_truncated_to_500_characters(monkeypatch):
     """A reason must not become a whole stack trace in the database."""
     config = _config_with_a_served_tool()
     supabase = _SupabaseToCheck([_ROW_TO_CHECK])
-    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.routed_model", lambda *a, **k: object())
 
     oversized_message = "x" * 1000
 
@@ -1439,7 +1439,7 @@ def test_a_successful_check_clears_an_earlier_reason(monkeypatch):
     on a row that has since been checked."""
     config = _config_with_a_served_tool()
     supabase = _SupabaseToCheck([{**_ROW_TO_CHECK, "check_error": "an older failure"}])
-    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.routed_model", lambda *a, **k: object())
 
     async def succeeds(**kwargs):
         return True, ""
@@ -1472,7 +1472,7 @@ def test_a_raising_write_of_the_reason_does_not_bring_the_check_down(monkeypatch
     the reason could not be written — which is the case."""
     config = _config_with_a_served_tool()
     supabase = _SupabaseRefusingWritesToo([_ROW_TO_CHECK])
-    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.routed_model", lambda *a, **k: object())
 
     async def raises(**kwargs):
         raise RuntimeError("invalid key")
@@ -1488,7 +1488,7 @@ def test_a_raising_write_of_the_reason_does_not_bring_the_check_down(monkeypatch
 # A MINOR from the work's final review: the docstring already promised "never
 # brings the run down" for the whole function, but three reads and
 # external writes were left unguarded — `unchecked_tool_results`,
-# `get_model(check_model_for(...))` and `write_tool_verdict`. Three tests, one
+# `routed_model(check_model_for(...))` and `write_tool_verdict`. Three tests, one
 # per unprotected call.
 
 
@@ -1515,7 +1515,7 @@ def test_a_raising_read_of_the_rows_to_check_does_not_bring_the_check_down():
 def test_a_raising_build_of_the_checker_does_not_bring_the_check_down(
     monkeypatch,
 ):
-    """The same guard for `get_model(check_model_for(...))`: a `models.world`
+    """The same guard for `routed_model(check_model_for(...))`: a `models.world`
     that no longer names a known provider, or a missing key at the checker's,
     must not bring the run down either."""
     config = _config_with_a_served_tool()
@@ -1524,7 +1524,7 @@ def test_a_raising_build_of_the_checker_does_not_bring_the_check_down(
     def raises(*args, **kwargs):
         raise RuntimeError("fournisseur inconnu")
 
-    monkeypatch.setattr("playground.batch_job.get_model", raises)
+    monkeypatch.setattr("playground.batch_job.routed_model", raises)
 
     assert check_served_results(supabase, "run-1", config) == 0
     assert supabase.updates == []
@@ -1537,7 +1537,7 @@ def test_a_raising_write_of_the_verdict_does_not_bring_the_check_down(monkeypatc
     — the row keeps a null `faithful`, and a later pass will pick it up."""
     config = _config_with_a_served_tool()
     supabase = _SupabaseRefusingWritesToo([_ROW_TO_CHECK])
-    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.routed_model", lambda *a, **k: object())
 
     async def succeeds(**kwargs):
         return True, ""
@@ -1603,7 +1603,7 @@ def _serves(monkeypatch, answers, verdicts):
             raise next_one
         return next_one
 
-    monkeypatch.setattr("playground.batch_job.get_model", lambda *a, **k: object())
+    monkeypatch.setattr("playground.batch_job.routed_model", lambda *a, **k: object())
     monkeypatch.setattr("playground.batch_job.serve", fake_serve)
     monkeypatch.setattr("playground.batch_job.check", fake_check)
     return seen

@@ -21,18 +21,35 @@ test("no price is left lying without a model carrying it", () => {
   assert.deepEqual(orphans, []);
 });
 
-test("the four providers are there, in order", () => {
+test("the seven providers are there, in order", () => {
+  // The last three are reached through OpenRouter, one group per maker: a
+  // single "OpenRouter" group would say how the call travels, not whose model
+  // it is.
   assert.deepEqual(
     catalog(NO_FAVOURITES).map((p) => p.id),
-    ["anthropic", "openai", "grok", "google"],
+    ["anthropic", "openai", "grok", "google", "deepseek", "moonshotai", "z-ai"],
   );
 });
 
-test("the catalogue carries forty-one models", () => {
-  assert.equal(knownModelIds().size, 41);
+test("the three groups reached through OpenRouter share its key", () => {
+  const routed = catalog(NO_FAVOURITES).filter((p) =>
+    p.models.every((m) => m.id.startsWith("openrouter/")),
+  );
+  assert.deepEqual(
+    routed.map((p) => [p.id, p.env_vars]),
+    [
+      ["deepseek", ["OPENROUTER_API_KEY"]],
+      ["moonshotai", ["OPENROUTER_API_KEY"]],
+      ["z-ai", ["OPENROUTER_API_KEY"]],
+    ],
+  );
 });
 
-test("the seven models that discard temperature are marked", () => {
+test("the catalogue carries forty-nine models", () => {
+  assert.equal(knownModelIds().size, 49);
+});
+
+test("the nine models that discard temperature are marked", () => {
   // Marked and not removed: a fixed-temperature run on them is legitimate; it
   // is the sweep that would measure nothing.
   const ignoring = catalog(NO_FAVOURITES)
@@ -48,6 +65,8 @@ test("the seven models that discard temperature are marked", () => {
     "anthropic/claude-opus-5",
     "anthropic/claude-sonnet-5",
     "openai/gpt-6-astra",
+    "openrouter/moonshotai/kimi-k2.6",
+    "openrouter/moonshotai/kimi-k3",
   ]);
 });
 

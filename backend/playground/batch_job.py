@@ -8,7 +8,8 @@ can substitute environment variables at launch, not arguments.
     EVAL_RUN_ID     the run to execute, already in the database with its samples
     EVAL_JOB_MODE   `run` (default) or `catchup`
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-    ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GEMINI_API_KEY
+    ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GEMINI_API_KEY,
+    OPENROUTER_API_KEY
 
 The job invents nothing: the matrix already exists in the database, one row per
 cell, `pending`. All it does is fill them in. Since multiple judges, that is
@@ -27,7 +28,6 @@ from typing import Any, Callable
 from inspect_ai import Task, eval as inspect_eval
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.log import EvalLog
-from inspect_ai.model import get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from playground.conversation import ToolAnswer
@@ -35,6 +35,7 @@ from playground.eval_schemas import EvalRunConfig, JournalEntry, ToolSpec
 from playground.log_store import Storage, upload_logs
 from playground.eval_task import conversation_solver, pending_dataset
 from playground.pricing import actual_cost
+from playground.routing import routed_model
 from playground.scoring import JudgeOutcome, ScoredSample, judges_scorer
 from playground.supabase_store import (
     JUDGE_SCORES,
@@ -220,7 +221,7 @@ def world_server(
                 return None, "", last or "no checker could be reached"
             try:
                 verdict = await check(
-                    model=get_model(candidate, **(model_args or {})),
+                    model=routed_model(candidate, model_args),
                     world=world,
                     journal=journal,
                     tool=tool_name,
@@ -283,7 +284,7 @@ def world_server(
         for attempt in (1, 2):
             try:
                 served = await serve(
-                    model=get_model(config.models.world, **(model_args or {})),
+                    model=routed_model(config.models.world, model_args),
                     world=config.world,
                     scenario_world=config.scenarios[scenario_index].world,
                     journal=journal,
@@ -379,7 +380,7 @@ def check_served_results(
         return 0
 
     try:
-        model = get_model(check_model_for(config.models.world), **(model_args or {}))
+        model = routed_model(check_model_for(config.models.world), model_args)
     except Exception:
         # A checker we cannot build — missing key, identifier gone invalid —
         # must not bring the run down either: the rows stay to be checked, and a
