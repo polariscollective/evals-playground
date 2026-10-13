@@ -85,6 +85,15 @@ export const MCP_TOOLS: McpTool[] = [
     output: "The run's address and a summary, or every problem found, with nothing written.",
   },
   {
+    name: "get_import_upload_link",
+    summary:
+      "The same import, for a document too large to pass as text: a link, valid 30 minutes and " +
+      "for one import, that the filled file is sent to with one command. Nothing runs and " +
+      "nothing is spent.",
+    input: ["draft_id"],
+    output: "The link, and the command that sends the file to it.",
+  },
+  {
     name: "update_draft_run",
     summary:
       "Rewrites a draft in place rather than leaving a second one beside it. Someone else's " +

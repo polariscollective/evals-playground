@@ -24,6 +24,7 @@ test("the open paths go through the door with no session", () => {
     "/mcp",
     "/mcp/authorize",
     "/mcp/token",
+    "/mcp/upload/some-sealed-token",
     "/.well-known/oauth-authorization-server",
     "/.well-known/oauth-protected-resource",
   ]) {

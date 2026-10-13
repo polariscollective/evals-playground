@@ -46,6 +46,8 @@ import {
   playedElsewhereProblem,
   playedHereProblem,
 } from "@/lib/import-results";
+import { authorOnly, extensionRefusal, importDraft } from "@/lib/import-draft";
+import { sealUploadLink, UPLOAD_LINK_TTL_MS } from "@/lib/import-upload-link";
 import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { JudgeTarget } from "@/lib/types";
@@ -56,8 +58,6 @@ import {
   expectationForDraft,
   extendRun,
   failToStart,
-  importExtension,
-  importRun,
   judgeVerdictsForSample,
   loadLiveRunJudges,
   loadRun,
@@ -99,7 +99,6 @@ import {
 } from "@/lib/world-warnings";
 import type {
   Draft,
-  ExtendDraft,
   Judge,
   JudgeSystemType,
   JudgeSystemTypeColumn,
@@ -203,22 +202,6 @@ async function profileOf(caller: string): Promise<Profile | null> {
     console.error(`Could not read or create a profile for ${caller}:`, (error as Error).message);
     return null;
   }
-}
-
-/** The refusal to write on a run that is not one's own, or nothing when
- *  `callerEmail` already designates `run.user_email` — one function for the
- *  three tools that write on a run: `submit_draft_extension`, `set_run_tags`,
- *  and `update_run_text`. Reading, for its part, stays open to any caller; none
- *  of those three touches it.
- *
- *  Never names the real owner: `get_run_metadata` already answers that question
- *  for whoever asks it, but a refusal has no business pushing it. */
-function authorOnly(ownerEmail: string, caller: string): string | null {
-  if (ownerEmail === caller) return null;
-  return (
-    `This run was created by someone other than you (you are calling as ${caller}). Only its ` +
-    "creator can write to it — reading a run stays open to anyone."
-  );
 }
 
 /** The refusal of a document, said for this channel.
@@ -363,55 +346,6 @@ function judgeIdentity(view: {
     // and make a study look like an exploration.
     ...("targets" in view ? { targets: view.targets ?? null } : {}),
   };
-}
-
-/** What refuses applying an extension draft to its run, by either door:
- *  launched here or imported. The same checks the human route makes, made
- *  again because the run may have moved since the draft was written. The
- *  scale checked is the living principal's, never the possibly stale one in
- *  `config` (see `extendProblem`). */
-function extensionRefusal(draft: ExtendDraft, detail: RunDetail, caller: string): string | null {
-  const { run } = detail;
-  // An explicit decision: through MCP, one can only extend a run one
-  // created oneself, since an extension writes on a run that already exists,
-  // which launching a fresh run never does. The same function as
-  // `submit_draft_extension`, for the same reason; the message spells out
-  // the distinction so that a refusal here is not read as bearing on every
-  // launch.
-  const ownership = authorOnly(run.user_email, caller);
-  if (ownership) {
-    return (
-      `${ownership} This check is specific to extending an existing run: launching a fresh ` +
-      "run draft (kind \"run\") creates a new run instead, and is never refused for who owns " +
-      "anything."
-    );
-  }
-
-  // The same validation as the human route, revalidated here: a draft
-  // deposited by `submit_draft_extension` was valid when written, but
-  // nothing stops the run having moved since, a model withdrawn from the
-  // catalogue, for instance. The scale checked is the LIVING PRINCIPAL's,
-  // never the possibly stale one in `config`: `deepenCandidates`
-  // (`planExtension`, `runs.ts`) already keeps only attempts graded by that
-  // same principal, and validating `deepen` against another scale would let
-  // through a grade no attempt really carries, silently zero attempts
-  // deepened, exactly what this check exists to prevent (see `validate.ts`,
-  // `extendProblem`).
-  const rubric =
-    detail.judges?.find((judge) => judge.is_principal)?.judge.rubric ?? run.config.rubric;
-  const problem = extendProblem(
-    draft.config,
-    run.config.scenarios.length,
-    run.config.tools ?? [],
-    run.config.turns,
-    run.config.models.adversary ?? null,
-    rubric.map((level) => level.value),
-    run.config.models.world ?? null,
-  );
-  if (problem) return problem;
-  // Beside `extendProblem`, never in its place: this rule looks at the
-  // run's LIVE judges, which live in `run_judges` and not in `config`.
-  return extendTargetsProblem(draft.config, judgesForTargets(detail.judges));
 }
 
 const handler = createMcpHandler((server) => {
@@ -1609,86 +1543,62 @@ const handler = createMcpHandler((server) => {
     async ({ draft_id, results }, ctx) => {
       const found = await draftOrError(draft_id);
       if ("error" in found) return found.error;
-      const { draft } = found;
       const caller = await callerEmail(ctx);
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
-      const profile = await profileOf(caller);
-      if (!profile) {
-        return toolError(
-          "Your profile could not be found or created right now, so the models you may use " +
-            "cannot be checked. Try again in a moment.",
-        );
-      }
+      const outcome = await importDraft(found.draft, results, caller, origin);
+      if (!outcome.ok) return toolError(outcome.text);
+      return { content: [{ type: "text", text: outcome.text }] };
+    },
+  );
 
-      let outcome;
-      try {
-        if (draft.kind === "run") {
-          const problem = configProblem(draft.config);
-          if (problem) return toolError(problem);
-          const outside = configFavouritesProblem(draft.config, favoriteModels(profile));
-          if (outside) return toolError(outside);
-          outcome = await importRun(draft, results, caller);
-          if ("run" in outcome) {
-            try {
-              const tags = await tagsOfDraft(draft_id);
-              if (tags.length > 0) await setRunTags(outcome.run.id, tags.map((tag) => tag.id));
-            } catch (error) {
-              console.error(
-                `Could not copy tags from draft ${draft_id} to run ${outcome.run.id}:`,
-                (error as Error).message,
-              );
-            }
-          }
-        } else {
-          const applied = alreadyAppliedProblem(draft);
-          if (applied) return toolError(applied);
-          const target = await runOrError(draft.extends_run_id, {
-            withTranscripts: false,
-            withSourceCsvFlag: false,
-            withJudges: true,
-          });
-          if ("error" in target) return target.error;
-          const here = playedHereProblem(target.run.run);
-          if (here) return toolError(here);
-          const refusal = extensionRefusal(draft, target.run, caller);
-          if (refusal) return toolError(refusal);
-          // A catch-up job grading this run snapshots its pending score rows at
-          // start and rewrites the run's status and cost at the end: an import
-          // landing meanwhile would be overwritten by it.
-          if (target.run.run.status === "triggered" || target.run.run.status === "running") {
-            return toolError(
-              `Run ${target.run.run.id} is being graded right now (a catch-up pass is in flight). ` +
-                "Importing into it meanwhile would have that pass overwrite what you import. " +
-                "Wait for it to finish, then try again.",
-            );
-          }
-          const outside = extendFavouritesProblem(draft.config, favoriteModels(profile));
-          if (outside) return toolError(outside);
-          outcome = await importExtension(draft, results, caller);
-        }
-      } catch (error) {
-        if (error instanceof ConfigProblem || error instanceof NotFound) {
-          return toolError(error.message);
-        }
-        throw error;
+  server.registerTool(
+    "get_import_upload_link",
+    {
+      title: "Get a link to upload an import as a file",
+      description:
+        "Starts nothing and spends nothing. The same import as import_draft_results, for a " +
+        "document too large to pass as text: returns a link you send the filled file to " +
+        "yourself, with one command, instead of writing it out in a tool call. The link is " +
+        `valid ${UPLOAD_LINK_TTL_MS / 60000} minutes and serves once: a successful import ` +
+        "spends it, a refused one does not. Send the file as the request body, plain JSON or " +
+        "gzipped (recommended above a few megabytes: a request carries at most about 4 MB). " +
+        "The response is exactly what import_draft_results would have answered, with HTTP " +
+        "status 200 when imported and 422 when refused, nothing written.",
+      inputSchema: z.object({
+        draft_id: z.string().describe("The draft's UUID, from its address."),
+      }),
+    },
+    async ({ draft_id }, ctx) => {
+      const found = await draftOrError(draft_id);
+      if ("error" in found) return found.error;
+      const { draft } = found;
+      // Refused now rather than at upload: the file would be built for nothing.
+      if (draft.kind === "extend") {
+        const applied = alreadyAppliedProblem(draft);
+        if (applied) return toolError(applied);
       }
-
-      if ("problems" in outcome) {
-        return toolError(
-          `Nothing was written. The document does not fit draft ${draft_id}:\n\n- ` +
-            outcome.problems.join("\n- "),
-        );
-      }
-      await markDraftLaunched(draft_id);
-      const cost =
-        outcome.cost === null ? "cost unknown" : `cost declared at ${formatUsd(outcome.cost)}`;
+      const secret = process.env.AUTH_SECRET;
+      if (!secret) return toolError("Upload links are not available on this deployment.");
+      const caller = await callerEmail(ctx);
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      const token = sealUploadLink(
+        { draftId: draft.id, caller, launchedAt: draft.launched_at },
+        secret,
+        Date.now(),
+      );
+      const url = `${origin}/mcp/upload/${token}`;
       return {
         content: [
           {
             type: "text",
             text:
-              `${draft.kind === "run" ? "Imported as" : "Extended"} run ${outcome.run.id}, ` +
-              `${cost}. ${outcome.summary}\n\n${origin}/eval/${outcome.run.id}`,
+              `Upload link for draft ${draft.id}, valid ${UPLOAD_LINK_TTL_MS / 60000} minutes, ` +
+              "for one successful import:\n\n" +
+              `${url}\n\n` +
+              "Send the filled document as the request body, for instance:\n\n" +
+              `curl --fail-with-body --data-binary @results.json ${url}\n\n` +
+              "or, compressed:\n\n" +
+              `gzip -c results.json | curl --fail-with-body --data-binary @- ${url}`,
           },
         ],
       };

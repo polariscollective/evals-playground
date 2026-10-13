@@ -32,7 +32,8 @@ export const OPEN_PREFIXES = [
   // refused to a stranger, with the 404 of a run that does not exist.
   "inspect-view",
   // The MCP connector and its authorisation server: a machine with no session,
-  // like prompt and validate.
+  // like prompt and validate. Also the import upload link (`mcp/upload/`),
+  // where the sealed link in the path is the only credential.
   "mcp",
   ".well-known",
   "_next/static",

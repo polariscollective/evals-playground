@@ -881,6 +881,11 @@ It returns a JSON document with one entry per cell. Play each one, fill it in,
 and hand the whole document to \`import_draft_results\`. Nothing is spent here
 and no cap applies.
 
+When the filled document is large, do not write it out in a tool call: save it
+to a file, call \`get_import_upload_link\` on the draft, and send the file to
+the link it returns with the command it gives. The answer is the same as
+\`import_draft_results\`'s, and so are the checks.
+
 Each cell is either played or failed, never both, never neither:
 
 - played: \`messages\` holds the conversation as the playground stores it,
