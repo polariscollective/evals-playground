@@ -777,15 +777,12 @@ def run_batch_job(
             # inspect trip over an empty dataset, and the run would otherwise
             # stay `triggered` until the two-hour sweep.
             usage = row.get("usage") or {}
-            cost, unpriced = actual_cost_from_dicts(usage)
-            finish_run(
-                supabase,
-                run_id,
-                usage=usage,
-                cost_usd=row.get("cost_usd")
-                if external
-                else (None if unpriced else cost),
-            )
+            if external:
+                run_cost = row.get("cost_usd")
+            else:
+                cost, unpriced = actual_cost_from_dicts(usage)
+                run_cost = None if unpriced else cost
+            finish_run(supabase, run_id, usage=usage, cost_usd=run_cost)
             return
 
         if mode == "run":
@@ -863,11 +860,11 @@ def run_batch_job(
         # does not. The run's figure is what is paid; the cells' says where it
         # went.
         usage = add_usage(row.get("usage") or {}, usage_from_log(log))
-        cost, unpriced = actual_cost_from_dicts(usage)
         if external:
             spent, pass_unpriced = actual_cost_from_dicts(usage_from_log(log))
             run_cost = external_cost(row.get("cost_usd"), spent, pass_unpriced)
         else:
+            cost, unpriced = actual_cost_from_dicts(usage)
             # A total missing a model with no known price would be more
             # misleading than no total at all.
             run_cost = None if unpriced else cost
@@ -896,7 +893,15 @@ def run_batch_job(
         abandon_unfinished_samples(
             supabase, run_id, f"{type(error).__name__}: {error}"
         )
-        finish_run(supabase, run_id, error=f"{type(error).__name__}: {error}")
+        # A run played here measured nothing it could write down; an imported
+        # one keeps the cost its agent declared, and the usage of the passes
+        # before this one, rather than have a crash here wipe them.
+        kept = (
+            {"usage": row.get("usage") or {}, "cost_usd": row.get("cost_usd")}
+            if external
+            else {}
+        )
+        finish_run(supabase, run_id, error=f"{type(error).__name__}: {error}", **kept)
         traceback.print_exc()
         raise
 

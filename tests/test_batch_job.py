@@ -1336,6 +1336,62 @@ def test_a_catchup_leaves_an_unknown_external_cost_unknown(tmp_path: Path):
     assert all(v["cost_usd"] is None for v in cell_writes)
 
 
+def test_a_crashing_catchup_keeps_an_external_run_s_declared_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A pass that dies closes the run in error. For a run played here that
+    writes no cost, since none was measured; for an imported one it would wipe
+    the cost its agent declared, which this pass never had a hand in."""
+    supabase = _external_catchup(cost_usd=3.0, cell_cost=0.5)
+    supabase.run["usage"] = {"x/model": {"input_tokens": 10, "output_tokens": 0}}
+
+    def blow_up(*a, **k):
+        raise RuntimeError("inspect blew up")
+
+    monkeypatch.setattr("playground.batch_job.inspect_eval", blow_up)
+
+    with pytest.raises(RuntimeError, match="inspect blew up"):
+        _launch(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    cloture = supabase.written(RUNS)[-1]
+    assert cloture["status"] == "error"
+    assert cloture["cost_usd"] == pytest.approx(3.0)
+    assert cloture["usage"] == {"x/model": {"input_tokens": 10, "output_tokens": 0}}
+
+
+def test_an_external_catchup_with_nothing_to_do_keeps_the_declared_cost(
+    tmp_path: Path,
+):
+    supabase = _external_catchup(cost_usd=3.0, cell_cost=0.5)
+    for score in supabase.judge_scores:
+        score["status"] = "done"
+        score["score"] = 0.0
+
+    _launch(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    assert supabase.written(JUDGE_SCORES) == []
+    assert supabase.written(RUNS)[-1]["status"] == "done"
+    assert supabase.written(RUNS)[-1]["cost_usd"] == pytest.approx(3.0)
+
+
+def test_a_catchup_adds_what_it_spent_to_an_external_run_s_declared_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`mockllm` reports no token, so the pass's spend is set on its log: a
+    million input tokens of a priced model, one dollar."""
+    supabase = _external_catchup(cost_usd=3.0, cell_cost=0.5)
+    monkeypatch.setattr(
+        "playground.batch_job.usage_from_log",
+        lambda log: {
+            "anthropic/claude-haiku-4-5": {"input_tokens": 1_000_000, "output_tokens": 0}
+        },
+    )
+
+    _launch(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    assert supabase.written(RUNS)[-1]["cost_usd"] == pytest.approx(4.0)
+
+
 # --- the environment check ------------------------------------------------
 #
 # See docs/superpowers/specs/2026-09-07-le-monde-des-outils.md. It bears on
