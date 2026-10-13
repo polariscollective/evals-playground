@@ -10,6 +10,7 @@ import {
 } from "@/lib/runs";
 import { startJob } from "@/lib/trigger";
 import { DraftNotFound, loadDraft, markDraftLaunched } from "@/lib/drafts";
+import { playedElsewhereProblem } from "@/lib/import-results";
 import { extendProblem, extensionDraftProblem } from "@/lib/validate";
 import type { ExtendRequest } from "@/lib/types";
 
@@ -68,6 +69,9 @@ export async function POST(
     }
     throw error;
   }
+
+  const elsewhere = playedElsewhereProblem(detail.run);
+  if (elsewhere) return NextResponse.json({ error: elsewhere }, { status: 409 });
 
   const problem = extendProblem(
     body,

@@ -621,6 +621,7 @@ export default function EvalRunPage({
 
   const running =
     detail?.run.status === "running" || detail?.run.status === "triggered";
+  const external = detail?.run.origin === "external";
 
   useEffect(() => {
     if (!running) return;
@@ -794,6 +795,11 @@ export default function EvalRunPage({
                 >
                   ${run.cost_usd.toFixed(run.cost_usd < 1 ? 4 : 2)}
                 </span>
+                {external && (
+                  <span className="text-zinc-500" title="Declared by the agent that played this run, never measured here">
+                    {" "}declared
+                  </span>
+                )}
                 {run.estimate && (
                     // The gap to the quote, beside the price: it is by seeing it
                     // run after run that one will know whether the estimate drifts,
@@ -866,7 +872,7 @@ export default function EvalRunPage({
                 >
                   {publicUrl ? "Unpublish" : "Publish…"}
                 </MenuItem>
-                {!running && (
+                {!running && !external && (
                   <MenuItem
                     onClick={() => {
                       close();
@@ -877,7 +883,7 @@ export default function EvalRunPage({
                     Extend…
                   </MenuItem>
                 )}
-                {!running && progress.errored > 0 && (
+                {!running && !external && progress.errored > 0 && (
                   <MenuItem
                     onClick={() => {
                       close();

@@ -92,6 +92,7 @@ export const PSEUDO_TAG_CLASSES: Record<string, string> = {
   error: "bg-red-100 text-red-800",
   cancelled: "bg-amber-100 text-amber-900",
   local: "bg-zinc-100 text-zinc-600",
+  external: "bg-teal-100 text-teal-900",
   live: "bg-zinc-100 text-zinc-600",
   public: "bg-amber-100 text-amber-800",
   private: "bg-zinc-100 text-zinc-600",

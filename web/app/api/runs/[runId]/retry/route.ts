@@ -8,6 +8,7 @@ import {
   recordStart,
   retryFailed,
 } from "@/lib/runs";
+import { playedElsewhereProblem } from "@/lib/import-results";
 import { startJob } from "@/lib/trigger";
 import { worldEquivalenceProblem } from "@/lib/validate";
 
@@ -34,6 +35,9 @@ export async function POST(
     }
     throw error;
   }
+
+  const elsewhere = playedElsewhereProblem(detail.run);
+  if (elsewhere) return NextResponse.json({ error: elsewhere }, { status: 409 });
 
   if (detail.run.status === "triggered" || detail.run.status === "running") {
     return NextResponse.json(

@@ -531,6 +531,15 @@ export default function RunsPage() {
                           local
                         </span>
                       )}
+                      {run.origin === "external" && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${PSEUDO_TAG_CLASSES.external}`}
+                          title="Played outside the playground, then imported"
+                        >
+                          <DimensionIcon dimension="machine" />
+                          external
+                        </span>
+                      )}
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
                           run.launched_via === "mcp"

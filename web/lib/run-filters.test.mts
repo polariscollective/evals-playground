@@ -218,7 +218,17 @@ test("every displayable word has its classes", () => {
   for (const word of words) {
     assert.ok(PSEUDO_TAG_CLASSES[word]?.length > 0, word);
   }
-  assert.equal(Object.keys(PSEUDO_TAG_CLASSES).length, words.length);
+  // `external` is a badge and not a filter word: a run played outside the
+  // playground sits on the "live" side of the machine dimension, and the badge
+  // only says more about it.
+  const badgeOnly = ["external"];
+  for (const word of badgeOnly) {
+    assert.ok(PSEUDO_TAG_CLASSES[word]?.length > 0, word);
+  }
+  assert.equal(
+    Object.keys(PSEUDO_TAG_CLASSES).length,
+    words.length + badgeOnly.length,
+  );
 });
 
 // --- "am I already there?", which decides whether a link goes dark ---------
