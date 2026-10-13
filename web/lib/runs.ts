@@ -49,13 +49,14 @@ import {
   addCosts,
   cellKey,
   checkImport,
+  DuplicateJudgeKey,
   extensionExpectation,
   importCost,
   NOTHING_TO_IMPORT,
   nothingToImport,
   importSummary,
   importWrites,
-  judgeKey,
+  liveJudgeKeys,
   launchJudgeKeys,
   runExpectation,
   type ImportDocument,
@@ -2126,23 +2127,29 @@ export async function expectationForDraft(draft: Draft): Promise<ImportExpectati
     order: "scenario_index,target_model,repetition",
   });
   const deepened = new Set(plan.continuedSampleIds);
-  return extensionExpectation({
-    cases: plan.cases,
-    deepened: samples
-      .filter((sample) => deepened.has(sample.id))
-      .map((sample) => ({
-        scenario_index: sample.scenario_index,
-        target_model: sample.target_model,
-        repetition: sample.repetition,
-        temperature: sample.temperature,
-        // What the attempt cost so far: the import adds the deepening to it.
-        cost_usd: sample.cost_usd,
-      })),
-    turns: draft.config.turns ?? plan.run.config.turns,
-    liveJudges: live,
-    newJudgeScales: await Promise.all(plan.newJudges.map(writtenJudgeScale)),
-    doneConversations: samples.filter((sample) => sample.status === "done"),
-  });
+  try {
+    return extensionExpectation({
+      cases: plan.cases,
+      deepened: samples
+        .filter((sample) => deepened.has(sample.id))
+        .map((sample) => ({
+          scenario_index: sample.scenario_index,
+          target_model: sample.target_model,
+          repetition: sample.repetition,
+          temperature: sample.temperature,
+          // What the attempt cost so far: the import adds the deepening to it.
+          cost_usd: sample.cost_usd,
+        })),
+      turns: draft.config.turns ?? plan.run.config.turns,
+      liveJudges: live,
+      newJudgeScales: await Promise.all(plan.newJudges.map(writtenJudgeScale)),
+      doneConversations: samples.filter((sample) => sample.status === "done"),
+    });
+  } catch (error) {
+    // A refusal the caller can act on, returned by both MCP tools as such.
+    if (error instanceof DuplicateJudgeKey) throw new ConfigProblem(error.message);
+    throw error;
+  }
 }
 
 /** Upserts what a checked document holds onto rows that already exist. */
@@ -2269,10 +2276,7 @@ export async function importExtension(
       run_id: `eq.${runId}`,
       select: "id,scenario_index,target_model,repetition",
     });
-    const judgeIds = new Map(
-      (await loadLiveRunJudges(runId)).map((link) => [judgeKey(link), link.id]),
-    );
-    newRunJudgeIds.forEach((id, index) => judgeIds.set(`new_judges[${index}]`, id));
+    const judgeIds = liveJudgeKeys(await loadLiveRunJudges(runId), newRunJudgeIds);
     await writeImport(
       runId,
       checked.doc,

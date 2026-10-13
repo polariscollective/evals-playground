@@ -11,8 +11,10 @@ import {
   importSkeleton,
   importSummary,
   importWrites,
+  DuplicateJudgeKey,
   judgeKey,
   launchJudgeKeys,
+  liveJudgeKeys,
   nothingToImport,
   playedElsewhereProblem,
   playedHereProblem,
@@ -619,4 +621,41 @@ test("an extension that adds no cell and no grade to give has nothing to import"
   assert.equal(nothingToImport({ ...JUDGE_EXTENSION, conversations: [] }), true);
   assert.equal(nothingToImport(JUDGE_EXTENSION), false);
   assert.equal(nothingToImport(EXPECT), false);
+});
+
+test("an ordinary judge whose slug is a system judge's key is refused, never shadowed", () => {
+  const live = [
+    { id: "rj-p", is_principal: true, system_type: "ordinary", judge: { slug: "p", rubric: RUBRIC } },
+    { id: "rj-a", is_principal: false, system_type: "awake", judge: { slug: "w", rubric: AWAKE_RUBRIC } },
+    { id: "rj-x", is_principal: false, system_type: "ordinary", judge: { slug: "awareness", rubric: RUBRIC } },
+  ];
+  assert.throws(
+    () =>
+      extensionExpectation({
+        cases: [],
+        deepened: [],
+        turns: 2,
+        liveJudges: live,
+        newJudgeScales: [],
+        doneConversations: [],
+      }),
+    (error: unknown) => error instanceof DuplicateJudgeKey && /"awareness"/.test(error.message),
+  );
+  assert.throws(() => liveJudgeKeys(live, []), DuplicateJudgeKey);
+});
+
+test("the keys an extension import writes with: every live judge, then the new ones in order", () => {
+  const keys = liveJudgeKeys(
+    [
+      { id: "rj-p", is_principal: true, system_type: "ordinary", judge: { slug: "p" } },
+      { id: "rj-t", is_principal: false, system_type: "ordinary", judge: { slug: "tone" } },
+    ],
+    ["rj-n0", "rj-n1"],
+  );
+  assert.deepEqual([...keys], [
+    ["principal", "rj-p"],
+    ["tone", "rj-t"],
+    ["new_judges[0]", "rj-n0"],
+    ["new_judges[1]", "rj-n1"],
+  ]);
 });

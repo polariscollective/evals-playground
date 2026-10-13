@@ -136,6 +136,49 @@ export function judgeKey(link: {
   return link.judge.slug;
 }
 
+/** Two judges of a run going by the same key in a document.
+ *
+ * An ordinary judge's slug is free text, and nothing stops one from being
+ * `principal`, `awareness` or `adversary_fidelity`. A map would then keep the
+ * last of the two, and a grade meant for one would be written on the other
+ * without a word: refused instead, before anything is written. */
+export class DuplicateJudgeKey extends Error {
+  constructor(key: string) {
+    super(
+      `Two judges of this run would both be named "${key}" in the import document: an ` +
+        "ordinary judge's slug matches the name of the principal or of a system judge. Their " +
+        "grades could not be told apart, so this run cannot be imported into while both are " +
+        "linked: unlink one of them, or give that judge another slug.",
+    );
+  }
+}
+
+/** The keys, in order, refusing a repeat: see `DuplicateJudgeKey`. */
+function distinct(keys: string[]): string[] {
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (seen.has(key)) throw new DuplicateJudgeKey(key);
+    seen.add(key);
+  }
+  return keys;
+}
+
+/** The judge links an extension import writes with, by key: every live judge
+ *  of the run, then the judges the extension just added, `new_judges[i]` in
+ *  the order of the request. Throws `DuplicateJudgeKey` rather than let one
+ *  link shadow another. */
+export function liveJudgeKeys(
+  links: { id: string; is_principal: boolean; system_type: string; judge: { slug: string } }[],
+  newRunJudgeIds: string[],
+): Map<string, string> {
+  const entries: [string, string][] = [
+    ...links.map((link): [string, string] => [judgeKey(link), link.id]),
+    ...newRunJudgeIds.map((id, index): [string, string] => [`new_judges[${index}]`, id]),
+  ];
+  distinct(entries.map(([key]) => key));
+  return new Map(entries);
+}
+
 /** The keys of a fresh run's links, as `judgesForLaunch` built them: the
  *  principal, then `config.judges` in their order, then the system judges.
  *
@@ -191,7 +234,9 @@ export function runExpectation(
 /** What an extension draft expects, from the same plan `launch_draft` would
  *  apply (`planExtension`): its fresh cells and the attempts it deepens, graded
  *  by every live judge; or, when it adds judges, their grades on every
- *  finished conversation. */
+ *  finished conversation.
+ *
+ * Throws `DuplicateJudgeKey` when two live judges would go by the same key. */
 export function extensionExpectation(input: {
   cases: NewCell[];
   /** With the cost each attempt stores now, from before the deepening. */
@@ -205,6 +250,9 @@ export function extensionExpectation(input: {
   newJudgeScales: number[][];
   doneConversations: CellRef[];
 }): ImportExpectation {
+  // Checked even when only new judges grade: the import names every live link
+  // all the same (`liveJudgeKeys`), and refusing here writes nothing.
+  const keys = distinct(input.liveJudges.map(judgeKey));
   if (input.newJudgeScales.length > 0) {
     return {
       cells: [],
@@ -225,8 +273,8 @@ export function extensionExpectation(input: {
   return {
     cells: [...input.cases, ...input.deepened].map(expectedCell),
     turns: input.turns,
-    judges: input.liveJudges.map((link) => ({
-      key: judgeKey(link),
+    judges: input.liveJudges.map((link, index) => ({
+      key: keys[index],
       scale: scaleOf(link.judge.rubric),
     })),
     conversations: [],
