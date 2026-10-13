@@ -199,6 +199,7 @@ test("both sides of every dimension are reserved, and so are the statuses", () =
   const reserved = [
     "local", "live", "public", "private", "mcp", "MCP", "manual",
     "extend", "creation", "launched", "waiting", "done", "ERROR", " Running ",
+    "external", "External",
   ];
   for (const label of reserved) {
     assert.equal(isReservedTag(label), true, label);

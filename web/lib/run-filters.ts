@@ -105,13 +105,18 @@ export const PSEUDO_TAG_CLASSES: Record<string, string> = {
 };
 
 /** Everything the machine produces, and which a human therefore cannot create
- *  as a tag without a silent collision in the bar. */
+ *  as a tag without a silent collision in the bar.
+ *
+ * `external` is the pill a run imported from elsewhere carries in the list. It
+ * is no dimension of the bar, but a tag of that name would read as the pill
+ * and claim a run was played elsewhere when it was not. */
 const RESERVED: readonly string[] = [
   ...STATUS_TAGS,
   ...(Object.keys(DIMENSIONS) as DimensionKey[]).flatMap((key) => [
     DIMENSIONS[key].a,
     DIMENSIONS[key].b,
   ]),
+  "external",
 ];
 
 /** Case-insensitive, like `createTag` which deduplicates through `ilike`:
