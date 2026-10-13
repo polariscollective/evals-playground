@@ -334,6 +334,28 @@ test("the three outcomes of a grade are all accepted", () => {
   assert.ok("doc" in check({ cells: [{ ...PLAYED, grades }, FAILED] }));
 });
 
+test("an error left null or empty is no error", () => {
+  for (const error of [null, ""]) {
+    const grades = { principal: { score: 1, justification: "x", error } };
+    const result = check({ cells: [{ ...PLAYED, grades }, FAILED] });
+    assert.ok("doc" in result, `error: ${JSON.stringify(error)} refused`);
+    const writes = importWrites(
+      "r",
+      result.doc,
+      new Map([
+        ["0|a/1|0", "s-0"],
+        ["0|a/1|1", "s-1"],
+      ]),
+      new Map([["principal", "p"]]),
+      "now()",
+      new Map(),
+    );
+    assert.equal(writes.scores[0].status, "done");
+    assert.equal(writes.scores[0].score, 1);
+    assert.equal(writes.scores[0].error, null);
+  }
+});
+
 test("a grade with both a score and an error is refused", () => {
   const grades = { principal: { score: 1, justification: "x", error: "y" } };
   assert.match(problems({ cells: [{ ...PLAYED, grades }, FAILED] }), /both a score and an error/);

@@ -61,7 +61,15 @@ export interface ImportExpectation {
 export interface Grade {
   score?: number | null;
   justification?: string;
-  error?: string;
+  /** `null` or `""` is no error, as a serialiser writing every field leaves it. */
+  error?: string | null;
+}
+
+/** Whether a grade says its judge failed: an error that is there and says
+ *  something. The checker and the writer read it the same way, so a grade
+ *  accepted as graded is never written as failed. */
+function judgeFailed(grade: Record<string, unknown> | Grade): boolean {
+  return grade.error !== undefined && grade.error !== null && grade.error !== "";
 }
 
 /** One cell as the document carries it: played (`messages`) or failed
@@ -345,7 +353,7 @@ function messageProblem(message: unknown, where: string): string | null {
 function gradeProblem(grade: unknown, scale: number[], where: string): string | null {
   if (grade === null) return null;
   if (!isObject(grade)) return `${where} must be an object, or null when not provided.`;
-  if (grade.error !== undefined) {
+  if (judgeFailed(grade)) {
     if (typeof grade.error !== "string" || grade.error.trim() === "") {
       return `${where}: error must be a sentence saying why the judge failed.`;
     }
@@ -613,7 +621,7 @@ export function importWrites(
       run_judge_id: runJudgeId,
       sample_id: sample,
       run_id: runId,
-      ...(grade.error !== undefined
+      ...(judgeFailed(grade)
         ? { status: "error", score: null, justification: "", error: grade.error }
         : {
             status: "done",
