@@ -2232,9 +2232,10 @@ export async function importExtension(
   if ("problems" in checked) return checked;
 
   const before = await select<EvalRun>(RUNS, { id: `eq.${runId}`, select: "*", limit: 1 });
-  const { newRunJudgeIds } = await extendRun(runId, draft.config, caller, "mcp");
   const cost = addCosts(before[0].cost_usd, importCost(checked.doc));
   try {
+    // Inside the try: extendRun marks the run triggered, so its failures must reach failImport.
+    const { newRunJudgeIds } = await extendRun(runId, draft.config, caller, "mcp");
     const samples = await select<SampleRef>(SAMPLES, {
       run_id: `eq.${runId}`,
       select: "id,scenario_index,target_model,repetition",
