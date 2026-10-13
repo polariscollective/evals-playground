@@ -999,8 +999,11 @@ export interface EvalRun {
    *  keeps saying what had been asked at launch. */
   awareness_judged_at: string | null;
   execution: string | null;
-  /** Where the job ran: on a development machine, or on Cloud Run. */
-  origin: "local" | "cloud-run";
+  /** Where the run was played: a job on a development machine, the deployed
+   *  job, or outside the playground altogether, handed over through
+   *  `import_draft_results`. An external run is never played by our engine;
+   *  only a catch-up of its judges runs here. */
+  origin: "local" | "cloud-run" | "external";
   /** The quote computed at launch, to compare with `cost_usd`. null on the runs
    *  predating its recording. */
   estimate: CostEstimate | null;
@@ -1202,7 +1205,11 @@ export interface RunListRun {
   status: RunStatus;
   cost_usd: number | null;
   is_public: boolean;
-  origin: "local" | "cloud-run";
+  /** Where the run was played: a job on a development machine, the deployed
+   *  job, or outside the playground altogether, handed over through
+   *  `import_draft_results`. An external run is never played by our engine;
+   *  only a catch-up of its judges runs here. */
+  origin: "local" | "cloud-run" | "external";
   /** Who pressed the button, for THIS run — never for what was added to it
    *  afterwards. A draft submitted by an agent then launched by a human click is
    *  therefore worth `ui`: it is the launch that counts, not the writing. The

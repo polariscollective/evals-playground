@@ -1276,11 +1276,23 @@ export async function saveAnalysis(runId: string, analysis: string): Promise<voi
   await update(RUNS, { analysis }, { id: `eq.${runId}` });
 }
 
+/** Records which execution a job start produced, and where it runs.
+ *
+ * Two writes, because `origin` has two meanings it must not mix up. On a run
+ * played here it says where the job ran, and the latest start is the truth. On
+ * an external run it says the run was played elsewhere, and a catch-up pass
+ * started here must not erase that: the filter leaves such a run's origin as it
+ * stands. */
 export async function recordStart(
   runId: string,
   started: { execution: string; origin: string },
 ): Promise<void> {
-  await update(RUNS, started, { id: `eq.${runId}` });
+  await update(RUNS, { execution: started.execution }, { id: `eq.${runId}` });
+  await update(
+    RUNS,
+    { origin: started.origin },
+    { id: `eq.${runId}`, origin: "neq.external" },
+  );
 }
 
 /** Marks a run as stillborn: the job could not be started.

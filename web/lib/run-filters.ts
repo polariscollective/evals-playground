@@ -124,7 +124,7 @@ export function isReservedTag(label: string): boolean {
  *  without building a whole `RunListItem`. */
 export interface FilterableRun {
   status: string;
-  origin: "local" | "cloud-run";
+  origin: "local" | "cloud-run" | "external";
   is_public: boolean;
   launched_via: "ui" | "mcp";
 }
