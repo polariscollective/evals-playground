@@ -142,7 +142,9 @@ test("an extension adding cells expects its new cells and its deepened ones", ()
     cases: [
       { scenario_index: 2, scenario_title: "C", target_model: "a/1", repetition: 0, temperature: null },
     ],
-    deepened: [{ scenario_index: 0, target_model: "a/1", repetition: 1, temperature: 0.5 }],
+    deepened: [
+      { scenario_index: 0, target_model: "a/1", repetition: 1, temperature: 0.5, cost_usd: 0.1 },
+    ],
     turns: 4,
     liveJudges: [
       { is_principal: true, system_type: "ordinary", judge: { slug: "p", rubric: RUBRIC } },
@@ -157,6 +159,7 @@ test("an extension adding cells expects its new cells and its deepened ones", ()
   ]);
   assert.equal(expectation.turns, 4);
   assert.deepEqual(expectation.judges.map((judge) => judge.key), ["principal", "awareness"]);
+  assert.deepEqual([...expectation.deepenedCosts], [["0|a/1|1", 0.1]]);
 });
 
 test("an extension adding judges expects their grades on every finished conversation", () => {
@@ -202,6 +205,7 @@ test("the skeleton of a judge extension lists one null grade per judge and conve
     judges: [],
     conversations: [{ scenario_index: 0, target_model: "a/1", repetition: 0 }],
     newJudges: [{ key: "new_judges[0]", scale: [0, 1] }],
+    deepenedCosts: new Map(),
   });
   assert.deepEqual(skeleton.grades, [
     { scenario_index: 0, target_model: "a/1", repetition: 0, judge: "new_judges[0]", grade: null },
@@ -220,6 +224,7 @@ const EXPECT: ImportExpectation = {
   ],
   conversations: [],
   newJudges: [],
+  deepenedCosts: new Map(),
 };
 
 const PLAYED = {
@@ -358,6 +363,7 @@ const JUDGE_EXTENSION: ImportExpectation = {
   judges: [],
   conversations: [{ scenario_index: 0, target_model: "a/1", repetition: 0 }],
   newJudges: [{ key: "new_judges[0]", scale: [0, 1, 2] }],
+  deepenedCosts: new Map(),
 };
 
 test("a judge extension takes one grade per conversation", () => {
@@ -430,6 +436,7 @@ test("an import writes played cells, failed cells and the grades provided", () =
       ["awareness", "rj-w"],
     ]),
     "now()",
+    new Map(),
   );
   assert.deepEqual(writes.played, [
     {
@@ -473,12 +480,49 @@ test("an import writes played cells, failed cells and the grades provided", () =
   ]);
 });
 
+// An extension deepening one attempt and adding one fresh cell. The attempt
+// cost 0.1 before; the agent declares 0.15 for the deepening alone.
+const DEEPENING: ImportExpectation = {
+  ...EXPECT,
+  deepenedCosts: new Map([["0|a/1|0", 0.1]]),
+};
+const DEEPENING_IDS = new Map([
+  ["0|a/1|0", "s-0"],
+  ["0|a/1|1", "s-1"],
+]);
+
+test("a deepened cell stores what it cost before plus what deepening it cost", () => {
+  const doc = {
+    cells: [{ ...PLAYED, grades: {}, cost_usd: 0.15 }, FAILED] as never,
+    grades: [],
+  };
+  const writes = importWrites("r", doc, DEEPENING_IDS, new Map(), "now()", DEEPENING.deepenedCosts);
+  assert.equal(Math.round((writes.played[0].cost_usd as number) * 100) / 100, 0.25);
+  // A fresh cell without a declared cost stores none.
+  assert.equal(writes.failed[0].cost_usd, null);
+  // The import's cost is what was declared: the deepening alone, once.
+  assert.equal(importCost(doc), 0.15);
+});
+
+test("a deepened cell whose earlier cost is unknown stays unknown", () => {
+  const doc = { cells: [{ ...PLAYED, grades: {}, cost_usd: 0.15 }] as never, grades: [] };
+  const writes = importWrites(
+    "r",
+    doc,
+    DEEPENING_IDS,
+    new Map(),
+    "now()",
+    new Map([["0|a/1|0", null]]),
+  );
+  assert.equal(writes.played[0].cost_usd, null);
+});
+
 test("a judge's failure is written as an error, never as a grade", () => {
   const doc = {
     cells: [{ ...PLAYED, grades: { principal: { error: "Timed out." } } }] as never,
     grades: [],
   };
-  const writes = importWrites("r", doc, new Map([["0|a/1|0", "s"]]), new Map([["principal", "p"]]), "now()");
+  const writes = importWrites("r", doc, new Map([["0|a/1|0", "s"]]), new Map([["principal", "p"]]), "now()", new Map());
   assert.deepEqual(writes.scores[0], {
     run_judge_id: "p",
     sample_id: "s",
@@ -507,6 +551,7 @@ test("a new judge's grades are written on the conversations they name", () => {
     ]),
     new Map([["new_judges[0]", "rj-new"]]),
     "now()",
+    new Map(),
   );
   assert.deepEqual(writes.played, []);
   assert.equal(writes.scores.length, 1);
@@ -516,7 +561,7 @@ test("a new judge's grades are written on the conversations they name", () => {
 
 test("a cell the run does not hold is a loud failure, not a silent skip", () => {
   assert.throws(
-    () => importWrites("r", { cells: [PLAYED as never], grades: [] }, new Map(), new Map(), "now()"),
+    () => importWrites("r", { cells: [PLAYED as never], grades: [] }, new Map(), new Map(), "now()", new Map()),
     /No cell scenario 0, a\/1, repetition 0 on run r/,
   );
 });

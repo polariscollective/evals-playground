@@ -902,9 +902,10 @@ judge's scale>, "justification": "..." }\`, or \`{ "score": null,
 that judge: it stays pending, and I can have it graded here from the run page.
 
 \`cost_usd\` is optional, on the document and on each cell, in US dollars. A
-deepened cell's cost is that of the whole conversation as it now stands. Leave
-it out rather than guess: an unknown cost is shown as unknown, a guess would be
-shown as a fact.
+deepened cell's cost is what deepening it cost, the turns you just played, not
+the conversation from its start: the run already counts what came before.
+Leave it out rather than guess: an unknown cost is shown as unknown, a guess
+would be shown as a fact.
 
 A run you imported grows the same way: \`submit_draft_extension\`, then
 \`get_import_skeleton\` and \`import_draft_results\` on that draft. The

@@ -183,6 +183,9 @@ nothing else.
 Optional, declared by the agent, never measured.
 
 - A cell's `cost_usd` goes to `eval_samples.cost_usd`.
+- A deepened cell's `cost_usd` is what deepening it cost, not the whole
+  conversation: the run already counts the turns played before. The cell then
+  stores its earlier cost plus that one, unknown when either is.
 - The document's `cost_usd` is the cost of this import. Absent, it is the sum of
   every cell's declared cost, failed cells included, when every played cell
   carries one, and unknown otherwise.

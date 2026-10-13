@@ -47,6 +47,13 @@ export interface ImportExpectation {
   judges: ExpectedJudge[];
   conversations: CellRef[];
   newJudges: ExpectedJudge[];
+  /** What each attempt the extension deepens had cost before it, by `cellKey`;
+   *  `null` when that was unknown. A cell absent from it is fresh.
+   *
+   * Kept apart from `cells`, which the skeleton copies out to the agent: a
+   * deepened cell declares what deepening it cost, and `importWrites` adds the
+   * two, so this is what turns a declaration into the cell's whole cost. */
+  deepenedCosts: Map<string, number | null>;
 }
 
 /** One judge's verdict on one conversation: graded (`score` on the scale),
@@ -169,6 +176,7 @@ export function runExpectation(
     judges,
     conversations: [],
     newJudges: [],
+    deepenedCosts: new Map(),
   };
 }
 
@@ -178,7 +186,8 @@ export function runExpectation(
  *  finished conversation. */
 export function extensionExpectation(input: {
   cases: NewCell[];
-  deepened: ExpectedCell[];
+  /** With the cost each attempt stores now, from before the deepening. */
+  deepened: (ExpectedCell & { cost_usd: number | null })[];
   turns: number;
   liveJudges: {
     is_principal: boolean;
@@ -202,6 +211,7 @@ export function extensionExpectation(input: {
         key: `new_judges[${index}]`,
         scale,
       })),
+      deepenedCosts: new Map(),
     };
   }
   return {
@@ -213,6 +223,7 @@ export function extensionExpectation(input: {
     })),
     conversations: [],
     newJudges: [],
+    deepenedCosts: new Map(input.deepened.map((cell) => [cellKey(cell), cell.cost_usd])),
   };
 }
 
@@ -545,6 +556,12 @@ export function addCosts(before: number | null, added: number | null): number | 
  *
  * `now` is `NOW` from `supabase.ts`, passed in so this stays pure.
  *
+ * A deepened cell declares what deepening it cost, not the whole conversation:
+ * it stores that added to its cost from before (`deepenedCosts`, from the
+ * expectation), unknown when either is. A fresh cell stores what it declares.
+ * The run's total, `importCost`, adds the declarations alone, so no pass is
+ * counted twice.
+ *
  * Throws when a cell or a judge has no row: the checker has already matched
  * the document to the draft, so this can only mean the writes before it went
  * wrong, and silently skipping would lose a verdict. */
@@ -554,6 +571,7 @@ export function importWrites(
   sampleIds: Map<string, string>,
   judgeIds: Map<string, string>,
   now: string,
+  deepenedCosts: Map<string, number | null>,
 ): {
   played: Record<string, unknown>[];
   failed: Record<string, unknown>[];
@@ -591,13 +609,17 @@ export function importWrites(
 
   for (const cell of doc.cells) {
     const id = sampleId(cell);
+    const key = cellKey(cell);
+    const declared = cell.cost_usd ?? null;
     const base = {
       id,
       run_id: runId,
       scenario_index: cell.scenario_index,
       target_model: cell.target_model,
       repetition: cell.repetition,
-      cost_usd: cell.cost_usd ?? null,
+      cost_usd: deepenedCosts.has(key)
+        ? addCosts(deepenedCosts.get(key) ?? null, declared)
+        : declared,
       finished_at: now,
     };
     if (!isPlayed(cell)) {

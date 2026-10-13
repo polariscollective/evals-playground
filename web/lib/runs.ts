@@ -2116,14 +2116,13 @@ export async function expectationForDraft(draft: Draft): Promise<ImportExpectati
   const runId = draft.extends_run_id;
   const plan = await planExtension(runId, draft.config);
   const live = await loadLiveRunJudges(runId);
-  const samples = await select<SampleRef & { status: SampleStatus; temperature: number | null }>(
-    SAMPLES,
-    {
-      run_id: `eq.${runId}`,
-      select: "id,scenario_index,target_model,repetition,status,temperature",
-      order: "scenario_index,target_model,repetition",
-    },
-  );
+  const samples = await select<
+    SampleRef & { status: SampleStatus; temperature: number | null; cost_usd: number | null }
+  >(SAMPLES, {
+    run_id: `eq.${runId}`,
+    select: "id,scenario_index,target_model,repetition,status,temperature,cost_usd",
+    order: "scenario_index,target_model,repetition",
+  });
   const deepened = new Set(plan.continuedSampleIds);
   return extensionExpectation({
     cases: plan.cases,
@@ -2134,6 +2133,8 @@ export async function expectationForDraft(draft: Draft): Promise<ImportExpectati
         target_model: sample.target_model,
         repetition: sample.repetition,
         temperature: sample.temperature,
+        // What the attempt cost so far: the import adds the deepening to it.
+        cost_usd: sample.cost_usd,
       })),
     turns: draft.config.turns ?? plan.run.config.turns,
     liveJudges: live,
@@ -2146,10 +2147,18 @@ export async function expectationForDraft(draft: Draft): Promise<ImportExpectati
 async function writeImport(
   runId: string,
   doc: ImportDocument,
+  expectation: ImportExpectation,
   sampleIds: Map<string, string>,
   judgeIds: Map<string, string>,
 ): Promise<void> {
-  const { played, failed, scores } = importWrites(runId, doc, sampleIds, judgeIds, NOW);
+  const { played, failed, scores } = importWrites(
+    runId,
+    doc,
+    sampleIds,
+    judgeIds,
+    NOW,
+    expectation.deepenedCosts,
+  );
   await upsert(SAMPLES, played, "id");
   await upsert(SAMPLES, failed, "id");
   await upsert(JUDGE_SCORES, scores, "run_judge_id,sample_id");
@@ -2196,6 +2205,7 @@ export async function importRun(
     await writeImport(
       created.run.id,
       checked.doc,
+      expectation,
       new Map(created.samples.map((sample) => [cellKey(sample), sample.id])),
       launchJudgeKeys(created.runJudges),
     );
@@ -2247,6 +2257,7 @@ export async function importExtension(
     await writeImport(
       runId,
       checked.doc,
+      expectation,
       new Map(samples.map((sample) => [cellKey(sample), sample.id])),
       judgeIds,
     );
