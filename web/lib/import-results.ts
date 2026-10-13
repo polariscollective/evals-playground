@@ -515,14 +515,20 @@ function isPlayed(cell: ImportCell): boolean {
 }
 
 /** What this import declares it cost: the document's total, or else the sum of
- *  its played cells when every one of them carries a cost. Anything less is
- *  unknown: a partial sum would read as the whole. */
+ *  every cell's declared cost, failed cells included, since a refused request
+ *  may still bill. The sum is known only when every played cell carries a cost;
+ *  a failed cell without one counts as 0, since it may have cost nothing.
+ *  Unknown when nothing was played and no total is declared, and a partial sum
+ *  would read as the whole. */
 export function importCost(doc: ImportDocument): number | null {
   if (typeof doc.cost_usd === "number") return doc.cost_usd;
   const played = doc.cells.filter(isPlayed);
   if (played.length === 0) return null;
   if (!played.every((cell) => typeof cell.cost_usd === "number")) return null;
-  return played.reduce((total, cell) => total + (cell.cost_usd as number), 0);
+  return doc.cells.reduce(
+    (total, cell) => total + (typeof cell.cost_usd === "number" ? cell.cost_usd : 0),
+    0,
+  );
 }
 
 /** A run's cost after one more import. Unknown plus anything stays unknown. */

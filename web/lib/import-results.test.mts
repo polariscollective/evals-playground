@@ -397,6 +397,12 @@ test("without a total, the cells' costs add up only when every played cell has o
   assert.equal(importCost({ cells: [a, { ...PLAYED, repetition: 1 } as never], grades: [] }), null);
 });
 
+test("a failed cell's declared cost counts in the total when there is no declared total", () => {
+  const played = { ...PLAYED, cost_usd: 0.25 } as never;
+  const failed = { ...FAILED, cost_usd: 0.1 } as never;
+  assert.equal(Math.round(importCost({ cells: [played, failed], grades: [] })! * 100) / 100, 0.35);
+});
+
 test("an import that plays nothing and declares nothing costs an unknown amount", () => {
   assert.equal(importCost({ cells: [], grades: [] }), null);
 });

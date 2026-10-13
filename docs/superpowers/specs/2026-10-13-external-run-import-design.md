@@ -184,7 +184,8 @@ Optional, declared by the agent, never measured.
 
 - A cell's `cost_usd` goes to `eval_samples.cost_usd`.
 - The document's `cost_usd` is the cost of this import. Absent, it is the sum of
-  the cells' when every played cell carries one, and unknown otherwise.
+  every cell's declared cost, failed cells included, when every played cell
+  carries one, and unknown otherwise.
 - The run's `cost_usd` is the sum of its imports' costs. Unknown plus anything
   stays unknown (`null`): a partial sum would read as the whole.
 - An extension's log entry records `cost_before_usd` as usual, so an imported
