@@ -1286,7 +1286,9 @@ const handler = createMcpHandler((server) => {
         "and this restriction never applies to it: launching a fresh run is never refused for who " +
         "owns anything. Launching an extend draft is also refused if the run it targets is already " +
         "going: it already read its pending cells at start, and cells added now would never be " +
-        "picked up — wait for it to finish, then try again.",
+        "picked up: wait for it to finish, then try again. It also refuses an extend draft of a run " +
+        "that was imported (played outside the playground): that one is filled with " +
+        "get_import_skeleton and import_draft_results instead.",
       inputSchema: z.object({
         draft_id: z.string().describe("The draft's UUID, from its address."),
       }),
@@ -1631,6 +1633,16 @@ const handler = createMcpHandler((server) => {
           if (here) return toolError(here);
           const refusal = extensionRefusal(draft, target.run, caller);
           if (refusal) return toolError(refusal);
+          // A catch-up job grading this run snapshots its pending score rows at
+          // start and rewrites the run's status and cost at the end: an import
+          // landing meanwhile would be overwritten by it.
+          if (target.run.run.status === "triggered" || target.run.run.status === "running") {
+            return toolError(
+              `Run ${target.run.run.id} is being graded right now (a catch-up pass is in flight). ` +
+                "Importing into it meanwhile would have that pass overwrite what you import. " +
+                "Wait for it to finish, then try again.",
+            );
+          }
           const outside = extendFavouritesProblem(draft.config, favoriteModels(profile));
           if (outside) return toolError(outside);
           outcome = await importExtension(draft, results, caller);

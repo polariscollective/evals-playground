@@ -912,6 +912,16 @@ skeleton then holds only what the extension adds. \`launch_draft\` refuses it,
 and \`import_draft_results\` refuses an extension of a run the playground
 played: a matrix is played in one place or the other.
 
+Three details of an extension's skeleton. An extension that adds judges has an
+empty \`cells\` list and a top-level \`grades\` list instead: one entry per new
+judge per finished conversation, each \`{ "scenario_index": ..., "target_model":
+"...", "repetition": ..., "judge": "new_judges[0]", "grade": ... }\`, where
+\`grade\` takes the same three forms as above (a score and justification, a null
+score, or an error), or \`null\` when you did not grade it. For an attempt the
+extension deepens, \`messages\` is the whole conversation as it now stands, and
+it replaces the stored one. Each cell's \`temperature\` in the skeleton is the
+planned one: leave it or remove it, a different value is refused.
+
 ## Starting from something that already exists
 
 If I am asking you to change a run I have already done, or a draft I have
