@@ -38,22 +38,34 @@ export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5";
  * Then the open models ai-character-index judges with, as of September 2026:
  * DeepSeek V3.2 holds a seat of its panel, Kimi K3 is the declared stand-in
  * that took the Fable seat when Anthropic's models were refused, and Kimi K2.6
- * and GLM 5.2 are the stand-ins its configuration names for those two. */
+ * and GLM 5.2 are the stand-ins its configuration names for those two.
+ *
+ * Then, as of October 2026, the model ai-character-index rates for each
+ * company it grades, where the catalogue can run it: GPT-6 Astra, Gemini 3.7
+ * Flash, DeepSeek V4 Pro, Qwen 3.8 Max and Mistral Medium 3.5 join the ones
+ * already here. Muse Spark 1.3 (Meta) refuses a forced tool choice, which every
+ * judge sends, and MAI-Thinking-1 (Microsoft AI) is served by no host the
+ * catalogue reaches, so neither is offered yet. */
 export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "anthropic/claude-fable-5-1",
   "anthropic/claude-opus-5",
   "anthropic/claude-sonnet-5",
   "anthropic/claude-haiku-4-5",
+  "openai/gpt-6-astra",
   "openai/gpt-5.6-sol",
   "openai/gpt-5.6-terra",
   "openai/gpt-5.6-luna",
   "grok/grok-4.6",
   "grok/grok-4.5",
   "grok/grok-4.3",
+  "google/gemini-3.7-flash",
+  "openrouter/deepseek/deepseek-v4-pro-0813",
   "openrouter/deepseek/deepseek-v3.2",
   "openrouter/moonshotai/kimi-k3",
   "openrouter/moonshotai/kimi-k2.6",
   "openrouter/z-ai/glm-5.2",
+  "openrouter/qwen/qwen3.8-max-0902",
+  "openrouter/mistralai/mistral-medium-3-5",
 ];
 
 /** The models to offer this person.

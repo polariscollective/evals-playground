@@ -26,22 +26,38 @@ test("the default names only models from the catalogue", () => {
   assert.deepEqual(DEFAULT_FAVORITE_MODELS.filter((id) => !known.has(id)), []);
 });
 
-test("the default carries fourteen models", () => {
-  assert.equal(DEFAULT_FAVORITE_MODELS.length, 14);
+test("the default carries nineteen models", () => {
+  assert.equal(DEFAULT_FAVORITE_MODELS.length, 19);
+});
+
+test("the default offers the model ai-character-index rates for each company it can run", () => {
+  // As of October 2026. Muse Spark 1.3 and MAI-Thinking-1 are missing because
+  // the catalogue cannot run them yet, not by choice.
+  for (const id of [
+    "openai/gpt-6-astra",
+    "anthropic/claude-fable-5-1",
+    "openrouter/qwen/qwen3.8-max-0902",
+    "grok/grok-4.6",
+    "google/gemini-3.7-flash",
+    "openrouter/mistralai/mistral-medium-3-5",
+    "openrouter/deepseek/deepseek-v4-pro-0813",
+    "openrouter/moonshotai/kimi-k3",
+  ]) {
+    assert.ok(DEFAULT_FAVORITE_MODELS.includes(id), id);
+  }
 });
 
 test("the default offers the open models ai-character-index judges with", () => {
   // Its panel's seat, and the stand-ins its configuration names for a seat
   // that cannot answer: the same models, offered here without asking.
-  assert.deepEqual(
-    DEFAULT_FAVORITE_MODELS.filter((id) => id.startsWith("openrouter/")),
-    [
-      "openrouter/deepseek/deepseek-v3.2",
-      "openrouter/moonshotai/kimi-k3",
-      "openrouter/moonshotai/kimi-k2.6",
-      "openrouter/z-ai/glm-5.2",
-    ],
-  );
+  for (const id of [
+    "openrouter/deepseek/deepseek-v3.2",
+    "openrouter/moonshotai/kimi-k3",
+    "openrouter/moonshotai/kimi-k2.6",
+    "openrouter/z-ai/glm-5.2",
+  ]) {
+    assert.ok(DEFAULT_FAVORITE_MODELS.includes(id), id);
+  }
 });
 
 test("NULL returns the code's default", () => {

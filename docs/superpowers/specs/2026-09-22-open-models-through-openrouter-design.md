@@ -211,3 +211,36 @@ the eight models while the job has no key, and every cell on them fails.
   (`web/lib/favorite-models.test.mts`).
 - The live calls above, which are the entry rule itself, run on every host of
   every list.
+
+## Added on 13 October 2026: Qwen 3.8 Max and Mistral Medium 3.5
+
+Two of the models ai-character-index rates for the companies it grades, so
+that each of those companies can be evaluated here. Both are served only by
+their maker on OpenRouter, so each is held to two of the maker's own
+endpoints rather than to two companies.
+
+| identifier | label | hosts, in order | in | out | cache read | temperature |
+|---|---|---|---|---|---|---|
+| `openrouter/qwen/qwen3.8-max-0902` | Qwen 3.8 Max (0902) | alibaba, alibaba/us-east-1 | 2 | 6 | 0.25 | honoured, below 2 |
+| `openrouter/mistralai/mistral-medium-3-5` | Mistral Medium 3.5 | mistral, mistral/zdr | 1.50 | 7.50 | (shared multiplier) | honoured |
+
+`qwen/qwen3.8-max`, the identifier ai-character-index uses, resolves on
+OpenRouter to the dated `0902` build; the catalogue names the dated one so that
+a later build cannot replace it silently. Mistral's `eu` endpoint, priced 10 %
+higher, is left out.
+
+Each passed the entry rule on each of its endpoints: a turn with a tool and a
+temperature, the next turn with the result replayed, and a forced tool choice;
+then once more through `routed_model` with both endpoints in order. Mistral
+repeats itself exactly at temperature 0. Qwen still varies a little at 0, and
+refuses 2 outright (`Temperature should be in [0.0, 2.0)`): a sweep on it must
+stop below 2.
+
+Two others stay out:
+
+- **Muse Spark 1.3** (`meta/muse-spark-1.3`) answers tool calls, but its only
+  host refuses a forced one (`only "auto" is supported`). Every judge forces
+  its scoring tool, so it would fail as a judge on every cell. It could be
+  evaluated, never judge; the catalogue has no way yet to say that.
+- **MAI-Thinking-1** (Microsoft AI) is not on OpenRouter. It is in public
+  preview on Microsoft Foundry only, which the job does not reach.
