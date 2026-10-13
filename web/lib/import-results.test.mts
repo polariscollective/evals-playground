@@ -3,12 +3,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  addCosts,
   cellKey,
   checkImport,
   extensionExpectation,
+  importCost,
   importSkeleton,
+  importSummary,
+  importWrites,
   judgeKey,
   launchJudgeKeys,
+  playedElsewhereProblem,
+  playedHereProblem,
   runExpectation,
   type ImportExpectation,
 } from "./import-results.ts";
@@ -378,4 +384,149 @@ test("grades on a draft that adds no judge are refused", () => {
     grades: [{ scenario_index: 0, target_model: "a/1", repetition: 0, judge: "x", grade: null }],
   };
   assert.match(problems(doc), /adds no judge/);
+});
+
+test("the declared total wins over the cells' costs", () => {
+  assert.equal(importCost({ cost_usd: 3, cells: [{ ...PLAYED, cost_usd: 1 } as never], grades: [] }), 3);
+});
+
+test("without a total, the cells' costs add up only when every played cell has one", () => {
+  const a = { ...PLAYED, cost_usd: 0.25 } as never;
+  const b = { ...PLAYED, repetition: 1, cost_usd: 0.5 } as never;
+  assert.equal(importCost({ cells: [a, b, FAILED as never], grades: [] }), 0.75);
+  assert.equal(importCost({ cells: [a, { ...PLAYED, repetition: 1 } as never], grades: [] }), null);
+});
+
+test("an import that plays nothing and declares nothing costs an unknown amount", () => {
+  assert.equal(importCost({ cells: [], grades: [] }), null);
+});
+
+test("unknown plus anything stays unknown", () => {
+  assert.equal(addCosts(null, 2), null);
+  assert.equal(addCosts(2, null), null);
+  assert.equal(addCosts(1.5, 2), 3.5);
+});
+
+test("an import writes played cells, failed cells and the grades provided", () => {
+  const doc = {
+    cells: [{ ...PLAYED, cost_usd: 0.1 }, FAILED] as never,
+    grades: [],
+  };
+  const writes = importWrites(
+    "run-1",
+    doc,
+    new Map([
+      ["0|a/1|0", "s-0"],
+      ["0|a/1|1", "s-1"],
+    ]),
+    new Map([
+      ["principal", "rj-p"],
+      ["awareness", "rj-w"],
+    ]),
+    "now()",
+  );
+  assert.deepEqual(writes.played, [
+    {
+      id: "s-0",
+      run_id: "run-1",
+      scenario_index: 0,
+      target_model: "a/1",
+      repetition: 0,
+      cost_usd: 0.1,
+      finished_at: "now()",
+      status: "done",
+      error: null,
+      messages: PLAYED.messages,
+      turns_done: 1,
+      started_at: "now()",
+    },
+  ]);
+  assert.deepEqual(writes.failed, [
+    {
+      id: "s-1",
+      run_id: "run-1",
+      scenario_index: 0,
+      target_model: "a/1",
+      repetition: 1,
+      cost_usd: null,
+      finished_at: "now()",
+      status: "error",
+      error: "The provider refused the request.",
+    },
+  ]);
+  assert.deepEqual(writes.scores, [
+    {
+      run_judge_id: "rj-p",
+      sample_id: "s-0",
+      run_id: "run-1",
+      status: "done",
+      score: 1,
+      justification: "at turn 1",
+      error: null,
+    },
+  ]);
+});
+
+test("a judge's failure is written as an error, never as a grade", () => {
+  const doc = {
+    cells: [{ ...PLAYED, grades: { principal: { error: "Timed out." } } }] as never,
+    grades: [],
+  };
+  const writes = importWrites("r", doc, new Map([["0|a/1|0", "s"]]), new Map([["principal", "p"]]), "now()");
+  assert.deepEqual(writes.scores[0], {
+    run_judge_id: "p",
+    sample_id: "s",
+    run_id: "r",
+    status: "error",
+    score: null,
+    justification: "",
+    error: "Timed out.",
+  });
+});
+
+test("a new judge's grades are written on the conversations they name", () => {
+  const doc = {
+    cells: [],
+    grades: [
+      { scenario_index: 0, target_model: "a/1", repetition: 0, judge: "new_judges[0]", grade: { score: 0, justification: "no" } },
+      { scenario_index: 0, target_model: "a/1", repetition: 1, judge: "new_judges[0]", grade: null },
+    ],
+  };
+  const writes = importWrites(
+    "r",
+    doc,
+    new Map([
+      ["0|a/1|0", "s-0"],
+      ["0|a/1|1", "s-1"],
+    ]),
+    new Map([["new_judges[0]", "rj-new"]]),
+    "now()",
+  );
+  assert.deepEqual(writes.played, []);
+  assert.equal(writes.scores.length, 1);
+  assert.equal(writes.scores[0].sample_id, "s-0");
+  assert.equal(writes.scores[0].run_judge_id, "rj-new");
+});
+
+test("a cell the run does not hold is a loud failure, not a silent skip", () => {
+  assert.throws(
+    () => importWrites("r", { cells: [PLAYED as never], grades: [] }, new Map(), new Map(), "now()"),
+    /No cell scenario 0, a\/1, repetition 0 on run r/,
+  );
+});
+
+test("the summary counts what was played and what is left pending", () => {
+  const doc = { cells: [PLAYED, FAILED] as never, grades: [] };
+  assert.equal(
+    importSummary(doc, EXPECT),
+    "1 conversation played, 1 failed, 1 grade given. 1 grade left pending: the run " +
+      "page's catch-up button can have it graded here, at our cost.",
+  );
+});
+
+test("the two doors stay apart", () => {
+  assert.match(playedElsewhereProblem({ id: "r", origin: "external" }) ?? "", /played outside/);
+  assert.equal(playedElsewhereProblem({ id: "r", origin: "cloud-run" }), null);
+  assert.match(playedHereProblem({ id: "r", origin: "cloud-run" }) ?? "", /launch_draft/);
+  assert.equal(playedHereProblem({ id: "r", origin: "external" }), null);
 });

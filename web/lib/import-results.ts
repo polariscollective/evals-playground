@@ -509,3 +509,161 @@ export function checkImport(
     },
   };
 }
+
+function isPlayed(cell: ImportCell): boolean {
+  return (cell.messages ?? []).length > 0;
+}
+
+/** What this import declares it cost: the document's total, or else the sum of
+ *  its played cells when every one of them carries a cost. Anything less is
+ *  unknown: a partial sum would read as the whole. */
+export function importCost(doc: ImportDocument): number | null {
+  if (typeof doc.cost_usd === "number") return doc.cost_usd;
+  const played = doc.cells.filter(isPlayed);
+  if (played.length === 0) return null;
+  if (!played.every((cell) => typeof cell.cost_usd === "number")) return null;
+  return played.reduce((total, cell) => total + (cell.cost_usd as number), 0);
+}
+
+/** A run's cost after one more import. Unknown plus anything stays unknown. */
+export function addCosts(before: number | null, added: number | null): number | null {
+  return before === null || added === null ? null : before + added;
+}
+
+/** The rows an import upserts, built in memory from a checked document.
+ *
+ * Three lists because a bulk upsert must carry the same columns on every row:
+ * a played cell writes its transcript, a failed one only its error, and leaves
+ * its score rows pending exactly as the engine does when a cell fails. A grade
+ * left `null` writes nothing, so its row stays pending too.
+ *
+ * `now` is `NOW` from `supabase.ts`, passed in so this stays pure.
+ *
+ * Throws when a cell or a judge has no row: the checker has already matched
+ * the document to the draft, so this can only mean the writes before it went
+ * wrong, and silently skipping would lose a verdict. */
+export function importWrites(
+  runId: string,
+  doc: ImportDocument,
+  sampleIds: Map<string, string>,
+  judgeIds: Map<string, string>,
+  now: string,
+): {
+  played: Record<string, unknown>[];
+  failed: Record<string, unknown>[];
+  scores: Record<string, unknown>[];
+} {
+  const played: Record<string, unknown>[] = [];
+  const failed: Record<string, unknown>[] = [];
+  const scores: Record<string, unknown>[] = [];
+
+  function sampleId(ref: CellRef): string {
+    const id = sampleIds.get(cellKey(ref));
+    if (!id) throw new Error(`No cell ${describe(ref)} on run ${runId}.`);
+    return id;
+  }
+  function judgeId(key: string): string {
+    const id = judgeIds.get(key);
+    if (!id) throw new Error(`No judge "${key}" on run ${runId}.`);
+    return id;
+  }
+  function score(runJudgeId: string, sample: string, grade: Grade): void {
+    scores.push({
+      run_judge_id: runJudgeId,
+      sample_id: sample,
+      run_id: runId,
+      ...(grade.error !== undefined
+        ? { status: "error", score: null, justification: "", error: grade.error }
+        : {
+            status: "done",
+            score: grade.score ?? null,
+            justification: grade.justification ?? "",
+            error: null,
+          }),
+    });
+  }
+
+  for (const cell of doc.cells) {
+    const id = sampleId(cell);
+    const base = {
+      id,
+      run_id: runId,
+      scenario_index: cell.scenario_index,
+      target_model: cell.target_model,
+      repetition: cell.repetition,
+      cost_usd: cell.cost_usd ?? null,
+      finished_at: now,
+    };
+    if (!isPlayed(cell)) {
+      failed.push({ ...base, status: "error", error: cell.error });
+      continue;
+    }
+    played.push({
+      ...base,
+      status: "done",
+      error: null,
+      messages: cell.messages,
+      turns_done: cell.turns_done,
+      started_at: now,
+    });
+    for (const [key, grade] of Object.entries(cell.grades ?? {})) {
+      if (grade) score(judgeId(key), id, grade);
+    }
+  }
+  for (const item of doc.grades) {
+    if (item.grade) score(judgeId(item.judge), sampleId(item), item.grade);
+  }
+  return { played, failed, scores };
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+/** One sentence for the agent: what came in, and what is left pending. */
+export function importSummary(doc: ImportDocument, expectation: ImportExpectation): string {
+  const played = doc.cells.filter(isPlayed).length;
+  const failed = doc.cells.length - played;
+  const given =
+    doc.cells.reduce(
+      (count, cell) => count + Object.values(cell.grades ?? {}).filter((g) => g !== null).length,
+      0,
+    ) + doc.grades.filter((item) => item.grade !== null).length;
+  const owed =
+    played * expectation.judges.length +
+    expectation.conversations.length * expectation.newJudges.length;
+
+  const parts: string[] = [];
+  if (doc.cells.length > 0) {
+    parts.push(`${plural(played, "conversation")} played, ${failed} failed`);
+  }
+  parts.push(`${plural(given, "grade")} given`);
+  const pending = owed - given;
+  const tail =
+    pending > 0
+      ? ` ${plural(pending, "grade")} left pending: the run page's catch-up button can have ` +
+        `${pending === 1 ? "it" : "them"} graded here, at our cost.`
+      : "";
+  return `${parts.join(", ")}.${tail}`;
+}
+
+/** Refuses to have our engine play any part of an external run: its cells
+ *  were played elsewhere, and a matrix is played in one place or the other.
+ *  Shared by `launch_draft`, the web extend route and the retry route. */
+export function playedElsewhereProblem(run: { id: string; origin: string }): string | null {
+  if (run.origin !== "external") return null;
+  return (
+    `Run ${run.id} was played outside the playground and imported. Our engine does not ` +
+    "play any of its cells: more of it comes in as an extension draft, filled with " +
+    "get_import_skeleton and import_draft_results."
+  );
+}
+
+/** Refuses to import an extension of a run played here, for the same reason. */
+export function playedHereProblem(run: { id: string; origin: string }): string | null {
+  if (run.origin === "external") return null;
+  return (
+    `Run ${run.id} was played by the playground itself. An extension of it is launched ` +
+    "with launch_draft, never imported: a matrix is played in one place or the other."
+  );
+}
