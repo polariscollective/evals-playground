@@ -119,7 +119,7 @@ the run (see below).
   ],
   "grades": [
     { "scenario_index": 1, "target_model": "...", "repetition": 0,
-      "judge": "new_judges[0]", "score": 1, "justification": "..." }
+      "judge": "new_judges[0]", "grade": { "score": 1, "justification": "..." } }
   ]
 }
 ```
