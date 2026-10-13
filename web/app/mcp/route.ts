@@ -519,6 +519,11 @@ const handler = createMcpHandler((server) => {
         "that isn't knowable yet, never 0. This is what lets a run's current cost be explained instead " +
         "of just reported: a run costed three times its original quote reads very differently as one " +
         "extension gone over budget versus five deliberate ones.\n\n" +
+        "`origin` says where the run was played: \"cloud-run\" or \"local\" by the playground " +
+        "itself, \"external\" outside the playground by an agent that then imported it " +
+        "(import_draft_results). An external run's `cost_usd` is the cost that agent declared, " +
+        "not one measured here, plus whatever a catch-up pass graded here spent; null when " +
+        "unknown, as when the agent declared none.\n\n" +
         "A run can carry more than one judge now — `judges` lists every one still linked (never one that " +
         "was unlinked), each with its own criterion and rubric, its model, whether it's the principal " +
         "(the one `criterion`/`rubric` below repeat at the top level, and the one get_run_results' matrix " +
@@ -575,6 +580,8 @@ const handler = createMcpHandler((server) => {
         id: run.id,
         label: run.label,
         status: run.status,
+        // Where it was played; "external" makes `cost_usd` a declared figure.
+        origin: run.origin,
         user_email: run.user_email,
         created_at: run.created_at,
         started_at: run.started_at,
