@@ -57,11 +57,11 @@ test("the five groups reached through OpenRouter share its key", () => {
   );
 });
 
-test("the catalogue carries fifty-one models", () => {
-  assert.equal(knownModelIds().size, 51);
+test("the catalogue carries fifty-four models", () => {
+  assert.equal(knownModelIds().size, 54);
 });
 
-test("the nine models that discard temperature are marked", () => {
+test("the twelve models that discard temperature are marked", () => {
   // Marked and not removed: a fixed-temperature run on them is legitimate; it
   // is the sweep that would measure nothing.
   const ignoring = catalog(NO_FAVOURITES)
@@ -72,10 +72,13 @@ test("the nine models that discard temperature are marked", () => {
   assert.deepEqual(ignoring, [
     "anthropic/claude-fable-5",
     "anthropic/claude-fable-5-1",
+    "anthropic/claude-haiku-5-5",
     "anthropic/claude-opus-4-7",
     "anthropic/claude-opus-4-8",
     "anthropic/claude-opus-5",
+    "anthropic/claude-opus-5-5",
     "anthropic/claude-sonnet-5",
+    "anthropic/claude-sonnet-5-5",
     "openai/gpt-6-astra",
     "openrouter/moonshotai/kimi-k2.6",
     "openrouter/moonshotai/kimi-k3",

@@ -29,10 +29,10 @@ from collections.abc import Sequence
 from typing import Any, NamedTuple
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser, Model
-from inspect_ai.tool import Tool, ToolFunction, tool
+from inspect_ai.tool import Tool, tool
 
 from playground.eval_schemas import JournalEntry, ToolSpec
-from playground.tool_calls import tool_call_arguments
+from playground.tool_calls import answer_by_tool
 from playground.shared_data import load
 
 _SHARED = load("world-prompt")
@@ -324,13 +324,14 @@ async def serve(
     system, message = world_prompt(
         world, scenario_world, journal, tool, arguments, fault
     )
-    output = await model.generate(
-        input=[ChatMessageSystem(content=system), ChatMessageUser(content=message)],
-        tools=[submit_result()],
-        tool_choice=ToolFunction(name="submit_result"),
-    )
     try:
-        returned = tool_call_arguments(output, "submit_result", required=("result",))
+        returned = await answer_by_tool(
+            model,
+            [ChatMessageSystem(content=system), ChatMessageUser(content=message)],
+            submit_result(),
+            "submit_result",
+            required=("result",),
+        )
     except ValueError as reason:
         raise ServeRefused(str(reason)) from reason
     # A tool that declares no effect produces none, whatever the model says.
@@ -455,12 +456,13 @@ async def check(
     system, message = check_prompt(
         world, journal, tool, arguments, result, world_change
     )
-    output = await model.generate(
-        input=[ChatMessageSystem(content=system), ChatMessageUser(content=message)],
-        tools=[submit_check()],
-        tool_choice=ToolFunction(name="submit_check"),
+    returned = await answer_by_tool(
+        model,
+        [ChatMessageSystem(content=system), ChatMessageUser(content=message)],
+        submit_check(),
+        "submit_check",
+        required=("faithful",),
     )
-    returned = tool_call_arguments(output, "submit_check", required=("faithful",))
     faithful = bool(returned.get("faithful"))
     fault = str(returned.get("fault") or "").strip()
     if faithful:

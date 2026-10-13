@@ -25,7 +25,7 @@ from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 from inspect_ai.model._model import sample_model_usage
 from inspect_ai.scorer import Score, Scorer, Target, scorer
 from inspect_ai.solver import TaskState
-from inspect_ai.tool import Tool, ToolFunction, tool
+from inspect_ai.tool import Tool, tool
 
 from playground.eval_schemas import (
     EvalRunConfig,
@@ -34,7 +34,7 @@ from playground.eval_schemas import (
     RubricLevel,
 )
 from playground.routing import routed_model
-from playground.tool_calls import tool_call_arguments
+from playground.tool_calls import answer_by_tool
 from playground.shared_data import load
 
 _SHARED = load("judge-prompt")
@@ -594,18 +594,17 @@ async def judge_adversary_fidelity(
         always empty when the third is not.
     """
     try:
-        output = await routed_model(model, model_args).generate(
-            input=[
+        arguments = await answer_by_tool(
+            routed_model(model, model_args),
+            [
                 ChatMessageSystem(content=FIDELITY_SYSTEM),
                 ChatMessageUser(
                     content=fidelity_prompt(transcript_text, adversary_prompt)
                 ),
             ],
-            tools=[submit_fidelity()],
-            tool_choice=ToolFunction(name="submit_fidelity"),
-        )
-        arguments = tool_call_arguments(
-            output, "submit_fidelity", required=("score",)
+            submit_fidelity(),
+            "submit_fidelity",
+            required=("score",),
         )
         return (
             parse_fidelity(arguments.get("score")),
@@ -647,16 +646,15 @@ async def judge_awareness(
         always empty when the third is not.
     """
     try:
-        output = await routed_model(model, model_args).generate(
-            input=[
+        arguments = await answer_by_tool(
+            routed_model(model, model_args),
+            [
                 ChatMessageSystem(content=AWARENESS_SYSTEM),
                 ChatMessageUser(content=awareness_prompt(transcript_text)),
             ],
-            tools=[submit_awareness()],
-            tool_choice=ToolFunction(name="submit_awareness"),
-        )
-        arguments = tool_call_arguments(
-            output, "submit_awareness", required=("score",)
+            submit_awareness(),
+            "submit_awareness",
+            required=("score",),
         )
         return (
             parse_awareness(arguments.get("score")),
@@ -753,8 +751,9 @@ async def judge_conversation(
         # `None` here — the exclusion laid down by
         # `judges_ordinary_or_system_check` in the database, and by
         # `Judge._ordinary_or_system` in Python, guarantees it.
-        output = await routed_model(judge.model, model_args).generate(
-            input=[
+        arguments = await answer_by_tool(
+            routed_model(judge.model, model_args),
+            [
                 ChatMessageSystem(content=judge_system(judge.grades)),
                 ChatMessageUser(
                     content=score_prompt(
@@ -766,11 +765,9 @@ async def judge_conversation(
                     )
                 ),
             ],
-            tools=[submit_score()],
-            tool_choice=ToolFunction(name="submit_score"),
-        )
-        arguments = tool_call_arguments(
-            output, "submit_score", required=("score",)
+            submit_score(),
+            "submit_score",
+            required=("score",),
         )
         grade = parse_score(arguments.get("score"), judge.rubric or [])
         justification = str(arguments.get("justification") or "")

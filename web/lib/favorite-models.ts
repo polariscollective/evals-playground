@@ -21,11 +21,10 @@ import { knownModelIds } from "./catalog.ts";
  * widening to forty-one models thus moved the opening from Opus 5 to Fable 5.1,
  * and silently doubled a blank page's quote. A name resists order.
  *
- * Sonnet 5: the latest Sonnet, and the cheapest of the catalogue's three. It
- * ignores temperature, like every Claude 4.7 and above — so a blank page shows
- * the warning. That is true, and saying so is better than choosing an older
- * model to avoid it. */
-export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5";
+ * Sonnet 5.5: the latest Sonnet. It ignores temperature, like every Claude 4.7
+ * and above, so a blank page shows the warning. That is true, and saying so is
+ * better than choosing an older model to avoid it. */
+export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5-5";
 
 /** What is offered to whoever has chosen nothing.
  *
@@ -45,12 +44,16 @@ export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5";
  * Flash, DeepSeek V4 Pro, Qwen 3.8 Max and Mistral Medium 3.5 join the ones
  * already here. Muse Spark 1.3 (Meta) refuses a forced tool choice, which every
  * judge sends, and MAI-Thinking-1 (Microsoft AI) is served by no host the
- * catalogue reaches, so neither is offered yet. */
+ * catalogue reaches, so neither is offered yet.
+ *
+ * The Opus, Sonnet and Haiku offered are the 5.5 generation since October
+ * 2026; Opus 5, Sonnet 5 and Haiku 4.5 stay in the catalogue for whoever
+ * ticks them. */
 export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "anthropic/claude-fable-5-1",
-  "anthropic/claude-opus-5",
-  "anthropic/claude-sonnet-5",
-  "anthropic/claude-haiku-4-5",
+  "anthropic/claude-opus-5-5",
+  "anthropic/claude-sonnet-5-5",
+  "anthropic/claude-haiku-5-5",
   "openai/gpt-6-astra",
   "openai/gpt-5.6-sol",
   "openai/gpt-5.6-terra",
