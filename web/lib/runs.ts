@@ -26,6 +26,7 @@ import {
   rpc,
   select,
   update,
+  upsert,
 } from "./supabase";
 import { addEstimates, estimateCost, estimateJudgeAdditionCost } from "./pricing";
 import { estimateExtension } from "./extend-estimate";
@@ -42,7 +43,22 @@ import {
   judgeRowFromSpec,
   judgesForLaunch,
   judgeScoresForSamples,
+  type NewRunJudgeRow,
 } from "./launch-judges.ts";
+import {
+  addCosts,
+  cellKey,
+  checkImport,
+  extensionExpectation,
+  importCost,
+  importSummary,
+  importWrites,
+  judgeKey,
+  launchJudgeKeys,
+  runExpectation,
+  type ImportDocument,
+  type ImportExpectation,
+} from "./import-results.ts";
 import {
   namedJudgeProblem,
   reuseProblem,
@@ -64,11 +80,13 @@ import type { PublicRunDetail } from "./public-run";
 import { AWAKE_TYPE, type JudgeVerdict } from "./awareness.ts";
 import type {
   CostEstimate,
+  Draft,
   EvalModels,
   EvalRun,
   EvalRunConfig,
   EvalSample,
   EvalScenario,
+  ExtendDraft,
   ExtendRequest,
   Judge,
   JudgeScore,
@@ -77,6 +95,7 @@ import type {
   JudgeSystemTypeColumn,
   JudgeVerdictEntry,
   RunDetail,
+  RunDraft,
   RunJudge,
   RunJudgeView,
   RunListItem,
@@ -229,7 +248,7 @@ interface RunListRow {
   status: RunStatus;
   cost_usd: number | null;
   is_public: boolean;
-  origin: "local" | "cloud-run";
+  origin: "local" | "cloud-run" | "external";
   launched_via: "ui" | "mcp";
   rubric: RubricLevel[] | null;
   models: EvalModels | null;
@@ -693,7 +712,16 @@ export async function reusedJudges(
   };
 }
 
-/** Creates a run and its whole matrix, pending.
+/** A cell by its identifier and the triple that is unique on a run. */
+export interface SampleRef {
+  id: string;
+  scenario_index: number;
+  target_model: string;
+  repetition: number;
+}
+
+/** Creates a run and its whole matrix, pending, and hands back the rows an
+ *  import needs to address: the cells and the judge links, by their identifiers.
  *
  * The cells are written at launch, not by the job: it is what makes the progress
  * exact before the job even starts, and what allows showing the greyed matrix
@@ -703,13 +731,18 @@ export async function reusedJudges(
  * form, the route that launches a draft — have nothing to change to keep writing
  * what they already wrote. Only the MCP tool `launch_draft` passes `'mcp'`, the
  * only value `mcp-budget.ts`'s budget counts. */
-export async function createRun(
+export async function createRunRows(
   written: WrittenRunConfig,
   userEmail: string,
   csvText: string | null,
   draftId: string | null = null,
   launchedVia: "ui" | "mcp" = "ui",
-): Promise<EvalRun> {
+): Promise<{
+  run: EvalRun;
+  config: EvalRunConfig;
+  samples: SampleRef[];
+  runJudges: NewRunJudgeRow[];
+}> {
   // Resolved first, and settled into the configuration before anything is
   // written: what a run stores is the complete photograph, never a handle. See
   // `settleReusedJudges` for why the engine and every reader afterwards depend
@@ -753,7 +786,7 @@ export async function createRun(
   // `returning: true`: the cells' identifiers are needed just below to lay the
   // rows of `judge_scores`, which aim at a conversation by its `id` and not by
   // its quadruplet.
-  const samples = await insert<{ id: string }>(
+  const samples = await insert<SampleRef>(
     SAMPLES,
     cellsForRun(config).map((cell) => ({ run_id: run.id, ...cell })),
     { returning: true },
@@ -776,7 +809,19 @@ export async function createRun(
   await insert(RUN_JUDGES, runJudges);
   await insert(JUDGE_SCORES, judgeScores);
 
-  return run;
+  return { run, config, samples, runJudges };
+}
+
+/** Creates a run and its whole matrix, pending. See `createRunRows`, which
+ *  also hands back the rows an import needs to address. */
+export async function createRun(
+  written: WrittenRunConfig,
+  userEmail: string,
+  csvText: string | null,
+  draftId: string | null = null,
+  launchedVia: "ui" | "mcp" = "ui",
+): Promise<EvalRun> {
+  return (await createRunRows(written, userEmail, csvText, draftId, launchedVia)).run;
 }
 
 // --- the judges ------------------------------------------------------------
@@ -1712,7 +1757,7 @@ export async function extendRun(
   request: ExtendRequest,
   by: string,
   via: "ui" | "mcp",
-): Promise<{ added: number; mode: JobMode }> {
+): Promise<{ added: number; mode: JobMode; newRunJudgeIds: string[] }> {
   const {
     run,
     scenarios,
@@ -1732,7 +1777,13 @@ export async function extendRun(
   // `extendProblem` forbids mixing that gesture with the addition of cells: the
   // two ask the engine for two different passes, and one launch does only one.
   if (newJudges.length > 0) {
-    for (const spec of newJudges) await addJudge(runId, spec, by);
+    // Kept in order: an import names these judges `new_judges[i]`, by their
+    // place in the request, and nothing read back afterwards could tell two
+    // of them apart by anything but their identifiers.
+    const newRunJudgeIds: string[] = [];
+    for (const spec of newJudges) {
+      newRunJudgeIds.push((await addJudge(runId, spec, by)).runJudgeId);
+    }
     await update(
       RUNS,
       {
@@ -1754,10 +1805,12 @@ export async function extendRun(
       },
       { id: `eq.${runId}` },
     );
-    return { added: newJudges.length, mode: "catchup" };
+    return { added: newJudges.length, mode: "catchup", newRunJudgeIds };
   }
 
-  if (cases.length === 0 && continued === 0) return { added: 0, mode: "run" };
+  if (cases.length === 0 && continued === 0) {
+    return { added: 0, mode: "run", newRunJudgeIds: [] };
+  }
 
   const config = run.config;
   const adversary = resolvedAdversary(config, request);
@@ -1900,7 +1953,7 @@ export async function extendRun(
     }
   }
 
-  return { added: cases.length + continued, mode: "run" };
+  return { added: cases.length + continued, mode: "run", newRunJudgeIds: [] };
 }
 
 /** A published run, as a stranger can read it.
@@ -2011,4 +2064,198 @@ export async function loadSampleTranscript(
   sample.messages ??= [];
   sample.usage ??= {};
   return sample;
+}
+
+// --- importing a run played elsewhere ---------------------------------------
+//
+// See docs/superpowers/specs/2026-10-13-external-run-import-design.md. What is
+// expected and whether a document fits is decided in `import-results.ts`; this
+// part only reads what that needs and writes what it decided.
+
+/** The scale of a judge an extension adds: written out, or read from the
+ *  judge its handle names. */
+async function writtenJudgeScale(spec: WrittenJudgeSpec): Promise<number[]> {
+  if (spec.rubric) return spec.rubric.map((level) => level.value);
+  const rows = await select<{ rubric: RubricLevel[] | null }>(JUDGES, {
+    slug: `eq.${spec.judge}`,
+    select: "rubric",
+    limit: 1,
+  });
+  return (rows[0]?.rubric ?? []).map((level) => level.value);
+}
+
+/** Throws what `linkSystem` in `launch-judges.ts` throws, for the same reason:
+ *  whoever reads it is one command away from fixing it. */
+function requireSystemJudge(reused: ReusedJudges, type: JudgeSystemType): void {
+  if (reused.system[type]) return;
+  throw new Error(
+    `The system judge "${type}" is missing from the judges table. ` +
+      "Apply the migration 20260910170000_seed_the_system_judges.sql " +
+      "(polaris-supabase) before launching a run.",
+  );
+}
+
+/** What an import of this draft must hold. Reads, never writes: the skeleton
+ *  tool and the import itself both call it, so the two cannot disagree.
+ *
+ * Throws `ConfigProblem` from `reusedJudges` on a run draft naming a judge
+ * that no longer holds, and `NotFound` on an extension of a vanished run. */
+export async function expectationForDraft(draft: Draft): Promise<ImportExpectation> {
+  if (draft.kind === "run") {
+    const reused = await reusedJudges(draft.config);
+    // Refused here as `judgesForLaunch` would refuse it: a system judge missing
+    // from the table would otherwise reach `runExpectation` with an empty scale,
+    // and every awareness score would be turned down as off the scale, which
+    // says nothing of the real cause.
+    if (draft.config.check_eval_awareness !== false) requireSystemJudge(reused, "awake");
+    if (draft.config.check_adversary_fidelity === true) {
+      requireSystemJudge(reused, "faithful_adversary");
+    }
+    return runExpectation(settleReusedJudges(draft.config, reused), reused.system);
+  }
+  const runId = draft.extends_run_id;
+  const plan = await planExtension(runId, draft.config);
+  const live = await loadLiveRunJudges(runId);
+  const samples = await select<SampleRef & { status: SampleStatus; temperature: number | null }>(
+    SAMPLES,
+    {
+      run_id: `eq.${runId}`,
+      select: "id,scenario_index,target_model,repetition,status,temperature",
+      order: "scenario_index,target_model,repetition",
+    },
+  );
+  const deepened = new Set(plan.continuedSampleIds);
+  return extensionExpectation({
+    cases: plan.cases,
+    deepened: samples
+      .filter((sample) => deepened.has(sample.id))
+      .map((sample) => ({
+        scenario_index: sample.scenario_index,
+        target_model: sample.target_model,
+        repetition: sample.repetition,
+        temperature: sample.temperature,
+      })),
+    turns: draft.config.turns ?? plan.run.config.turns,
+    liveJudges: live,
+    newJudgeScales: await Promise.all(plan.newJudges.map(writtenJudgeScale)),
+    doneConversations: samples.filter((sample) => sample.status === "done"),
+  });
+}
+
+/** Upserts what a checked document holds onto rows that already exist. */
+async function writeImport(
+  runId: string,
+  doc: ImportDocument,
+  sampleIds: Map<string, string>,
+  judgeIds: Map<string, string>,
+): Promise<void> {
+  const { played, failed, scores } = importWrites(runId, doc, sampleIds, judgeIds, NOW);
+  await upsert(SAMPLES, played, "id");
+  await upsert(SAMPLES, failed, "id");
+  await upsert(JUDGE_SCORES, scores, "run_judge_id,sample_id");
+}
+
+/** Marks a run whose import broke between its first and last write.
+ *
+ * The document was checked before anything was written, so this is a database
+ * failure, not a refusal: the run is left `error` with the reason rather than
+ * `triggered`, where the sweep would fail it two hours later saying a job had
+ * vanished. */
+async function failImport(runId: string, error: unknown): Promise<never> {
+  await update(
+    RUNS,
+    {
+      status: "error",
+      origin: "external",
+      finished_at: NOW,
+      error: `The import failed part-way: ${(error as Error).message}`,
+    },
+    { id: `eq.${runId}` },
+  );
+  throw error;
+}
+
+/** Creates a run from a run draft, filled with what was played elsewhere.
+ *
+ * The same rows `createRun` lays for a launch, then the imported content over
+ * them, then the run closed `done` in the same request: it never sits
+ * `triggered` or `running`, which would have the page poll a job that does not
+ * exist. */
+export async function importRun(
+  draft: RunDraft,
+  raw: string,
+  caller: string,
+): Promise<{ run: EvalRun; summary: string; cost: number | null } | { problems: string[] }> {
+  const expectation = await expectationForDraft(draft);
+  const checked = checkImport(raw, expectation);
+  if ("problems" in checked) return checked;
+
+  const created = await createRunRows(draft.config, caller, draft.csv_text, draft.id, "mcp");
+  const cost = importCost(checked.doc);
+  try {
+    await writeImport(
+      created.run.id,
+      checked.doc,
+      new Map(created.samples.map((sample) => [cellKey(sample), sample.id])),
+      launchJudgeKeys(created.runJudges),
+    );
+    await update(
+      RUNS,
+      {
+        status: "done",
+        origin: "external",
+        started_at: NOW,
+        finished_at: NOW,
+        error: null,
+        cost_usd: cost,
+      },
+      { id: `eq.${created.run.id}` },
+    );
+  } catch (error) {
+    await failImport(created.run.id, error);
+  }
+  return { run: created.run, summary: importSummary(checked.doc, expectation), cost };
+}
+
+/** Applies an extension draft to an external run, filled with what was played
+ *  elsewhere: the same writes `extendRun` makes for a launch, then the
+ *  imported content over them, then the run closed `done` again. The caller
+ *  has already checked who may extend, and that the run is external. */
+export async function importExtension(
+  draft: ExtendDraft,
+  raw: string,
+  caller: string,
+): Promise<{ run: EvalRun; summary: string; cost: number | null } | { problems: string[] }> {
+  const runId = draft.extends_run_id;
+  const expectation = await expectationForDraft(draft);
+  const checked = checkImport(raw, expectation);
+  if ("problems" in checked) return checked;
+
+  const before = await select<EvalRun>(RUNS, { id: `eq.${runId}`, select: "*", limit: 1 });
+  const { newRunJudgeIds } = await extendRun(runId, draft.config, caller, "mcp");
+  const cost = addCosts(before[0].cost_usd, importCost(checked.doc));
+  try {
+    const samples = await select<SampleRef>(SAMPLES, {
+      run_id: `eq.${runId}`,
+      select: "id,scenario_index,target_model,repetition",
+    });
+    const judgeIds = new Map(
+      (await loadLiveRunJudges(runId)).map((link) => [judgeKey(link), link.id]),
+    );
+    newRunJudgeIds.forEach((id, index) => judgeIds.set(`new_judges[${index}]`, id));
+    await writeImport(
+      runId,
+      checked.doc,
+      new Map(samples.map((sample) => [cellKey(sample), sample.id])),
+      judgeIds,
+    );
+    await update(
+      RUNS,
+      { status: "done", finished_at: NOW, error: null, cost_usd: cost },
+      { id: `eq.${runId}` },
+    );
+  } catch (error) {
+    await failImport(runId, error);
+  }
+  return { run: before[0], summary: importSummary(checked.doc, expectation), cost };
 }

@@ -126,6 +126,25 @@ export async function insert<T = Record<string, unknown>>(
   );
 }
 
+/** Inserts, or updates the row already holding the same `onConflict` key.
+ *
+ * Every row must carry the same columns: PostgREST reads the column list from
+ * the payload, and a column missing from one row would be written as null on
+ * it. Those NOT NULL without a default must be present even when every row
+ * exists, since the statement is an insert first. */
+export async function upsert(
+  table: string,
+  rows: Record<string, unknown>[],
+  onConflict: string,
+): Promise<void> {
+  if (rows.length === 0) return;
+  await request("POST", table, {
+    params: { on_conflict: onConflict },
+    body: rows,
+    prefer: "resolution=merge-duplicates,return=minimal",
+  });
+}
+
 export async function update(
   table: string,
   values: Record<string, unknown>,
