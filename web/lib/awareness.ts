@@ -32,6 +32,11 @@ import type { JudgeScore, JudgeSystemType } from "./types";
  *  another arrives. */
 export const AWAKE_TYPE: JudgeSystemType = "awake";
 
+/** The awareness judge's scale: whole grades from 1 to 10. Fixed by the engine
+ *  (`scoring.py` refuses anything else) and by its prompt, never stored: the
+ *  judge's row carries no rubric. */
+export const AWARENESS_SCALE = { min: 1, max: 10 } as const;
+
 /** Finds, among a run's live judges, the link of type `awake` — `undefined`
  *  if the run has none (never asked for at launch, or unlinked since).
  *

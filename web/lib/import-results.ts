@@ -5,7 +5,9 @@
 // Pure, like `cells.ts` and `launch-judges.ts`: `runs.ts` imports
 // `server-only`, which breaks under `node --test`, and everything worth testing
 // about an import is decided here, before the first write.
+import { AWARENESS_SCALE } from "./awareness.ts";
 import { cellsForRun, type NewCell } from "./cells.ts";
+import { FIDELITY_SCALE } from "./fidelity.ts";
 import type {
   EvalRunConfig,
   JudgeSystemType,
@@ -114,6 +116,26 @@ function scaleOf(rubric: RubricLevel[] | null | undefined): number[] {
   return (rubric ?? []).map((level) => level.value);
 }
 
+function wholeRange({ min, max }: { min: number; max: number }): number[] {
+  return Array.from({ length: max - min + 1 }, (_, i) => min + i);
+}
+
+/** A system judge's grades: set by the engine, never by a rubric, which the
+ *  schema keeps null for these judges. */
+const SYSTEM_SCALES: Record<JudgeSystemType, number[]> = {
+  awake: wholeRange(AWARENESS_SCALE),
+  faithful_adversary: wholeRange(FIDELITY_SCALE),
+};
+
+/** The values an import may grade a judge with. A system judge's come from
+ *  the engine; reading its rubric would give none, and refuse every grade. */
+export function judgeScale(
+  systemType: string | null | undefined,
+  rubric: RubricLevel[] | null | undefined,
+): number[] {
+  return systemType && isSystemType(systemType) ? SYSTEM_SCALES[systemType] : scaleOf(rubric);
+}
+
 function expectedCell(cell: CellRef & { temperature: number | null }): ExpectedCell {
   return {
     scenario_index: cell.scenario_index,
@@ -209,23 +231,20 @@ export function launchJudgeKeys(
  *  `judgesForLaunch` would link.
  *
  * `config` is the settled configuration (`settleReusedJudges`), so a judge
- * named by handle already carries its scale. `system` is the two seeded rows,
- * read by `reusedJudges`. */
-export function runExpectation(
-  config: EvalRunConfig,
-  system: Partial<Record<JudgeSystemType, { rubric: RubricLevel[] | null }>>,
-): ImportExpectation {
+ * named by handle already carries its scale. The two system judges' scales are
+ * the engine's (`judgeScale`). */
+export function runExpectation(config: EvalRunConfig): ImportExpectation {
   const judges: ExpectedJudge[] = [{ key: "principal", scale: scaleOf(config.rubric) }];
   for (const [index, spec] of (config.judges ?? []).entries()) {
     judges.push({ key: `judges[${index}]`, scale: scaleOf(spec.rubric) });
   }
   if (config.check_eval_awareness !== false) {
-    judges.push({ key: SYSTEM_KEYS.awake, scale: scaleOf(system.awake?.rubric) });
+    judges.push({ key: SYSTEM_KEYS.awake, scale: SYSTEM_SCALES.awake });
   }
   if (config.check_adversary_fidelity === true) {
     judges.push({
       key: SYSTEM_KEYS.faithful_adversary,
-      scale: scaleOf(system.faithful_adversary?.rubric),
+      scale: SYSTEM_SCALES.faithful_adversary,
     });
   }
   return {
@@ -282,7 +301,7 @@ export function extensionExpectation(input: {
     turns: input.turns,
     judges: input.liveJudges.map((link, index) => ({
       key: keys[index],
-      scale: scaleOf(link.judge.rubric),
+      scale: judgeScale(link.system_type, link.judge.rubric),
     })),
     conversations: [],
     newJudges: [],

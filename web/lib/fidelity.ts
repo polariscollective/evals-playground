@@ -29,6 +29,10 @@ import type { JudgeVerdict } from "./awareness.ts";
  *  handling of a TYPE, not a special case for one judge. */
 export const FAITHFUL_ADVERSARY_TYPE: JudgeSystemType = "faithful_adversary";
 
+/** The fidelity judge's scale: whole grades from 1 to 5. Fixed by the engine
+ *  and its prompt, like `AWARENESS_SCALE`, never stored as a rubric. */
+export const FIDELITY_SCALE = { min: 1, max: 5 } as const;
+
 /** Finds, among a run's live judges, the fidelity link — `undefined` if the run
  *  has none, which is the common case: this judge is opt in.
  *

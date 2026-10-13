@@ -56,6 +56,7 @@ import {
   nothingToImport,
   importSummary,
   importWrites,
+  judgeScale,
   liveJudgeKeys,
   launchJudgeKeys,
   runExpectation,
@@ -2076,15 +2077,16 @@ export async function loadSampleTranscript(
 // part only reads what that needs and writes what it decided.
 
 /** The scale of a judge an extension adds: written out, or read from the
- *  judge its handle names. */
+ *  judge its handle names (a system judge's being the engine's, see
+ *  `judgeScale`). */
 async function writtenJudgeScale(spec: WrittenJudgeSpec): Promise<number[]> {
   if (spec.rubric) return spec.rubric.map((level) => level.value);
-  const rows = await select<{ rubric: RubricLevel[] | null }>(JUDGES, {
+  const rows = await select<{ rubric: RubricLevel[] | null; system_type: string }>(JUDGES, {
     slug: `eq.${spec.judge}`,
-    select: "rubric",
+    select: "rubric,system_type",
     limit: 1,
   });
-  return (rows[0]?.rubric ?? []).map((level) => level.value);
+  return judgeScale(rows[0]?.system_type, rows[0]?.rubric);
 }
 
 /** Throws what `linkSystem` in `launch-judges.ts` throws, for the same reason:
@@ -2114,7 +2116,7 @@ export async function expectationForDraft(draft: Draft): Promise<ImportExpectati
     if (draft.config.check_adversary_fidelity === true) {
       requireSystemJudge(reused, "faithful_adversary");
     }
-    return runExpectation(settleReusedJudges(draft.config, reused), reused.system);
+    return runExpectation(settleReusedJudges(draft.config, reused));
   }
   const runId = draft.extends_run_id;
   const plan = await planExtension(runId, draft.config);

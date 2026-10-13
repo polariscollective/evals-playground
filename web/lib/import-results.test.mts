@@ -28,10 +28,11 @@ const RUBRIC: RubricLevel[] = [
   { value: 0, meaning: "No." },
   { value: 1, meaning: "Yes." },
 ];
-const AWAKE_RUBRIC: RubricLevel[] = Array.from({ length: 10 }, (_, i) => ({
-  value: i + 1,
-  meaning: `Level ${i + 1}.`,
-}));
+// A system judge carries no rubric: the schema holds it null
+// (20260906113533_run_judges_judge_fk_and_system_type_sentinel.sql), and its
+// scale is the engine's, never read from the database.
+const AWAKE_SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const FIDELITY_SCALE = [1, 2, 3, 4, 5];
 
 function config(overrides: Partial<EvalRunConfig> = {}): EvalRunConfig {
   return {
@@ -55,7 +56,7 @@ function seeded(id: string, type: "awake" | "faithful_adversary"): Judge {
     label: id,
     slug: id,
     criterion: null,
-    rubric: AWAKE_RUBRIC,
+    rubric: null,
     grades: "assistant",
     sees_adversary_goals: false,
     higher_is_better: false,
@@ -67,7 +68,7 @@ function seeded(id: string, type: "awake" | "faithful_adversary"): Judge {
 }
 
 test("a run draft expects every cell of its matrix", () => {
-  const expectation = runExpectation(config(), { awake: { rubric: AWAKE_RUBRIC } });
+  const expectation = runExpectation(config());
   assert.equal(expectation.cells.length, 2 * 2 * 2);
   assert.deepEqual(
     expectation.cells.map(cellKey).slice(0, 2),
@@ -84,21 +85,17 @@ test("a run draft's judges are the principal, its judges in order, then the chec
       judges: [{ criterion: "Second?", rubric: [{ value: 5, meaning: "Five." }] }],
       check_adversary_fidelity: true,
     }),
-    {
-      awake: { rubric: AWAKE_RUBRIC },
-      faithful_adversary: { rubric: [{ value: 1, meaning: "One." }] },
-    },
   );
   assert.deepEqual(expectation.judges, [
     { key: "principal", scale: [0, 1] },
     { key: "judges[0]", scale: [5] },
-    { key: "awareness", scale: AWAKE_RUBRIC.map((level) => level.value) },
-    { key: "adversary_fidelity", scale: [1] },
+    { key: "awareness", scale: AWAKE_SCALE },
+    { key: "adversary_fidelity", scale: FIDELITY_SCALE },
   ]);
 });
 
 test("the awareness check is expected only when it is on", () => {
-  const expectation = runExpectation(config({ check_eval_awareness: false }), {});
+  const expectation = runExpectation(config({ check_eval_awareness: false }));
   assert.deepEqual(expectation.judges.map((judge) => judge.key), ["principal"]);
 });
 
@@ -151,7 +148,12 @@ test("an extension adding cells expects its new cells and its deepened ones", ()
     turns: 4,
     liveJudges: [
       { is_principal: true, system_type: "ordinary", judge: { slug: "p", rubric: RUBRIC } },
-      { is_principal: false, system_type: "awake", judge: { slug: "w", rubric: AWAKE_RUBRIC } },
+      { is_principal: false, system_type: "awake", judge: { slug: "w", rubric: null } },
+      {
+        is_principal: false,
+        system_type: "faithful_adversary",
+        judge: { slug: "f", rubric: null },
+      },
     ],
     newJudgeScales: [],
     doneConversations: [],
@@ -161,7 +163,11 @@ test("an extension adding cells expects its new cells and its deepened ones", ()
     { scenario_index: 0, target_model: "a/1", repetition: 1, temperature: 0.5 },
   ]);
   assert.equal(expectation.turns, 4);
-  assert.deepEqual(expectation.judges.map((judge) => judge.key), ["principal", "awareness"]);
+  assert.deepEqual(expectation.judges, [
+    { key: "principal", scale: [0, 1] },
+    { key: "awareness", scale: AWAKE_SCALE },
+    { key: "adversary_fidelity", scale: FIDELITY_SCALE },
+  ]);
   assert.deepEqual([...expectation.deepenedCosts], [["0|a/1|1", 0.1]]);
 });
 
@@ -182,9 +188,7 @@ test("an extension adding judges expects their grades on every finished conversa
 
 test("the skeleton leaves every grade null, never a grade of nothing", () => {
   const skeleton = importSkeleton(
-    runExpectation(config({ repetitions: 1, models: { targets: ["a/1"], judge: "j/1" } }), {
-      awake: { rubric: AWAKE_RUBRIC },
-    }),
+    runExpectation(config({ repetitions: 1, models: { targets: ["a/1"], judge: "j/1" } })),
   );
   assert.equal(skeleton.cells.length, 2);
   assert.deepEqual(skeleton.cells[0], {
@@ -674,7 +678,7 @@ test("an extension that adds no cell and no grade to give has nothing to import"
 test("an ordinary judge whose slug is a system judge's key is refused, never shadowed", () => {
   const live = [
     { id: "rj-p", is_principal: true, system_type: "ordinary", judge: { slug: "p", rubric: RUBRIC } },
-    { id: "rj-a", is_principal: false, system_type: "awake", judge: { slug: "w", rubric: AWAKE_RUBRIC } },
+    { id: "rj-a", is_principal: false, system_type: "awake", judge: { slug: "w", rubric: null } },
     { id: "rj-x", is_principal: false, system_type: "ordinary", judge: { slug: "awareness", rubric: RUBRIC } },
   ];
   assert.throws(
@@ -724,4 +728,38 @@ test("the keys an extension import writes with: every live judge, then the new o
     ["new_judges[0]", "rj-n0"],
     ["new_judges[1]", "rj-n1"],
   ]);
+});
+
+test("an imported awareness grade is checked on the engine's 1 to 10, not refused for want of a rubric", () => {
+  const expectation = runExpectation(
+    config({ repetitions: 1, models: { targets: ["a/1"], judge: "j/1" }, scenarios: [
+      { title: "A", system_prompt: "p", opening_message: "hi" },
+    ] }),
+  );
+  const filled = (awareness: unknown) =>
+    JSON.stringify({
+      cells: [
+        {
+          scenario_index: 0,
+          target_model: "a/1",
+          repetition: 0,
+          turns_done: 0,
+          messages: [
+            { role: "user", content: "hi" },
+            { role: "assistant", content: "Hello." },
+          ],
+          grades: {
+            principal: { score: 1, justification: "Fine." },
+            awareness,
+          },
+        },
+      ],
+    });
+  assert.ok("doc" in checkImport(filled({ score: 7, justification: "Says it is a test." }), expectation));
+  assert.ok("doc" in checkImport(filled({ score: 1, justification: "No sign." }), expectation));
+  for (const score of [0, 11, 7.5]) {
+    const outcome = checkImport(filled({ score, justification: "x" }), expectation);
+    assert.ok("problems" in outcome, `score ${score} should be refused`);
+    assert.match(outcome.problems.join("\n"), /1, 2, 3, 4, 5, 6, 7, 8, 9, 10/);
+  }
 });
