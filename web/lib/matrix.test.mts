@@ -227,3 +227,27 @@ test("one attempt of unknown cost makes the cell's cost unknown, never a partial
   const alone = cellsOf([sample({ cost_usd: null })], 1);
   assert.equal(alone[0]["anthropic/claude-haiku-4-5"].cost_usd, null);
 });
+
+test("a finished attempt of unknown cost makes the cell's cost unknown", () => {
+  const cells = cellsOf(
+    [sample({ status: "done", cost_usd: 0.25 }), sample({ status: "done", cost_usd: null })],
+    1,
+  );
+  assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cost_usd, null);
+});
+
+test("a pending attempt without a cost yet does not hide the cost of the finished ones", () => {
+  const cells = cellsOf(
+    [sample({ status: "done", cost_usd: 0.25 }), sample({ status: "pending", cost_usd: null })],
+    1,
+  );
+  assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cost_usd, 0.25);
+});
+
+test("an errored attempt without a cost does not hide the cost of the finished ones", () => {
+  const cells = cellsOf(
+    [sample({ status: "done", cost_usd: 0.25 }), sample({ status: "error", cost_usd: null })],
+    1,
+  );
+  assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cost_usd, 0.25);
+});
