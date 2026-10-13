@@ -212,3 +212,18 @@ test("overallMean ignores why the principal did not grade", () => {
   ]);
   assert.equal(mean, 1);
 });
+
+// --- the cost of a cell -------------------------------------------------------
+
+test("a cell's cost is the sum of its attempts' when every one is known", () => {
+  const cells = cellsOf([sample({ cost_usd: 0.25 }), sample({ cost_usd: 0.5 })], 1);
+  assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cost_usd, 0.75);
+});
+
+test("one attempt of unknown cost makes the cell's cost unknown, never a partial sum", () => {
+  // A partial sum would read as the whole, and an unknown cost as free.
+  const cells = cellsOf([sample({ cost_usd: 0.25 }), sample({ cost_usd: null })], 1);
+  assert.equal(cells[0]["anthropic/claude-haiku-4-5"].cost_usd, null);
+  const alone = cellsOf([sample({ cost_usd: null })], 1);
+  assert.equal(alone[0]["anthropic/claude-haiku-4-5"].cost_usd, null);
+});

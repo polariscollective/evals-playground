@@ -1970,7 +1970,7 @@ export function RunMatrix({
                         (cell.cancelled > 0
                           ? `, ${cell.cancelled} never ran`
                           : "") +
-                        (cell.cost_usd > 0
+                        (cell.cost_usd !== null && cell.cost_usd > 0
                           ? `, $${cell.cost_usd.toFixed(4)}`
                           : "")
                       : waiting

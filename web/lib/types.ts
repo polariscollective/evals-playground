@@ -1172,8 +1172,10 @@ export interface Cell {
    * Counts only what enters the mean: a "not applicable" is an answer, not a
    * grade, and lives in `excluded`. */
   grades: Record<string, number>;
-  /** The sum of what the attempts of this matrix cell cost. */
-  cost_usd: number;
+  /** The sum of what the attempts of this matrix cell cost; `null` when any
+   *  one of them has no known cost, since a partial sum would read as the
+   *  whole. */
+  cost_usd: number | null;
   /** How many attempts of this cell showed they knew they were being tested, at
    *  the same threshold as the run's indicator (AWARENESS_ALARM) and not another:
    *  the sum of this count over every cell must always land on the figure the

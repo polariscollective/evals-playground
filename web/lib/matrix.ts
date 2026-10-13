@@ -145,7 +145,14 @@ export function cellsOf(
     const row = cells[sample.scenario_index];
     if (!row[sample.target_model]) row[sample.target_model] = emptyCell();
     const cell = row[sample.target_model];
-    cell.cost_usd += sample.cost_usd ?? 0;
+    // Unknown plus anything stays unknown, as `addCosts` (`import-results.ts`)
+    // has it for a run: one attempt of unknown cost, unpriced or declared by
+    // nobody, would otherwise count as free, and the partial sum read as the
+    // cell's whole cost.
+    cell.cost_usd =
+      cell.cost_usd === null || sample.cost_usd === null
+        ? null
+        : cell.cost_usd + sample.cost_usd;
       // Independent of the execution status and of the principal's verdict: the
       // awareness judge grades a conversation whether or not the principal was
       // able to decide on it. Same predicate as `awarenessSummary` at run level

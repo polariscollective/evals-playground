@@ -656,7 +656,9 @@ const handler = createMcpHandler((server) => {
         "judge's own mean, grades and judged/excluded/errored/pending counts on that cell — a run with " +
         "several judges can and does disagree with itself, and a caller who only ever saw the principal " +
         "would not know that. `cost_usd` and `awareness_flagged` sit once per cell, not per judge: cost " +
-        "is the conversations', not any one judge's, and the eval-awareness flag already has its own " +
+        "is the conversations', not any one judge's, and is null when any attempt's cost is unknown " +
+        "(a model with no known price, or an imported attempt whose cost was not declared); and " +
+        "the eval-awareness flag already has its own " +
         "entry in `judges`/`by_judge` like any other judge — this field is a shorthand kept for the " +
         "threshold that root `awareness` names. That root `awareness` block carries what the built-in " +
         "eval-awareness judge measures, its scale, the exact threshold `awareness_flagged` applies, and " +
@@ -799,8 +801,9 @@ const handler = createMcpHandler((server) => {
               model,
               // The conversations', not any one judge's: one more judge costs
               // nothing more, it is never the judge that pays. One copy per cell,
-              // never one per judge.
-              cost_usd: cell?.cost_usd ?? 0,
+              // never one per judge. `null` when an attempt's cost is unknown,
+              // never 0: unknown is not free. A cell with no attempt cost nothing.
+              cost_usd: cell === undefined ? 0 : cell.cost_usd,
               // Where to look: it is the count that answers, cell by cell, the
               // overall figure of get_run_metadata. A shorthand kept for the same
               // threshold `awareness` above names — awareness also has its own
