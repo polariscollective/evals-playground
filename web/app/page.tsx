@@ -25,6 +25,7 @@ import {
 import {
   parseCsv,
   parseHistoryCell,
+  parseJudgeNotesCell,
   parseToolsCell,
   rebuildCsv,
   toCsv,
@@ -43,6 +44,7 @@ import type {
   WrittenRunConfig,
 } from "@/lib/types";
 import { HistoryEditor } from "@/components/HistoryEditor";
+import { JudgeNoteChoice } from "@/components/JudgeNoteChoice";
 import { NotesField } from "@/components/NotesField";
 import { ScenarioTools, ToolsEditor } from "@/components/ToolsEditor";
 import { PasteConfig } from "@/components/PasteConfig";
@@ -181,6 +183,10 @@ function EvaluateForm() {
   // column: they are two paths to the same field of the scenario.
   const [history, setHistory] = useState<SeededTurn[]>([]);
   const [scenarioNote, setScenarioNote] = useState("");
+  // The single manual scenario's judge notes, carried as they came: the form
+  // does not edit them (they are added on a run's page or in the YAML), it only
+  // must not lose them.
+  const [scenarioJudgeNotes, setScenarioJudgeNotes] = useState<Record<string, string>>({});
   // What this row changes about the run's world — see `EvalScenario.world`.
   // Given to the environment as a second, named block that wins over the run's
   // own, never melted into it: that is what makes a denial readable as a
@@ -213,6 +219,10 @@ function EvaluateForm() {
   // Optional: the column carrying the seeded history, as JSON. Most batches have
   // none, and the selector then stays on "—".
   const [colHistory, setColHistory] = useState("");
+  // Named judge notes per scenario travel in this column, JSON in a cell like
+  // `history`: a run of several scenarios comes back to the form as a CSV, and
+  // without it Duplicate would drop every note.
+  const [colJudgeNotes, setColJudgeNotes] = useState("");
   // Optional too: an empty cell offers all the run's tools, `none` offers none,
   // otherwise the names separated by commas.
   const [colTools, setColTools] = useState("");
@@ -315,6 +325,9 @@ function EvaluateForm() {
   // is the convention the format asks for and what every scale written before
   // this field followed.
   const [higherIsBetter, setHigherIsBetter] = useState(true);
+  // The scenario judge note the principal reads. On the link, so it stands
+  // beside a handle as well as beside a written criterion.
+  const [principalJudgeNote, setPrincipalJudgeNote] = useState<string | null>(null);
   const [principalHandle, setPrincipalHandle] = useState<string | null>(null);
   const [judgeByHandle, setJudgeByHandle] = useState<Record<string, Judge>>({});
   const [error, setError] = useState<string | null>(null);
@@ -430,6 +443,7 @@ function EvaluateForm() {
       setTargetsPerScenario(config.targets ?? null);
       setSeesSystemPrompt(config.sees_system_prompt !== false);
       setHigherIsBetter(config.higher_is_better !== false);
+      setPrincipalJudgeNote(config.judge_note ?? null);
       setRubric(config.rubric ?? DEFAULT_RUBRIC);
       // A configuration that NAMES its principal restores as one: the handle,
       // and the judge read back so the block can show what it asks.
@@ -494,6 +508,7 @@ function EvaluateForm() {
         setHistory(first?.history ?? []);
         setScenarioTools(first?.tools ?? null);
         setScenarioNote(first?.note ?? "");
+        setScenarioJudgeNotes(first?.judge_notes ?? {});
         setScenarioWorld(first?.world ?? "");
         return;
       }
@@ -510,6 +525,7 @@ function EvaluateForm() {
         setColSystem(config.source?.column_system_prompt ?? "system_prompt");
         setColOpening(config.source?.column_opening_message ?? "opening_message");
         setColHistory(config.source?.column_history ?? "");
+        setColJudgeNotes(config.source?.column_judge_notes ?? "");
         setColTools(config.source?.column_tools ?? "");
         setColNote(config.source?.column_note ?? "");
         setColWorld(config.source?.column_world ?? "");
@@ -530,6 +546,7 @@ function EvaluateForm() {
       setColNote(columns.includes("note") ? "note" : "");
       setColWorld(columns.includes("world") ? "world" : "");
       setColHistory(columns.includes("history") ? "history" : "");
+      setColJudgeNotes(columns.includes("judge_notes") ? "judge_notes" : "");
       setColTools(columns.includes("tools") ? "tools" : "");
     },
     // `rememberJudge` is laid with no dependency of its own, so naming it here
@@ -636,8 +653,14 @@ function EvaluateForm() {
         if (cancelled) return;
           // The original file if it was kept; failing that `fillFromConfig`
           // rebuilds it from the run's scenarios.
+        // Judge notes are added to a run's scenarios after launch, and the
+        // original file never holds them: with any, the batch is rebuilt from
+        // the scenarios, losing the file's layout rather than its notes.
+        const noted = run.config.scenarios.some(
+          (scenario) => Object.keys(scenario.judge_notes ?? {}).length > 0,
+        );
         const text =
-          run.config.source?.kind === "csv" && source_csv_available
+          run.config.source?.kind === "csv" && source_csv_available && !noted
             ? await sourceCsvText(relaunchOf).catch(() => null)
             : null;
         if (cancelled) return;
@@ -682,6 +705,9 @@ function EvaluateForm() {
           opening_message: openingMessage,
           history,
           note: scenarioNote,
+          ...(Object.keys(scenarioJudgeNotes).length > 0
+            ? { judge_notes: scenarioJudgeNotes }
+            : {}),
           world: scenarioWorld,
           tools: scenarioTools,
         },
@@ -693,6 +719,9 @@ function EvaluateForm() {
       system_prompt: row[colSystem] ?? "",
       opening_message: row[colOpening] ?? "",
       history: colHistory ? parseHistoryCell(row[colHistory] ?? "") : [],
+      ...(colJudgeNotes && Object.keys(parseJudgeNotesCell(row[colJudgeNotes] ?? "")).length > 0
+        ? { judge_notes: parseJudgeNotesCell(row[colJudgeNotes] ?? "") }
+        : {}),
       tools: colTools ? parseToolsCell(row[colTools] ?? "") : null,
       note: colNote ? (row[colNote] ?? "") : "",
       world: colWorld ? (row[colWorld] ?? "") : "",
@@ -709,10 +738,12 @@ function EvaluateForm() {
     colSystem,
     colOpening,
     colHistory,
+    colJudgeNotes,
     colTools,
     colNote,
     colWorld,
     scenarioNote,
+    scenarioJudgeNotes,
     scenarioWorld,
   ]);
 
@@ -755,6 +786,7 @@ function EvaluateForm() {
       // Absent stays absent: `null` here would be a declaration of nothing,
       // and `configProblem` tells the two apart.
       ...(targetsPerScenario ? { targets: targetsPerScenario } : {}),
+      ...(principalJudgeNote ? { judge_note: principalJudgeNote } : {}),
       judges: secondaryJudges,
       turns,
       repetitions,
@@ -802,6 +834,7 @@ function EvaluateForm() {
         column_system_prompt: source === "csv" ? colSystem : "",
         column_opening_message: source === "csv" ? colOpening : "",
         column_history: source === "csv" ? colHistory : "",
+        column_judge_notes: source === "csv" ? colJudgeNotes : "",
         column_tools: source === "csv" ? colTools : "",
         column_note: source === "csv" ? colNote : "",
         column_world: source === "csv" ? colWorld : "",
@@ -822,6 +855,7 @@ function EvaluateForm() {
       targetsPerScenario,
       seesSystemPrompt,
       secondaryJudges,
+      principalJudgeNote,
       principalHandle,
       higherIsBetter,
       turns,
@@ -849,6 +883,7 @@ function EvaluateForm() {
       colSystem,
       colOpening,
       colHistory,
+      colJudgeNotes,
       colTools,
       colNote,
       colWorld,
@@ -1098,6 +1133,7 @@ function EvaluateForm() {
       setSystemPrompt(config.scenarios[0].system_prompt);
       setOpeningMessage(config.scenarios[0].opening_message);
       setScenarioNote(config.scenarios[0].note ?? "");
+      setScenarioJudgeNotes(config.scenarios[0].judge_notes ?? {});
       setScenarioWorld(config.scenarios[0].world ?? "");
       setHistory(config.scenarios[0].history ?? []);
       setScenarioTools(config.scenarios[0].tools ?? null);
@@ -1118,6 +1154,7 @@ function EvaluateForm() {
       setColNote(columns.includes("note") ? "note" : "");
       setColWorld(columns.includes("world") ? "world" : "");
       setColHistory(columns.includes("history") ? "history" : "");
+      setColJudgeNotes(columns.includes("judge_notes") ? "judge_notes" : "");
       setColTools(columns.includes("tools") ? "tools" : "");
     }
     setImportNote(
@@ -1222,6 +1259,7 @@ function EvaluateForm() {
     setOpeningMessage("");
     setHistory([]);
     setScenarioNote("");
+    setScenarioJudgeNotes({});
     setScenarioWorld("");
     setScenarioTools(null);
     setTools([]);
@@ -1238,6 +1276,7 @@ function EvaluateForm() {
     setColSystem("");
     setColOpening("");
     setColHistory("");
+    setColJudgeNotes("");
     setColTools("");
     setColNote("");
     setColWorld("");
@@ -1247,6 +1286,7 @@ function EvaluateForm() {
     setCriterion("");
     setRubric(DEFAULT_RUBRIC);
     setHigherIsBetter(true);
+    setPrincipalJudgeNote(null);
     setPrincipalHandle(null);
     setSecondaryJudges([]);
     setTurns(1);
@@ -1776,6 +1816,11 @@ function EvaluateForm() {
                       value: colWorld,
                       set: setColWorld,
                     },
+                    {
+                      label: "Judge notes (optional)",
+                      value: colJudgeNotes,
+                      set: setColJudgeNotes,
+                    },
                   ].map((f) => (
                     <label key={f.label} className="block space-y-1">
                       <span className="text-xs font-medium">{f.label}</span>
@@ -1957,6 +2002,12 @@ function EvaluateForm() {
         </>
         )}
 
+        <JudgeNoteChoice
+          scenarios={scenarios}
+          value={principalJudgeNote}
+          onChange={setPrincipalJudgeNote}
+        />
+
         {/* Outside the branch: what a scenario is expected to score belongs to
             this run, whether the judge was written here or named. It is read in
             the scale of whichever judge is in force. */}
@@ -2091,6 +2142,14 @@ function EvaluateForm() {
                 });
                 void rememberJudge(slug);
               }}
+            />
+
+            <JudgeNoteChoice
+              scenarios={scenarios}
+              value={entry.judge_note}
+              onChange={(name) =>
+                updateSecondaryJudge(index, { judge_note: name ?? undefined })
+              }
             />
 
             {entry.judge ? (

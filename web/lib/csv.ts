@@ -165,6 +165,30 @@ export function writeToolsCell(tools: string[] | null): string {
   return tools.join(",");
 }
 
+/** A scenario's judge notes, read from a CSV cell: a JSON object of note
+ *  names to texts, like `history`. An unreadable cell returns no notes rather
+ *  than failing the file; `configProblem` checks the names that do come. */
+export function parseJudgeNotesCell(cell: string): Record<string, string> {
+  const text = (cell ?? "").trim();
+  if (text === "") return {};
+  try {
+    const raw = JSON.parse(text);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** The inverse of `parseJudgeNotesCell`. */
+export function writeJudgeNotesCell(notes: Record<string, string> | undefined): string {
+  return notes && Object.keys(notes).length > 0 ? JSON.stringify(notes) : "";
+}
+
 /** The columns always present in a rebuilt CSV. */
 const REBUILT_COLUMNS = ["title", "system_prompt", "opening_message"];
 
@@ -197,6 +221,9 @@ export function rebuildCsv(scenarios: EvalScenario[]): {
     ...(scenarios.some((s) => s.world?.trim()) ? ["world"] : []),
     ...(scenarios.some((s) => (s.history?.length ?? 0) > 0) ? ["history"] : []),
     ...(scenarios.some((s) => s.tools != null) ? ["tools"] : []),
+    ...(scenarios.some((s) => Object.keys(s.judge_notes ?? {}).length > 0)
+      ? ["judge_notes"]
+      : []),
   ];
   return {
     columns,
@@ -210,6 +237,7 @@ export function rebuildCsv(scenarios: EvalScenario[]): {
       world: scenario.world ?? "",
       history: writeHistoryCell(scenario.history ?? []),
       tools: writeToolsCell(scenario.tools ?? null),
+      judge_notes: writeJudgeNotesCell(scenario.judge_notes),
     })),
   };
 }

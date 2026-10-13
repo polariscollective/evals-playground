@@ -11,7 +11,9 @@ import {
   parseCsv,
   parseHistoryCell,
   parseToolsCell,
+  parseJudgeNotesCell,
   rebuildCsv,
+  writeJudgeNotesCell,
   toCsv,
   writeHistoryCell,
   writeToolsCell,
@@ -139,4 +141,26 @@ test("a scenario's world survives rebuildCsv → toCsv → parseCsv", () => {
   const read = parseCsv(toCsv(columns, rows)).rows.map((row) => row.world ?? "");
 
   assert.deepEqual(read, [scenarios[0].world, ""]);
+});
+
+test("judge notes survive the rebuilt CSV a multi-scenario document goes through", () => {
+  const scenarios = [
+    { title: "A", system_prompt: "p", opening_message: "hi", judge_notes: { "persona-v2": "Passage 3, \"quoted\"." } },
+    { title: "B", system_prompt: "p", opening_message: "hi" },
+  ];
+  const { columns, rows } = rebuildCsv(scenarios);
+  assert.ok(columns.includes("judge_notes"));
+  assert.deepEqual(parseJudgeNotesCell(rows[0].judge_notes), { "persona-v2": 'Passage 3, "quoted".' });
+  assert.deepEqual(parseJudgeNotesCell(rows[1].judge_notes), {});
+});
+
+test("no scenario with notes, no judge_notes column", () => {
+  const { columns } = rebuildCsv([{ title: "A", system_prompt: "p", opening_message: "hi" }]);
+  assert.equal(columns.includes("judge_notes"), false);
+});
+
+test("an unreadable judge notes cell gives no notes rather than failing", () => {
+  assert.deepEqual(parseJudgeNotesCell("{not json"), {});
+  assert.deepEqual(parseJudgeNotesCell("[1,2]"), {});
+  assert.equal(writeJudgeNotesCell({}), "");
 });

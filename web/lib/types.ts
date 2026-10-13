@@ -688,6 +688,9 @@ export interface ScenarioSource {
   column_opening_message: string;
   /** The column carrying the seeded history, as JSON. Empty if there is none. */
   column_history?: string;
+  /** The column holding each scenario's judge notes, as JSON. Empty if there
+   *  is none. */
+  column_judge_notes?: string;
   /** The column saying which tools the scenario receives. Empty if there is none. */
   column_tools?: string;
   /** The column carrying the scenario's laboratory note. */

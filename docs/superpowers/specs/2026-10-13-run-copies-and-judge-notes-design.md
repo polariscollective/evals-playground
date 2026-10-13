@@ -114,8 +114,19 @@ silently. `get_run_metadata` returns each judge's `judge_note`, and
 ## Out of scope
 
 Changing or removing a note; changing a run's origin; lifting "a matrix is
-played in one place"; judges limited to some scenarios. The composition form
-(and so Duplicate) does not carry judge notes; the YAML path does.
+played in one place"; judges limited to some scenarios.
+
+## Duplicate, which is not a copy
+
+Duplicate starts a new run from a run's settings, without its results; a copy
+keeps the results. Duplicate carries the notes all the same. The composition
+form holds several scenarios as a CSV, so judge notes travel in a
+`judge_notes` column, JSON in a cell like `history` (`parseJudgeNotesCell`,
+`lib/csv.ts`); a run whose scenarios carry notes is rebuilt from its
+scenarios rather than from its original file, which never holds notes added
+after launch. Each judge's note comes back from its live link
+(`withLiveJudges`), and the form offers a "Judge note" choice under the
+principal and under each additional judge when the scenarios carry any.
 
 ## Rollout
 
