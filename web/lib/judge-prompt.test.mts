@@ -3,7 +3,7 @@
 // side.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { JUDGE_SYSTEM, renderTranscript } from "./judge-prompt.ts";
+import { criterionWithNote, JUDGE_SYSTEM, renderTranscript } from "./judge-prompt.ts";
 
 test("the judge is warned about the SYSTEM PROMPT block", () => {
   // This prompt really goes out, through `shared/judge-prompt.json` — see
@@ -52,4 +52,19 @@ test("with no system prompt, the rendering does not change", () => {
   assert.equal(renderTranscript(messages), renderTranscript(messages, undefined));
   assert.equal(renderTranscript(messages), "USER [turn 1]: a\n\nASSISTANT [turn 2]: b");
   assert.doesNotMatch(renderTranscript(messages), /SYSTEM PROMPT/);
+});
+
+test("a judge note of the judge's name is appended to its criterion", () => {
+  const scenario = { judge_notes: { "persona-v2": "Passage 3 applies." } };
+  assert.equal(
+    criterionWithNote("Did it hold?", scenario, "persona-v2"),
+    "Did it hold?\n\nFor this conversation: Passage 3 applies.",
+  );
+});
+
+test("no note of that name, or no note chosen, leaves the criterion alone", () => {
+  const scenario = { judge_notes: { "persona-v2": "Passage 3 applies." } };
+  assert.equal(criterionWithNote("Did it hold?", scenario, "other"), "Did it hold?");
+  assert.equal(criterionWithNote("Did it hold?", scenario, null), "Did it hold?");
+  assert.equal(criterionWithNote("Did it hold?", {}, "persona-v2"), "Did it hold?");
 });

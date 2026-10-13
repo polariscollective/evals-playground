@@ -81,7 +81,48 @@ function scenarioOf(entry: unknown, position: number): EvalScenario {
       // offers those, `none` offers none. Confusing them would make the
       // comparison "the same row, with and without tools" disappear.
     tools: readScenarioTools(row.tools, position),
+      // Named notes for the judges, on this row only. Spread rather than
+      // assigned: absent stays absent, so a file read and written back gains
+      // no `judge_notes: {}` nobody wrote.
+    ...readJudgeNotes(row.judge_notes, position),
   };
+}
+
+/** A scenario's `judge_notes`: a mapping of note names to their texts. The
+ *  shape only; the names are `configProblem`'s business. */
+function readJudgeNotes(
+  value: unknown,
+  position: number,
+): { judge_notes?: Record<string, string> } {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new ConfigFileError(
+      `scenario ${position}: judge_notes must map note names to their texts.`,
+    );
+  }
+  const notes: Record<string, string> = {};
+  for (const [name, text] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof text !== "string") {
+      throw new ConfigFileError(
+        `scenario ${position}: judge note "${name}" must be text.`,
+      );
+    }
+    notes[name] = text;
+  }
+  return { judge_notes: notes };
+}
+
+/** A judge's `judge_note`, the name of the scenario note it appends to its
+ *  criterion. Belongs to the link, so it is read beside a handle too. */
+function readJudgeNote(
+  value: unknown,
+  where: string,
+): { judge_note?: string } {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "string") {
+    throw new ConfigFileError(`${where}: judge_note must be the name of a note.`);
+  }
+  return { judge_note: value };
 }
 
 function readScenarioTools(value: unknown, position: number): string[] | null {
@@ -288,6 +329,7 @@ function readJudges(value: unknown): WrittenJudgeSpec[] {
         judge: row.judge,
         ...(typeof model === "string" ? { model } : {}),
         ...readTargets(row.targets, `judge ${position + 1}`),
+        ...readJudgeNote(row.judge_note, `judge ${position + 1}`),
       };
     }
     return {
@@ -316,6 +358,7 @@ function readJudges(value: unknown): WrittenJudgeSpec[] {
       ...(typeof row.higher_is_better === "boolean"
         ? { higher_is_better: row.higher_is_better }
         : {}),
+      ...readJudgeNote(row.judge_note, `judge ${position + 1}`),
     };
   });
 }
@@ -430,6 +473,7 @@ export function readConfigFile(text: string): ImportedConfig {
     // The PRINCIPAL's targets, at the top level like its criterion and its
     // scale. The secondaries' travel inside `judges`.
     ...readTargets(file.targets, "the principal judge"),
+    ...readJudgeNote(file.judge_note, "the principal judge"),
     ...(typeof file.sees_system_prompt === "boolean"
       ? { sees_system_prompt: file.sees_system_prompt }
       : {}),
@@ -560,6 +604,7 @@ export function writeConfigFile(config: WrittenRunConfig): string {
         }),
     ...(config.targets ? { targets: targetsDocument(config.targets) } : {}),
     ...(config.sees_system_prompt === false ? { sees_system_prompt: false } : {}),
+    ...(config.judge_note ? { judge_note: config.judge_note } : {}),
     // Written only when it leaves the ordinary answer, like its neighbours: a
     // key on every document would teach a setting where there is nothing to
     // decide.
@@ -595,6 +640,7 @@ export function writeConfigFile(config: WrittenRunConfig): string {
             ...(judge.higher_is_better === false
               ? { higher_is_better: false }
               : {}),
+            ...(judge.judge_note ? { judge_note: judge.judge_note } : {}),
           })),
         }
       : {}),
@@ -665,6 +711,9 @@ export function writeConfigFile(config: WrittenRunConfig): string {
             ...(scenario.tools == null
               ? {}
               : { tools: scenario.tools.length === 0 ? "none" : scenario.tools }),
+            ...(scenario.judge_notes && Object.keys(scenario.judge_notes).length > 0
+              ? { judge_notes: scenario.judge_notes }
+              : {}),
           },
     ),
   };

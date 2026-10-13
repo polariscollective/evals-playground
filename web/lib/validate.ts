@@ -5,6 +5,7 @@
 // browser is believed: a scale with a single level, an empty scenario or a
 // multi-turn run with no adversary would produce a run that measures nothing,
 // and the job would have no way of noticing.
+import { judgeNoteChoiceProblem, judgeNotesProblem } from "./judge-notes.ts";
 import { knownModelIds } from "./catalog.ts";
 import { targetsProblem } from "./targets.ts";
 import { servesTools } from "./tools.ts";
@@ -496,6 +497,8 @@ export function configProblem(config: unknown): string | null {
     }
     const history = historyProblem(scenario.history, `scenario "${scenario.title}"`);
     if (history) return history;
+    const notes = judgeNotesProblem(scenario.judge_notes, `scenario "${scenario.title}"`);
+    if (notes) return notes;
   }
 
   const tools = toolsProblem(c.tools);
@@ -583,6 +586,23 @@ export function configProblem(config: unknown): string | null {
 
   const judges = judgesProblem(c.judges, c.scenarios.length, c.turns);
   if (judges) return judges;
+
+  // The note each judge appends to its criterion: a name some scenario of
+  // this run carries, or none.
+  const principalNote = judgeNoteChoiceProblem(
+    c.judge_note,
+    c.scenarios,
+    "the principal judge",
+  );
+  if (principalNote) return principalNote;
+  for (const [index, judge] of (c.judges ?? []).entries()) {
+    const chosen = judgeNoteChoiceProblem(
+      judge?.judge_note,
+      c.scenarios,
+      `judge ${index + 1}`,
+    );
+    if (chosen) return chosen;
+  }
 
   // One link per judge per run. Naming the same judge twice would ask for two
   // columns holding the same verdicts, and the second insert would fail on the

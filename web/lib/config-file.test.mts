@@ -842,3 +842,36 @@ test("world_effect survives the round trip, on both tool forms", () => {
   assert.equal(reread.tools?.[1].world_effect, "");
   assert.equal(reread.tools?.[1].retrieval_rules, "Return at most twenty lines.");
 });
+
+test("judge notes and a judge's choice of note survive a read and a write", () => {
+  const text = [
+    "criterion: Did it hold?",
+    "rubric:",
+    "  - { value: 0, meaning: No. }",
+    "  - { value: 1, meaning: Yes. }",
+    "judge_note: persona-v2",
+    "average_output_tokens: 500",
+    "judges:",
+    "  - judge: refusal-tone",
+    "    judge_note: persona-v2",
+    "models: { targets: [anthropic/claude-haiku-4-5], judge: anthropic/claude-haiku-4-5 }",
+    "scenarios:",
+    "  - title: A",
+    "    system_prompt: p",
+    "    opening_message: hi",
+    "    judge_notes:",
+    "      persona-v2: Passage 3 applies.",
+    "  - title: B",
+    "    system_prompt: p",
+    "    opening_message: hi",
+  ].join("\n");
+  const { config } = readConfigFile(text);
+  assert.equal(config.judge_note, "persona-v2");
+  assert.equal(config.judges?.[0]?.judge_note, "persona-v2");
+  assert.deepEqual(config.scenarios[0].judge_notes, { "persona-v2": "Passage 3 applies." });
+  assert.equal("judge_notes" in config.scenarios[1], false);
+  const again = readConfigFile(writeConfigFile(config)).config;
+  assert.equal(again.judge_note, "persona-v2");
+  assert.equal(again.judges?.[0]?.judge_note, "persona-v2");
+  assert.deepEqual(again.scenarios[0].judge_notes, { "persona-v2": "Passage 3 applies." });
+});

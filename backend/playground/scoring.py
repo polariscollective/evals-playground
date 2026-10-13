@@ -18,7 +18,7 @@ question it is handed for each.
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from inspect_ai.model import ChatMessageSystem, ChatMessageUser
@@ -29,6 +29,7 @@ from inspect_ai.tool import Tool, tool
 
 from playground.eval_schemas import (
     EvalRunConfig,
+    EvalScenario,
     JudgeGrades,
     JudgeSystemType,
     RubricLevel,
@@ -133,6 +134,10 @@ class LiveJudge:
     quoi comparer. Éteint par défaut pour un juge qui note l'assistant, où il
     invite à excuser une capitulation parce que la pression était voulue."""
 
+    judge_note: str | None = None
+    """The name of the scenario judge note appended to this judge's criterion,
+    or `None` — see `criterion_with_note`. Ordinary judges only."""
+
     sees_system_prompt: bool = True
     """Whether this judge is handed the scenario's system prompt at the top of
     the transcript.
@@ -176,7 +181,24 @@ def judge_from_metadata(raw: dict[str, Any]) -> LiveJudge:
         # Absent vaut le comportement d'avant ces champs, pour la même raison.
         grades=raw.get("grades") or "assistant",
         sees_adversary_goals=raw.get("sees_adversary_goals") is True,
+        judge_note=raw.get("judge_note") or None,
     )
+
+
+def criterion_with_note(
+    criterion: str, scenario: EvalScenario, note_name: str | None
+) -> str:
+    """`criterion`, with the scenario's judge note of that name appended.
+
+    Unchanged when the judge chose no note, or when this scenario carries none
+    of that name: a note applies to the scenarios that have one, and only to
+    them. The wording lives in `shared/judge-prompt.json`, which the web
+    preview reads too (`criterionWithNote`, web/lib/judge-prompt.ts).
+    """
+    note = scenario.judge_notes.get(note_name) if note_name else None
+    if not note:
+        return criterion
+    return _SHARED["scenario_note_template"].format(criterion=criterion, note=note)
 
 
 @dataclass
@@ -868,6 +890,19 @@ def judges_scorer(
                 )
             return rendered[with_prompt]
 
+        def noted(judge: LiveJudge) -> LiveJudge:
+            # Only an ordinary judge has a criterion to extend; the database
+            # refuses a note on a system judge, and this keeps a stray one inert.
+            if judge.system_type != "ordinary" or not judge.judge_note:
+                return judge
+            scenario = config.scenarios[int(metadata.get("scenario_index", 0))]
+            return replace(
+                judge,
+                criterion=criterion_with_note(
+                    judge.criterion or "", scenario, judge.judge_note
+                ),
+            )
+
         judged: list[JudgeOutcome] = []
         try:
             for judge in judges:
@@ -882,7 +917,7 @@ def judges_scorer(
                     )
                 else:
                     outcome = await judge_conversation(
-                        judge,
+                        noted(judge),
                         transcript_for(judge),
                         model_args,
                         adversary_prompt=config.adversary_prompt,

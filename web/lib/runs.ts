@@ -1,6 +1,9 @@
 // Reading and writing the runs. The only place that knows the shape of the two
 // tables.
 import "server-only";
+import { judgeNoteChoiceProblem } from "./judge-notes.ts";
+import { planCopy, type CopyRequest } from "./run-copy.ts";
+import { databaseRefusal } from "./database-refusal.ts";
 import { randomUUID } from "node:crypto";
 // The matrix is computed where it is looked at: the screen allows rereading a
 // run another way — a median, a folded scale — and two computations of the same
@@ -83,6 +86,7 @@ import type { PublicRunDetail } from "./public-run";
 // outside this task's scope — see the report.
 import { AWAKE_TYPE, type JudgeVerdict } from "./awareness.ts";
 import type {
+  CopyScope,
   CostEstimate,
   Draft,
   EvalModels,
@@ -566,6 +570,8 @@ async function attachJudges(
     // for a run launched before it existed, as for a run where nobody declared
     // a target.
     targets: link.targets ?? null,
+    // Same: `null` on a link made before the column, or with no note.
+    judge_note: link.judge_note ?? null,
     run_judge_id: link.id,
     judge: link.judge,
     is_principal: link.is_principal,
@@ -1252,6 +1258,15 @@ export async function addJudge(
   if (runs.length === 0) throw new NotFound(`Unknown run: ${runId}`);
   const run = runs[0];
 
+  // The note it appends to its criterion: one some scenario of this run
+  // carries, or none. Checked before anything is written.
+  const noteProblem = judgeNoteChoiceProblem(
+    spec.judge_note,
+    run.config.scenarios,
+    "the new judge",
+  );
+  if (noteProblem) throw new ConfigProblem(noteProblem);
+
   // Every conversation already laid down, finished or not: a cell still
   // `pending`/`running` will receive its score row like the others — see the
   // docstring for why a pending row must exist in advance, whatever the state of
@@ -1282,6 +1297,8 @@ export async function addJudge(
     // on a twelve-row run has to say what it expects of the twelve, which
     // `judgeSpecProblem` has already checked by this point.
     targets: spec.targets ?? null,
+    // Fixed here, for good: another note means another judge linked.
+    judge_note: spec.judge_note ?? null,
   });
   if (samples.length > 0) {
     await insert(
@@ -2295,4 +2312,139 @@ export async function importExtension(
     await failImport(runId, error);
   }
   return { run: before[0], summary: importSummary(checked.doc, expectation), cost };
+}
+
+// --- copying a run, and adding judge notes ----------------------------------
+//
+// See docs/superpowers/specs/2026-10-13-run-copies-and-judge-notes-design.md.
+// What a copy holds is decided in `run-copy.ts`; this part reads the source
+// and writes what that decided.
+
+/** Inserts `rows` in slices: a run's transcripts can weigh megabytes, more
+ *  than one request should carry. */
+async function insertInSlices(table: string, rows: unknown[], size: number): Promise<void> {
+  for (let start = 0; start < rows.length; start += size) {
+    await insert(table, rows.slice(start, start + size));
+  }
+}
+
+/** Copies a run into a new, independent one, owned by `createdBy`, and
+ *  returns it with the scope it took. Spends nothing.
+ *
+ * Throws `NotFound` for an unknown run, and `ConfigProblem` when the request
+ * names what the run does not hold, leaves out the principal, or the run is
+ * still being played. A failure halfway sets the half-written copy aside
+ * (`deleted_at`) rather than leave it in the lists. */
+export async function copyRun(
+  sourceId: string,
+  request: CopyRequest,
+  createdBy: string,
+  options: { label?: string | null; launchedVia: "ui" | "mcp" },
+): Promise<{ runId: string; scope: CopyScope; moneySaved: number | null }> {
+  const runs = await select<EvalRun>(RUNS, {
+    id: `eq.${sourceId}`,
+    deleted_at: "is.null",
+    select: "*",
+    limit: 1,
+  });
+  if (runs.length === 0) throw new NotFound(`Unknown run: ${sourceId}`);
+  const run = runs[0];
+
+  const [samples, links, scores, toolResults] = await Promise.all([
+    select<EvalSample>(SAMPLES, { run_id: `eq.${sourceId}`, select: "*" }),
+    loadLiveRunJudges(sourceId),
+    select<JudgeScore>(JUDGE_SCORES, {
+      run_id: `eq.${sourceId}`,
+      select: "run_judge_id,sample_id,status,score,justification,error",
+    }),
+    select<{ scenario_index: number } & Record<string, unknown>>(TOOL_RESULTS, {
+      run_id: `eq.${sourceId}`,
+      select: "*",
+    }),
+  ]);
+
+  const plan = planCopy(
+    {
+      run,
+      samples: samples.map(({ run_id: _runId, ...sample }) => sample),
+      links,
+      scores,
+      toolResults: toolResults.map(({ run_id: _runId, ...row }) => row),
+    },
+    request,
+    randomUUID,
+  );
+  if ("problem" in plan) throw new ConfigProblem(plan.problem);
+
+  const runId = randomUUID();
+  await insert(RUNS, {
+    id: runId,
+    user_email: createdBy,
+    label: options.label?.trim() || `Copy of ${run.label ?? sourceId}`,
+    status: run.status,
+    config: plan.config,
+    notes: run.notes,
+    total_samples: plan.samples.length,
+    // Where the cells were played does not change by copying them: a copy is
+    // extended the way its source was.
+    origin: run.origin,
+    cost_usd: plan.moneySaved,
+    money_saved: plan.moneySaved,
+    copied_from: sourceId,
+    copy_scope: plan.scope,
+    launched_via: options.launchedVia,
+    started_at: NOW,
+    finished_at: NOW,
+  });
+  try {
+    await insertInSlices(
+      SAMPLES,
+      plan.samples.map((sample) => ({ ...sample, run_id: runId })),
+      100,
+    );
+    // Every link in one request: the principal must be there from the first.
+    await insert(
+      RUN_JUDGES,
+      plan.links.map((link) => ({ ...link, run_id: runId })),
+    );
+    await insertInSlices(
+      JUDGE_SCORES,
+      plan.scores.map((row) => ({ ...row, run_id: runId })),
+      1000,
+    );
+    await insertInSlices(
+      TOOL_RESULTS,
+      plan.toolResults.map((row) => ({ ...row, run_id: runId })),
+      500,
+    );
+  } catch (error) {
+    await update(RUNS, { deleted_at: NOW, status: "error" }, { id: `eq.${runId}` }).catch(
+      () => undefined,
+    );
+    throw error;
+  }
+  return { runId, scope: plan.scope, moneySaved: plan.moneySaved };
+}
+
+/** Adds the note `name` to the scenarios `notes` names, by index, and
+ *  returns the run's new configuration. Never changes or removes a note: the
+ *  database function refuses a name one of those scenarios already carries,
+ *  and that refusal comes back as a `ConfigProblem` carrying its sentence. */
+export async function addJudgeNotes(
+  runId: string,
+  name: string,
+  notes: Record<string, string>,
+): Promise<EvalRunConfig> {
+  try {
+    return await rpc<EvalRunConfig>("eval_runs_add_judge_notes", {
+      p_run_id: runId,
+      p_name: name,
+      p_notes: notes,
+    });
+  } catch (error) {
+    const refusal = databaseRefusal(error);
+    if (refusal?.startsWith("Unknown run")) throw new NotFound(refusal);
+    if (refusal) throw new ConfigProblem(refusal);
+    throw error;
+  }
 }
