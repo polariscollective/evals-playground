@@ -227,6 +227,23 @@ export function extensionExpectation(input: {
   };
 }
 
+/** What `launch_draft` says of an extension that adds nothing; an import says
+ *  the same, since it is the same draft. */
+export const NOTHING_TO_IMPORT = "Nothing to add: that combination is already covered.";
+
+/** Whether the draft leaves nothing to import: no cell to play, and no new
+ *  judge with a finished conversation to grade.
+ *
+ * Refused before anything is written. Applying such an extension would still
+ * close the run with this import's cost, which is unknown when nothing is
+ * played: the declared cost of everything before it would be wiped. */
+export function nothingToImport(expectation: ImportExpectation): boolean {
+  return (
+    expectation.cells.length === 0 &&
+    (expectation.newJudges.length === 0 || expectation.conversations.length === 0)
+  );
+}
+
 /** The document to fill, every entry present and every value to provide left
  *  empty.
  *

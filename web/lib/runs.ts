@@ -51,6 +51,8 @@ import {
   checkImport,
   extensionExpectation,
   importCost,
+  NOTHING_TO_IMPORT,
+  nothingToImport,
   importSummary,
   importWrites,
   judgeKey,
@@ -2238,14 +2240,31 @@ export async function importExtension(
 ): Promise<{ run: EvalRun; summary: string; cost: number | null } | { problems: string[] }> {
   const runId = draft.extends_run_id;
   const expectation = await expectationForDraft(draft);
+  if (nothingToImport(expectation)) return { problems: [NOTHING_TO_IMPORT] };
   const checked = checkImport(raw, expectation);
   if ("problems" in checked) return checked;
 
   const before = await select<EvalRun>(RUNS, { id: `eq.${runId}`, select: "*", limit: 1 });
   const cost = addCosts(before[0].cost_usd, importCost(checked.doc));
+  let added: number;
+  let newRunJudgeIds: string[];
   try {
     // Inside the try: extendRun marks the run triggered, so its failures must reach failImport.
-    const { newRunJudgeIds } = await extendRun(runId, draft.config, caller, "mcp");
+    ({ added, newRunJudgeIds } = await extendRun(runId, draft.config, caller, "mcp"));
+  } catch (error) {
+    return failImport(runId, error);
+  }
+  // `nothingToImport` refused an empty plan above, so this means the plan read
+  // here and the one extendRun applied disagree. extendRun then wrote nothing,
+  // and closing the run now would write this import's cost over the run's for
+  // nothing played: refuse loudly, leaving the run as it was.
+  if (added === 0) {
+    throw new Error(
+      `The extension of run ${runId} added nothing when it was applied, though its draft ` +
+        "planned something. Nothing was written; read the run again before importing.",
+    );
+  }
+  try {
     const samples = await select<SampleRef>(SAMPLES, {
       run_id: `eq.${runId}`,
       select: "id,scenario_index,target_model,repetition",

@@ -39,7 +39,13 @@ import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
-import { importSkeleton, playedElsewhereProblem, playedHereProblem } from "@/lib/import-results";
+import {
+  importSkeleton,
+  NOTHING_TO_IMPORT,
+  nothingToImport,
+  playedElsewhereProblem,
+  playedHereProblem,
+} from "@/lib/import-results";
 import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { JudgeTarget } from "@/lib/types";
@@ -1553,7 +1559,10 @@ const handler = createMcpHandler((server) => {
         if (here) return toolError(here);
       }
       try {
-        const skeleton = importSkeleton(await expectationForDraft(draft));
+        const expectation = await expectationForDraft(draft);
+        // A skeleton with nothing to fill would only be refused on import.
+        if (nothingToImport(expectation)) return toolError(NOTHING_TO_IMPORT);
+        const skeleton = importSkeleton(expectation);
         return { content: [{ type: "text", text: JSON.stringify(skeleton, null, 2) }] };
       } catch (error) {
         if (error instanceof ConfigProblem || error instanceof NotFound) {

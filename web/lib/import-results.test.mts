@@ -13,6 +13,7 @@ import {
   importWrites,
   judgeKey,
   launchJudgeKeys,
+  nothingToImport,
   playedElsewhereProblem,
   playedHereProblem,
   runExpectation,
@@ -580,4 +581,20 @@ test("the two doors stay apart", () => {
   assert.equal(playedElsewhereProblem({ id: "r", origin: "cloud-run" }), null);
   assert.match(playedHereProblem({ id: "r", origin: "cloud-run" }) ?? "", /launch_draft/);
   assert.equal(playedHereProblem({ id: "r", origin: "external" }), null);
+});
+
+test("an extension that adds no cell and no grade to give has nothing to import", () => {
+  const empty = extensionExpectation({
+    cases: [],
+    deepened: [],
+    turns: 2,
+    liveJudges: [],
+    newJudgeScales: [],
+    doneConversations: [],
+  });
+  assert.equal(nothingToImport(empty), true);
+  // New judges, but no finished conversation for them to grade.
+  assert.equal(nothingToImport({ ...JUDGE_EXTENSION, conversations: [] }), true);
+  assert.equal(nothingToImport(JUDGE_EXTENSION), false);
+  assert.equal(nothingToImport(EXPECT), false);
 });
