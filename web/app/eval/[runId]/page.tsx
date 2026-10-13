@@ -1165,7 +1165,9 @@ export default function EvalRunPage({
         </div>
       )}
 
-      {extending && !running && (
+      {/* Never on an imported run: our engine plays none of it, so an
+          extension of it is filled by the agent that played it, by MCP. */}
+      {extending && !running && !external && (
         <ExtendPanel
           run={run}
           // The living judges, never `run.config.judges`: see the comment on

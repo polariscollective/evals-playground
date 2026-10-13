@@ -2112,7 +2112,13 @@ const handler = createMcpHandler((server) => {
       );
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
-      const address = `${origin}/eval/${input.run_id}?extend=${draftId}`;
+      // An imported run is never extended from the web app (its page opens no
+      // extension panel), so its draft's address is the run itself: `?extend=`
+      // would point at a panel that is not there.
+      const imported = run.origin === "external";
+      const address = imported
+        ? `${origin}/eval/${input.run_id}`
+        : `${origin}/eval/${input.run_id}?extend=${draftId}`;
       // The same warning as on the screen side (§7): serving from an empty world,
       // with nothing refusing it — see `extendWorldWarnings`.
       const warnings = extendWorldWarnings(request, run.config);
@@ -2122,6 +2128,19 @@ const handler = createMcpHandler((server) => {
       // draft for that reason alone, before even looking at the budget — the same
       // refusal, word for word.
       if (plan.cases.length === 0 && plan.continued === 0 && plan.newJudges.length === 0) {
+        if (imported) {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `Saved as a draft extension of "${run.label ?? input.run_id}": nothing to add ` +
+                  "or deepen, so nothing to import. Nothing to add: that combination is already " +
+                  `covered.${warningsSuffix}\n\n${address}`,
+              },
+            ],
+          };
+        }
         return {
           content: [
             {
@@ -2149,6 +2168,25 @@ const handler = createMcpHandler((server) => {
         );
       }
       const summary = parts.join(" and ");
+
+      // Played outside the playground: our engine plays none of it, so there is
+      // no quote to set against the caps, and launch_draft would refuse it. Say
+      // how it is filled instead.
+      if (imported) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Saved as a draft extension of "${run.label ?? input.run_id}": ${summary}. ` +
+                "Nothing has been spent. This run was played outside the playground and " +
+                "imported, so this draft is not launched: play what it adds yourself, then fill " +
+                `it with get_import_skeleton and import_draft_results.${warningsSuffix}\n\n${address}`,
+            },
+          ],
+        };
+      }
+
       const quote = plan.estimate?.usd ?? 0;
 
       // What the user asked for: not a promise that this draft WILL be launchable,
