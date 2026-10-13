@@ -247,6 +247,8 @@ def test_the_live_judges_merge_link_and_configuration():
                 "system_type",
                 "is_principal",
                 "targets",
+                # The note a judge appends to its criterion lives on the link.
+                "judge_note",
                 "created_at",
             }
             return httpx.Response(

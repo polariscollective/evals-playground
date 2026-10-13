@@ -415,7 +415,7 @@ def load_live_run_judges(supabase: Supabase, run_id: str) -> list[dict[str, Any]
         # job dies on `KeyError: 'model'` before its first cell. That is what
         # killed the run of 10 September 2026. `tests/test_supabase_store.py`
         # pins this list, and `FakeSupabase` now projects on it.
-        select="id,run_id,judge_id,model,system_type,is_principal,targets,created_at",
+        select="id,run_id,judge_id,model,system_type,is_principal,targets,judge_note,created_at",
         order="created_at",
     )
     if not links:

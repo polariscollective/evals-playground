@@ -2,7 +2,7 @@
 // actually sends it — see `shared/judge-prompt.json`. A preview describing a
 // prompt that is no longer the one that leaves would be a lie nobody would see.
 import { SHARED_JUDGE_PROMPT } from "./shared.ts";
-import type { JudgeGrades, RubricLevel } from "./types";
+import type { EvalScenario, JudgeGrades, RubricLevel } from "./types";
 
 /** The system message an ordinary judge receives, for whose turns it grades.
  *
@@ -126,4 +126,18 @@ export function scorePrompt(
       )
       .join(SHARED_JUDGE_PROMPT.value_separator),
   });
+}
+
+/** `criterion`, with the scenario's judge note of that name appended — the
+ *  twin of `criterion_with_note` (backend/playground/scoring.py), on the same
+ *  shared wording. Unchanged when no note is chosen, or when this scenario
+ *  carries none of that name. */
+export function criterionWithNote(
+  criterion: string,
+  scenario: Pick<EvalScenario, "judge_notes"> | null | undefined,
+  noteName: string | null | undefined,
+): string {
+  const note = noteName ? scenario?.judge_notes?.[noteName] : undefined;
+  if (!note) return criterion;
+  return fill(SHARED_JUDGE_PROMPT.scenario_note_template, { criterion, note });
 }

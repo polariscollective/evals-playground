@@ -46,6 +46,8 @@ export interface JudgeForConfig {
   /** The model that graded, read from the LINK since judges became a library:
    *  the same question put to two models is one judge, not two. */
   model: string;
+  /** The scenario judge note the link reads, when the caller holds it. */
+  judge_note?: string | null;
 }
 
 /** A run's configuration, with its judges replaced by those really living
@@ -92,6 +94,10 @@ export function withLiveJudges(
 
   return {
     ...config,
+    // The note the live principal reads, when the caller holds its link.
+    ...(principal && "judge_note" in principal
+      ? { judge_note: principal.judge_note ?? null }
+      : {}),
     criterion: principal?.judge.criterion ?? config.criterion,
     rubric: principal?.judge.rubric ?? config.rubric,
     models: {
@@ -107,6 +113,7 @@ export function withLiveJudges(
       criterion: entry.judge.criterion ?? "",
       rubric: entry.judge.rubric ?? [],
       model: entry.model,
+      ...(entry.judge_note ? { judge_note: entry.judge_note } : {}),
     })),
     check_eval_awareness: awakeStillLinked,
     check_adversary_fidelity: fidelityStillLinked,

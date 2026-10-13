@@ -139,6 +139,7 @@ function runJudge(
   return {
     run_judge_id: j.id,
     judge: j,
+    judge_note: null,
     is_principal: extra.isPrincipal ?? false,
     system_type: j.system_type,
     model: judgeOverrides.model ?? "anthropic/claude-haiku-4-5",

@@ -117,6 +117,17 @@ export interface EvalScenario {
    * list offers none. Without the third, one could not compare a row with tools
    * to the same row without them. */
   tools?: string[] | null;
+  /** Named notes for the judges, on this scenario only: `{ name: text }`.
+   *
+   * A judge linked with `judge_note: <name>` gets this scenario's text of that
+   * name appended to its criterion, as "For this conversation: <text>". A note
+   * says how the criterion applies here (which passage, which concrete
+   * behaviour matches which level), never the grade expected.
+   *
+   * Added, never changed or removed: the database refuses both (migration
+   * `20261013160000_eval_runs_copies_and_judge_notes.sql`, polaris-supabase).
+   * Another wording goes under another name. */
+  judge_notes?: Record<string, string>;
 }
 
 export interface EvalModels {
@@ -345,6 +356,12 @@ export interface RunJudge {
    *  `run_judges_single_system_type_idx` now filters on
    *  `system_type <> 'ordinary'`, no longer on `is not null`. */
   system_type: JudgeSystemTypeColumn;
+  /** The name of the scenario judge note appended to this judge's criterion,
+   *  or `null`. Where a conversation's scenario has a note of that name, the
+   *  judge reads "For this conversation: <text>" after its criterion; where it
+   *  has none, nothing is added. Set when the judge is linked and never
+   *  changed (a trigger refuses it); ordinary judges only. */
+  judge_note: string | null;
   /** The judge the matrix shows. The database guarantees AT MOST one living
    *  principal link per run — the partial unique index
    *  (`run_judges_single_principal_idx`), never "exactly one". The "at least
@@ -484,6 +501,8 @@ export interface RunJudgeView {
    * know which rows are controls. `null`: this judge declares none, and the
    * deviation reading then has nothing to show for it. */
   targets: JudgeTarget[] | null;
+  /** See `RunJudge.judge_note`. */
+  judge_note: string | null;
 }
 
 // --- The library ------------------------------------------------------------
@@ -596,6 +615,10 @@ export interface JudgeSpec {
    *  `Judge.higher_is_better`. Absent means `true`, the convention every scale
    *  written before this field followed. */
   higher_is_better?: boolean;
+  /** The scenario judge note this judge appends to its criterion — see
+   *  `RunJudge.judge_note`. It belongs to the link, so it may stand beside a
+   *  handle. */
+  judge_note?: string | null;
 }
 
 /** A judge as somebody WRITES it, where `JudgeSpec` is a judge as the database
@@ -665,6 +688,9 @@ export interface ScenarioSource {
   column_opening_message: string;
   /** The column carrying the seeded history, as JSON. Empty if there is none. */
   column_history?: string;
+  /** The column holding each scenario's judge notes, as JSON. Empty if there
+   *  is none. */
+  column_judge_notes?: string;
   /** The column saying which tools the scenario receives. Empty if there is none. */
   column_tools?: string;
   /** The column carrying the scenario's laboratory note. */
@@ -692,6 +718,9 @@ export interface EvalRunConfig {
   /** Whether the PRINCIPAL judge sees the scenario's system prompt — see
    *  `Judge.sees_system_prompt`. Absent means `true`. */
   sees_system_prompt?: boolean;
+  /** The scenario judge note the PRINCIPAL appends to its criterion — see
+   *  `EvalScenario.judge_notes` and `RunJudge.judge_note`. */
+  judge_note?: string | null;
   /** The run's secondary judges, on top of the principal described by
    *  `criterion`, `rubric` and `models.judge` above.
    *
@@ -1027,6 +1056,27 @@ export interface EvalRun {
    * which creates no run. Default `'ui'` in the database: the runs predating
    * this column could never have come from anywhere else. */
   launched_via: "ui" | "mcp";
+  /** The run this one was copied from, or `null`. Only a record: nothing
+   *  links the two afterwards. */
+  copied_from: string | null;
+  /** What the copy took from its source, or `null` on a run that is no copy. */
+  copy_scope: CopyScope | null;
+  /** The summed cost of the cells copied, what replaying them would have
+   *  cost; `null` on a run that is no copy, or when one copied cell had no
+   *  known cost. */
+  money_saved: number | null;
+}
+
+/** What a copy took from its source run. */
+export interface CopyScope {
+  /** The source's scenario index of each scenario of the copy, in the copy's
+   *  order: `scenarios[i]` is the source index of the copy's scenario `i`. */
+  scenarios: number[];
+  target_models: string[];
+  /** The source's run judge ids kept, the principal among them. */
+  run_judge_ids: string[];
+  /** The source's repetition numbers kept, renumbered from 0 in this order. */
+  repetitions: number[];
 }
 
 /** A row of `mcp_launches`: a launch that succeeded through an MCP tool, `run`

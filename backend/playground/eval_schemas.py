@@ -620,6 +620,14 @@ class EvalScenario(BaseModel):
     six months later; a row described by what it removes, much less so.
     """
 
+    judge_notes: dict[str, str] = Field(default_factory=dict)
+    """Named notes for the judges, on this scenario only: `{name: text}`.
+
+    A judge linked with `judge_note: <name>` gets this scenario's text of that
+    name appended to its criterion (`criterion_with_note`, scoring.py). Added,
+    never changed or removed: the database refuses both.
+    """
+
     tools: list[str] | None = None
     """The tools offered to this scenario, by name.
 

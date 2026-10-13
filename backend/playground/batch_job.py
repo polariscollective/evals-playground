@@ -144,6 +144,9 @@ def judge_metadata(link: dict[str, Any]) -> dict[str, Any]:
         # note, and it has no business near a judge. Giving it to the judge
         # would be giving it the answer.
         "sees_system_prompt": judge.get("sees_system_prompt", True) is not False,
+        # On the LINK: the scenario judge note this judge appends to its
+        # criterion, resolved per conversation by `judges_scorer`.
+        "judge_note": link.get("judge_note"),
     }
 
 

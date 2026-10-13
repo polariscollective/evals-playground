@@ -564,7 +564,45 @@ above, one entry per extra judge:
   Expressed in **this judge's** scale, which is why the same row can aim at 4 for
   the judge grading deletion and at 10 for the judge grading honesty.
 - \`sees_system_prompt\`: optional, and true by default.
-- \`higher_is_better\`: optional, and true by default. See just below.
+- \`higher_is_better\`: optional, and true by default. See below.
+- \`judge_note\`: optional, the name of a scenario judge note this judge reads.
+  See just below.
+
+## A note for the judge on one scenario
+
+A criterion is written for every row. Some rows need it applied more
+precisely: which passage of the text governs this situation, which concrete
+behaviour here counts as which grade. Write that on the scenario, under a name,
+and have a judge read it:
+
+    judge_note: persona-v2           # the principal reads the notes of this name
+    judges:
+      - judge: was-it-honest
+        judge_note: persona-v2       # and so may an extra judge, named or described
+    scenarios:
+      - title: ...
+        judge_notes:
+          persona-v2: >-
+            Passage 3 of the constitution governs here. Naming the persona
+            before answering is the behaviour the top grade describes.
+
+A judge whose \`judge_note\` names \`persona-v2\` reads, right after its
+criterion, \`For this conversation: <text>\` on every scenario carrying a note
+of that name, and nothing on the others. A judge with no \`judge_note\` reads
+none. The built-in checks never read one.
+
+- A name is lowercase letters, digits and hyphens. A \`judge_note\` must name a
+  note at least one scenario carries; a name nobody carries is refused, so a
+  typo cannot pass unseen.
+- **A note never gives the grade expected.** It says how the criterion applies
+  to this scenario. The grade a well-behaved model should get goes in
+  \`targets\`, which no judge ever sees. \`read_advice\` with \`["judge"]\` says more.
+- **A note is never changed or removed**, by any door, once the run exists.
+  Another wording goes under another name. On a run that already exists,
+  \`add_judge_notes\` adds one, and a judge added with \`new_judges\` in
+  \`submit_draft_extension\` may name it in its own \`judge_note\`.
+- A judge's \`judge_note\` is fixed when it is linked to a run. To grade with
+  another note, add another judge.
 
 ## Which end of the scale is good
 
@@ -947,7 +985,35 @@ author, though: rewriting someone else's draft instead forks it, leaving the
 original untouched and giving you a new one of your own, at an address the
 response names. A launched draft refuses a rewrite from its own author, since the
 run it produced already points back to it, but forking one for someone else
-still works even then. Either way, nothing is launched.`,
+still works even then. Either way, nothing is launched.
+
+## Copying a run
+
+\`copy_run\` makes a new, independent run out of an existing one: its
+conversations exactly as played, its judges' grades and each cell's cost, whole
+or reduced to some scenarios, target models, judges and repetitions. Nothing is
+replayed and nothing is spent. Reach for it when I want to:
+
+- **grade again without replaying.** Copy the run, then add a judge to the copy
+  (\`submit_draft_extension\` with \`new_judges\`), perhaps with a
+  \`judge_note\`. The source keeps its grades untouched.
+- **build one company's run out of a common base.** Copy the base keeping that
+  company's model and the scenarios that concern it, then extend the copy with
+  its own scenarios and a judge that quotes its own text.
+
+What to know about a copy:
+
+- It keeps its source's origin for good. A copy of a run the playground played
+  is extended with \`launch_draft\`; a copy of an imported run with
+  \`get_import_skeleton\` and \`import_draft_results\`. The other way is refused.
+- The principal judge is always copied. Leave \`judges\` out to keep every live
+  judge, or name them by \`run_judge_id\` or \`slug\`.
+- Scenarios and repetitions are renumbered from 0, in the source's order. The
+  answer gives the source index of each new scenario; \`get_run_metadata\` on the
+  copy gives it again as \`copy_scope\`.
+- Its scenarios keep their judge notes, and its judges keep theirs.
+- Its \`cost_usd\` starts at what its copied cells cost, and \`money_saved\` says the
+  same sum: what replaying them would have cost, not money spent twice.`,
   sample: `A hundred scenarios in one YAML document is normal, and it goes through in one
 call. Do not summarise, do not stop at a sample, and do not spread them over
 several calls: one document holding everything is the simplest thing for both

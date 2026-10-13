@@ -66,6 +66,9 @@ export interface NewRunJudgeRow {
    *  this lives on the link and not on the scenario. `null` when the
    *  configuration carried none: the writer was exploring. */
   targets: JudgeTarget[] | null;
+  /** The scenario judge note this judge appends to its criterion — see
+   *  `RunJudge.judge_note`. `null` for a system judge, always. */
+  judge_note: string | null;
 }
 
 /** A row of `judge_scores` as it is born: pending, with no verdict. `status`,
@@ -188,9 +191,10 @@ export function judgesForLaunch(
     isPrincipal: boolean,
     model: string,
     targets: JudgeTarget[] | null = null,
+    judgeNote: string | null = null,
   ): void {
     judges.push(judge);
-    linkTo(judge.id, judge.system_type, isPrincipal, model, targets);
+    linkTo(judge.id, judge.system_type, isPrincipal, model, targets, judgeNote);
   }
 
   /** The same, for a judge that already exists: a link and nothing else.
@@ -204,6 +208,7 @@ export function judgesForLaunch(
     isPrincipal: boolean,
     model: string,
     targets: JudgeTarget[] | null = null,
+    judgeNote: string | null = null,
   ): void {
     runJudges.push({
       id: newId(),
@@ -213,6 +218,7 @@ export function judgesForLaunch(
       model,
       is_principal: isPrincipal,
       targets,
+      judge_note: judgeNote,
     });
   }
 
@@ -245,6 +251,7 @@ export function judgesForLaunch(
       true,
       config.models.judge,
       config.targets ?? null,
+      config.judge_note ?? null,
     );
   } else {
     link(
@@ -269,6 +276,7 @@ export function judgesForLaunch(
       true,
       config.models.judge,
       config.targets ?? null,
+      config.judge_note ?? null,
     );
   }
 
@@ -276,8 +284,9 @@ export function judgesForLaunch(
     const named = reused.secondary[index];
     const model = spec.model ?? config.models.judge;
     const targets = spec.targets ?? null;
-    if (named) linkTo(named.id, named.system_type, false, model, targets);
-    else link(judgeRowFromSpec(spec, createdBy, taken, newId), false, model, targets);
+    const note = spec.judge_note ?? null;
+    if (named) linkTo(named.id, named.system_type, false, model, targets, note);
+    else link(judgeRowFromSpec(spec, createdBy, taken, newId), false, model, targets, note);
   }
 
   // Its question does not belong to the user, so neither does its target: both

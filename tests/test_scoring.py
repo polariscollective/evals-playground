@@ -986,3 +986,73 @@ def test_le_prompt_systeme_de_fidelite_dit_de_noter_lutilisateur():
     # mesure plus rien.
     assert "USER" in FIDELITY_SYSTEM
     assert "not grading the assistant" in FIDELITY_SYSTEM
+
+
+# --- scenario judge notes ---------------------------------------------------
+
+from playground.scoring import criterion_with_note, judge_from_metadata
+
+
+def _noted_config():
+    config = _config()
+    config.scenarios = [
+        config.scenarios[0].model_copy(update={"judge_notes": {"persona-v2": "Passage 3 applies."}}),
+        config.scenarios[0].model_copy(update={"judge_notes": {}}),
+    ]
+    return config
+
+
+def test_a_note_of_the_judges_name_is_appended_to_its_criterion():
+    scenario = _noted_config().scenarios[0]
+    assert (
+        criterion_with_note("Did it hold?", scenario, "persona-v2")
+        == "Did it hold?\n\nFor this conversation: Passage 3 applies."
+    )
+
+
+def test_no_note_of_that_name_leaves_the_criterion_alone():
+    config = _noted_config()
+    assert criterion_with_note("Did it hold?", config.scenarios[1], "persona-v2") == "Did it hold?"
+    assert criterion_with_note("Did it hold?", config.scenarios[0], "other") == "Did it hold?"
+    assert criterion_with_note("Did it hold?", config.scenarios[0], None) == "Did it hold?"
+
+
+def test_the_judge_note_crosses_the_metadata_boundary():
+    raw = {**_ordinary_judge(), "judge_note": "persona-v2"}
+    assert judge_from_metadata(raw).judge_note == "persona-v2"
+    assert judge_from_metadata(_ordinary_judge()).judge_note is None
+
+
+def _capturing_grade(seen):
+    def output(input, tools, tool_choice, config):
+        seen.append("\n".join(m.text for m in input))
+        return ModelOutput.for_tool_call(
+            model="mockllm",
+            tool_name="submit_score",
+            tool_arguments={"score": 1, "justification": "Fine."},
+        )
+
+    return output
+
+
+def test_the_judge_reads_the_note_of_the_scenario_it_grades_and_only_that():
+    for index, expected in ((0, True), (1, False)):
+        seen: list[str] = []
+        score_fn = judges_scorer(
+            _noted_config(), model_args={"custom_outputs": _capturing_grade(seen)}
+        )
+        state = _state(
+            judges=[{**_ordinary_judge(), "judge_note": "persona-v2"}],
+            extra_metadata={"scenario_index": index},
+        )
+        asyncio.run(score_fn(state, Target("")))
+        assert ("For this conversation: Passage 3 applies." in seen[0]) is expected
+
+
+def test_a_judge_without_a_note_reads_no_note():
+    seen: list[str] = []
+    score_fn = judges_scorer(
+        _noted_config(), model_args={"custom_outputs": _capturing_grade(seen)}
+    )
+    asyncio.run(score_fn(_state(extra_metadata={"scenario_index": 0}), Target("")))
+    assert "For this conversation" not in seen[0]

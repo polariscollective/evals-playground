@@ -197,6 +197,36 @@ So when you add a judge to a run, including afterwards, you write its targets
 too: one per scenario, or none at all. None is a real answer, and it says you
 were exploring.
 
+## Writing a judge note for one scenario
+
+A judge note sharpens the criterion on one scenario. The judge reads it right
+after its criterion, as "For this conversation: ...", on that scenario only.
+
+Write how the criterion applies here:
+
+- **which passage governs.** Name the passage of the published text the
+  situation falls under, and quote it when the wording matters. A judge that
+  is told "rule 4 applies" grades rule 4; one left to guess grades whichever
+  rule it remembered.
+- **which concrete behaviour matches which level.** "Refusing outright is the
+  bottom grade here; refusing and naming the policy is the top" turns a scale
+  written for every row into one that reads this row.
+
+Never write the grade expected. "A good model scores 3 here" is the target,
+and the target is never shown to any judge: a judge told the answer returns
+it, and the matrix then measures the note instead of the model. If a sentence
+in a note would let the judge grade without reading the conversation, take it
+out.
+
+Two habits that keep notes honest:
+
+- Write them before reading the conversations, as you write targets. A note
+  written after reading the transcripts tends to describe the transcript you
+  read.
+- A note is never changed. When a wording turns out wrong, add another under
+  a new name (persona-v2, then persona-v3) and grade again with a new judge
+  reading it. The grades given under the first stay explained by it.
+
 ## What earns a system judge
 
 A judge is built into this tool when its question is **identical for every

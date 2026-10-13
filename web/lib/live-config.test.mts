@@ -154,3 +154,12 @@ test("the original configuration is never mutated", () => {
   ]);
   assert.equal(JSON.stringify(CONFIG), before);
 });
+
+test("the judge notes the live links read travel into the configuration", () => {
+  const live = withLiveJudges(CONFIG, [
+    { ...link("principal", true), judge_note: "persona-v2" },
+    { ...link("second", false), judge_note: "strict" },
+  ]);
+  assert.equal(live.judge_note, "persona-v2");
+  assert.equal(live.judges?.[0]?.judge_note, "strict");
+});

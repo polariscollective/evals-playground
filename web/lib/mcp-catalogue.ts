@@ -94,6 +94,25 @@ export const MCP_TOOLS: McpTool[] = [
     output: "The link, and the command that sends the file to it.",
   },
   {
+    name: "copy_run",
+    summary:
+      "A new, independent run holding another run's conversations, grades and cell costs, " +
+      "whole or reduced to some scenarios, models, judges and repetitions. It keeps its source's " +
+      "origin, and says what it was copied from and what replaying it would have cost. Nothing " +
+      "runs and nothing is spent.",
+    input: ["run_id", "scenario_indices?", "target_models?", "judges?", "repetitions?", "label?"],
+    output: "The copy's address, and the source index of each of its scenarios.",
+  },
+  {
+    name: "add_judge_notes",
+    summary:
+      "Adds one named note to some scenarios of a run, finished or not. A judge linked with that " +
+      "judge_note reads it after its criterion on those scenarios. Never changed, never removed. " +
+      "Nothing runs and nothing is spent.",
+    input: ["run_id", "name", "notes"],
+    output: "Where the note was added, or why nothing was.",
+  },
+  {
     name: "update_draft_run",
     summary:
       "Rewrites a draft in place rather than leaving a second one beside it. Someone else's " +

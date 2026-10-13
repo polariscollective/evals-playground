@@ -148,6 +148,8 @@ test("with no secondary judges and no awareness, one judge: the principal", () =
     // `null` and not an empty list: this configuration declares no target,
     // which says "I was exploring" — not "I expect zero of them".
     targets: null,
+    // No scenario note chosen.
+    judge_note: null,
   });
   // One score row per conversation, for this single judge.
   assert.equal(judgeScores.length, 2);
@@ -884,5 +886,28 @@ test("an extra judge chooses its own direction, and the run's does not leak into
   assert.deepEqual(
     judges.map((judge) => judge.higher_is_better),
     [true, false, true],
+  );
+});
+
+test("each judge carries the scenario note it chose onto its link", () => {
+  const { runJudges } = judgesForLaunch(
+    config({
+      judge_note: "persona-v2",
+      judges: [{ criterion: "Second?", rubric: RUBRIC, judge_note: "strict" }],
+    }),
+    "run-1",
+    "a@b.c",
+    [],
+    fresh(),
+    seeded(),
+    counter(),
+  );
+  assert.deepEqual(
+    runJudges.map((link) => [link.system_type, link.is_principal, link.judge_note]),
+    [
+      ["ordinary", true, "persona-v2"],
+      ["ordinary", false, "strict"],
+      ["awake", false, null],
+    ],
   );
 });

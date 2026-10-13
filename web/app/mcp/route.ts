@@ -53,6 +53,7 @@ import {
   playedElsewhereProblem,
   playedHereProblem,
 } from "@/lib/import-results";
+import { judgeNoteChoiceProblem, noteNamesOf } from "@/lib/judge-notes";
 import { authorOnly, extensionRefusal, importDraft } from "@/lib/import-draft";
 import { sealUploadLink, UPLOAD_LINK_TTL_MS } from "@/lib/import-upload-link";
 import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
@@ -61,6 +62,8 @@ import type { JudgeTarget } from "@/lib/types";
 import {
   ConfigProblem,
   NotFound,
+  addJudgeNotes,
+  copyRun,
   createRun,
   expectationForDraft,
   extendRun,
@@ -307,6 +310,7 @@ function judgeIdentity(view: {
    *  same question graded by two models is one judge, not two. */
   model: string;
   targets?: JudgeTarget[] | null;
+  judge_note?: string | null;
 }) {
   const system =
     view.system_type === "ordinary" ? null : SYSTEM_JUDGES[view.system_type];
@@ -350,6 +354,10 @@ function judgeIdentity(view: {
     // distinction, `get_run_trajectory` would return `targets: null` everywhere
     // and make a study look like an exploration.
     ...("targets" in view ? { targets: view.targets ?? null } : {}),
+    // The scenario judge note this judge appends to its criterion, on the
+    // link: `null` for none. Omitted, like `targets`, where the caller does
+    // not hold the link.
+    ...("judge_note" in view ? { judge_note: view.judge_note ?? null } : {}),
   };
 }
 
@@ -530,6 +538,22 @@ const handler = createMcpHandler((server) => {
         analysis: run.analysis,
         total_samples: run.total_samples,
         cost_usd: run.cost_usd,
+        // A copy's record of its source, all three null on a run that is no
+        // copy. `money_saved` is what replaying the copied cells would have
+        // cost: it is already inside `cost_usd`, and was not spent twice.
+        copied_from: run.copied_from ?? null,
+        copy_scope: run.copy_scope ?? null,
+        money_saved: run.money_saved ?? null,
+        // Every judge note name the scenarios carry, with the scenarios that
+        // carry it. The texts are in get_run_config's YAML.
+        judge_notes: Object.fromEntries(
+          noteNamesOf(run.config.scenarios).map((name) => [
+            name,
+            run.config.scenarios.flatMap((scenario, index) =>
+              scenario.judge_notes?.[name] !== undefined ? [index] : [],
+            ),
+          ]),
+        ),
         criterion: principal?.judge.criterion ?? run.config.criterion,
         rubric: principal?.judge.rubric ?? run.config.rubric,
         models: run.config.models,
@@ -1851,6 +1875,14 @@ const handler = createMcpHandler((server) => {
                 .string()
                 .optional()
                 .describe("Defaults to the run's judge model. Same catalogue as everywhere else."),
+              judge_note: z
+                .string()
+                .optional()
+                .describe(
+                  "The name of a scenario judge note (add_judge_notes) this judge appends to its " +
+                    "criterion, as \"For this conversation: <text>\", on every scenario that carries " +
+                    "one; nothing on the others. Fixed once linked: another note means another judge.",
+                ),
             }),
           )
           .optional()
@@ -1985,6 +2017,17 @@ const handler = createMcpHandler((server) => {
         ...(input.deepen === undefined ? {} : { deepen: input.deepen }),
         ...(input.new_judges === undefined ? {} : { new_judges: input.new_judges }),
       };
+
+      // A judge's note must be one some scenario of this run carries: said
+      // now, before a draft that could only fail at launch is saved.
+      for (const [index, judge] of (input.new_judges ?? []).entries()) {
+        const noted = judgeNoteChoiceProblem(
+          judge.judge_note,
+          run.config.scenarios,
+          `new_judges[${index}]`,
+        );
+        if (noted) return toolError(noted);
+      }
 
       // The same checks as the extension route, on deposit rather than at launch:
       // an agent must know straight away that its proposal does not hold, and a
@@ -2137,6 +2180,164 @@ const handler = createMcpHandler((server) => {
           },
         ],
       };
+    },
+  );
+
+  server.registerTool(
+    "copy_run",
+    {
+      title: "Copy a run, with its conversations and grades",
+      description:
+        "Starts nothing and spends nothing: no model is called. Creates a new, independent run " +
+        "from an existing one, holding its conversations exactly as played, its judges' grades " +
+        "and each cell's cost, whole or reduced to some scenarios, target models, judges and " +
+        "repetitions. Use it to grade again without replaying (add a judge to the copy), or to " +
+        "build one company's run out of a common base: keep its model and the scenarios that " +
+        "concern it, then extend the copy with its own scenarios.\n\n" +
+        "The copy keeps its source's origin for good: a copy of a run the playground played is " +
+        "extended with launch_draft, a copy of an imported run with get_import_skeleton and " +
+        "import_draft_results, never the other way round. The principal judge is always copied. " +
+        "Scenarios are renumbered from 0 in the source's order, repetitions too; the answer gives " +
+        "the old index of each new scenario. The copy carries copied_from, copy_scope and " +
+        "money_saved (what replaying its cells would have cost, already inside its cost_usd), " +
+        "which get_run_metadata returns. Any run can be copied by anyone; the copy is yours.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run to copy."),
+        scenario_indices: z
+          .array(z.number().int().min(0))
+          .optional()
+          .describe("Scenarios to keep, 0-based. Absent keeps them all."),
+        target_models: z
+          .array(z.string())
+          .optional()
+          .describe("Target models to keep. Absent keeps them all."),
+        judges: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Judges to keep, by run_judge_id or by slug (get_run_metadata lists both). Must " +
+              "include the principal. Absent keeps every live judge.",
+          ),
+        repetitions: z
+          .array(z.number().int().min(0))
+          .optional()
+          .describe("Repetition numbers to keep, renumbered from 0. Absent keeps them all."),
+        label: z.string().optional().describe("The copy's label. Absent: \"Copy of <source label>\"."),
+      }),
+    },
+    async (input, ctx) => {
+      const found = await runOrError(input.run_id, { withJudges: true });
+      if ("error" in found) return found.error;
+      const live = found.run.judges ?? [];
+      let runJudgeIds: string[] | undefined;
+      if (input.judges) {
+        runJudgeIds = [];
+        for (const wanted of input.judges) {
+          const link = live.find(
+            (entry) => entry.run_judge_id === wanted || entry.judge.slug === wanted,
+          );
+          if (!link) {
+            return toolError(
+              `No live judge of run ${input.run_id} goes by "${wanted}". get_run_metadata lists ` +
+                "each judge's run_judge_id and slug.",
+            );
+          }
+          runJudgeIds.push(link.run_judge_id);
+        }
+      }
+      const caller = await callerEmail(ctx);
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      try {
+        const copy = await copyRun(
+          input.run_id,
+          {
+            scenario_indices: input.scenario_indices,
+            target_models: input.target_models,
+            run_judge_ids: runJudgeIds,
+            repetitions: input.repetitions,
+          },
+          caller,
+          { label: input.label, launchedVia: "mcp" },
+        );
+        const saved =
+          copy.moneySaved === null
+            ? "what replaying them would have cost is unknown (a copied cell has no known cost)"
+            : `replaying them would have cost ${formatUsd(copy.moneySaved)}`;
+        const mapping = copy.scope.scenarios
+          .map((old, index) => `${index} ← ${old}`)
+          .join(", ");
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Copied as run ${copy.runId}: ${copy.scope.scenarios.length} scenario(s), ` +
+                `${copy.scope.target_models.length} target model(s), ` +
+                `${copy.scope.run_judge_ids.length} judge(s), ` +
+                `${copy.scope.repetitions.length} repetition(s). Nothing was spent; ${saved}.\n\n` +
+                `Scenarios, new index ← source index: ${mapping}.\n\n${origin}/eval/${copy.runId}`,
+            },
+          ],
+        };
+      } catch (error) {
+        if (error instanceof ConfigProblem || error instanceof NotFound) {
+          return toolError(error.message);
+        }
+        throw error;
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_judge_notes",
+    {
+      title: "Add a named judge note to some scenarios of a run",
+      description:
+        "Starts nothing and spends nothing. Adds one note, under one name, to some scenarios of " +
+        "a run, finished or not. A judge linked with that judge_note (new_judges in " +
+        "submit_draft_extension, or judge_note in a draft's YAML) reads, after its criterion, " +
+        "\"For this conversation: <text>\" on each scenario carrying a note of that name, and " +
+        "nothing on the others. Read read_advice(\"judge\") first: a note says how the criterion " +
+        "applies to this scenario, never the grade expected.\n\n" +
+        "A note is never changed or removed, by any door. A name one of the scenarios named " +
+        "already carries is refused, and nothing is written: write another wording under another " +
+        "name. Restricted to the run's own creator.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run's UUID."),
+        name: z
+          .string()
+          .describe("The note's name: lowercase letters, digits and hyphens, like persona-v2."),
+        notes: z
+          .record(z.string(), z.string())
+          .describe("The text for each scenario, keyed by its 0-based index as a string."),
+      }),
+    },
+    async (input, ctx) => {
+      const found = await runOrError(input.run_id, { withJudges: false });
+      if ("error" in found) return found.error;
+      const ownership = authorOnly(found.run.run.user_email, await callerEmail(ctx));
+      if (ownership) return toolError(ownership);
+      try {
+        const config = await addJudgeNotes(input.run_id, input.name, input.notes);
+        const where = Object.keys(input.notes)
+          .map((key) => `${key} (${config.scenarios[Number(key)]?.title ?? "?"})`)
+          .join(", ");
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Added the judge note "${input.name}" to scenario(s) ${where}. A judge linked ` +
+                `with judge_note: ${input.name} now reads it there.`,
+            },
+          ],
+        };
+      } catch (error) {
+        if (error instanceof ConfigProblem || error instanceof NotFound) {
+          return toolError(error.message);
+        }
+        throw error;
+      }
     },
   );
 
