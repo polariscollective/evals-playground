@@ -239,3 +239,273 @@ export function importSkeleton(expectation: ImportExpectation): ImportDocument {
     ),
   };
 }
+
+const ROLES = new Set(["user", "assistant", "tool"]);
+
+/** How many entries a refusal names before saying how many more there are. */
+const LISTED = 20;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function describe(ref: CellRef): string {
+  return `scenario ${ref.scenario_index}, ${ref.target_model}, repetition ${ref.repetition}`;
+}
+
+function listed(items: string[]): string {
+  const shown = items.slice(0, LISTED).join("; ");
+  return items.length > LISTED ? `${shown}; and ${items.length - LISTED} more` : shown;
+}
+
+function refOf(value: unknown): CellRef | null {
+  if (!isObject(value)) return null;
+  const { scenario_index, target_model, repetition } = value;
+  if (
+    !Number.isInteger(scenario_index) ||
+    typeof target_model !== "string" ||
+    !Number.isInteger(repetition)
+  ) {
+    return null;
+  }
+  return {
+    scenario_index: scenario_index as number,
+    target_model,
+    repetition: repetition as number,
+  };
+}
+
+function costProblem(cost: unknown, where: string): string | null {
+  if (cost === undefined || cost === null) return null;
+  if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) {
+    return `${where} must be a non-negative number of US dollars, or null.`;
+  }
+  return null;
+}
+
+/** The shape `eval_samples.messages` holds (`Message`, `types.ts`), and that
+ *  the run page and a later deepening read back without checking again. */
+function messageProblem(message: unknown, where: string): string | null {
+  if (!isObject(message)) return `${where} is not an object.`;
+  if (typeof message.role !== "string" || !ROLES.has(message.role)) {
+    return `${where}: role must be "user", "assistant" or "tool".`;
+  }
+  if (typeof message.content !== "string") return `${where}: content must be a string.`;
+  if (message.tool_calls !== undefined) {
+    if (!Array.isArray(message.tool_calls)) return `${where}: tool_calls must be a list.`;
+    for (const [index, call] of message.tool_calls.entries()) {
+      if (
+        !isObject(call) ||
+        typeof call.id !== "string" ||
+        typeof call.name !== "string" ||
+        !isObject(call.arguments)
+      ) {
+        return `${where}: tool_calls[${index}] needs a string id, a string name and an arguments object.`;
+      }
+    }
+  }
+  for (const field of ["tool_name", "tool_call_id"] as const) {
+    const value = message[field];
+    if (value !== undefined && value !== null && typeof value !== "string") {
+      return `${where}: ${field} must be a string.`;
+    }
+  }
+  return null;
+}
+
+/** One verdict, against its judge's scale. `null` is "not provided". */
+function gradeProblem(grade: unknown, scale: number[], where: string): string | null {
+  if (grade === null) return null;
+  if (!isObject(grade)) return `${where} must be an object, or null when not provided.`;
+  if (grade.error !== undefined) {
+    if (typeof grade.error !== "string" || grade.error.trim() === "") {
+      return `${where}: error must be a sentence saying why the judge failed.`;
+    }
+    if (grade.score !== undefined && grade.score !== null) {
+      return `${where} carries both a score and an error: a judge either graded or failed.`;
+    }
+    return null;
+  }
+  if (grade.score === undefined) {
+    return `${where}: score is missing. Use null when there was nothing to grade.`;
+  }
+  if (typeof grade.justification !== "string") return `${where}: justification must be a string.`;
+  if (grade.score === null) return null;
+  if (typeof grade.score !== "number" || !scale.includes(grade.score)) {
+    return (
+      `${where}: ${JSON.stringify(grade.score)} is not on this judge's scale ` +
+      `(${scale.join(", ")}). Use null when there was nothing to grade.`
+    );
+  }
+  return null;
+}
+
+/** Whether `raw` fills exactly what `expectation` allows, and the document if
+ *  it does.
+ *
+ * Every problem found is returned, not only the first: the agent fixes a
+ * document in one round trip rather than one per mistake. Nothing is written
+ * by the caller unless this passes. */
+export function checkImport(
+  raw: string,
+  expectation: ImportExpectation,
+): { doc: ImportDocument } | { problems: string[] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return { problems: [`results is not valid JSON: ${(error as Error).message}`] };
+  }
+  if (!isObject(parsed)) {
+    return { problems: ["results must be a JSON object holding cells and grades."] };
+  }
+
+  const problems: string[] = [];
+  const cost = costProblem(parsed.cost_usd, "cost_usd");
+  if (cost) problems.push(cost);
+
+  const cells = parsed.cells ?? [];
+  const grades = parsed.grades ?? [];
+  if (!Array.isArray(cells)) problems.push("cells must be a list.");
+  if (!Array.isArray(grades)) problems.push("grades must be a list.");
+  if (!Array.isArray(cells) || !Array.isArray(grades)) return { problems };
+
+  const expected = new Map(expectation.cells.map((cell) => [cellKey(cell), cell]));
+  const scales = new Map(expectation.judges.map((judge) => [judge.key, judge.scale]));
+  const seen = new Set<string>();
+  const unexpected: string[] = [];
+
+  for (const [index, cell] of cells.entries()) {
+    const where = `cells[${index}]`;
+    const ref = refOf(cell);
+    if (!ref) {
+      problems.push(`${where} needs scenario_index, target_model and repetition.`);
+      continue;
+    }
+    const key = cellKey(ref);
+    const planned = expected.get(key);
+    if (!planned) {
+      unexpected.push(describe(ref));
+      continue;
+    }
+    const label = `${where} (${describe(ref)})`;
+    if (seen.has(key)) {
+      problems.push(`${label} appears twice.`);
+      continue;
+    }
+    seen.add(key);
+
+    const entry = cell as Record<string, unknown>;
+    if (entry.temperature !== undefined && entry.temperature !== planned.temperature) {
+      problems.push(
+        `${label}: temperature ${JSON.stringify(entry.temperature)} is not the planned ` +
+          `${JSON.stringify(planned.temperature)}.`,
+      );
+    }
+    const played = Array.isArray(entry.messages) && entry.messages.length > 0;
+    const failed = typeof entry.error === "string" && entry.error.trim() !== "";
+    if (played && failed) {
+      problems.push(`${label} has both messages and an error: a cell was either played or it failed.`);
+      continue;
+    }
+    if (!played && !failed) {
+      problems.push(`${label} has neither messages nor an error.`);
+      continue;
+    }
+    const cellCost = costProblem(entry.cost_usd, `${label}: cost_usd`);
+    if (cellCost) problems.push(cellCost);
+
+    if (failed) {
+      const graded =
+        isObject(entry.grades) && Object.values(entry.grades).some((grade) => grade !== null);
+      if (graded) {
+        problems.push(`${label} failed, so no judge can have graded it: leave its grades null.`);
+      }
+      continue;
+    }
+
+    const messages = entry.messages as unknown[];
+    if (isObject(messages[0]) && messages[0].role !== "user") {
+      problems.push(`${label}: the conversation must open with the user's message.`);
+    }
+    for (const [position, message] of messages.entries()) {
+      const issue = messageProblem(message, `${label}: messages[${position}]`);
+      if (issue) {
+        problems.push(issue);
+        break;
+      }
+    }
+    const turns = entry.turns_done;
+    if (!Number.isInteger(turns) || (turns as number) < 0 || (turns as number) > expectation.turns) {
+      problems.push(`${label}: turns_done must be a whole number from 0 to ${expectation.turns}.`);
+    }
+    if (entry.grades !== undefined) {
+      if (!isObject(entry.grades)) {
+        problems.push(`${label}: grades must be an object keyed by judge.`);
+        continue;
+      }
+      for (const [judge, grade] of Object.entries(entry.grades)) {
+        const scale = scales.get(judge);
+        if (!scale) {
+          problems.push(
+            `${label}: no judge "${judge}" grades this run. Expected: ${[...scales.keys()].join(", ")}.`,
+          );
+          continue;
+        }
+        const issue = gradeProblem(grade, scale, `${label}: grades.${judge}`);
+        if (issue) problems.push(issue);
+      }
+    }
+  }
+
+  if (unexpected.length > 0) problems.push(`Not part of this draft: ${listed(unexpected)}.`);
+  const missing = expectation.cells.filter((cell) => !seen.has(cellKey(cell))).map(describe);
+  if (missing.length > 0) {
+    problems.push(`Missing, each needs messages or an error: ${listed(missing)}.`);
+  }
+
+  const conversations = new Set(expectation.conversations.map(cellKey));
+  const newScales = new Map(expectation.newJudges.map((judge) => [judge.key, judge.scale]));
+  const graded = new Set<string>();
+  for (const [index, item] of grades.entries()) {
+    const where = `grades[${index}]`;
+    const ref = refOf(item);
+    if (!ref || typeof (item as Record<string, unknown>).judge !== "string") {
+      problems.push(`${where} needs scenario_index, target_model, repetition and judge.`);
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    const judge = entry.judge as string;
+    const label = `${where} (${describe(ref)}, ${judge})`;
+    const scale = newScales.get(judge);
+    if (!scale) {
+      problems.push(
+        newScales.size === 0
+          ? `${label}: this draft adds no judge, so grades must be empty.`
+          : `${label}: no new judge "${judge}". Expected: ${[...newScales.keys()].join(", ")}.`,
+      );
+      continue;
+    }
+    if (!conversations.has(cellKey(ref))) {
+      problems.push(`${label}: not a finished conversation of this run.`);
+      continue;
+    }
+    const key = `${cellKey(ref)}|${judge}`;
+    if (graded.has(key)) {
+      problems.push(`${label} appears twice.`);
+      continue;
+    }
+    graded.add(key);
+    const issue = gradeProblem(entry.grade, scale, `${label}: grade`);
+    if (issue) problems.push(issue);
+  }
+
+  if (problems.length > 0) return { problems };
+  return {
+    doc: {
+      cost_usd: (parsed.cost_usd as number | null | undefined) ?? null,
+      cells: cells as ImportCell[],
+      grades: grades as ImportGrade[],
+    },
+  };
+}

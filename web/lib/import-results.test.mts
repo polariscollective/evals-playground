@@ -4,11 +4,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   cellKey,
+  checkImport,
   extensionExpectation,
   importSkeleton,
   judgeKey,
   launchJudgeKeys,
   runExpectation,
+  type ImportExpectation,
 } from "./import-results.ts";
 import { judgesForLaunch } from "./launch-judges.ts";
 import type { EvalRunConfig, Judge, RubricLevel } from "./types";
@@ -198,4 +200,182 @@ test("the skeleton of a judge extension lists one null grade per judge and conve
   assert.deepEqual(skeleton.grades, [
     { scenario_index: 0, target_model: "a/1", repetition: 0, judge: "new_judges[0]", grade: null },
   ]);
+});
+
+const EXPECT: ImportExpectation = {
+  cells: [
+    { scenario_index: 0, target_model: "a/1", repetition: 0, temperature: null },
+    { scenario_index: 0, target_model: "a/1", repetition: 1, temperature: null },
+  ],
+  turns: 2,
+  judges: [
+    { key: "principal", scale: [0, 1] },
+    { key: "awareness", scale: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+  ],
+  conversations: [],
+  newJudges: [],
+};
+
+const PLAYED = {
+  scenario_index: 0,
+  target_model: "a/1",
+  repetition: 0,
+  turns_done: 1,
+  messages: [
+    { role: "user", content: "hi" },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "c1", name: "lookup", arguments: { q: "x" } }],
+    },
+    { role: "tool", content: "found", tool_name: "lookup", tool_call_id: "c1" },
+    { role: "assistant", content: "Done." },
+  ],
+  grades: { principal: { score: 1, justification: "at turn 1" }, awareness: null },
+};
+const FAILED = {
+  scenario_index: 0,
+  target_model: "a/1",
+  repetition: 1,
+  error: "The provider refused the request.",
+};
+
+function check(doc: unknown, expectation = EXPECT) {
+  return checkImport(JSON.stringify(doc), expectation);
+}
+
+function problems(doc: unknown, expectation = EXPECT): string {
+  const result = check(doc, expectation);
+  assert.ok("problems" in result, "expected a refusal");
+  return result.problems.join("\n");
+}
+
+test("a document covering every cell passes", () => {
+  const result = check({ cells: [PLAYED, FAILED] });
+  assert.ok("doc" in result);
+  assert.equal(result.doc.cells.length, 2);
+  assert.deepEqual(result.doc.grades, []);
+});
+
+test("text that is not JSON is refused", () => {
+  const result = checkImport("{cells:", EXPECT);
+  assert.ok("problems" in result);
+  assert.match(result.problems[0], /not valid JSON/);
+});
+
+test("a missing cell is refused and named", () => {
+  assert.match(problems({ cells: [PLAYED] }), /Missing.*repetition 1/);
+});
+
+test("a cell the draft does not hold is refused", () => {
+  assert.match(
+    problems({ cells: [PLAYED, FAILED, { ...FAILED, target_model: "z/9" }] }),
+    /Not part of this draft: scenario 0, z\/9, repetition 1/,
+  );
+});
+
+test("a cell given twice is refused", () => {
+  assert.match(problems({ cells: [PLAYED, FAILED, FAILED] }), /appears twice/);
+});
+
+test("a cell both played and failed is refused, and so is one neither", () => {
+  assert.match(problems({ cells: [PLAYED, { ...FAILED, messages: PLAYED.messages }] }), /both messages and an error/);
+  assert.match(problems({ cells: [PLAYED, { ...FAILED, error: undefined }] }), /neither messages nor an error/);
+});
+
+test("a temperature other than the planned one is refused", () => {
+  assert.match(problems({ cells: [{ ...PLAYED, temperature: 0.9 }, FAILED] }), /not the planned null/);
+});
+
+test("turns_done must sit between 0 and the run's turns", () => {
+  assert.match(problems({ cells: [{ ...PLAYED, turns_done: 3 }, FAILED] }), /from 0 to 2/);
+  assert.match(problems({ cells: [{ ...PLAYED, turns_done: undefined }, FAILED] }), /turns_done/);
+});
+
+test("a conversation must open with the user", () => {
+  assert.match(
+    problems({ cells: [{ ...PLAYED, messages: PLAYED.messages.slice(1) }, FAILED] }),
+    /open with the user/,
+  );
+});
+
+test("a malformed message is refused", () => {
+  const broken = [{ role: "user", content: "hi" }, { role: "assistant", content: 3 }];
+  assert.match(problems({ cells: [{ ...PLAYED, messages: broken }, FAILED] }), /content must be a string/);
+  const badCall = [
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "", tool_calls: [{ name: "x", arguments: {} }] },
+  ];
+  assert.match(problems({ cells: [{ ...PLAYED, messages: badCall }, FAILED] }), /tool_calls\[0\]/);
+});
+
+test("a score off the judge's scale is refused", () => {
+  const grades = { principal: { score: 2, justification: "x" } };
+  assert.match(problems({ cells: [{ ...PLAYED, grades }, FAILED] }), /2 is not on this judge's scale \(0, 1\)/);
+});
+
+test("the three outcomes of a grade are all accepted", () => {
+  const grades = {
+    principal: { score: null, justification: "Empty conversation." },
+    awareness: { error: "The judge timed out." },
+  };
+  assert.ok("doc" in check({ cells: [{ ...PLAYED, grades }, FAILED] }));
+});
+
+test("a grade with both a score and an error is refused", () => {
+  const grades = { principal: { score: 1, justification: "x", error: "y" } };
+  assert.match(problems({ cells: [{ ...PLAYED, grades }, FAILED] }), /both a score and an error/);
+});
+
+test("a judge the run does not have is refused", () => {
+  const grades = { tone: { score: 1, justification: "x" } };
+  assert.match(problems({ cells: [{ ...PLAYED, grades }, FAILED] }), /no judge "tone"/);
+});
+
+test("a failed cell carries no grade", () => {
+  const grades = { principal: { score: 0, justification: "x" } };
+  assert.match(problems({ cells: [PLAYED, { ...FAILED, grades }] }), /leave its grades null/);
+});
+
+test("a negative cost is refused", () => {
+  assert.match(problems({ cost_usd: -1, cells: [PLAYED, FAILED] }), /cost_usd/);
+});
+
+test("an untouched skeleton is refused rather than read as verdicts", () => {
+  const skeleton = importSkeleton(EXPECT);
+  assert.match(problems(skeleton), /neither messages nor an error/);
+});
+
+const JUDGE_EXTENSION: ImportExpectation = {
+  cells: [],
+  turns: 2,
+  judges: [],
+  conversations: [{ scenario_index: 0, target_model: "a/1", repetition: 0 }],
+  newJudges: [{ key: "new_judges[0]", scale: [0, 1, 2] }],
+};
+
+test("a judge extension takes one grade per conversation", () => {
+  const doc = {
+    grades: [
+      { scenario_index: 0, target_model: "a/1", repetition: 0, judge: "new_judges[0]", grade: { score: 2, justification: "x" } },
+    ],
+  };
+  assert.ok("doc" in check(doc, JUDGE_EXTENSION));
+});
+
+test("a judge extension refuses a grade on a conversation that is not finished", () => {
+  const doc = {
+    grades: [
+      { scenario_index: 0, target_model: "a/1", repetition: 5, judge: "new_judges[0]", grade: null },
+    ],
+  };
+  assert.match(problems(doc, JUDGE_EXTENSION), /not a finished conversation/);
+});
+
+test("grades on a draft that adds no judge are refused", () => {
+  const doc = {
+    cells: [PLAYED, FAILED],
+    grades: [{ scenario_index: 0, target_model: "a/1", repetition: 0, judge: "x", grade: null }],
+  };
+  assert.match(problems(doc), /adds no judge/);
 });
