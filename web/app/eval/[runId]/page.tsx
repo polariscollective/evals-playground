@@ -43,6 +43,7 @@ import type { ExtendPanelSample } from "@/components/ExtendPanel";
 import { CopyButton, CopyId, CopyIcon } from "@/components/CopyButton";
 import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
 import {
+  DeclaredMark,
   DetailModal,
   JudgeBlock,
   RunMatrix,
@@ -795,11 +796,7 @@ export default function EvalRunPage({
                 >
                   ${run.cost_usd.toFixed(run.cost_usd < 1 ? 4 : 2)}
                 </span>
-                {external && (
-                  <span className="text-zinc-500" title="Declared by the agent that played this run, never measured here">
-                    {" "}declared
-                  </span>
-                )}
+                {external && <DeclaredMark />}
                 {run.estimate && (
                     // The gap to the quote, beside the price: it is by seeing it
                     // run after run that one will know whether the estimate drifts,

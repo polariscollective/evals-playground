@@ -105,6 +105,22 @@ const PENDING_VERDICT: JudgeVerdictEntry = {
   error: null,
 };
 
+/** Why a cost on an imported run (`origin` `external`) reads "declared": the
+ *  agent that played it said so, and nothing here measured it. The run page
+ *  puts the mark beside the run's total; the matrix and the attempts beside
+ *  theirs, here, so the public page says it too. */
+export const DECLARED_COST_TITLE =
+  "Declared by the agent that played this run, never measured here";
+
+/** The mark itself, muted, its reason on hover. */
+export function DeclaredMark() {
+  return (
+    <span className="text-zinc-500" title={DECLARED_COST_TITLE}>
+      {" "}declared
+    </span>
+  );
+}
+
 /** The list's living principal, or `undefined` — `judges` not loaded yet, or an
  *  improbable list with no principal. At most one living principal is guaranteed
  *  in the database (design invariant 1): this function therefore never has to
@@ -1451,6 +1467,7 @@ export function DetailModal({
             rubric={rubric}
             runTurns={detail.run.config.turns}
             toolResults={detail.tool_results}
+            costDeclared={detail.run.origin === "external"}
           />
         ))}
       </div>
@@ -1464,6 +1481,7 @@ export function AttemptView({
   rubric,
   runTurns,
   toolResults,
+  costDeclared = false,
 }: {
   attempt: EvalSample;
   /** All the run's living judges, with their verdict on each conversation — see
@@ -1479,6 +1497,8 @@ export function AttemptView({
    *  held up. Absent on the public page and on any caller that did not load
    *  them: the turns then read as they always did. */
   toolResults?: ToolResultRow[];
+  /** The run was imported: its attempts' costs were declared, not measured. */
+  costDeclared?: boolean;
 }) {
   // Folded by default: ten repetitions of ten turns would make a wall of text
   // where one no longer finds the attempt one was after.
@@ -1583,7 +1603,10 @@ export function AttemptView({
         )}
         <span className="ml-auto text-xs text-zinc-500">
           {attempt.cost_usd !== null && attempt.cost_usd > 0 && (
-            <>${attempt.cost_usd.toFixed(4)}, </>
+            <>
+              ${attempt.cost_usd.toFixed(4)}
+              {costDeclared && <DeclaredMark />},{" "}
+            </>
           )}
           {attempt.messages.length} message
           {attempt.messages.length > 1 ? "s" : ""}
@@ -1707,6 +1730,9 @@ export function RunMatrix({
   displayedRunJudgeId?: string;
 }) {
   const { run, progress } = detail;
+  // An imported run's cell costs were declared: a title cannot hold the
+  // mark's own hover, so the word goes in the cell's title text.
+  const external = run.origin === "external";
   const principal = principalJudge(detail.judges);
   // The shown judge is authoritative for the scale: two judges may have written
   // different scales, and a cell only reads in the light of the one belonging to
@@ -1971,7 +1997,7 @@ export function RunMatrix({
                           ? `, ${cell.cancelled} never ran`
                           : "") +
                         (cell.cost_usd !== null && cell.cost_usd > 0
-                          ? `, $${cell.cost_usd.toFixed(4)}`
+                          ? `, $${cell.cost_usd.toFixed(4)}${external ? " declared" : ""}`
                           : "")
                       : waiting
                         ? `${cell?.pending} still to run`
