@@ -39,6 +39,9 @@ import { PLAIN_VIEW } from "@/lib/view";
 import type { MatrixView } from "@/lib/view";
 import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
+import { CopyRunPanel } from "@/components/CopyRunPanel";
+import { JudgeNotesPanel } from "@/components/JudgeNotesPanel";
+import { noteNamesOf } from "@/lib/judge-notes";
 import type { ExtendPanelSample } from "@/components/ExtendPanel";
 import { CopyButton, CopyId, CopyIcon } from "@/components/CopyButton";
 import { Menu, MenuItem, MenuSeparator } from "@/components/Menu";
@@ -235,6 +238,10 @@ function AddJudgePanel({
   const [criterion, setCriterion] = useState("");
   const [rubric, setRubric] = useState<RubricLevel[]>(config.rubric);
   const [model, setModel] = useState(config.models.judge);
+  // The scenario note this judge appends to its criterion, if any: fixed
+  // once it is linked, so another note means another judge.
+  const noteNames = noteNamesOf(config.scenarios);
+  const [judgeNote, setJudgeNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -291,7 +298,12 @@ function AddJudgePanel({
     setBusy(true);
     setFailed(null);
     try {
-      await addRunJudge(detail.run.id, { criterion, rubric, model });
+      await addRunJudge(detail.run.id, {
+        criterion,
+        rubric,
+        model,
+        ...(judgeNote ? { judge_note: judgeNote } : {}),
+      });
       onAdded();
     } catch (e) {
       setFailed((e as Error).message);
@@ -351,6 +363,28 @@ function AddJudgePanel({
           ))}
         </select>
       </label>
+
+      {noteNames.length > 0 && (
+        <label className="block space-y-1">
+          <span className="text-sm font-medium">Judge note</span>
+          <select
+            value={judgeNote}
+            onChange={(e) => setJudgeNote(e.target.value)}
+            className="block rounded border border-olive bg-paper p-2 text-sm"
+          >
+            <option value="">None</option>
+            {noteNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <span className="block text-sm text-zinc-600">
+            Read after the criterion on the scenarios that carry it. Fixed once
+            the judge is added.
+          </span>
+        </label>
+      )}
 
         {/* The cost lives here, at the moment one decides to add — not only on the
             click on Catch up, at the foot of the page, which is what really calls
@@ -465,6 +499,8 @@ export default function EvalRunPage({
   const [notes, setNotes] = useState("");
   const [analysis, setAnalysis] = useState("");
   const [addingJudge, setAddingJudge] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [addingNotes, setAddingNotes] = useState(false);
   const [extending, setExtending] = useState(false);
   // An extension proposed by an agent, opened from the drafts list. It only
   // prefills the panel: nothing is applied to the run until somebody has
@@ -823,6 +859,25 @@ export default function EvalRunPage({
               </>
             )}
           </p>
+          {run.copied_from && (
+            // A copy says where it came from, and that its cost was not spent
+            // twice: the copied cells' cost is already inside it.
+            <p className="text-sm text-zinc-600">
+              Copied from{" "}
+              <Link href={`/eval/${run.copied_from}`} className="link-underline">
+                <span className="font-mono text-[13px]">{run.copied_from.slice(0, 8)}</span>
+              </Link>
+              {", "}
+              {run.money_saved !== null ? (
+                <>
+                  <span className="font-mono text-[13px]">${amountDigits(run.money_saved)}</span>{" "}
+                  saved by not replaying its cells
+                </>
+              ) : (
+                "what replaying its cells would have cost is unknown"
+              )}
+            </p>
+          )}
             {/* On its own line rather than at the end of the previous one: drowned
                 between the cost and the quote, the address did not read. */}
           {run.user_email && (
@@ -855,6 +910,17 @@ export default function EvalRunPage({
                 >
                   Duplicate
                 </MenuItem>
+                {!running && (
+                  <MenuItem
+                    onClick={() => {
+                      close();
+                      setCopying(true);
+                    }}
+                    hint="A new run with these conversations and grades, nothing replayed"
+                  >
+                    Copy with results…
+                  </MenuItem>
+                )}
                 <MenuItem
                   onClick={() => {
                     close();
@@ -906,6 +972,15 @@ export default function EvalRunPage({
                     Add a judge…
                   </MenuItem>
                 )}
+                <MenuItem
+                  onClick={() => {
+                    close();
+                    setAddingNotes(true);
+                  }}
+                  hint="A sentence a judge reads on some scenarios"
+                >
+                  Add judge notes…
+                </MenuItem>
                 <MenuSeparator />
                 <MenuItem
                   href={exportUrl(run.id, "matrix", view)}
@@ -1230,6 +1305,21 @@ export default function EvalRunPage({
             router.replace(`/eval/${run.id}?extend=${id}`);
             return { forked: false };
           }}
+        />
+      )}
+
+      {copying && !running && (
+        <CopyRunPanel detail={detail} onClose={() => setCopying(false)} />
+      )}
+
+      {addingNotes && (
+        <JudgeNotesPanel
+          run={run}
+          onAdded={() => {
+            setAddingNotes(false);
+            load(transcripts);
+          }}
+          onClose={() => setAddingNotes(false)}
         />
       )}
 

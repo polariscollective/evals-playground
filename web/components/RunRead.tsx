@@ -25,6 +25,7 @@
 // therefore no longer needs to degrade for a `judges` that is always `undefined`
 // — only for the real case of a caller that did not ask for it (a run still
 // being opened, or a future lighter caller).
+import { criterionWithNote } from "@/lib/judge-prompt";
 import { useEffect, useState } from "react";
 import { Collapsible } from "@/components/Collapsible";
 import { Dialog } from "@/components/Dialog";
@@ -533,6 +534,23 @@ export function ScenarioModal({
             <pre className="overflow-x-auto rounded border border-zinc-200 p-3 text-xs whitespace-pre-wrap">
               {scenario.world}
             </pre>
+          </div>
+        )}
+
+        {Object.keys(scenario.judge_notes ?? {}).length > 0 && (
+          <div>
+            <p className="mb-1 text-xs text-zinc-500">
+              Judge notes — read after the criterion by a judge linked with
+              the note&rsquo;s name. Never changed once added.
+            </p>
+            <dl className="space-y-2 rounded border border-zinc-200 p-3 text-xs">
+              {Object.entries(scenario.judge_notes ?? {}).map(([name, text]) => (
+                <div key={name}>
+                  <dt className="font-mono text-olive">{name}</dt>
+                  <dd className="whitespace-pre-wrap">{text}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
 
@@ -1214,7 +1232,13 @@ export function JudgeBlock({
           variants={perScenario(config.scenarios, (scenario) =>
             judgePreview(
               {
-                criterion: criterion ?? "",
+                // With this scenario's note when the judge reads one: the
+                // preview shows what the judge got on this very row.
+                criterion: criterionWithNote(
+                  criterion ?? "",
+                  scenario,
+                  displayedJudge?.judge_note,
+                ),
                 rubric: rubric ?? [],
                 sees_system_prompt:
                   displayedJudge?.judge.sees_system_prompt ?? true,

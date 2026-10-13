@@ -1,7 +1,8 @@
 // The browser's access to the application. Everything goes through the `/api`
 // routes of this same application: the browser never talks to Supabase, and
 // therefore never sees the service key.
-import type { JudgeDetail, JudgeSummary } from "./types";
+import type { CopyScope, JudgeDetail, JudgeSummary } from "./types";
+import type { CopyRequest } from "./run-copy";
 import type {
   CostEstimate,
   Draft,
@@ -114,6 +115,29 @@ export const addRunJudge = (runId: string, spec: JudgeSpec) =>
   request<{ ok: true; run_judge_id: string }>(`/api/runs/${runId}/judges`, {
     method: "POST",
     body: JSON.stringify(spec),
+  });
+
+/** Copies a run into a new, independent one; each part of `request` left
+ *  out takes all of it. Spends nothing. */
+export const copyRunInto = (
+  runId: string,
+  scope: CopyRequest & { label?: string },
+) =>
+  request<{ run_id: string; scope: CopyScope; money_saved: number | null }>(
+    `/api/runs/${runId}/copy`,
+    { method: "POST", body: JSON.stringify(scope) },
+  );
+
+/** Adds one named judge note to some scenarios of a run, keyed by scenario
+ *  index. Refused, with nothing written, when one of them already has it. */
+export const addJudgeNotes = (
+  runId: string,
+  name: string,
+  notes: Record<string, string>,
+) =>
+  request<{ ok: true }>(`/api/runs/${runId}/judge-notes`, {
+    method: "POST",
+    body: JSON.stringify({ name, notes }),
   });
 
 /** Unlinks a judge from a run. `replacementRunJudgeId`: required to unlink the
