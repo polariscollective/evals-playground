@@ -394,7 +394,38 @@ function messageProblem(message: unknown, where: string): string | null {
       return `${where}: ${field} must be a string.`;
     }
   }
+  const seeded = message.seeded;
+  if (seeded !== undefined && seeded !== null && typeof seeded !== "boolean") {
+    return `${where}: seeded must be true or false.`;
+  }
   return null;
+}
+
+/** A checked message reduced to the keys `Message` holds and something here
+ *  reads back: the run page, a judge pass (`scoring.py`), an export.
+ *
+ * Whatever else an agent's own harness put on a turn (a latency, a provider's
+ * reasoning, a call's `type`) is dropped rather than stored: nothing here
+ * would show it, and a stored key nothing explains reads as one the
+ * playground wrote. `seeded` left `null` is no flag. */
+function cleanMessage(message: Record<string, unknown>): Message {
+  const clean: Message = {
+    role: message.role as Message["role"],
+    content: message.content as string,
+  };
+  if (Array.isArray(message.tool_calls)) {
+    clean.tool_calls = (message.tool_calls as Record<string, unknown>[]).map((call) => ({
+      id: call.id as string,
+      name: call.name as string,
+      arguments: call.arguments as Record<string, unknown>,
+    }));
+  }
+  if (message.tool_name !== undefined) clean.tool_name = message.tool_name as string | null;
+  if (message.tool_call_id !== undefined) {
+    clean.tool_call_id = message.tool_call_id as string | null;
+  }
+  if (typeof message.seeded === "boolean") clean.seeded = message.seeded;
+  return clean;
 }
 
 /** One verdict, against its judge's scale. `null` is "not provided". */
@@ -588,7 +619,18 @@ export function checkImport(
   return {
     doc: {
       cost_usd: (parsed.cost_usd as number | null | undefined) ?? null,
-      cells: cells as ImportCell[],
+      // Every message checked above, so each one is an object with a role and
+      // a string content: only its keys are cut down here.
+      cells: (cells as ImportCell[]).map((cell) =>
+        Array.isArray(cell.messages)
+          ? {
+              ...cell,
+              messages: (cell.messages as unknown as Record<string, unknown>[]).map(
+                cleanMessage,
+              ),
+            }
+          : cell,
+      ),
       grades: grades as ImportGrade[],
     },
   };

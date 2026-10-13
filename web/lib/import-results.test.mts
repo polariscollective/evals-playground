@@ -323,6 +323,35 @@ test("a malformed message is refused", () => {
   assert.match(problems({ cells: [{ ...PLAYED, messages: badCall }, FAILED] }), /tool_calls\[0\]/);
 });
 
+test("only the keys the playground stores are kept from each message", () => {
+  const messages = [
+    { role: "user", content: "earlier", seeded: true, note: "from my notebook" },
+    { role: "assistant", content: "earlier answer", seeded: true },
+    { role: "user", content: "hi", seeded: null },
+    {
+      role: "assistant",
+      content: "",
+      reasoning: "private",
+      tool_calls: [{ id: "c1", name: "lookup", arguments: { q: "x" }, type: "function" }],
+    },
+    { role: "tool", content: "found", tool_name: "lookup", tool_call_id: "c1", latency_ms: 40 },
+  ];
+  const result = check({ cells: [{ ...PLAYED, messages }, FAILED] });
+  assert.ok("doc" in result);
+  assert.deepEqual(result.doc.cells[0].messages, [
+    { role: "user", content: "earlier", seeded: true },
+    { role: "assistant", content: "earlier answer", seeded: true },
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "", tool_calls: [{ id: "c1", name: "lookup", arguments: { q: "x" } }] },
+    { role: "tool", content: "found", tool_name: "lookup", tool_call_id: "c1" },
+  ]);
+});
+
+test("seeded must be true or false", () => {
+  const messages = [{ role: "user", content: "hi", seeded: "yes" }];
+  assert.match(problems({ cells: [{ ...PLAYED, messages }, FAILED] }), /seeded must be true or false/);
+});
+
 test("a score off the judge's scale is refused", () => {
   const grades = { principal: { score: 2, justification: "x" } };
   assert.match(problems({ cells: [{ ...PLAYED, grades }, FAILED] }), /2 is not on this judge's scale \(0, 1\)/);

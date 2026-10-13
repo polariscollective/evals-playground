@@ -890,6 +890,11 @@ Each cell is either played or failed, never both, never neither:
   \`id\`, \`name\` and \`arguments\` (an object); the answer is a \`tool\`
   turn with \`tool_name\` and \`tool_call_id\`. \`turns_done\` is how many
   turns were played after the opening message, at most the run's \`turns\`.
+  When the scenario has written-in earlier turns (\`history\`), the
+  conversation includes them first, before the opening message, each marked
+  \`"seeded": true\`, as the playground stores them: the model was handed
+  them as though it had lived them. A judge here reads seeded turns as context
+  and does not grade them. Any other key on a message is dropped.
 - failed: \`error\` is one sentence saying why, and its grades stay null.
 
 \`grades\` holds one entry per judge, under the name the skeleton gives it:
