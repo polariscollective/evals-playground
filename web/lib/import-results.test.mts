@@ -571,6 +571,25 @@ test("a deepened cell whose earlier cost is unknown stays unknown", () => {
   assert.equal(writes.played[0].cost_usd, null);
 });
 
+test("a deepened cell that fails without a declared cost keeps the cost it had", () => {
+  const doc = { cells: [{ ...PLAYED, grades: {} }] as never, grades: [] };
+  const failedDoc = {
+    cells: [{ ...FAILED, repetition: 0 }] as never,
+    grades: [],
+  };
+  const known = new Map<string, number | null>([["0|a/1|0", 0.1]]);
+  assert.equal(importWrites("r", failedDoc, DEEPENING_IDS, new Map(), "now()", known).failed[0].cost_usd, 0.1);
+  // A failed attempt that does declare a cost still adds it.
+  const priced = { cells: [{ ...FAILED, repetition: 0, cost_usd: 0.05 }] as never, grades: [] };
+  const sum = importWrites("r", priced, DEEPENING_IDS, new Map(), "now()", known).failed[0].cost_usd as number;
+  assert.equal(Math.round(sum * 100) / 100, 0.15);
+  // An unknown earlier cost stays unknown.
+  const unknown = new Map<string, number | null>([["0|a/1|0", null]]);
+  assert.equal(importWrites("r", failedDoc, DEEPENING_IDS, new Map(), "now()", unknown).failed[0].cost_usd, null);
+  // A played deepened cell without a declared cost is still unknown.
+  assert.equal(importWrites("r", doc, DEEPENING_IDS, new Map(), "now()", known).played[0].cost_usd, null);
+});
+
 test("a judge's failure is written as an error, never as a grade", () => {
   const doc = {
     cells: [{ ...PLAYED, grades: { principal: { error: "Timed out." } } }] as never,

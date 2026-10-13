@@ -680,7 +680,9 @@ export function addCosts(before: number | null, added: number | null): number | 
  *
  * A deepened cell declares what deepening it cost, not the whole conversation:
  * it stores that added to its cost from before (`deepenedCosts`, from the
- * expectation), unknown when either is. A fresh cell stores what it declares.
+ * expectation), unknown when either is. A deepening that fails without a
+ * declared cost adds nothing, so the cell keeps the cost it had. A fresh cell
+ * stores what it declares.
  * The run's total, `importCost`, adds the declarations alone, so no pass is
  * counted twice.
  *
@@ -740,7 +742,7 @@ export function importWrites(
       target_model: cell.target_model,
       repetition: cell.repetition,
       cost_usd: deepenedCosts.has(key)
-        ? addCosts(deepenedCosts.get(key) ?? null, declared)
+        ? addCosts(deepenedCosts.get(key) ?? null, isPlayed(cell) ? declared : (declared ?? 0))
         : declared,
       finished_at: now,
     };

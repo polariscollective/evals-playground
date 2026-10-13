@@ -186,6 +186,9 @@ Optional, declared by the agent, never measured.
 - A deepened cell's `cost_usd` is what deepening it cost, not the whole
   conversation: the run already counts the turns played before. The cell then
   stores its earlier cost plus that one, unknown when either is.
+- A deepened attempt that fails without a declared cost keeps the cost it had:
+  a failed attempt with no cost contributes nothing, and an unknown earlier cost
+  stays unknown.
 - The document's `cost_usd` is the cost of this import. Absent, it is the sum of
   every cell's declared cost, failed cells included, when every played cell
   carries one, and unknown otherwise. With no played cell and no declared
