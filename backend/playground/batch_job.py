@@ -519,7 +519,7 @@ def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
         id="in.(" + ",".join(ids) + ")",
         select=(
             "id,scenario_index,target_model,repetition,temperature,messages,"
-            "usage,turns_done"
+            "usage,turns_done,cost_usd"
         ),
         order="scenario_index,target_model,repetition",
     )
@@ -539,6 +539,7 @@ def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
                     "transcript": row.get("messages") or [],
                     "usage": row.get("usage") or {},
                     "turns_done": row.get("turns_done") or 0,
+                    "cost_usd": row.get("cost_usd"),
                     "judges": [
                         judge_metadata(live_by_id[run_judge_id])
                         for run_judge_id in judges_per_sample.get(sample_id, [])
@@ -611,6 +612,11 @@ def run_batch_job(
     supabase = supabase or Supabase.from_env()
     row = fetch_run(supabase, run_id)
     config = EvalRunConfig(**row["config"])
+    # Played elsewhere and imported: only a catch-up of its judges ever runs
+    # here, and its cost was declared rather than measured. See
+    # `external_cost`.
+    external = row.get("origin") == "external"
+    declared: dict[tuple[int, str, int], float | None] = {}
 
     start_run(supabase, run_id, execution=os.environ.get("CLOUD_RUN_EXECUTION"))
     stop = cancellation or Cancellation(supabase, run_id)
@@ -712,10 +718,15 @@ def run_batch_job(
         """
         key = (sample.scenario_index, sample.target, sample.repetition)
         usage = add_usage(already_billed.get(key, {}), sample.usage)
-        cost, unpriced = actual_cost_from_dicts(usage)
+        if external:
+            spent, unpriced = actual_cost_from_dicts(sample.usage)
+            cost_usd = external_cost(declared.get(key), spent, unpriced)
+        else:
+            cost, unpriced = actual_cost_from_dicts(usage)
+            cost_usd = None if unpriced else cost
         supabase.update(
             SAMPLES,
-            {"usage": usage, "cost_usd": None if unpriced else cost},
+            {"usage": usage, "cost_usd": cost_usd},
             **sample_filters(run_id, *key),
         )
 
@@ -733,6 +744,10 @@ def run_batch_job(
                 (m["scenario_index"], m["target"], m["repetition"]): (
                     m.get("usage") or {}
                 )
+                for m in (sample.metadata for sample in dataset.samples)
+            }
+            declared = {
+                (m["scenario_index"], m["target"], m["repetition"]): m.get("cost_usd")
                 for m in (sample.metadata for sample in dataset.samples)
             }
             # The depth (`turns_done`) does not need reading back here:
@@ -767,7 +782,9 @@ def run_batch_job(
                 supabase,
                 run_id,
                 usage=usage,
-                cost_usd=None if unpriced else cost,
+                cost_usd=row.get("cost_usd")
+                if external
+                else (None if unpriced else cost),
             )
             return
 
@@ -847,6 +864,13 @@ def run_batch_job(
         # went.
         usage = add_usage(row.get("usage") or {}, usage_from_log(log))
         cost, unpriced = actual_cost_from_dicts(usage)
+        if external:
+            spent, pass_unpriced = actual_cost_from_dicts(usage_from_log(log))
+            run_cost = external_cost(row.get("cost_usd"), spent, pass_unpriced)
+        else:
+            # A total missing a model with no known price would be more
+            # misleading than no total at all.
+            run_cost = None if unpriced else cost
 
         # Inspect does not raise on a task error: it catches it and finishes
         # the log with a status. Without this check, a broken run would write
@@ -863,9 +887,7 @@ def run_batch_job(
             supabase,
             run_id,
             usage=usage,
-            # A total missing a model with no known price would be more
-            # misleading than no total at all.
-            cost_usd=None if unpriced else cost,
+            cost_usd=run_cost,
             error=run_error,
             cancelled=cancelled,
         )
@@ -894,6 +916,21 @@ def actual_cost_from_dicts(usage: dict[str, Any]) -> tuple[float, list[str]]:
     return actual_cost(
         {model: ModelUsage(**counts) for model, counts in usage.items()}
     )
+
+
+def external_cost(
+    before: float | None, spent: float, unpriced: list[str]
+) -> float | None:
+    """The cost of an imported run, or of one of its cells, after a pass here.
+
+    Its cost was declared by the agent that played it, and it carries no
+    token usage to recompute it from: what this pass spent is added to what
+    was declared, never put in its place. Unknown plus anything stays unknown,
+    and so does a pass with a model that has no price.
+    """
+    if before is None or unpriced:
+        return None
+    return before + spent
 
 
 def main() -> None:

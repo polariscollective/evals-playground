@@ -9,6 +9,7 @@ from inspect_ai.model import ModelOutput
 from playground.batch_job import (
     add_usage,
     check_served_results,
+    external_cost,
     run_batch_job,
     usage_from_log,
     world_server,
@@ -1278,6 +1279,61 @@ def test_a_caught_up_cell_keeps_the_tokens_and_cost_of_its_initial_pass(
     assert all(v["cost_usd"] == pytest.approx(1.0) for v in cell_writes), (
         "the initial cost must not fall to that of the judge alone"
     )
+
+
+def test_an_external_cost_grows_by_what_a_pass_spent():
+    assert external_cost(2.5, 0.25, []) == pytest.approx(2.75)
+
+
+def test_an_unknown_external_cost_stays_unknown():
+    assert external_cost(None, 0.25, []) is None
+
+
+def test_an_unpriced_pass_makes_an_external_cost_unknown():
+    assert external_cost(2.5, 0.25, ["mystery/model"]) is None
+
+
+def _external_catchup(cost_usd, cell_cost):
+    samples = _recorded_samples()
+    for sample in samples:
+        sample["cost_usd"] = cell_cost
+    judges, run_judges, scores = _catchup_of_a_single_judge(samples)
+    return FakeSupabase(
+        run={
+            "id": "r1",
+            "config": CONFIG,
+            "usage": {},
+            "origin": "external",
+            "cost_usd": cost_usd,
+        },
+        samples=samples,
+        judges=judges,
+        run_judges=run_judges,
+        judge_scores=scores,
+    )
+
+
+def test_a_catchup_keeps_an_external_run_s_declared_cost(tmp_path: Path):
+    """An imported run carries a cost its agent declared and no token usage.
+    Recomputing the cost from usage, as for a run played here, would replace
+    the declared amount with what the judge alone just spent."""
+    supabase = _external_catchup(cost_usd=3.0, cell_cost=0.5)
+
+    _launch(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    assert supabase.written(RUNS)[-1]["cost_usd"] == pytest.approx(3.0)
+    cell_writes = [v for v in supabase.written(SAMPLES) if "cost_usd" in v]
+    assert cell_writes and all(v["cost_usd"] == pytest.approx(0.5) for v in cell_writes)
+
+
+def test_a_catchup_leaves_an_unknown_external_cost_unknown(tmp_path: Path):
+    supabase = _external_catchup(cost_usd=None, cell_cost=None)
+
+    _launch(supabase, tmp_path, mode="catchup", outputs=_outputs(0))
+
+    assert supabase.written(RUNS)[-1]["cost_usd"] is None
+    cell_writes = [v for v in supabase.written(SAMPLES) if "cost_usd" in v]
+    assert all(v["cost_usd"] is None for v in cell_writes)
 
 
 # --- the environment check ------------------------------------------------
