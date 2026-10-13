@@ -39,6 +39,7 @@ import { ensureProfile } from "@/lib/profiles";
 import { costSentence, estimateCost } from "@/lib/pricing";
 import { ADVICE_TOPICS, adviceFor, overridesOf } from "@/lib/advice";
 import { extendTargetsProblem, judgesForTargets } from "@/lib/targets";
+import { importSkeleton, playedElsewhereProblem, playedHereProblem } from "@/lib/import-results";
 import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
 import { PLAIN_VIEW } from "@/lib/view";
 import type { JudgeTarget } from "@/lib/types";
@@ -46,8 +47,11 @@ import {
   ConfigProblem,
   NotFound,
   createRun,
+  expectationForDraft,
   extendRun,
   failToStart,
+  importExtension,
+  importRun,
   judgeVerdictsForSample,
   loadLiveRunJudges,
   loadRun,
@@ -89,6 +93,7 @@ import {
 } from "@/lib/world-warnings";
 import type {
   Draft,
+  ExtendDraft,
   Judge,
   JudgeSystemType,
   JudgeSystemTypeColumn,
@@ -352,6 +357,55 @@ function judgeIdentity(view: {
     // and make a study look like an exploration.
     ...("targets" in view ? { targets: view.targets ?? null } : {}),
   };
+}
+
+/** What refuses applying an extension draft to its run, by either door:
+ *  launched here or imported. The same checks the human route makes, made
+ *  again because the run may have moved since the draft was written. The
+ *  scale checked is the living principal's, never the possibly stale one in
+ *  `config` (see `extendProblem`). */
+function extensionRefusal(draft: ExtendDraft, detail: RunDetail, caller: string): string | null {
+  const { run } = detail;
+  // An explicit decision: through MCP, one can only extend a run one
+  // created oneself, since an extension writes on a run that already exists,
+  // which launching a fresh run never does. The same function as
+  // `submit_draft_extension`, for the same reason; the message spells out
+  // the distinction so that a refusal here is not read as bearing on every
+  // launch.
+  const ownership = authorOnly(run.user_email, caller);
+  if (ownership) {
+    return (
+      `${ownership} This check is specific to extending an existing run: launching a fresh ` +
+      "run draft (kind \"run\") creates a new run instead, and is never refused for who owns " +
+      "anything."
+    );
+  }
+
+  // The same validation as the human route, revalidated here: a draft
+  // deposited by `submit_draft_extension` was valid when written, but
+  // nothing stops the run having moved since, a model withdrawn from the
+  // catalogue, for instance. The scale checked is the LIVING PRINCIPAL's,
+  // never the possibly stale one in `config`: `deepenCandidates`
+  // (`planExtension`, `runs.ts`) already keeps only attempts graded by that
+  // same principal, and validating `deepen` against another scale would let
+  // through a grade no attempt really carries, silently zero attempts
+  // deepened, exactly what this check exists to prevent (see `validate.ts`,
+  // `extendProblem`).
+  const rubric =
+    detail.judges?.find((judge) => judge.is_principal)?.judge.rubric ?? run.config.rubric;
+  const problem = extendProblem(
+    draft.config,
+    run.config.scenarios.length,
+    run.config.tools ?? [],
+    run.config.turns,
+    run.config.models.adversary ?? null,
+    rubric.map((level) => level.value),
+    run.config.models.world ?? null,
+  );
+  if (problem) return problem;
+  // Beside `extendProblem`, never in its place: this rule looks at the
+  // run's LIVE judges, which live in `run_judges` and not in `config`.
+  return extendTargetsProblem(draft.config, judgesForTargets(detail.judges));
 }
 
 const handler = createMcpHandler((server) => {
@@ -1260,52 +1314,12 @@ const handler = createMcpHandler((server) => {
         });
         if ("error" in target) return target.error;
         const { run } = target.run;
+        const elsewhere = playedElsewhereProblem(run);
+        if (elsewhere) return toolError(elsewhere);
 
-        // An explicit decision: through MCP, one can only extend a run one
-        // created oneself — an extension writes on a run that already exists,
-        // which launching a fresh run never does. The same function as
-        // `submit_draft_extension`, for the same reason; the message spells out
-        // the distinction so that a refusal here is not read as bearing on every
-        // launch.
-        const ownership = authorOnly(run.user_email, caller);
-        if (ownership) {
-          return toolError(
-            `${ownership} This check is specific to extending an existing run — launching a fresh ` +
-              "run draft (kind \"run\") creates a new run instead, and is never refused for who owns " +
-              "anything.",
-          );
-        }
-
-        // The same validation as the human route, revalidated here: a draft
-        // deposited by `submit_draft_extension` was valid when written, but
-        // nothing stops the run having moved since — a model withdrawn from the
-        // catalogue, for instance. The scale checked is the LIVING PRINCIPAL's,
-        // never the possibly stale one in `config`: `deepenCandidates`
-        // (`planExtension`, `runs.ts`) already keeps only attempts graded by that
-        // same principal, and validating `deepen` against another scale would let
-        // through a grade no attempt really carries — silently zero attempts
-        // deepened, exactly what this check exists to prevent (see `validate.ts`,
-        // `extendProblem`).
-        const rubric = target.run.judges?.find((judge) => judge.is_principal)?.judge.rubric ??
-          run.config.rubric;
+        const refusal = extensionRefusal(draft, target.run, caller);
+        if (refusal) return toolError(refusal);
         const request = draft.config;
-        const problem = extendProblem(
-          request,
-          run.config.scenarios.length,
-          run.config.tools ?? [],
-          run.config.turns,
-          run.config.models.adversary ?? null,
-          rubric.map((level) => level.value),
-          run.config.models.world ?? null,
-        );
-        if (problem) return toolError(problem);
-        // Beside `extendProblem`, never in its place: this rule looks at the
-        // run's LIVE judges, which live in `run_judges` and not in `config`.
-        const targetsProblem = extendTargetsProblem(
-          request,
-          judgesForTargets(target.run.judges),
-        );
-        if (targetsProblem) return toolError(targetsProblem);
 
         // One call for the favourites below and the budget further down, and its
         // refusal laid here, before the favourites rather than after: a profile
@@ -1501,6 +1515,149 @@ const handler = createMcpHandler((server) => {
               `Launched as run ${run.id}, quoted at ${formatUsd(quote.usd)}. You have now spent about ` +
               `${formatUsd(spentLastHour + quote.usd)} launching runs by MCP in the last hour.` +
               `\n\n${origin}/eval/${run.id}`,
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "get_import_skeleton",
+    {
+      title: "Get the document an import must fill",
+      description:
+        "Starts nothing and spends nothing. For a run you play yourself, outside the playground: " +
+        "returns the JSON document import_draft_results expects for this draft, every entry " +
+        "present and every value to provide left empty. A run draft gets one entry per cell of " +
+        "its matrix. An extension draft of a run already imported gets exactly the cells it " +
+        "adds, the attempts it deepens, or the conversations its new judges must grade, as the " +
+        "playground itself would have planned them. Fill it in and hand it to " +
+        "import_draft_results. read_format explains each field.",
+      inputSchema: z.object({
+        draft_id: z.string().describe("The draft's UUID, from its address."),
+      }),
+    },
+    async ({ draft_id }) => {
+      const found = await draftOrError(draft_id);
+      if ("error" in found) return found.error;
+      const { draft } = found;
+      if (draft.kind === "extend") {
+        const target = await runOrError(draft.extends_run_id, {
+          withTranscripts: false,
+          withSourceCsvFlag: false,
+        });
+        if ("error" in target) return target.error;
+        const here = playedHereProblem(target.run.run);
+        if (here) return toolError(here);
+      }
+      try {
+        const skeleton = importSkeleton(await expectationForDraft(draft));
+        return { content: [{ type: "text", text: JSON.stringify(skeleton, null, 2) }] };
+      } catch (error) {
+        if (error instanceof ConfigProblem || error instanceof NotFound) {
+          return toolError(error.message);
+        }
+        throw error;
+      }
+    },
+  );
+
+  server.registerTool(
+    "import_draft_results",
+    {
+      title: "Import a run played elsewhere",
+      description:
+        "Spends nothing: no model is called. For a run you played yourself, outside the " +
+        "playground, against a draft saved with submit_draft_run or submit_draft_extension. " +
+        "results is the document get_import_skeleton returned, filled in. It is checked whole " +
+        "before anything is written: every cell the draft expects, played or failed, no cell or " +
+        "judge it does not hold, every score on its judge's scale. A refusal lists every " +
+        "problem found and writes nothing.\n\n" +
+        "A run draft becomes a new run, finished, marked external. An extension draft applies " +
+        "only to a run that was itself imported, and only its own creator can import it; a run " +
+        "played by the playground is extended with launch_draft instead. A grade left null " +
+        "stays pending: the run page's catch-up button can have it graded here. The cost is " +
+        "what you declare, optionally, and is shown as declared.",
+      inputSchema: z.object({
+        draft_id: z.string().describe("The draft's UUID, from its address."),
+        results: z
+          .string()
+          .describe("The filled document, as JSON text. See get_import_skeleton and read_format."),
+      }),
+    },
+    async ({ draft_id, results }, ctx) => {
+      const found = await draftOrError(draft_id);
+      if ("error" in found) return found.error;
+      const { draft } = found;
+      const caller = await callerEmail(ctx);
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      const profile = await profileOf(caller);
+      if (!profile) {
+        return toolError(
+          "Your profile could not be found or created right now, so the models you may use " +
+            "cannot be checked. Try again in a moment.",
+        );
+      }
+
+      let outcome;
+      try {
+        if (draft.kind === "run") {
+          const problem = configProblem(draft.config);
+          if (problem) return toolError(problem);
+          const outside = configFavouritesProblem(draft.config, favoriteModels(profile));
+          if (outside) return toolError(outside);
+          outcome = await importRun(draft, results, caller);
+          if ("run" in outcome) {
+            try {
+              const tags = await tagsOfDraft(draft_id);
+              if (tags.length > 0) await setRunTags(outcome.run.id, tags.map((tag) => tag.id));
+            } catch (error) {
+              console.error(
+                `Could not copy tags from draft ${draft_id} to run ${outcome.run.id}:`,
+                (error as Error).message,
+              );
+            }
+          }
+        } else {
+          const applied = alreadyAppliedProblem(draft);
+          if (applied) return toolError(applied);
+          const target = await runOrError(draft.extends_run_id, {
+            withTranscripts: false,
+            withSourceCsvFlag: false,
+            withJudges: true,
+          });
+          if ("error" in target) return target.error;
+          const here = playedHereProblem(target.run.run);
+          if (here) return toolError(here);
+          const refusal = extensionRefusal(draft, target.run, caller);
+          if (refusal) return toolError(refusal);
+          const outside = extendFavouritesProblem(draft.config, favoriteModels(profile));
+          if (outside) return toolError(outside);
+          outcome = await importExtension(draft, results, caller);
+        }
+      } catch (error) {
+        if (error instanceof ConfigProblem || error instanceof NotFound) {
+          return toolError(error.message);
+        }
+        throw error;
+      }
+
+      if ("problems" in outcome) {
+        return toolError(
+          `Nothing was written. The document does not fit draft ${draft_id}:\n\n- ` +
+            outcome.problems.join("\n- "),
+        );
+      }
+      await markDraftLaunched(draft_id);
+      const cost =
+        outcome.cost === null ? "cost unknown" : `cost declared at ${formatUsd(outcome.cost)}`;
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `${draft.kind === "run" ? "Imported as" : "Extended"} run ${outcome.run.id}, ` +
+              `${cost}. ${outcome.summary}\n\n${origin}/eval/${outcome.run.id}`,
           },
         ],
       };

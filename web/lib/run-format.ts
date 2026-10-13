@@ -871,6 +871,47 @@ right after quoting it, as the number to trust, not this one. Either cap
 refuses with the quote, the cap, and what you can do about it: trim the
 draft, wait, or ask me to launch it from the web app, where neither applies.
 
+## Playing it yourself instead
+
+When I ask you to play the run yourself rather than have the playground play
+it, the draft is still the contract: write it and deposit it with
+\`submit_draft_run\` exactly as above, with the models you will actually call.
+Then, instead of \`launch_draft\`, call \`get_import_skeleton\` on the draft.
+It returns a JSON document with one entry per cell. Play each one, fill it in,
+and hand the whole document to \`import_draft_results\`. Nothing is spent here
+and no cap applies.
+
+Each cell is either played or failed, never both, never neither:
+
+- played: \`messages\` holds the conversation as the playground stores it,
+  without the system prompt, opening with the user's message. Each message has
+  \`role\` (\`user\`, \`assistant\` or \`tool\`) and \`content\`, always a
+  string. An assistant turn that calls tools carries \`tool_calls\`, each with
+  \`id\`, \`name\` and \`arguments\` (an object); the answer is a \`tool\`
+  turn with \`tool_name\` and \`tool_call_id\`. \`turns_done\` is how many
+  turns were played after the opening message, at most the run's \`turns\`.
+- failed: \`error\` is one sentence saying why, and its grades stay null.
+
+\`grades\` holds one entry per judge, under the name the skeleton gives it:
+\`principal\`, \`judges[0]\` and so on in the order you wrote them,
+\`awareness\` and \`adversary_fidelity\` for the two checks, and on an
+existing run any other judge's slug. Each is \`{ "score": <a value of that
+judge's scale>, "justification": "..." }\`, or \`{ "score": null,
+"justification": "..." }\` when there was nothing to grade, or \`{ "error":
+"..." }\` when the judge failed. Leave it \`null\` when you did not grade with
+that judge: it stays pending, and I can have it graded here from the run page.
+
+\`cost_usd\` is optional, on the document and on each cell, in US dollars. A
+deepened cell's cost is that of the whole conversation as it now stands. Leave
+it out rather than guess: an unknown cost is shown as unknown, a guess would be
+shown as a fact.
+
+A run you imported grows the same way: \`submit_draft_extension\`, then
+\`get_import_skeleton\` and \`import_draft_results\` on that draft. The
+skeleton then holds only what the extension adds. \`launch_draft\` refuses it,
+and \`import_draft_results\` refuses an extension of a run the playground
+played: a matrix is played in one place or the other.
+
 ## Starting from something that already exists
 
 If I am asking you to change a run I have already done, or a draft I have

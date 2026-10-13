@@ -67,6 +67,24 @@ export const MCP_TOOLS: McpTool[] = [
     spends: true,
   },
   {
+    name: "get_import_skeleton",
+    summary:
+      "For a run you play yourself, outside the playground: the JSON document to fill in, one " +
+      "entry per cell the draft expects. For an extension of an imported run, only what the " +
+      "extension adds. Nothing runs and nothing is spent.",
+    input: ["draft_id"],
+    output: "The document, every entry present and every value left empty.",
+  },
+  {
+    name: "import_draft_results",
+    summary:
+      "Checks the filled document whole and, if it fits the draft, writes it as a finished run " +
+      "marked external, or as an extension of a run that was itself imported. No model is " +
+      "called and nothing is spent; the cost is whatever you declare.",
+    input: ["draft_id", "results"],
+    output: "The run's address and a summary, or every problem found, with nothing written.",
+  },
+  {
     name: "update_draft_run",
     summary:
       "Rewrites a draft in place rather than leaving a second one beside it. Someone else's " +
