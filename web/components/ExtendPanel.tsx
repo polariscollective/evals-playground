@@ -159,6 +159,9 @@ export function ExtendPanel({
    *  of one's own, never a fork. */
   draftMine = true,
   onCancel,
+  /** Apply the extension to the run. `null` for a run played outside the
+   *  playground: our engine plays none of it, so the panel only sets a draft
+   *  aside, for whoever played the run to fill by import. */
   onSubmit,
   /** Set the composed extension aside, without applying it. `forked` says whether
    *  the save rewrote `draftId` in place or laid a new draft beside it — which is
@@ -178,7 +181,7 @@ export function ExtendPanel({
   draftId?: string | null;
   draftMine?: boolean;
   onCancel: () => void;
-  onSubmit: (request: ExtendRequest) => Promise<void>;
+  onSubmit: ((request: ExtendRequest) => Promise<void>) | null;
   onSaveDraft: (request: ExtendRequest) => Promise<{ forked: boolean }>;
 }) {
   // The judge, the scale and the adversary shown further down — like the quote
@@ -469,7 +472,10 @@ export function ExtendPanel({
       ),
     });
 
+  const playedElsewhere = onSubmit === null;
+
   const submit = async () => {
+    if (!onSubmit) return;
     setError("");
     setBusy(true);
     try {
@@ -521,6 +527,14 @@ export function ExtendPanel({
           The matrix grows and the averages are recomputed over everything. Cells
           already graded are not touched, and not paid for again.
         </p>
+        {playedElsewhere && (
+          <p className="mt-1 text-sm text-zinc-600">
+            This run was played outside the playground, so nothing here is
+            played by it. Save this as a draft: whoever played the run plays
+            what it adds, then imports it by MCP with get_import_skeleton and
+            import_draft_results.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -1088,7 +1102,8 @@ export function ExtendPanel({
               </>
             )}
           </p>
-          {totalEstimate && (
+          {/* No quote for a run played outside: nothing here would spend it. */}
+          {totalEstimate && !playedElsewhere && (
             <>
               {/* The same fixed landmark as on the composition screen: two reference
                   lengths, not a range claiming to contain the quote — a talkative
@@ -1268,49 +1283,57 @@ export function ExtendPanel({
               {draftNotice} Find it under Runs → Show drafts.
             </span>
           )}
-          <button
-            onClick={submit}
-            disabled={
-              busy ||
-              // Nothing to add and nothing to deepen: the request would turn empty.
-              // Deepening alone stays allowed — `extendProblem` does not refuse it,
-              // and it is not the field's job to do so in its place.
-              (added === 0 && deepen === null) ||
-              // A model is demanded only if the request adds something: with no
-              // scenario to cover it would designate nothing, and a deepening alone
-              // does not need one. That is exactly `extendProblem`'s rule; writing
-              // it differently here would make the draft an agent has just deposited
-              // unconfirmable.
-              ((indices.length > 0 || newScenarios.length > 0) &&
-                targets.length === 0) ||
-              // Attempts chosen with no new depth: there is nothing to continue, and
-              // `extendProblem` would refuse. Leaving it clickable would lead only to
-              // a certain refusal, one second later.
-              (deepen !== null && turns <= config.turns) ||
-              // As long as the question is put, it must be answered: a silent default
-              // would decide in the user's place what their old scenarios will see
-              // again.
-              (newTools.length > 0 &&
-                toInherit.length > 0 &&
-                forExisting === null) ||
-              // A served tool with nobody to serve it would lead only to a certain
-              // refusal — `extendProblem` demands it in exactly that case.
-              (needsWorldModel && !worldModel) ||
-              // Same thing for the adversary: a depth beyond one turn on a run
-              // that has nobody to push would lead only to a certain refusal.
-              // Both fields, since one without the other is not a definition.
-              (needsAdversary && (!adversaryModel || !adversaryPrompt.trim()))
-            }
-            className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink disabled:cursor-default disabled:opacity-40"
-          >
-            {busy
-              ? "Adding…"
-              : added > 0 && deepenCount.total > 0
-                ? `Add ${added} cell${added > 1 ? "s" : ""} and deepen ${deepenCount.total}`
-                : added > 0
-                  ? `Add ${added} cell${added > 1 ? "s" : ""}`
-                  : `Deepen ${deepenCount.total} attempt${deepenCount.total > 1 ? "s" : ""}`}
-          </button>
+          {/* What an agent needs to fill it: the import tools take this id. */}
+          {playedElsewhere && draftId && (
+            <span className="text-sm text-zinc-600">
+              Draft <span className="font-mono text-[13px]">{draftId}</span>
+            </span>
+          )}
+          {!playedElsewhere && (
+            <button
+              onClick={submit}
+              disabled={
+                busy ||
+                // Nothing to add and nothing to deepen: the request would turn empty.
+                // Deepening alone stays allowed — `extendProblem` does not refuse it,
+                // and it is not the field's job to do so in its place.
+                (added === 0 && deepen === null) ||
+                // A model is demanded only if the request adds something: with no
+                // scenario to cover it would designate nothing, and a deepening alone
+                // does not need one. That is exactly `extendProblem`'s rule; writing
+                // it differently here would make the draft an agent has just deposited
+                // unconfirmable.
+                ((indices.length > 0 || newScenarios.length > 0) &&
+                  targets.length === 0) ||
+                // Attempts chosen with no new depth: there is nothing to continue, and
+                // `extendProblem` would refuse. Leaving it clickable would lead only to
+                // a certain refusal, one second later.
+                (deepen !== null && turns <= config.turns) ||
+                // As long as the question is put, it must be answered: a silent default
+                // would decide in the user's place what their old scenarios will see
+                // again.
+                (newTools.length > 0 &&
+                  toInherit.length > 0 &&
+                  forExisting === null) ||
+                // A served tool with nobody to serve it would lead only to a certain
+                // refusal — `extendProblem` demands it in exactly that case.
+                (needsWorldModel && !worldModel) ||
+                // Same thing for the adversary: a depth beyond one turn on a run
+                // that has nobody to push would lead only to a certain refusal.
+                // Both fields, since one without the other is not a definition.
+                (needsAdversary && (!adversaryModel || !adversaryPrompt.trim()))
+              }
+              className="cursor-pointer rounded-full bg-olive-deep px-3 py-1 text-sm text-paper hover:bg-chartreuse hover:text-ink disabled:cursor-default disabled:opacity-40"
+            >
+              {busy
+                ? "Adding…"
+                : added > 0 && deepenCount.total > 0
+                  ? `Add ${added} cell${added > 1 ? "s" : ""} and deepen ${deepenCount.total}`
+                  : added > 0
+                    ? `Add ${added} cell${added > 1 ? "s" : ""}`
+                    : `Deepen ${deepenCount.total} attempt${deepenCount.total > 1 ? "s" : ""}`}
+            </button>
+          )}
         </div>
       </div>
 

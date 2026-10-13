@@ -869,13 +869,17 @@ export default function EvalRunPage({
                 >
                   {publicUrl ? "Unpublish" : "Publish…"}
                 </MenuItem>
-                {!running && !external && (
+                {!running && (
                   <MenuItem
                     onClick={() => {
                       close();
                       setExtending(true);
                     }}
-                    hint="Scenarios, models or attempts, added here"
+                    hint={
+                      external
+                        ? "A draft to play outside, then import"
+                        : "Scenarios, models or attempts, added here"
+                    }
                   >
                     Extend…
                   </MenuItem>
@@ -1165,9 +1169,10 @@ export default function EvalRunPage({
         </div>
       )}
 
-      {/* Never on an imported run: our engine plays none of it, so an
-          extension of it is filled by the agent that played it, by MCP. */}
-      {extending && !running && !external && (
+      {/* On an imported run too, to compose or amend a draft, but never to
+          apply it: our engine plays none of that run, so the extension is
+          filled by whoever plays it, by MCP. */}
+      {extending && !running && (
         <ExtendPanel
           run={run}
           // The living judges, never `run.config.judges`: see the comment on
@@ -1187,17 +1192,21 @@ export default function EvalRunPage({
             setProposalId(null);
             setProposalMine(true);
           }}
-          onSubmit={async (request) => {
-              // The draft goes with the request: it is the route that refuses a
-              // draft already applied and that marks it launched, in the very
-              // request that extends. Doing it here afterwards, while swallowing
-              // the error, left a launched draft believing itself still waiting.
-            await extendRun(run.id, request, proposalId);
-            setExtending(false);
-            setProposal(null);
-            setProposalId(null);
-            await load(transcripts);
-          }}
+          onSubmit={
+            external
+              ? null
+              : async (request) => {
+                    // The draft goes with the request: it is the route that refuses a
+                    // draft already applied and that marks it launched, in the very
+                    // request that extends. Doing it here afterwards, while swallowing
+                    // the error, left a launched draft believing itself still waiting.
+                  await extendRun(run.id, request, proposalId);
+                  setExtending(false);
+                  setProposal(null);
+                  setProposalId(null);
+                  await load(transcripts);
+                }
+          }
           onSaveDraft={async (request) => {
               // In place for its author; apart for anyone else, who receives their
               // own draft without touching the original — the same rule as the run

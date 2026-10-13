@@ -2119,13 +2119,10 @@ const handler = createMcpHandler((server) => {
       );
 
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
-      // An imported run is never extended from the web app (its page opens no
-      // extension panel), so its draft's address is the run itself: `?extend=`
-      // would point at a panel that is not there.
+      // An imported run's page opens the draft too, to read or amend it: only
+      // its launch is withheld, since our engine plays none of that run.
       const imported = run.origin === "external";
-      const address = imported
-        ? `${origin}/eval/${input.run_id}`
-        : `${origin}/eval/${input.run_id}?extend=${draftId}`;
+      const address = `${origin}/eval/${input.run_id}?extend=${draftId}`;
       // The same warning as on the screen side (§7): serving from an empty world,
       // with nothing refusing it — see `extendWorldWarnings`.
       const warnings = extendWorldWarnings(request, run.config);
@@ -2141,8 +2138,8 @@ const handler = createMcpHandler((server) => {
               {
                 type: "text",
                 text:
-                  `Saved as a draft extension of "${run.label ?? input.run_id}": nothing to add ` +
-                  "or deepen, so nothing to import. Nothing to add: that combination is already " +
+                  `Saved as draft ${draftId}, an extension of "${run.label ?? input.run_id}": ` +
+                  "nothing to add or deepen, so nothing to import. Nothing to add: that combination is already " +
                   `covered.${warningsSuffix}\n\n${address}`,
               },
             ],
@@ -2185,10 +2182,11 @@ const handler = createMcpHandler((server) => {
             {
               type: "text",
               text:
-                `Saved as a draft extension of "${run.label ?? input.run_id}": ${summary}. ` +
-                "Nothing has been spent. This run was played outside the playground and " +
-                "imported, so this draft is not launched: play what it adds yourself, then fill " +
-                `it with get_import_skeleton and import_draft_results.${warningsSuffix}\n\n${address}`,
+                `Saved as draft ${draftId}, an extension of "${run.label ?? input.run_id}": ` +
+                `${summary}. Nothing has been spent. This run was played outside the playground ` +
+                "and imported, so this draft is not launched: play what it adds yourself, then " +
+                `fill it with get_import_skeleton and import_draft_results, passing draft_id ` +
+                `${draftId}.${warningsSuffix}\n\n${address}`,
             },
           ],
         };
