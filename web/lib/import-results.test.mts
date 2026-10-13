@@ -673,6 +673,24 @@ test("an ordinary judge whose slug is a system judge's key is refused, never sha
   assert.throws(() => liveJudgeKeys(live, []), DuplicateJudgeKey);
 });
 
+test("a judge an extension adds is named only by its place, never by its slug", () => {
+  // A new judge labelled "Awareness" gets the slug `awareness`, the key of the
+  // live awake judge: its own link must not be keyed by that slug.
+  const keys = liveJudgeKeys(
+    [
+      { id: "rj-p", is_principal: true, system_type: "ordinary", judge: { slug: "p" } },
+      { id: "rj-a", is_principal: false, system_type: "awake", judge: { slug: "w" } },
+      { id: "rj-n0", is_principal: false, system_type: "ordinary", judge: { slug: "awareness" } },
+    ],
+    ["rj-n0"],
+  );
+  assert.deepEqual([...keys], [
+    ["principal", "rj-p"],
+    ["awareness", "rj-a"],
+    ["new_judges[0]", "rj-n0"],
+  ]);
+});
+
 test("the keys an extension import writes with: every live judge, then the new ones in order", () => {
   const keys = liveJudgeKeys(
     [

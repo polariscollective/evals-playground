@@ -166,13 +166,20 @@ function distinct(keys: string[]): string[] {
 /** The judge links an extension import writes with, by key: every live judge
  *  of the run, then the judges the extension just added, `new_judges[i]` in
  *  the order of the request. Throws `DuplicateJudgeKey` rather than let one
- *  link shadow another. */
+ *  link shadow another.
+ *
+ * `links` may already hold the links the extension just created: those are
+ * named only by their place, never by their slug, which is free text and may
+ * equal the key of a live judge (a new judge labelled "Awareness"). */
 export function liveJudgeKeys(
   links: { id: string; is_principal: boolean; system_type: string; judge: { slug: string } }[],
   newRunJudgeIds: string[],
 ): Map<string, string> {
+  const added = new Set(newRunJudgeIds);
   const entries: [string, string][] = [
-    ...links.map((link): [string, string] => [judgeKey(link), link.id]),
+    ...links
+      .filter((link) => !added.has(link.id))
+      .map((link): [string, string] => [judgeKey(link), link.id]),
     ...newRunJudgeIds.map((id, index): [string, string] => [`new_judges[${index}]`, id]),
   ];
   distinct(entries.map(([key]) => key));
