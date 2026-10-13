@@ -24,8 +24,12 @@ What an imported run does not have:
 ## A third origin
 
 `eval_runs.origin` already says where a run was played: `local` or
-`cloud-run`. It gains `external`. The list already shows `origin` as a pill and
-already filters on it, so an external run is visible as such with no new column.
+`cloud-run`. It gains `external`. The list view already carries `origin`, so an
+external run gets its own pill in the list with no new column. A filter on it
+can come later.
+
+Every job start rewrites `origin` today (`recordStart`). It stops doing so on an
+external run, or the first catch-up pass would erase what the run is.
 
 The check constraint on `origin` is widened by a migration in
 `polaris-supabase` (`evals/supabase/migrations/`). Supabase CI does not apply
@@ -132,7 +136,10 @@ deepens (an extension draft). Each one is either:
   the scenario. `turns_done` is required: a later deepening computes the turns
   left from it.
 - **failed**: `error`, one sentence. The cell is stored as `error` with that
-  text, and its score rows too.
+  text. Its score rows stay `pending`, exactly as when our engine fails a cell.
+
+The skeleton also gives each cell its `temperature`, the one the draft planned.
+It may be left as it is or removed, but a different value is refused.
 
 For a deepened attempt, `messages` is the whole conversation, now longer, and
 replaces the stored one.
@@ -140,16 +147,18 @@ replaces the stored one.
 ### Grades
 
 `grades` on a cell holds one entry per judge linked to the run, keyed as the
-skeleton names them: `principal`, `judges[i]` for the draft's additional judges
-in their order, `awareness` and `adversary_fidelity` for the system judges.
+skeleton names them: `principal`, `awareness` and `adversary_fidelity` for the
+system judges, and for any other judge `judges[i]` (its place in a run draft's
+`judges`) or, on a run that already exists, the judge's slug.
 Each entry is one of the three outcomes the run already keeps apart:
 
 - `{ score, justification }`: graded. The score must be a value of that judge's
   scale, or the document is refused.
 - `{ score: null, justification }`: nothing to grade.
 - `{ error }`: the judge failed.
+- `null`, as the skeleton leaves it: not provided.
 
-A judge left out of a played cell keeps its score row `pending`. That is how
+A judge left out, or left `null`, of a played cell keeps its score row `pending`. That is how
 an agent that does not run the awareness check hands the run over: the catch-up
 button can then grade those rows with our judge, if someone chooses to.
 
@@ -160,7 +169,7 @@ new judge per conversation already in the run, keyed `new_judges[i]`.
 
 The document is refused whole, nothing written, when:
 
-- an expected cell or grade is missing, or one is present that was not
+- an expected cell is missing, or a cell or grade is present that was not
   expected (the refusal lists them);
 - a score is off its judge's scale;
 - a cell is both played and failed, or neither;
