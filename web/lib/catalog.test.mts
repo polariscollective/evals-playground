@@ -21,8 +21,8 @@ test("no price is left lying without a model carrying it", () => {
   assert.deepEqual(orphans, []);
 });
 
-test("the nine providers are there, in order", () => {
-  // The last five are reached through OpenRouter, one group per maker: a
+test("the ten providers are there, in order", () => {
+  // The last six are reached through OpenRouter, one group per maker: a
   // single "OpenRouter" group would say how the call travels, not whose model
   // it is.
   assert.deepEqual(
@@ -37,11 +37,12 @@ test("the nine providers are there, in order", () => {
       "z-ai",
       "qwen",
       "mistralai",
+      "meta",
     ],
   );
 });
 
-test("the five groups reached through OpenRouter share its key", () => {
+test("the six groups reached through OpenRouter share its key", () => {
   const routed = catalog(NO_FAVOURITES).filter((p) =>
     p.models.every((m) => m.id.startsWith("openrouter/")),
   );
@@ -53,12 +54,13 @@ test("the five groups reached through OpenRouter share its key", () => {
       ["z-ai", ["OPENROUTER_API_KEY"]],
       ["qwen", ["OPENROUTER_API_KEY"]],
       ["mistralai", ["OPENROUTER_API_KEY"]],
+      ["meta", ["OPENROUTER_API_KEY"]],
     ],
   );
 });
 
-test("the catalogue carries fifty-four models", () => {
-  assert.equal(knownModelIds().size, 54);
+test("the catalogue carries fifty-five models", () => {
+  assert.equal(knownModelIds().size, 55);
 });
 
 test("the twelve models that discard temperature are marked", () => {

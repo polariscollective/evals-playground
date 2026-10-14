@@ -23,16 +23,21 @@ def test_every_model_reached_through_openrouter_names_its_hosts():
     assert hostless == []
 
 
+# Served by one host only, as of October 2026: there is no second to name.
+SINGLE_HOST = {"openrouter/meta/muse-spark-1.3"}
+
+
 def test_every_model_reached_through_openrouter_has_a_second_host():
     # One host alone stalls every cell the day OpenRouter's shared pool with it
     # runs dry, as Fireworks' did for three of these models on 22 September.
+    # The exceptions are named, and only for a model nobody else serves.
     alone = [
         model["id"]
         for model in CATALOGUE
         if model["id"].startswith("openrouter/")
         and len(set(model["openrouter_hosts"])) < 2
     ]
-    assert alone == []
+    assert sorted(alone) == sorted(SINGLE_HOST)
 
 
 def test_a_model_called_directly_names_no_host():

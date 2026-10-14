@@ -157,5 +157,6 @@ def test_the_catalogue_says_which_models_refuse_a_forced_tool():
     assert accepts_forced_tool("anthropic/claude-fable-5-1") is False
     assert accepts_forced_tool("anthropic/claude-haiku-5-5") is True
     assert accepts_forced_tool("anthropic/claude-haiku-4-5") is True
+    assert accepts_forced_tool("openrouter/meta/muse-spark-1.3") is False
     # Outside the catalogue (the tests' mockllm), the forced path stands.
     assert accepts_forced_tool("mockllm/model") is True

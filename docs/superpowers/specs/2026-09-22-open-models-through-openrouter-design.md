@@ -244,3 +244,17 @@ Two others stay out:
   evaluated, never judge; the catalogue has no way yet to say that.
 - **MAI-Thinking-1** (Microsoft AI) is not on OpenRouter. It is in public
   preview on Microsoft Foundry only, which the job does not reach.
+
+## Added on 14 October 2026: Muse Spark 1.3
+
+`openrouter/meta/muse-spark-1.3` (Meta), 1.25 / 4.25, cache read 0.15, held to
+`meta`, the only host OpenRouter lists for it: the one model held to a single
+host, named as such in `tests/test_routing.py`. A day Meta's pool runs dry, its
+cells wait rather than reach a host nobody checked.
+
+It refuses a forced tool choice ("only auto is supported"), so it is marked
+`accepts_forced_tool: false` and judges through `answer_by_tool`'s free path
+(docs/superpowers/specs/2026-10-13-judges-that-refuse-a-forced-tool-design.md).
+Checked live through `routed_model`: a tool offered and its result replayed,
+and `judge_awareness` returning a grade with its justification. Temperature
+arrives: it near-repeats itself at 0 and returns nothing usable at 2.
