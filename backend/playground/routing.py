@@ -15,6 +15,7 @@ back to `get_model` would silently lose the route, and nothing would say so
 except a matrix answered by the wrong build.
 """
 
+import os
 from typing import Any
 
 from inspect_ai.model import Model, get_model
@@ -32,8 +33,35 @@ ROUTES: dict[str, dict[str, Any]] = {
 """The construction arguments each routed model receives, by identifier."""
 
 
+ENDPOINTS: dict[str, dict[str, Any]] = {
+    model["id"]: {
+        "base_url": model["base_url"],
+        "header": model.get("api_key_header"),
+        "key_var": provider["env_vars"][0],
+    }
+    for provider in load("pricing")["providers"]
+    for model in provider["models"]
+    if model.get("base_url")
+}
+"""Models served on their own endpoint (Microsoft Foundry), by identifier: the
+address, and the header their key travels in when it is not a bearer token."""
+
+
 def route(name: str) -> dict[str, Any]:
-    """The construction arguments `name` requires, empty for a direct model."""
+    """The construction arguments `name` requires, empty for a direct model.
+
+    A model on its own endpoint gets its address, and its key in the header
+    the endpoint wants, read from the environment at the moment the model is
+    built. Without the key the header is left out, and the provider then
+    fails loudly, naming the missing variable.
+    """
+    if name in ENDPOINTS:
+        endpoint = ENDPOINTS[name]
+        args: dict[str, Any] = {"base_url": endpoint["base_url"]}
+        key = os.environ.get(endpoint["key_var"])
+        if endpoint["header"] and key:
+            args["default_headers"] = {endpoint["header"]: key}
+        return args
     return ROUTES.get(name, {})
 
 

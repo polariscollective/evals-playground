@@ -21,7 +21,7 @@ test("no price is left lying without a model carrying it", () => {
   assert.deepEqual(orphans, []);
 });
 
-test("the ten providers are there, in order", () => {
+test("the eleven providers are there, in order", () => {
   // The last six are reached through OpenRouter, one group per maker: a
   // single "OpenRouter" group would say how the call travels, not whose model
   // it is.
@@ -38,6 +38,7 @@ test("the ten providers are there, in order", () => {
       "qwen",
       "mistralai",
       "meta",
+      "microsoft",
     ],
   );
 });
@@ -59,8 +60,8 @@ test("the six groups reached through OpenRouter share its key", () => {
   );
 });
 
-test("the catalogue carries fifty-five models", () => {
-  assert.equal(knownModelIds().size, 55);
+test("the catalogue carries fifty-six models", () => {
+  assert.equal(knownModelIds().size, 56);
 });
 
 test("the twelve models that discard temperature are marked", () => {

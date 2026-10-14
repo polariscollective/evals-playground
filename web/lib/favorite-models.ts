@@ -41,9 +41,9 @@ export const DEFAULT_RUN_MODEL = "anthropic/claude-sonnet-5-5";
  *
  * Then, as of October 2026, the model ai-character-index rates for each
  * company it grades, where the catalogue can run it: GPT-6 Astra, Gemini 3.7
- * Flash, DeepSeek V4 Pro, Qwen 3.8 Max, Mistral Medium 3.5 and Muse Spark 1.3
- * join the ones already here. MAI-Thinking-1 (Microsoft AI) is served by no
- * host the catalogue reaches, so it is not offered yet.
+ * Flash, DeepSeek V4 Pro, Qwen 3.8 Max, Mistral Medium 3.5, Muse Spark 1.3 and
+ * MAI-Thinking-1 (through Polaris Collective's own Microsoft Foundry
+ * deployment) join the ones already here.
  *
  * The Opus, Sonnet and Haiku offered are the 5.5 generation since October
  * 2026; Opus 5, Sonnet 5 and Haiku 4.5 stay in the catalogue for whoever
@@ -69,6 +69,7 @@ export const DEFAULT_FAVORITE_MODELS: readonly string[] = [
   "openrouter/qwen/qwen3.8-max-0902",
   "openrouter/mistralai/mistral-medium-3-5",
   "openrouter/meta/muse-spark-1.3",
+  "openai-api/foundry/MAI-Thinking-1",
 ];
 
 /** The models to offer this person.

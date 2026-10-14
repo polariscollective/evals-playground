@@ -4,6 +4,7 @@
   "_comment_temperature": "honours_temperature absent means true. false says the provider throws the parameter away: Claude 4.7 and beyond run in adaptive thinking and refuse it, inspect_ai strips it and logs. The call succeeds — that is what makes the trap treacherous, and why it is written here.",
   "_comment_forced_tool": "accepts_forced_tool absent means true. false says the model answers a forced tool choice with a 400: Claude Fable 5.1, Opus 5.5 and Sonnet 5.5, and Muse Spark 1.3 (\"only auto is supported\"). Every judge and the world model ask for one named tool; for these models the job offers the tool freely and asks again when the answer is not the call (backend/playground/tool_calls.py, answer_by_tool). Claude Haiku 5.5 is priced at its rate for prompts up to 100K tokens; beyond that Anthropic bills 0.50 / 2.50, which a run's recorded cost would undercount.",
   "_comment_openrouter": "Models whose id starts with `openrouter/` travel through OpenRouter, on the one key OPENROUTER_API_KEY. OpenRouter serves each of them from fifteen to thirty hosts, at prices that vary twofold and precisions that vary too, and by default picks any of them per call. `openrouter_hosts` holds each model to two hosts, tried in that order and never a third (backend/playground/routing.py): each passed the entry rule, and the second is there because one host alone stalls every cell the day OpenRouter's shared pool with it runs dry. The first is the maker's own when it passes, otherwise Fireworks, or Novita for DeepSeek V3.2, which Fireworks does not serve. DeepSeek's own servers are refused by the account's data policy (they train on paid traffic), and Z.ai's refuse a forced tool choice, which every judge sends. Each price is the highest of the two hosts', so the recorded cost never falls short of the bill, and `cache_read_per_mtok` is its cache read, which runs from 3 % to 50 % of input here rather than the shared 10 %. See docs/superpowers/specs/2026-09-22-open-models-through-openrouter-design.md. Qwen 3.8 Max and Mistral Medium 3.5 are held to two endpoints of their maker's own, the only hosts OpenRouter lists for them (as of October 2026): Alibaba and Alibaba's US East region, Mistral and Mistral's zero-data-retention endpoint. Qwen 3.8 Max refuses a temperature of 2 (`Temperature should be in [0.0, 2.0)`): a sweep on it must stop below 2. Muse Spark 1.3 is served by Meta alone (as of October 2026), so it is held to that one host, the only exception to two: a day Meta's pool runs dry, its cells wait.",
+  "_comment_foundry": "Models on their own endpoint carry it as base_url, with api_key_header naming the header their key goes in (backend/playground/routing.py). MAI-Thinking-1 is Polaris Collective's own Microsoft Foundry deployment of that name (resource polaris-collective-resource), reached through its OpenAI-compatible chat completions endpoint with the key from FOUNDRY_API_KEY in an api-key header. Priced at Microsoft's launch rate, 2 / 8 per million tokens; Azure's price table showed no figure as of October 2026. Its deployed version, 2026-06-01, is a preview Microsoft retires on 4 November 2026: update the deployment to a newer version, the name stays. It accepts a forced tool choice; it answers normally at temperature 1.5 but runs away at 2, so a sweep on it must stop below 2.",
   "chars_per_token": 2.5,
   "default_response_tokens": 1100,
   "short_response_tokens": 200,
@@ -247,6 +248,10 @@
       "input_per_mtok": 1.25,
       "output_per_mtok": 4.25,
       "cache_read_per_mtok": 0.15
+    },
+    "openai-api/foundry/MAI-Thinking-1": {
+      "input_per_mtok": 2.0,
+      "output_per_mtok": 8.0
     }
   },
   "providers": [
@@ -618,6 +623,21 @@
           "openrouter_hosts": [
             "meta"
           ]
+        }
+      ]
+    },
+    {
+      "id": "microsoft",
+      "label": "Microsoft AI (MAI), via Microsoft Foundry",
+      "env_vars": [
+        "FOUNDRY_API_KEY"
+      ],
+      "models": [
+        {
+          "id": "openai-api/foundry/MAI-Thinking-1",
+          "label": "MAI-Thinking-1 (preview)",
+          "base_url": "https://polaris-collective-resource.services.ai.azure.com/mai/v1",
+          "api_key_header": "api-key"
         }
       ]
     }

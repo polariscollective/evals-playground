@@ -26,13 +26,12 @@ test("the default names only models from the catalogue", () => {
   assert.deepEqual(DEFAULT_FAVORITE_MODELS.filter((id) => !known.has(id)), []);
 });
 
-test("the default carries twenty models", () => {
-  assert.equal(DEFAULT_FAVORITE_MODELS.length, 20);
+test("the default carries twenty-one models", () => {
+  assert.equal(DEFAULT_FAVORITE_MODELS.length, 21);
 });
 
 test("the default offers the model ai-character-index rates for each company it can run", () => {
-  // As of October 2026. MAI-Thinking-1 is missing because the catalogue cannot
-  // run it yet, not by choice.
+  // As of October 2026: one model per company the index grades.
   for (const id of [
     "openai/gpt-6-astra",
     "anthropic/claude-fable-5-1",
@@ -43,6 +42,7 @@ test("the default offers the model ai-character-index rates for each company it 
     "openrouter/deepseek/deepseek-v4-pro-0813",
     "openrouter/moonshotai/kimi-k3",
     "openrouter/meta/muse-spark-1.3",
+    "openai-api/foundry/MAI-Thinking-1",
   ]) {
     assert.ok(DEFAULT_FAVORITE_MODELS.includes(id), id);
   }

@@ -112,3 +112,23 @@ def test_the_arguments_passed_in_travel_with_the_route(built):
 def test_a_direct_model_is_built_as_before(built):
     routed_model("mockllm/model", {"custom_outputs": ["x"]})
     assert built == [("mockllm/model", {"custom_outputs": ["x"]})]
+
+
+# --- a model on its own endpoint (Microsoft Foundry) -------------------------
+
+MAI = "openai-api/foundry/MAI-Thinking-1"
+
+
+def test_a_model_on_its_own_endpoint_is_sent_there_with_its_key_header(monkeypatch):
+    # Foundry wants the key in an `api-key` header, not as a bearer token, and
+    # the endpoint lives in the catalogue: it is no secret.
+    monkeypatch.setenv("FOUNDRY_API_KEY", "the-key")
+    assert route(MAI) == {
+        "base_url": "https://polaris-collective-resource.services.ai.azure.com/mai/v1",
+        "default_headers": {"api-key": "the-key"},
+    }
+
+
+def test_without_its_key_the_header_is_left_out_and_the_provider_complains(monkeypatch):
+    monkeypatch.delenv("FOUNDRY_API_KEY", raising=False)
+    assert "default_headers" not in route(MAI)
