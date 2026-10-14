@@ -504,6 +504,9 @@ def catchup_dataset(supabase: Supabase, run_id: str) -> MemoryDataset:
         run_id=f"eq.{run_id}",
         status="in.(pending,error)",
         select="run_judge_id,sample_id",
+        # Stable across pages: a large run holds more grades than one
+        # response carries (see `Supabase.select`).
+        order="run_judge_id,sample_id",
     )
     judges_per_sample: dict[str, list[str]] = {}
     for row in to_resume:

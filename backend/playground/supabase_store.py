@@ -47,6 +47,11 @@ detecting abandoned runs rests on.
 """
 
 
+
+PAGE_SIZE = 1000
+"""PostgREST's cap on the rows of one response on the evals project
+(`max_rows`, polaris-supabase evals/supabase/config.toml)."""
+
 class SupabaseError(RuntimeError):
     """A PostgREST request failed.
 
@@ -113,7 +118,30 @@ class Supabase:
         return response.json() if response.content.strip() else None
 
     def select(self, table: str, **params: Any) -> list[dict]:
-        return self._request("GET", f"/rest/v1/{table}", params=params) or []
+        """Every row matching `params`.
+
+        PostgREST cuts a response at `max_rows` (1000 on the evals project)
+        without saying so. A read that sets its own `limit` is one request;
+        any other is read page after page until a short one. Give such a read
+        an `order` when its table is being written meanwhile.
+        """
+        if "limit" in params:
+            return self._request("GET", f"/rest/v1/{table}", params=params) or []
+        rows: list[dict] = []
+        offset = 0
+        while True:
+            page = (
+                self._request(
+                    "GET",
+                    f"/rest/v1/{table}",
+                    params={**params, "offset": offset, "limit": PAGE_SIZE},
+                )
+                or []
+            )
+            rows.extend(page)
+            if len(page) < PAGE_SIZE:
+                return rows
+            offset += PAGE_SIZE
 
     def insert(
         self,
@@ -673,6 +701,8 @@ def unchecked_tool_results(supabase: Supabase, run_id: str) -> list[dict[str, An
         ),
         run_id=f"eq.{run_id}",
         faithful="is.null",
+        # Stable across pages: see `Supabase.select`.
+        order="scenario_index,tool_name,arguments_hash,state_hash",
     )
 
 

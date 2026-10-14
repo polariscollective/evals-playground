@@ -580,3 +580,41 @@ def test_the_reason_for_a_failed_check_aims_at_the_row_by_its_key():
     assert params["scenario_index"] == "eq.3"
     assert params["tool_name"] == "eq.search_files"
     assert params["arguments_hash"] == "eq.abc"
+
+
+# --- reading past PostgREST's 1000-row cap ----------------------------------
+
+
+def _rows_table(total: int):
+    """A handler serving `total` rows, honouring `offset` and `limit` as
+    PostgREST does, never more than 1000 at once."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params.get("offset", 0))
+        limit = min(int(request.url.params.get("limit", 1000)), 1000)
+        rows = [{"n": n} for n in range(offset, min(total, offset + limit))]
+        return httpx.Response(200, json=rows)
+
+    return handler
+
+
+def test_a_read_past_the_cap_comes_back_whole():
+    # 3 judges x 486 conversations: a catch-up pass saw only the first 1000
+    # pending grades and left the rest pending.
+    supabase, sent = _supabase(_rows_table(1458))
+    rows = supabase.select("judge_scores", run_id="eq.r", order="sample_id")
+    assert [row["n"] for row in rows] == list(range(1458))
+    assert [r.url.params["offset"] for r in sent] == ["0", "1000"]
+
+
+def test_a_read_under_the_cap_is_one_request():
+    supabase, sent = _supabase(_rows_table(486))
+    assert len(supabase.select("judge_scores", run_id="eq.r")) == 486
+    assert len(sent) == 1
+
+
+def test_a_read_with_its_own_limit_is_left_alone():
+    supabase, sent = _supabase(_rows_table(5000))
+    assert len(supabase.select("eval_runs", id="eq.r", limit=1)) == 1
+    assert len(sent) == 1
+    assert "offset" not in sent[0].url.params

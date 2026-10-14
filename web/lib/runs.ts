@@ -235,6 +235,8 @@ async function principalVerdictsByRun(
   }>(JUDGE_SCORES, {
     run_judge_id: `in.(${principals.map((p) => p.id).join(",")})`,
     select: "sample_id,status,score",
+    // Stable across pages: see `select`.
+    order: "run_judge_id.asc,sample_id.asc",
   });
 
   const bySample = new Map<string, JudgeVerdict>();
@@ -551,6 +553,9 @@ async function attachJudges(
         }>(JUDGE_SCORES, {
           run_judge_id: `in.(${wanted.map((link) => link.id).join(",")})`,
           select: "run_judge_id,sample_id,status,score,justification,error",
+          // Stable across pages: three judges on a large run pass the
+          // database's 1000-row cap, see `select`.
+          order: "run_judge_id.asc,sample_id.asc",
         });
 
   const byJudge = new Map<string, Record<string, JudgeVerdictEntry>>();
@@ -631,6 +636,8 @@ async function catchupMissingTotal(
     // above) — same filter as `catchup_dataset` on the engine's side.
     status: "in.(pending,error)",
     select: "sample_id",
+    // Stable across pages: see `select`.
+    order: "run_judge_id.asc,sample_id.asc",
   });
   if (pending.length === 0) return 0;
 
@@ -640,6 +647,8 @@ async function catchupMissingTotal(
     id: `in.(${sampleIds.join(",")})`,
     status: "eq.done",
     select: "id",
+    // Stable across pages: see `select`.
+    order: "id.asc",
   });
 
   return catchupCandidateCount(pending, new Set(done.map((row) => row.id)));
@@ -1274,6 +1283,8 @@ export async function addJudge(
   const samples = await select<{ id: string }>(SAMPLES, {
     run_id: `eq.${runId}`,
     select: "id",
+    // Stable across pages: see `select`.
+    order: "id.asc",
   });
 
   // Named, the judge is linked as it stands; described, it is created. The
@@ -1429,6 +1440,8 @@ export async function failedCellCount(runId: string): Promise<number> {
     select: "id",
     run_id: `eq.${runId}`,
     status: "eq.error",
+    // Stable across pages: see `select`.
+    order: "id.asc",
   });
   return failed.length;
 }
@@ -1538,6 +1551,8 @@ export async function planExtension(
   }>(SAMPLES, {
     select: "scenario_index,target_model,repetition",
     run_id: `eq.${runId}`,
+    // Stable across pages: see `select`.
+    order: "id.asc",
   });
   const lastRepetition = new Map<string, number>();
   for (const cell of existingCells) {
@@ -1598,6 +1613,8 @@ export async function planExtension(
   const playedCells = await select<MeasurableCell>(SAMPLES, {
     run_id: `eq.${runId}`,
     select: "scenario_index,target_model,status,turns_done,usage",
+    // Stable across pages: see `select`.
+    order: "id.asc",
   });
   for (const cell of playedCells) cell.usage ??= {};
   const measured = measureRun(playedCells, config.models, config.turns);
@@ -1721,6 +1738,8 @@ async function deepenCandidates(
     run_judge_id: `eq.${principalRunJudgeId}`,
     status: "eq.done",
     score: Array.isArray(deepen) ? `in.(${deepen.join(",")})` : "not.is.null",
+    // Stable across pages: see `select`.
+    order: "run_judge_id.asc,sample_id.asc",
   });
   if (scored.length === 0) return [];
 
@@ -2294,6 +2313,8 @@ export async function importExtension(
     const samples = await select<SampleRef>(SAMPLES, {
       run_id: `eq.${runId}`,
       select: "id,scenario_index,target_model,repetition",
+      // Stable across pages: see `select`.
+      order: "id.asc",
     });
     const judgeIds = liveJudgeKeys(await loadLiveRunJudges(runId), newRunJudgeIds);
     await writeImport(
@@ -2351,11 +2372,13 @@ export async function copyRun(
   const run = runs[0];
 
   const [samples, links, scores, toolResults] = await Promise.all([
-    select<EvalSample>(SAMPLES, { run_id: `eq.${sourceId}`, select: "*" }),
+    select<EvalSample>(SAMPLES, { run_id: `eq.${sourceId}`, select: "*", order: "id.asc" }),
     loadLiveRunJudges(sourceId),
     select<JudgeScore>(JUDGE_SCORES, {
       run_id: `eq.${sourceId}`,
       select: "run_judge_id,sample_id,status,score,justification,error",
+      // Stable across pages: see `select`.
+      order: "run_judge_id.asc,sample_id.asc",
     }),
     select<{ scenario_index: number } & Record<string, unknown>>(TOOL_RESULTS, {
       run_id: `eq.${sourceId}`,

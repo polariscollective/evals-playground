@@ -10,6 +10,7 @@
 // project. It must never reach a browser: nothing in this file may be imported
 // from a client component.
 import "server-only";
+import { allPages } from "./pages.ts";
 
 export const RUNS = "eval_runs";
 export const SAMPLES = "eval_samples";
@@ -106,11 +107,25 @@ async function request(
   return text.trim() ? JSON.parse(text) : null;
 }
 
+/** PostgREST's cap on the rows of one response on this project (`max_rows`). */
+const PAGE_SIZE = 1000;
+
+/** Every row matching `params`. A read that sets its own `limit` is one
+ *  request; any other is read page after page, since PostgREST silently cuts
+ *  a response at `max_rows` (see `allPages`). Give such a read an `order`
+ *  when its table is being written meanwhile. */
 export async function select<T = Record<string, unknown>>(
   table: string,
   params: Params = {},
 ): Promise<T[]> {
-  return ((await request("GET", table, { params })) as T[]) ?? [];
+  if (params.limit !== undefined) {
+    return ((await request("GET", table, { params })) as T[]) ?? [];
+  }
+  return allPages(
+    async (offset, limit) =>
+      ((await request("GET", table, { params: { ...params, offset, limit } })) as T[]) ?? [],
+    PAGE_SIZE,
+  );
 }
 
 export async function insert<T = Record<string, unknown>>(
