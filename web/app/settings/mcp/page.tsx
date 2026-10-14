@@ -11,6 +11,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { McpReference } from "@/components/McpReference";
 import { McpConnections } from "@/components/McpConnections";
+import { McpPermissions } from "@/components/McpPermissions";
 import { originOf } from "@/lib/inspect-view";
 
 export const metadata: Metadata = {
@@ -33,6 +34,10 @@ export default async function McpPage() {
       </header>
 
       <McpReference origin={origin} />
+
+      <div className="border-t border-zinc-200 pt-6">
+        <McpPermissions />
+      </div>
 
       <div className="border-t border-zinc-200 pt-6">
         <McpConnections />

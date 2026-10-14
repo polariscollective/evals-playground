@@ -150,3 +150,14 @@ export async function updateFavoriteModels(
   await update(PROFILES, { favorite_models: models }, { user_email: `eq.${email}` });
   return ensureProfile(email);
 }
+
+/** Turns on or off whether an agent connected through MCP may publish or
+ *  unpublish this person's runs. Reads back for the same reason as
+ *  `updateProfileCaps`. */
+export async function updateMcpCanChangeVisibility(
+  email: string,
+  allowed: boolean,
+): Promise<Profile> {
+  await update(PROFILES, { mcp_can_change_visibility: allowed }, { user_email: `eq.${email}` });
+  return ensureProfile(email);
+}

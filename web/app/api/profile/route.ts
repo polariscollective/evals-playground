@@ -6,6 +6,7 @@ import { capProblem, profilePatchProblem } from "@/lib/profile-caps";
 import {
   ensureProfile,
   updateFavoriteModels,
+  updateMcpCanChangeVisibility,
   updateProfileCaps,
   updateAdvice,
 } from "@/lib/profiles";
@@ -55,6 +56,7 @@ export async function PATCH(request: Request) {
      *  an already-deployed client still sends. */
     advice_topic?: unknown;
     favorite_models?: unknown;
+    mcp_can_change_visibility?: unknown;
   };
 
   // Refuse a request that carries two of those three settings at once — a rule
@@ -86,6 +88,20 @@ export async function PATCH(request: Request) {
       user.email,
       topic,
       body.scenario_advice as string | null,
+    );
+    return NextResponse.json({ profile });
+  }
+
+  if (body.mcp_can_change_visibility !== undefined) {
+    if (typeof body.mcp_can_change_visibility !== "boolean") {
+      return NextResponse.json(
+        { error: "mcp_can_change_visibility must be true or false" },
+        { status: 422 },
+      );
+    }
+    const profile = await updateMcpCanChangeVisibility(
+      user.email,
+      body.mcp_can_change_visibility,
     );
     return NextResponse.json({ profile });
   }

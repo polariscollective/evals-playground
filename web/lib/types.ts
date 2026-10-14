@@ -1135,6 +1135,10 @@ export interface Profile {
    * Bounds only what is OFFERED; a run's validation, for its part, accepts the
    * whole catalogue. */
   favorite_models: string[] | null;
+  /** Whether an agent connected through MCP may publish or unpublish this
+   *  person's runs (`set_run_visibility`). True by default; read as true when
+   *  absent, as on a row read before the column existed. */
+  mcp_can_change_visibility?: boolean;
 }
 
 /** What `mcp_launches` says of the last hour, for one person: how many launches,

@@ -98,3 +98,11 @@ test("favorite_models does not travel with the scenario advice", () => {
 test("favorite_models on its own passes", () => {
   assert.equal(profilePatchProblem({ favorite_models: ["grok/grok-4.6"] }), null);
 });
+
+test("the MCP visibility switch alone passes, and is refused beside another setting", () => {
+  assert.equal(profilePatchProblem({ mcp_can_change_visibility: false }), null);
+  assert.notEqual(
+    profilePatchProblem({ mcp_can_change_visibility: false, max_usd_per_run: 2 }),
+    null,
+  );
+});

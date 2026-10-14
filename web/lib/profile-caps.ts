@@ -51,17 +51,19 @@ export function profilePatchProblem(body: unknown): string | null {
     favorite_models?: unknown;
     max_usd_per_run?: unknown;
     max_usd_per_hour?: unknown;
+    mcp_can_change_visibility?: unknown;
   };
-  // Three independent settings, one route: each arrives from its own screen and
+  // Independent settings, one route: each arrives from its own screen and
   // none has to know the others. A body carrying two is refused rather than
   // silently clearing one of them.
   const sent = [
     b.scenario_advice !== undefined,
     b.favorite_models !== undefined,
     b.max_usd_per_run !== undefined || b.max_usd_per_hour !== undefined,
+    b.mcp_can_change_visibility !== undefined,
   ].filter(Boolean).length;
   if (sent > 1) {
-    return "Send the spending caps, the scenario advice and the favourite models in separate requests — this route applies one of the three, and silently dropping the rest of what you sent would be worse than refusing it.";
+    return "Send the spending caps, the scenario advice, the favourite models and the MCP visibility switch in separate requests: this route applies one of them, and silently dropping the rest of what you sent would be worse than refusing it.";
   }
   return null;
 }

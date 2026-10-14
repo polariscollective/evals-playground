@@ -184,6 +184,15 @@ export const MCP_TOOLS: McpTool[] = [
     output: "The tags, with how many runs carry each.",
   },
   {
+    name: "set_run_visibility",
+    summary:
+      "Publishes a run, readable by anyone at its public address with no sign-in, or makes it " +
+      "private again. The run's creator only, and only while they leave the switch below on. " +
+      "Nothing runs and nothing is spent.",
+    input: ["run_id", "public"],
+    output: "The public address, or that the run is private again.",
+  },
+  {
     name: "set_run_tags",
     summary: "Adds tags to a run, by their words rather than by an id.",
     input: ["run_id", "tags"],

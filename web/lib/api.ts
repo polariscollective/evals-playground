@@ -455,6 +455,13 @@ export const updateAdvice = (topic: AdviceTopic, advice: string | null) =>
 
 /** Writes the favourites of whoever is signed in. Sent alone: the route applies
  *  one setting at a time — see `profilePatchProblem`. */
+/** Whether an agent connected through MCP may publish or unpublish my runs. */
+export const updateMcpCanChangeVisibility = (allowed: boolean) =>
+  request<{ profile: Profile }>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ mcp_can_change_visibility: allowed }),
+  });
+
 export const updateProfileFavorites = (favorite_models: string[]) =>
   request<{ profile: Profile }>("/api/profile", {
     method: "PATCH",

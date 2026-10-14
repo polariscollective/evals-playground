@@ -80,8 +80,9 @@ import {
   reusedJudges,
   saveAnalysis,
   saveNotes,
+  setPublic,
 } from "@/lib/runs";
-import { isRunId } from "@/lib/run-id";
+import { isRunId, publicRunPath } from "@/lib/run-id";
 import { extensionsOf } from "@/lib/run-extensions";
 import { countMatches, searchRuns } from "@/lib/run-search";
 import {
@@ -494,7 +495,8 @@ const handler = createMcpHandler((server) => {
         "eval-awareness included.",
       inputSchema: z.object({ run_id: z.string().describe("The run's UUID.") }),
     },
-    async ({ run_id }) => {
+    async ({ run_id }, ctx) => {
+      const siteOrigin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
       const result = await runOrError(run_id, {
         withTranscripts: false,
         withSourceCsvFlag: false,
@@ -534,6 +536,8 @@ const handler = createMcpHandler((server) => {
         started_at: run.started_at,
         finished_at: run.finished_at,
         is_public: run.is_public,
+        // The address anyone can read it at, with no sign-in; null while private.
+        public_url: run.is_public ? `${siteOrigin}${publicRunPath(run.id)}` : null,
         notes: run.notes,
         analysis: run.analysis,
         total_samples: run.total_samples,
@@ -2338,6 +2342,57 @@ const handler = createMcpHandler((server) => {
         }
         throw error;
       }
+    },
+  );
+
+  server.registerTool(
+    "set_run_visibility",
+    {
+      title: "Publish a run, or make it private again",
+      description:
+        "Starts nothing and spends nothing. Makes a run public, readable by anyone at its public " +
+        "address with no sign-in, or private again, which kills that address. The answer gives " +
+        "the public address when the run is public. Restricted to the run's own creator, and " +
+        "refused when that person has turned off \"Let an agent change a run's visibility\" on " +
+        "the MCP settings page (on by default). A public run shows its conversations, grades and " +
+        "notes to anyone with the link: publish only what its creator asked to share.",
+      inputSchema: z.object({
+        run_id: z.string().describe("The run's UUID."),
+        public: z.boolean().describe("true to publish, false to make it private again."),
+      }),
+    },
+    async (input, ctx) => {
+      const found = await runOrError(input.run_id, { withJudges: false });
+      if ("error" in found) return found.error;
+      const caller = await callerEmail(ctx);
+      const ownership = authorOnly(found.run.run.user_email, caller);
+      if (ownership) return toolError(ownership);
+      const profile = await profileOf(caller);
+      if (!profile) {
+        return toolError(
+          "Your profile could not be read right now, so whether you allow an agent to change a " +
+            "run's visibility cannot be checked. Try again in a moment.",
+        );
+      }
+      if (profile.mcp_can_change_visibility === false) {
+        return toolError(
+          "You have turned off \"Let an agent change a run's visibility\" on the MCP settings " +
+            "page, so this run's visibility can only be changed from its page in the application.",
+        );
+      }
+      await setPublic(input.run_id, input.public);
+      const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
+      return {
+        content: [
+          {
+            type: "text",
+            text: input.public
+              ? `Run ${input.run_id} is public. Anyone with this address can read it, no sign-in:\n\n` +
+                `${origin}${publicRunPath(input.run_id)}`
+              : `Run ${input.run_id} is private again. Its public address no longer answers.`,
+          },
+        ],
+      };
     },
   );
 
