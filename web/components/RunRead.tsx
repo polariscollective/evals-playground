@@ -149,6 +149,11 @@ export function verdictOf(
  * adversary's carries the scenario's own opening message. On a run already
  * played those texts exist, so there is no reason to stand in for them, and
  * every reason not to show one row's prompt as though it were every row's. */
+
+/** The width of every model column of the matrix, in rem: narrow enough for
+ *  nine models to sit side by side, wide enough for a mean such as 2.67. */
+const MODEL_COLUMN_REM = 5.5;
+
 function perScenario(
   scenarios: EvalScenario[],
   build: (scenario: EvalScenario) => ReturnType<typeof judgePreview>,
@@ -1901,18 +1906,18 @@ export function RunMatrix({
         onChange={onViewChange}
       />
       <div className="overflow-x-auto">
-        {/* Fixed layout: the scenario column has its width, and the models
-            share the rest equally, whatever their names or their cells hold.
-            A floor per model column keeps nine models readable, scrolling
-            sideways rather than squeezing. */}
+        {/* Fixed layout: the scenario column has its width, and every model
+            column the same narrow one, whatever its name or its cells hold.
+            The table is as wide as its columns, never stretched across the
+            page, and nine models scroll sideways rather than squeeze. */}
         <table
-          className="w-full table-fixed border-collapse text-sm"
-          style={{ minWidth: `${18 + targets.length * 7}rem` }}
+          className="table-fixed border-collapse text-sm"
+          style={{ width: `${18 + targets.length * MODEL_COLUMN_REM}rem` }}
         >
           <colgroup>
             <col style={{ width: "18rem" }} />
             {targets.map((target) => (
-              <col key={target} />
+              <col key={target} style={{ width: `${MODEL_COLUMN_REM}rem` }} />
             ))}
           </colgroup>
           <thead>
@@ -1944,9 +1949,11 @@ export function RunMatrix({
               {targets.map((target) => (
                 <th
                   key={target}
-                  className="border-b border-zinc-300 p-2 text-left font-mono text-xs font-medium break-words"
+                  className="border-b border-zinc-300 p-2 text-left align-bottom font-mono text-xs font-medium"
+                  title={target}
                 >
-                  {shortModel(target)}
+                  {/* Cut on three lines at most; the full name on hover. */}
+                  <span className="line-clamp-3 [overflow-wrap:anywhere]">{shortModel(target)}</span>
                 </th>
               ))}
             </tr>
