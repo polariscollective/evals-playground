@@ -112,20 +112,16 @@ type Source = "manual" | "csv";
  * a blank page opened on — and the quote with it.
  *
  * The two fallbacks serve the case where that model is not offered to this
- * person: they removed it from their favourites, or their provider's key is
- * missing. We then take their first available favourite, and failing that the
+ * person: they removed it from their favourites. We then take their first available favourite, and failing that the
  * first model at all — preselecting a model the filtered catalogue will not
  * show would be a fault, but leaving all three fields empty would be worse. */
 function openingModel(catalog: ProviderInfo[]): string | null {
-  const available = catalog.find((p) => p.key_present);
-  if (!available) return null;
-  const offered = catalog
-    .filter((p) => p.key_present)
-    .flatMap((p) => p.models);
+  const offered = catalog.flatMap((p) => p.models);
   return (
     offered.find((m) => m.id === DEFAULT_RUN_MODEL && m.favorite)?.id ??
     offered.find((m) => m.favorite)?.id ??
-    available.models[0].id
+    offered[0]?.id ??
+    null
   );
 }
 
@@ -1380,8 +1376,6 @@ function EvaluateForm() {
       .map((model) => ({
         id: model.id,
         label: `${provider.label} — ${model.label}`,
-        available: provider.key_present,
-        missing: provider.env_vars.join(" or "),
         outsideFavourites: !model.favorite,
         honoursTemperature: model.honours_temperature,
         price:
@@ -1413,11 +1407,10 @@ function EvaluateForm() {
       >
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {modelRows.map((m) => (
-          <option key={m.id} value={m.id} disabled={!m.available}>
+          <option key={m.id} value={m.id}>
             {m.label}
             {m.price ? ` — ${m.price}` : ""}
             {m.outsideFavourites ? " — not in your favourites" : ""}
-            {m.available ? "" : ` (${m.missing} missing)`}
           </option>
         ))}
       </select>
@@ -2314,10 +2307,9 @@ function EvaluateForm() {
               >
                 <option value="">Same as the run&apos;s judge above</option>
                 {modelRows.map((m) => (
-                  <option key={m.id} value={m.id} disabled={!m.available}>
+                  <option key={m.id} value={m.id}>
                     {m.label}
                     {m.price ? ` — ${m.price}` : ""}
-                    {m.available ? "" : ` (${m.missing} missing)`}
                   </option>
                 ))}
               </select>
@@ -2425,11 +2417,10 @@ function EvaluateForm() {
             {modelRows.map((m) => (
               <label
                 key={m.id}
-                className={`flex items-center gap-2 text-sm ${m.available ? "" : "text-zinc-400"}`}
+                className="flex items-center gap-2 text-sm"
               >
                 <input
                   type="checkbox"
-                  disabled={!m.available}
                   checked={targets.includes(m.id)}
                   onChange={(e) =>
                     setTargets((current) =>
@@ -2442,7 +2433,6 @@ function EvaluateForm() {
                 <span className="flex-1">
                   {m.label}
                   {m.outsideFavourites ? " — not in your favourites" : ""}
-                  {m.available ? "" : ` (${m.missing} missing)`}
                 </span>
                 {m.price && (
                   <span className="font-mono text-xs text-zinc-500">

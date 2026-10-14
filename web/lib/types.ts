@@ -1414,7 +1414,6 @@ export interface ProviderInfo {
   id: string;
   label: string;
   env_vars: string[];
-  key_present: boolean;
   models: ModelOption[];
 }
 

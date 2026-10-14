@@ -3,22 +3,6 @@
 import { SHARED_PRICING } from "./shared.ts";
 import type { ProviderInfo } from "./types";
 
-const PROVIDER_ENV: Record<string, string[]> = Object.fromEntries(
-  SHARED_PRICING.providers.map((p) => [p.id, p.env_vars]),
-);
-
-/** Are the provider keys even visible from here?
- *
- * They live only where the models run: in the Cloud Run Job's secrets. The
- * deployed application has none, and can therefore say nothing about their
- * presence. In development they are in the `.env` and the information is real —
- * that is the case this function serves. */
-function canSeeProviderKeys(): boolean {
-  return Object.values(PROVIDER_ENV)
-    .flat()
-    .some((name) => Boolean(process.env[name]));
-}
-
 /** The identifiers this product knows how to launch, flat.
  *
  * Separated from `catalog()`, which also does screen work — greying out a
@@ -39,18 +23,17 @@ export function knownModelIds(): Set<string> {
  * route — and an implicit default here would pass an oversight off as a
  * choice. */
 export function catalog(favorites: readonly string[]): ProviderInfo[] {
-  const informed = canSeeProviderKeys();
   const preferred = new Set(favorites);
   return SHARED_PRICING.providers.map((provider) => ({
     id: provider.id,
     label: provider.label,
+    // No model is greyed out for a key this server lacks: the web server never
+    // calls a model, the Cloud Run job does, with its own keys. Reading this
+    // server's environment greyed out providers the job runs perfectly well
+    // (every OpenRouter model locally, where the .env has no OpenRouter key).
+    // A key the job really lacks shows as red cells carrying the provider's
+    // error.
     env_vars: provider.env_vars,
-    // When we cannot know, we do not grey out: a missing key will show anyway,
-    // as red cells carrying the provider's error. Greying out wrongly would
-    // stop a perfectly valid run being launched.
-    key_present: informed
-      ? provider.env_vars.some((name) => Boolean(process.env[name]))
-      : true,
     models: provider.models.map((model) => {
       const price = SHARED_PRICING.prices[model.id as keyof typeof SHARED_PRICING.prices];
       const declared = (model as { honours_temperature?: boolean }).honours_temperature;
