@@ -1901,7 +1901,20 @@ export function RunMatrix({
         onChange={onViewChange}
       />
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        {/* Fixed layout: the scenario column has its width, and the models
+            share the rest equally, whatever their names or their cells hold.
+            A floor per model column keeps nine models readable, scrolling
+            sideways rather than squeezing. */}
+        <table
+          className="w-full table-fixed border-collapse text-sm"
+          style={{ minWidth: `${18 + targets.length * 7}rem` }}
+        >
+          <colgroup>
+            <col style={{ width: "18rem" }} />
+            {targets.map((target) => (
+              <col key={target} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th className="border-b border-zinc-300 p-2 text-left font-medium">
@@ -1931,7 +1944,7 @@ export function RunMatrix({
               {targets.map((target) => (
                 <th
                   key={target}
-                  className="border-b border-zinc-300 p-2 text-left font-mono text-xs font-medium"
+                  className="border-b border-zinc-300 p-2 text-left font-mono text-xs font-medium break-words"
                 >
                   {shortModel(target)}
                 </th>
