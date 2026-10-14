@@ -1707,6 +1707,26 @@ function EvaluateForm() {
                 className="w-full rounded border border-zinc-300 p-2 text-sm"
               />
             </label>
+            {/* Shown, not edited here: notes are written in the YAML or added
+                on a run's page, and the form only carries them. */}
+            {Object.keys(scenarioJudgeNotes).length > 0 && (
+              <div className="space-y-1">
+                <span className="text-sm font-medium">
+                  Judge notes{" "}
+                  <span className="font-normal text-zinc-500">
+                    — read after the criterion by a judge linked with the name
+                  </span>
+                </span>
+                <dl className="space-y-2 rounded border border-zinc-300 p-2 text-sm">
+                  {Object.entries(scenarioJudgeNotes).map(([name, text]) => (
+                    <div key={name}>
+                      <dt className="font-mono text-[13px] text-olive">{name}</dt>
+                      <dd className="whitespace-pre-wrap">{text}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
             <ScenarioTools
               tools={tools}
               selected={scenarioTools}

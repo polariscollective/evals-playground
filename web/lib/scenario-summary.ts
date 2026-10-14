@@ -20,6 +20,12 @@ export function scenarioBadges(scenario: EvalScenario): string[] {
 
   if (scenario.note?.trim()) badges.push("note");
 
+  // Named, not counted: a judge reads a note by its name, and the name is
+  // what one looks for in a list of rows.
+  for (const name of Object.keys(scenario.judge_notes ?? {})) {
+    badges.push(`judge note ${name}`);
+  }
+
   const turns = scenario.history?.length ?? 0;
   if (turns > 0) badges.push(`${turns} seeded turn${turns > 1 ? "s" : ""}`);
 

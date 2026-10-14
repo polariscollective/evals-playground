@@ -102,6 +102,15 @@ function Scenario({
               </p>
             </div>
           )}
+          {Object.entries(scenario.judge_notes ?? {}).map(([name, text]) => (
+            <div key={name}>
+              <span className="font-medium text-zinc-500">
+                Judge note <span className="font-mono">{name}</span> — read after
+                the criterion by a judge linked with this name
+              </span>
+              <p className="whitespace-pre-wrap text-zinc-700">{text}</p>
+            </div>
+          ))}
           {history.length > 0 && (
             <div>
               <span className="font-medium text-zinc-500">

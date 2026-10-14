@@ -48,3 +48,15 @@ test("the pills come in the order they are read", () => {
     ["note", "1 seeded turn", "no tools"],
   );
 });
+
+test("each judge note shows by its name", () => {
+  assert.deepEqual(
+    scenarioBadges({
+      title: "t",
+      system_prompt: "s",
+      opening_message: "m",
+      judge_notes: { "core-v1": "R1 applies.", "core-v2": "R1, read literally." },
+    }),
+    ["judge note core-v1", "judge note core-v2"],
+  );
+});
