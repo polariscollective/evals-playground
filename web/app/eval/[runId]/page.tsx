@@ -1412,6 +1412,7 @@ export default function EvalRunPage({
           target={open.target}
           loading={!transcripts}
           onClose={() => setOpen(null)}
+          displayedRunJudgeId={displayedRunJudgeId}
         />
       )}
     </main>

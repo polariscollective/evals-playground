@@ -143,6 +143,19 @@ export function verdictOf(
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
 }
 
+/** The judge a cell's attempts lead with: the one the matrix shows when it is
+ *  an ordinary judge still linked, otherwise the principal. */
+function featuredJudge(
+  judges: PublicRunJudgeView[] | undefined,
+  displayedRunJudgeId: string | undefined,
+): PublicRunJudgeView | undefined {
+  const shown = judges?.find(
+    (judge) =>
+      judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
+  );
+  return shown ?? principalJudge(judges);
+}
+
 /** One entry per scenario, for `PromptPreview`'s selector.
  *
  * A judge's prompt opens with the scenario's own system prompt, and the
@@ -1334,12 +1347,16 @@ export function DetailModal({
   target,
   loading,
   onClose,
+  displayedRunJudgeId,
 }: {
   detail: PublicRunDetail;
   scenarioIndex: number;
   target: string;
   loading: boolean;
   onClose: () => void;
+  /** The judge the matrix shows, when not the principal: each attempt then
+   *  leads with that judge's verdict, as the cell clicked did. */
+  displayedRunJudgeId?: string;
 }) {
   const [showSystem, setShowSystem] = useState(false);
   const [showTools, setShowTools] = useState(false);
@@ -1348,9 +1365,11 @@ export function DetailModal({
     (sample) =>
       sample.scenario_index === scenarioIndex && sample.target_model === target,
   );
-  // The principal is authoritative for this window's scale — the same fallback as
-  // `JudgeBlock` when `detail.judges` is not provided yet.
-  const rubric = principalJudge(detail.judges)?.judge.rubric ?? detail.run.config.rubric;
+  // The judge the matrix shows leads this window, as it led the cell clicked:
+  // the principal by default. A system judge does not take that place (it has
+  // no rubric, and the awareness one has its own line on every attempt).
+  const featured = featuredJudge(detail.judges, displayedRunJudgeId);
+  const rubric = featured?.judge.rubric ?? detail.run.config.rubric;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1493,6 +1512,7 @@ export function DetailModal({
             key={attempt.id}
             attempt={attempt}
             judges={detail.judges}
+            featuredRunJudgeId={featured?.run_judge_id}
             rubric={rubric}
             runTurns={detail.run.config.turns}
             toolResults={detail.tool_results}
@@ -1507,11 +1527,15 @@ export function DetailModal({
 export function AttemptView({
   attempt,
   judges,
+  featuredRunJudgeId,
   rubric,
   runTurns,
   toolResults,
   costDeclared = false,
 }: {
+  /** The judge whose verdict leads, folded or not: the one the matrix shows.
+   *  Absent, the principal. */
+  featuredRunJudgeId?: string;
   attempt: EvalSample;
   /** All the run's living judges, with their verdict on each conversation — see
    *  `RunJudgeView` (`lib/types.ts`). `undefined` when the caller did not ask for
@@ -1542,14 +1566,17 @@ export function AttemptView({
     toolResults ?? [],
   );
 
-  const principal = principalJudge(judges);
+  // The judge whose verdict leads: the one the matrix shows, the principal by
+  // default. Named "principal" below for history; it is the featured judge.
+  const principal = featuredJudge(judges, featuredRunJudgeId);
   const principalVerdict = verdictOf(principal, attempt.id);
+  const featuredIsPrincipal = principal?.is_principal !== false;
   const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
   const awakeVerdict = awake ? verdictOf(awake, attempt.id) : null;
-  // This run's undeleted judges, except the principal (already shown above) and
-  // the awareness one (dealt with apart, with its own visibility threshold) — it
-  // is that list an unfolded conversation must still show so as to hold the
-  // design's "all the undeleted judges".
+  // This run's undeleted judges, except the featured one (already shown above)
+  // and the awareness one (dealt with apart, with its own visibility threshold).
+  // When another judge leads, the real principal lands here, with the rest: an
+  // unfolded conversation still shows "all the undeleted judges".
   const others = (judges ?? []).filter(
     (judge) => judge.run_judge_id !== principal?.run_judge_id && judge !== awake,
   );
@@ -1646,7 +1673,10 @@ export function AttemptView({
           says whether this attempt is worth opening. */}
       {principalVerdict.justification && (
         <p className="px-3 pb-3 text-sm text-zinc-700">
-          <span className="font-medium">Judge:</span> {principalVerdict.justification}
+          <span className="font-medium">
+            {featuredIsPrincipal ? "Judge:" : `${principal?.judge.label ?? "Judge"}:`}
+          </span>{" "}
+          {principalVerdict.justification}
         </p>
       )}
       {principalVerdict.error && (
