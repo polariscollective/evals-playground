@@ -42,6 +42,13 @@ const PATHS: Record<DimensionKey, React.ReactNode> = {
       <path d="M4 3h8l-2 2.75L12 8.5H4Z" />
     </>
   ),
+  // An arrow coming into a box: played elsewhere and brought in, or here.
+  played: (
+    <>
+      <path d="M2.5 9.5v3a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" />
+      <path d="M8 2v8M5 7l3 3 3-3" />
+    </>
+  ),
 };
 
 export function DimensionIcon({ dimension }: { dimension: DimensionKey }) {

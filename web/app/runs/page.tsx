@@ -536,7 +536,9 @@ export default function RunsPage() {
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${PSEUDO_TAG_CLASSES.external}`}
                           title="Played outside the playground, then imported"
                         >
-                          <DimensionIcon dimension="machine" />
+                          {/* Its own question, beside "local" and "mcp", not
+                              one of their answers. */}
+                          <DimensionIcon dimension="played" />
                           external
                         </span>
                       )}

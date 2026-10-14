@@ -72,6 +72,9 @@ export const DIMENSIONS = {
   author: { a: "mcp", b: "manual", on: "both" },
   kind: { a: "extend", b: "creation", on: "drafts" },
   launch: { a: "launched", b: "waiting", on: "drafts" },
+  // Where the conversations were played: imported from outside the
+  // playground, or played by it. `machine` says which machine of ours did it.
+  played: { a: "external", b: "playground", on: "runs" },
 } as const satisfies Record<string, Dimension>;
 
 export type DimensionKey = keyof typeof DIMENSIONS;
@@ -93,6 +96,7 @@ export const PSEUDO_TAG_CLASSES: Record<string, string> = {
   cancelled: "bg-amber-100 text-amber-900",
   local: "bg-zinc-100 text-zinc-600",
   external: "bg-teal-100 text-teal-900",
+  playground: "bg-zinc-100 text-zinc-600",
   live: "bg-zinc-100 text-zinc-600",
   public: "bg-amber-100 text-amber-800",
   private: "bg-zinc-100 text-zinc-600",
@@ -116,7 +120,6 @@ const RESERVED: readonly string[] = [
     DIMENSIONS[key].a,
     DIMENSIONS[key].b,
   ]),
-  "external",
 ];
 
 /** Case-insensitive, like `createTag` which deduplicates through `ilike`:
@@ -148,6 +151,7 @@ export function runSides(run: FilterableRun): Sides {
     machine: run.origin === "local" ? "a" : "b",
     visibility: run.is_public ? "a" : "b",
     author: run.launched_via === "mcp" ? "a" : "b",
+    played: run.origin === "external" ? "a" : "b",
   };
 }
 

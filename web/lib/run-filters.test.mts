@@ -44,6 +44,7 @@ test("an ordinary run falls on the plain side of every dimension", () => {
     machine: "b",
     visibility: "b",
     author: "b",
+    played: "b",
   });
 });
 
@@ -51,6 +52,17 @@ test("each notable property tips its dimension", () => {
   assert.equal(runSides(run({ origin: "local" })).machine, "a");
   assert.equal(runSides(run({ is_public: true })).visibility, "a");
   assert.equal(runSides(run({ launched_via: "mcp" })).author, "a");
+  assert.equal(runSides(run({ origin: "external" })).played, "a");
+});
+
+test("an imported run can be kept or left out of the list", () => {
+  assert.equal(sideLabel("played", "a"), "external");
+  assert.equal(sideLabel("played", "b"), "playground");
+  const onlyImported = cycleDimension(OPEN, "played");
+  assert.equal(passes(runSides(run({ origin: "external" })), [], onlyImported), true);
+  assert.equal(passes(runSides(run({ origin: "cloud-run" })), [], onlyImported), false);
+  // Drafts are neither: a draft is played nowhere yet.
+  assert.equal(draftSides(draft()).played, undefined);
 });
 
 test("a draft has neither machine nor publication", () => {
@@ -219,17 +231,9 @@ test("every displayable word has its classes", () => {
   for (const word of words) {
     assert.ok(PSEUDO_TAG_CLASSES[word]?.length > 0, word);
   }
-  // `external` is a badge and not a filter word: a run played outside the
-  // playground sits on the "live" side of the machine dimension, and the badge
-  // only says more about it.
-  const badgeOnly = ["external"];
-  for (const word of badgeOnly) {
-    assert.ok(PSEUDO_TAG_CLASSES[word]?.length > 0, word);
-  }
-  assert.equal(
-    Object.keys(PSEUDO_TAG_CLASSES).length,
-    words.length + badgeOnly.length,
-  );
+  // `external` is a filter word now (the `played` dimension), and still the
+  // badge an imported run carries in the list: one entry serves both.
+  assert.equal(Object.keys(PSEUDO_TAG_CLASSES).length, words.length);
 });
 
 // --- "am I already there?", which decides whether a link goes dark ---------
