@@ -156,6 +156,24 @@ function featuredJudge(
   return shown ?? principalJudge(judges);
 }
 
+/** How many of these conversations `judge` has still to grade, out of how
+ *  many. The run's own progress counts the principal only; a judge added
+ *  later, or caught up after the run, says here how far along it is. */
+function stillToGrade(
+  judge: PublicRunJudgeView | undefined,
+  samples: { id: string }[],
+): { pending: number; total: number } {
+  // Its verdicts not loaded yet (just switched to it): say nothing rather than
+  // count every conversation as waiting for a moment.
+  if (!judge || Object.keys(judge.scores).length === 0) {
+    return { pending: 0, total: samples.length };
+  }
+  return {
+    pending: samples.filter((sample) => verdictOf(judge, sample.id).status === "pending").length,
+    total: samples.length,
+  };
+}
+
 /** The judge the matrix follows, switched in one click from the matrix's top
  *  right: one pill per ordinary judge still linked, the principal first.
  *  Nothing when there is no other judge to switch to. A reading choice, never
@@ -1462,6 +1480,45 @@ export function DetailModal({
           )}
         </div>
 
+        {/* What the judge leading this window was handed on this very scenario,
+            its judge note included: the answer to "why did it grade like that". */}
+        {featured && scenario && (
+          <PromptPreview
+            label={`See the exact prompt ${featured.is_principal ? "the judge" : shortModel(featured.model)} received`}
+            note={
+              (featured.judge.sees_system_prompt === false
+                ? "This judge was not shown the scenario's system prompt. "
+                : "") +
+              "The transcript is stood in for; the rest is word for word."
+            }
+            preview={judgePreview(
+              {
+                criterion: criterionWithNote(
+                  featured.judge.criterion ?? detail.run.config.criterion,
+                  scenario,
+                  featured.judge_note,
+                ),
+                rubric,
+                sees_system_prompt: featured.judge.sees_system_prompt,
+                grades: featured.judge.grades,
+                sees_adversary_goals: featured.judge.sees_adversary_goals,
+              },
+              scenario.system_prompt,
+              detail.run.config.adversary_prompt,
+            )}
+          />
+        )}
+
+        {featured && !featured.is_principal && (() => {
+          const { pending, total } = stillToGrade(featured, attempts);
+          return pending > 0 ? (
+            <p className="text-sm text-zinc-600">
+              <span className="font-mono text-[13px]">{pending}/{total}</span>{" "}
+              still to grade by {shortModel(featured.model)} in this cell.
+            </p>
+          ) : null;
+        })()}
+
         {/* What this cell really had to hand: a scenario may have received no tool
             when the others have them all, and that is often the comparison one is
             after. With the description, without which one cannot reread a decision
@@ -1866,6 +1923,13 @@ export function RunMatrix({
   // principal. `awake` travels apart: it is a different judge on the same
   // conversation, and each cell's awareness badge does not depend on what the shown
   // judge decided.
+  // Another judge just chosen, its verdicts not loaded yet: the cells would
+  // read as all pending. Said, and the matrix dimmed, until they arrive.
+  const verdictsLoading =
+    !!displayedJudge &&
+    !displayedJudge.is_principal &&
+    detail.samples.length > 0 &&
+    Object.keys(displayedJudge.scores).length === 0;
   const matrixSamples: MatrixSample[] = detail.samples.map((sample) => ({
     scenario_index: sample.scenario_index,
     target_model: sample.target_model,
@@ -1959,6 +2023,22 @@ export function RunMatrix({
             Show how far from what a good model should have scored
           </label>
         )}
+        {verdictsLoading && (
+          <span className="text-sm text-zinc-600">
+            Loading {shortModel(displayedJudge!.model)}&apos;s grades…
+          </span>
+        )}
+        {displayedJudge && !displayedJudge.is_principal && (() => {
+          const { pending, total } = stillToGrade(displayedJudge, detail.samples);
+          return pending > 0 ? (
+            <span
+              className="font-mono text-[13px] text-zinc-600"
+              title={`${shortModel(displayedJudge.model)} has ${pending} of the ${total} conversations still to grade.`}
+            >
+              {pending}/{total} still to grade
+            </span>
+          ) : null;
+        })()}
         {onSelectDisplayed && (
           <JudgeToggle
             judges={detail.judges ?? []}
@@ -1999,7 +2079,7 @@ export function RunMatrix({
             The table is as wide as its columns, never stretched across the
             page, and nine models scroll sideways rather than squeeze. */}
         <table
-          className="table-fixed border-collapse text-sm"
+          className={`table-fixed border-collapse text-sm transition-opacity duration-150 ${verdictsLoading ? "opacity-40" : ""}`}
           style={{ width: `${18 + targets.length * MODEL_COLUMN_REM}rem` }}
         >
           <colgroup>

@@ -527,6 +527,15 @@ export default function EvalRunPage({
   const [displayedRunJudgeId, setDisplayedRunJudgeId] = useState<
     string | undefined
   >(undefined);
+  // Every live judge's verdicts, loaded from the first time another judge is
+  // shown and kept from then on: switching between judges is then instant,
+  // instead of a reload per switch during which the shown judge had no
+  // grades yet and its cells looked empty.
+  const [fullJudgeScores, setFullJudgeScores] = useState(false);
+  const showJudge = useCallback((runJudgeId: string | undefined) => {
+    if (runJudgeId !== undefined) setFullJudgeScores(true);
+    setDisplayedRunJudgeId(runJudgeId);
+  }, []);
   const [openScenario, setOpenScenario] = useState<number | null>(null);
   const [stopping, setStopping] = useState(false);
   // Which action is waiting to be confirmed, if there is one.
@@ -584,7 +593,7 @@ export default function EvalRunPage({
         // judge shown.
         const loaded = await getRun(runId, {
           withTranscripts,
-          withFullJudgeScores: displayedRunJudgeId !== undefined,
+          withFullJudgeScores: fullJudgeScores,
         });
         // Same reason as on the list: a finished run kept open must not make its
         // matrix flicker.
@@ -600,7 +609,7 @@ export default function EvalRunPage({
         setError((e as Error).message);
       }
     },
-    [runId, displayedRunJudgeId],
+    [runId, fullJudgeScores],
   );
 
   // `?extend=<id>`: one comes from the drafts list with a proposal to reread.
@@ -1363,7 +1372,7 @@ export default function EvalRunPage({
         onOpenScenario={setOpenScenario}
         onOpenCell={openCell}
         displayedRunJudgeId={displayedRunJudgeId}
-        onSelectDisplayed={setDisplayedRunJudgeId}
+        onSelectDisplayed={showJudge}
       />
 
       {/* Under the matrix, because they say whether it can be read at all.
@@ -1376,7 +1385,7 @@ export default function EvalRunPage({
         onUnlink={handleUnlinkJudge}
         onDesignatePrincipal={handleDesignatePrincipal}
         displayedRunJudgeId={displayedRunJudgeId}
-        onSelectDisplayed={setDisplayedRunJudgeId}
+        onSelectDisplayed={showJudge}
       />
 
       <ToolsBlock detail={detail} />
