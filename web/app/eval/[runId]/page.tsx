@@ -1363,6 +1363,7 @@ export default function EvalRunPage({
         onOpenScenario={setOpenScenario}
         onOpenCell={openCell}
         displayedRunJudgeId={displayedRunJudgeId}
+        onSelectDisplayed={setDisplayedRunJudgeId}
       />
 
       {/* Under the matrix, because they say whether it can be read at all.

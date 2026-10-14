@@ -156,6 +156,49 @@ function featuredJudge(
   return shown ?? principalJudge(judges);
 }
 
+/** The judge the matrix follows, switched in one click from the matrix's top
+ *  right: one pill per ordinary judge still linked, the principal first.
+ *  Nothing when there is no other judge to switch to. A reading choice, never
+ *  a write: making a judge principal stays in the judge block. */
+function JudgeToggle({
+  judges,
+  shownRunJudgeId,
+  onSelect,
+}: {
+  judges: PublicRunJudgeView[];
+  shownRunJudgeId: string | undefined;
+  onSelect: (judge: PublicRunJudgeView) => void;
+}) {
+  const ordinary = judges
+    .filter((judge) => judge.system_type === "ordinary")
+    .sort((a, b) => Number(b.is_principal) - Number(a.is_principal));
+  if (ordinary.length < 2) return null;
+  return (
+    <div role="group" aria-label="Judge shown" className="flex flex-wrap items-center gap-1">
+      <span className="mr-1 text-sm text-zinc-600">Judge</span>
+      {ordinary.map((judge) => {
+        const active = judge.run_judge_id === shownRunJudgeId;
+        return (
+          <button
+            key={judge.run_judge_id}
+            onClick={() => onSelect(judge)}
+            aria-pressed={active}
+            title={`${judge.judge.label}, graded by ${judge.model}${judge.is_principal ? " (principal)" : ""}`}
+            className={`max-w-[14rem] cursor-pointer truncate rounded-full border px-3 py-0.5 text-sm transition-colors duration-150 ${
+              active
+                ? "border-olive-deep bg-olive-deep text-paper"
+                : "border-olive text-ink hover:bg-chartreuse"
+            }`}
+          >
+            {shortModel(judge.model)}
+            {judge.is_principal ? ", principal" : ""}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** One entry per scenario, for `PromptPreview`'s selector.
  *
  * A judge's prompt opens with the scenario's own system prompt, and the
@@ -1775,12 +1818,16 @@ export function RunMatrix({
   onOpenScenario,
   onOpenCell,
   displayedRunJudgeId,
+  onSelectDisplayed,
 }: {
   detail: PublicRunDetail;
   view: MatrixView;
   onViewChange: (next: MatrixView) => void;
   onOpenScenario: (index: number) => void;
   onOpenCell: (scenario: number, target: string) => void;
+  /** Switches the judge the matrix follows, from the toggle at its top right.
+   *  Absent (the public page): no toggle. */
+  onSelectDisplayed?: (runJudgeId: string | undefined) => void;
   /** The judge one chose to look at — see `JudgeBlock`, which carries the
    *  selector. `undefined`, or an identifier that no longer designates a living
    *  ordinary judge of this run, falls back on the principal: that is what this
@@ -1891,7 +1938,7 @@ export function RunMatrix({
 
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="eyebrow">Grade per scenario and model</h2>
+        <h2 className="eyebrow mr-auto">Grade per scenario and model</h2>
         {/* Out of the panel below, which opens folded. On a run that declares
             targets this reading is the main thing the matrix has to offer, and a
             setting nobody can see is a setting nobody uses.
@@ -1911,6 +1958,17 @@ export function RunMatrix({
             />
             Show how far from what a good model should have scored
           </label>
+        )}
+        {onSelectDisplayed && (
+          <JudgeToggle
+            judges={detail.judges ?? []}
+            shownRunJudgeId={displayedJudge?.run_judge_id}
+            onSelect={(judge) =>
+              // The principal is the default: choosing it clears the choice,
+              // as the judge block's own selector does.
+              onSelectDisplayed(judge.is_principal ? undefined : judge.run_judge_id)
+            }
+          />
         )}
       </div>
 
