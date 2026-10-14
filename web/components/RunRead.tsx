@@ -26,6 +26,7 @@
 // — only for the real case of a caller that did not ask for it (a run still
 // being opened, or a future lighter caller).
 import { criterionWithNote } from "@/lib/judge-prompt";
+import { rubricOf } from "@/lib/system-scale";
 import { useEffect, useState } from "react";
 import { Collapsible } from "@/components/Collapsible";
 import { Dialog } from "@/components/Dialog";
@@ -143,17 +144,22 @@ export function verdictOf(
   return judge?.scores[sampleId] ?? PENDING_VERDICT;
 }
 
-/** The judge a cell's attempts lead with: the one the matrix shows when it is
- *  an ordinary judge still linked, otherwise the principal. */
+/** The judge a cell's attempts lead with: the one the matrix shows while it
+ *  is still linked, a system judge included, otherwise the principal. */
 function featuredJudge(
   judges: PublicRunJudgeView[] | undefined,
   displayedRunJudgeId: string | undefined,
 ): PublicRunJudgeView | undefined {
-  const shown = judges?.find(
-    (judge) =>
-      judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
-  );
+  const shown = judges?.find((judge) => judge.run_judge_id === displayedRunJudgeId);
   return shown ?? principalJudge(judges);
+}
+
+/** A judge's name in a pill or a sentence: its model, or what a system judge
+ *  checks, since every system judge runs on the run's judge model. */
+function judgeShortName(judge: PublicRunJudgeView): string {
+  if (judge.system_type === "awake") return "awareness";
+  if (judge.system_type === "faithful_adversary") return "adversary fidelity";
+  return shortModel(judge.model);
 }
 
 /** How many of these conversations `judge` has still to grade, out of how
@@ -187,9 +193,11 @@ function JudgeToggle({
   shownRunJudgeId: string | undefined;
   onSelect: (judge: PublicRunJudgeView) => void;
 }) {
+  // Ordinary judges first, the principal at their head, then the system ones.
   const ordinary = judges
     .filter((judge) => judge.system_type === "ordinary")
-    .sort((a, b) => Number(b.is_principal) - Number(a.is_principal));
+    .sort((a, b) => Number(b.is_principal) - Number(a.is_principal))
+    .concat(judges.filter((judge) => judge.system_type !== "ordinary"));
   if (ordinary.length < 2) return null;
   return (
     <div role="group" aria-label="Judge shown" className="flex flex-wrap items-center gap-1">
@@ -208,7 +216,7 @@ function JudgeToggle({
                 : "border-olive text-ink hover:bg-chartreuse"
             }`}
           >
-            {shortModel(judge.model)}
+            {judgeShortName(judge)}
             {judge.is_principal ? ", principal" : ""}
           </button>
         );
@@ -1220,8 +1228,14 @@ export function JudgeBlock({
   // the old world), fall back on the first living ordinary judge rather than on
   // nothing: that is what lets the banner below stay actionable rather than
   // disappearing along with the one gesture that repairs the situation.
+  // Ordinary judges only: a system judge shown in the matrix has its own
+  // fixed question, explained in the list below, and this block stays on the
+  // principal rather than present the principal's criterion as its own.
   const displayedJudge =
-    others.find((judge) => judge.run_judge_id === displayedRunJudgeId) ??
+    others.find(
+      (judge) =>
+        judge.run_judge_id === displayedRunJudgeId && judge.system_type === "ordinary",
+    ) ??
     principal ??
     others.find((judge) => judge.system_type === "ordinary");
   // True only if a principal exists AND it is the one being looked at.
@@ -1427,10 +1441,9 @@ export function DetailModal({
       sample.scenario_index === scenarioIndex && sample.target_model === target,
   );
   // The judge the matrix shows leads this window, as it led the cell clicked:
-  // the principal by default. A system judge does not take that place (it has
-  // no rubric, and the awareness one has its own line on every attempt).
+  // the principal by default. A system judge reads on the engine's scale.
   const featured = featuredJudge(detail.judges, displayedRunJudgeId);
-  const rubric = featured?.judge.rubric ?? detail.run.config.rubric;
+  const rubric = rubricOf(featured) ?? detail.run.config.rubric;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1484,28 +1497,38 @@ export function DetailModal({
             its judge note included: the answer to "why did it grade like that". */}
         {featured && scenario && (
           <PromptPreview
-            label={`See the exact prompt ${featured.is_principal ? "the judge" : shortModel(featured.model)} received`}
+            label={`See the exact prompt ${featured.is_principal ? "the judge" : judgeShortName(featured)} received`}
             note={
               (featured.judge.sees_system_prompt === false
                 ? "This judge was not shown the scenario's system prompt. "
                 : "") +
               "The transcript is stood in for; the rest is word for word."
             }
-            preview={judgePreview(
-              {
-                criterion: criterionWithNote(
-                  featured.judge.criterion ?? detail.run.config.criterion,
-                  scenario,
-                  featured.judge_note,
-                ),
-                rubric,
-                sees_system_prompt: featured.judge.sees_system_prompt,
-                grades: featured.judge.grades,
-                sees_adversary_goals: featured.judge.sees_adversary_goals,
-              },
-              scenario.system_prompt,
-              detail.run.config.adversary_prompt,
-            )}
+            preview={
+              featured.system_type === "awake"
+                ? awarenessPreview(featured.judge.sees_system_prompt !== false, scenario.system_prompt)
+                : featured.system_type === "faithful_adversary"
+                  ? fidelityPreview(
+                      detail.run.config.adversary_prompt,
+                      featured.judge.sees_system_prompt !== false,
+                      scenario.system_prompt,
+                    )
+                  : judgePreview(
+                      {
+                        criterion: criterionWithNote(
+                          featured.judge.criterion ?? detail.run.config.criterion,
+                          scenario,
+                          featured.judge_note,
+                        ),
+                        rubric,
+                        sees_system_prompt: featured.judge.sees_system_prompt,
+                        grades: featured.judge.grades,
+                        sees_adversary_goals: featured.judge.sees_adversary_goals,
+                      },
+                      scenario.system_prompt,
+                      detail.run.config.adversary_prompt,
+                    )
+            }
           />
         )}
 
@@ -1514,7 +1537,7 @@ export function DetailModal({
           return pending > 0 ? (
             <p className="text-sm text-zinc-600">
               <span className="font-mono text-[13px]">{pending}/{total}</span>{" "}
-              still to grade by {shortModel(featured.model)} in this cell.
+              still to grade by {judgeShortName(featured)} in this cell.
             </p>
           ) : null;
         })()}
@@ -1671,7 +1694,11 @@ export function AttemptView({
   const principal = featuredJudge(judges, featuredRunJudgeId);
   const principalVerdict = verdictOf(principal, attempt.id);
   const featuredIsPrincipal = principal?.is_principal !== false;
-  const awake = judges?.find((judge) => judge.system_type === AWAKE_TYPE);
+  // The awareness judge's own line, unless it is the judge already leading.
+  const awake = judges?.find(
+    (judge) =>
+      judge.system_type === AWAKE_TYPE && judge.run_judge_id !== principal?.run_judge_id,
+  );
   const awakeVerdict = awake ? verdictOf(awake, attempt.id) : null;
   // This run's undeleted judges, except the featured one (already shown above)
   // and the awareness one (dealt with apart, with its own visibility threshold).
@@ -1774,7 +1801,7 @@ export function AttemptView({
       {principalVerdict.justification && (
         <p className="px-3 pb-3 text-sm text-zinc-700">
           <span className="font-medium">
-            {featuredIsPrincipal ? "Judge:" : `${principal?.judge.label ?? "Judge"}:`}
+            {featuredIsPrincipal ? "Judge:" : `${principal ? judgeShortName(principal) : "Judge"}:`}
           </span>{" "}
           {principalVerdict.justification}
         </p>
@@ -1905,7 +1932,8 @@ export function RunMatrix({
   const displayedJudge =
     detail.judges?.find((judge) => judge.run_judge_id === displayedRunJudgeId) ??
     principal;
-  const rubric = displayedJudge?.judge.rubric ?? run.config.rubric;
+  // A system judge has no written scale: it reads on the engine's.
+  const rubric = rubricOf(displayedJudge) ?? run.config.rubric;
   // Which end of that judge's scale is the good one. `!== false` rather than a
   // plain read: a judge stored before the column existed carries nothing, and
   // it was written under the convention this defaults to.
@@ -2025,7 +2053,7 @@ export function RunMatrix({
         )}
         {verdictsLoading && (
           <span className="text-sm text-zinc-600">
-            Loading {shortModel(displayedJudge!.model)}&apos;s grades…
+            Loading {judgeShortName(displayedJudge!)}&apos;s grades…
           </span>
         )}
         {displayedJudge && !displayedJudge.is_principal && (() => {
@@ -2033,7 +2061,7 @@ export function RunMatrix({
           return pending > 0 ? (
             <span
               className="font-mono text-[13px] text-zinc-600"
-              title={`${shortModel(displayedJudge.model)} has ${pending} of the ${total} conversations still to grade.`}
+              title={`${judgeShortName(displayedJudge)} has ${pending} of the ${total} conversations still to grade.`}
             >
               {pending}/{total} still to grade
             </span>
