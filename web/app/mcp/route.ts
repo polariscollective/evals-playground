@@ -54,6 +54,7 @@ import {
   playedHereProblem,
 } from "@/lib/import-results";
 import { judgeNoteChoiceProblem, noteNamesOf } from "@/lib/judge-notes";
+import { extensionAddsNothing } from "@/lib/extension-plan";
 import { authorOnly, extensionRefusal, importDraft } from "@/lib/import-draft";
 import { sealUploadLink, UPLOAD_LINK_TTL_MS } from "@/lib/import-upload-link";
 import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
@@ -1344,7 +1345,9 @@ const handler = createMcpHandler((server) => {
         // and above all not the unrelated one of an hour already loaded by other
         // launches — a $0 quote must never find itself refused for what was spent
         // elsewhere.
-        if (plan.cases.length === 0 && plan.continued === 0) {
+        // A judge added alone is something to launch: it rereads every
+        // conversation already played (a catch-up pass), and is quoted.
+        if (extensionAddsNothing(plan)) {
           return toolError("Nothing to add: that combination is already covered.");
         }
         const quote = plan.estimate?.usd ?? 0;
@@ -2093,7 +2096,7 @@ const handler = createMcpHandler((server) => {
       // Nothing to add and nothing to deepen: `launch_draft` would refuse this
       // draft for that reason alone, before even looking at the budget — the same
       // refusal, word for word.
-      if (plan.cases.length === 0 && plan.continued === 0 && plan.newJudges.length === 0) {
+      if (extensionAddsNothing(plan)) {
         if (imported) {
           return {
             content: [
