@@ -22,7 +22,14 @@
  * not break the page.
  */
 
-import { DIMENSION_KEYS, OPEN, type DimensionKey, type FilterState, type Side } from "./run-filters";
+import {
+  DIMENSION_KEYS,
+  OPEN,
+  sidesOf,
+  type DimensionKey,
+  type FilterState,
+  type Side,
+} from "./run-filters";
 
 export type FilterMode = "runs" | "drafts";
 
@@ -58,7 +65,9 @@ function parse(raw: unknown, mode: FilterMode): FilterState {
     const given = source.dims as Record<string, unknown>;
     for (const key of DIMENSION_KEYS) {
       const side = given[key];
-      if (side === "a" || side === "b") dims[key] = side;
+      if (typeof side === "string" && (sidesOf(key) as string[]).includes(side)) {
+        dims[key] = side as Side;
+      }
     }
   }
 

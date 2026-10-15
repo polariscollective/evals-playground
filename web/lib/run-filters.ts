@@ -7,8 +7,9 @@
  * tag created tomorrow would be born invisible if the list named the ones
  * turned on.
  *
- * DIMENSIONS are binary: a run ran locally or live, it is published or not, an
- * agent launched it or a human. Treating them as tags one turns off answered
+ * DIMENSIONS are binary, or nearly: a run ran locally or live, an agent
+ * launched it or a human. Visibility alone has three sides (public, private,
+ * restricted), which the same button reaches one after the other. Treating them as tags one turns off answered
  * only "I do not want that", never "I want ONLY that": turning "MCP" off showed
  * the human runs, but nothing showed the agent runs alone. Hence three states —
  * one side, the other, or both — and a button that cycles between them.
@@ -49,8 +50,9 @@ export const STATUS_LABELS: Record<string, string> = {
 };
 
 /** Which side of a dimension a row occupies. `a` is the notable side: the one
- *  that earns a badge on the row, and the one people come looking for. */
-export type Side = "a" | "b";
+ *  that earns a badge on the row, and the one people come looking for. `c`
+ *  exists only on a dimension that names it. */
+export type Side = "a" | "b" | "c";
 
 /** What a dimension's button can be worth. `both` filters nothing. */
 export type Choice = Side | "both";
@@ -58,6 +60,8 @@ export type Choice = Side | "both";
 interface Dimension {
   a: string;
   b: string;
+  /** A third side, for the one dimension that has one. */
+  c?: string;
   /** On which list this button makes sense. */
   on: "runs" | "drafts" | "both";
 }
@@ -68,7 +72,7 @@ interface Dimension {
  * is publishable as long as nothing exists. */
 export const DIMENSIONS = {
   machine: { a: "local", b: "live", on: "runs" },
-  visibility: { a: "public", b: "private", on: "runs" },
+  visibility: { a: "public", b: "private", c: "restricted", on: "runs" },
   author: { a: "mcp", b: "manual", on: "both" },
   kind: { a: "extend", b: "creation", on: "drafts" },
   launch: { a: "launched", b: "waiting", on: "drafts" },
@@ -99,6 +103,7 @@ export const PSEUDO_TAG_CLASSES: Record<string, string> = {
   playground: "bg-zinc-100 text-zinc-600",
   live: "bg-zinc-100 text-zinc-600",
   public: "bg-amber-100 text-amber-800",
+  restricted: "bg-teal-100 text-teal-900",
   private: "bg-zinc-100 text-zinc-600",
   mcp: "bg-teal-100 text-teal-900",
   manual: "bg-zinc-100 text-zinc-600",
@@ -116,10 +121,9 @@ export const PSEUDO_TAG_CLASSES: Record<string, string> = {
  * and claim a run was played elsewhere when it was not. */
 const RESERVED: readonly string[] = [
   ...STATUS_TAGS,
-  ...(Object.keys(DIMENSIONS) as DimensionKey[]).flatMap((key) => [
-    DIMENSIONS[key].a,
-    DIMENSIONS[key].b,
-  ]),
+  ...(Object.keys(DIMENSIONS) as DimensionKey[]).flatMap((key) =>
+    sidesOf(key).map((side) => sideLabel(key, side)),
+  ),
 ];
 
 /** Case-insensitive, like `createTag` which deduplicates through `ilike`:
@@ -134,7 +138,7 @@ export function isReservedTag(label: string): boolean {
 export interface FilterableRun {
   status: string;
   origin: "local" | "cloud-run" | "external";
-  is_public: boolean;
+  visibility: "private" | "restricted" | "public";
   launched_via: "ui" | "mcp";
 }
 
@@ -149,7 +153,8 @@ export type Sides = Partial<Record<DimensionKey, Side>>;
 export function runSides(run: FilterableRun): Sides {
   return {
     machine: run.origin === "local" ? "a" : "b",
-    visibility: run.is_public ? "a" : "b",
+    visibility:
+      run.visibility === "public" ? "a" : run.visibility === "restricted" ? "c" : "b",
     author: run.launched_via === "mcp" ? "a" : "b",
     played: run.origin === "external" ? "a" : "b",
   };
@@ -163,9 +168,18 @@ export function draftSides(draft: FilterableDraft): Sides {
   };
 }
 
+/** The sides a dimension has, in the order its button visits them. */
+export function sidesOf(key: DimensionKey): Side[] {
+  const dim: Dimension = DIMENSIONS[key];
+  return dim.c === undefined ? ["a", "b"] : ["a", "b", "c"];
+}
+
 /** The word a row carries on this dimension — the one on its badge. */
 export function sideLabel(key: DimensionKey, side: Side): string {
-  return side === "a" ? DIMENSIONS[key].a : DIMENSIONS[key].b;
+  const dim: Dimension = DIMENSIONS[key];
+  if (side === "a") return dim.a;
+  if (side === "b") return dim.b;
+  return dim.c ?? dim.b;
 }
 
 /** The filter's state.
@@ -196,14 +210,15 @@ export function sameFilter(a: FilterState, b: FilterState): boolean {
   return b.off.every((label) => known.has(label));
 }
 
-/** A button's cycle: the notable side, the other, then both.
+/** A button's cycle: the notable side, the other (then the third, where there
+ *  is one), then both.
  *
  * `a` first because it is the one people come looking for — one clicks "MCP" to
  * see the agent runs, not to exclude them. */
-export function nextChoice(current: Choice): Choice {
-  if (current === "both") return "a";
-  if (current === "a") return "b";
-  return "both";
+export function nextChoice(current: Choice, sides: Side[] = ["a", "b"]): Choice {
+  if (current === "both") return sides[0];
+  const at = sides.indexOf(current);
+  return at >= 0 && at + 1 < sides.length ? sides[at + 1] : "both";
 }
 
 export function choiceOf(state: FilterState, key: DimensionKey): Choice {
@@ -215,7 +230,7 @@ export function cycleDimension(
   state: FilterState,
   key: DimensionKey,
 ): FilterState {
-  const next = nextChoice(choiceOf(state, key));
+  const next = nextChoice(choiceOf(state, key), sidesOf(key));
   const dims = { ...state.dims };
   if (next === "both") delete dims[key];
   else dims[key] = next;
@@ -285,8 +300,8 @@ export function matchesQuery(haystacks: (string | null)[], query: string): boole
 /** What the bar offers for the list at hand.
  *
  * A dimension is offered only if it makes sense here AND at least one row
- * occupies its notable side: offering "public / private" when nothing is
- * published would only clutter the bar. Statuses and tags: only what at least
+ * stands out from its plain side `b`: offering "public / private" when
+ * everything is private would only clutter the bar. Statuses and tags: only what at least
  * one row carries.
  *
  * All of it is computed BEFORE filtering, without which narrowing a dimension
@@ -301,7 +316,7 @@ export function offered(
     dims: DIMENSION_KEYS.filter((key) => {
       const dim = DIMENSIONS[key];
       if (dim.on !== "both" && dim.on !== mode) return false;
-      return rows.some((row) => row.sides[key] === "a");
+      return rows.some((row) => row.sides[key] !== undefined && row.sides[key] !== "b");
     }),
     statuses: STATUS_TAGS.filter((name) => present.has(name)),
     tags: [...present]

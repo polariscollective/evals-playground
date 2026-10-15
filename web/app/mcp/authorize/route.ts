@@ -2,7 +2,7 @@
 // itself: it hands over to Google, already in place.
 import { NextResponse } from "next/server";
 import { getPublicOrigin } from "mcp-handler";
-import { getSessionEmail } from "@/auth";
+import { getSessionAccess, getSessionEmail } from "@/auth";
 import { clientId, issueAuthCode, REDIRECT_URI } from "@/lib/mcp-auth";
 
 function fail(message: string): Response {
@@ -79,6 +79,13 @@ export async function GET(request: Request) {
     signin.searchParams.set("callbackUrl", `${origin}${url.pathname}${url.search}`);
     return NextResponse.redirect(signin);
   }
+  // A restricted reader is signed in, but may not connect an agent.
+  if ((await getSessionAccess()) !== "member") {
+    return new Response(
+      "This account can only open restricted runs it has been sent a link to; it cannot connect an agent.",
+      { status: 403, headers: { "content-type": "text/plain; charset=utf-8" } },
+    );
+  }
 
   const hidden = [
     ["client_id", params.clientId],
@@ -122,6 +129,10 @@ export async function POST(request: Request) {
 
   const email = await getSessionEmail();
   if (!email) return fail("Not signed in.");
+  // A restricted reader may sign in, never connect an agent.
+  if ((await getSessionAccess()) !== "member") {
+    return fail("This account can only open restricted runs; it cannot connect an agent.");
+  }
 
   const code = await issueAuthCode({ userEmail: email, redirectUri, codeChallenge });
 

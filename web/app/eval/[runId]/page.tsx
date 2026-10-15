@@ -19,7 +19,7 @@ import {
   inspectViewUrl,
   getTags,
   matrixCsvText,
-  publishRun,
+  setRunVisibility,
   saveAnalysis,
   saveExtendDraft,
   retryFailedCells,
@@ -36,6 +36,8 @@ import { extensionsOf } from "@/lib/run-extensions";
 import type { RunExtension } from "@/lib/run-extensions";
 import { keepIfUnchanged } from "@/lib/unchanged";
 import { PLAIN_VIEW } from "@/lib/view";
+import { visibilityOf, type Visibility } from "@/lib/visibility";
+import { VisibilityChoices } from "@/components/VisibilityChoices";
 import type { MatrixView } from "@/lib/view";
 import { ConfirmDialog, ConfirmRows } from "@/components/ConfirmDialog";
 import { ExtendPanel } from "@/components/ExtendPanel";
@@ -553,7 +555,10 @@ export default function EvalRunPage({
     null,
   );
   // The public address when the run is published, `null` otherwise.
-  const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  // private, restricted or public; the shared address is null while private.
+  const [visibility, setVisibilityState] = useState<Visibility>("private");
+  const publicUrl = visibility === "private" ? null : `/shared/${runId}`;
+  const [chosenVisibility, setChosenVisibility] = useState<Visibility>("private");
   const [publishing, setPublishing] = useState(false);
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   // The catalogue and this run's tags, for `TagField` — which no longer loads
@@ -598,7 +603,7 @@ export default function EvalRunPage({
         // Same reason as on the list: a finished run kept open must not make its
         // matrix flicker.
         setDetail((current) => keepIfUnchanged(current, loaded));
-        setPublicUrl(loaded.run.is_public ? `/shared/${loaded.run.id}` : null);
+        setVisibilityState(visibilityOf(loaded.run));
         // Primed once only: the refresh of a running run must not overwrite a note
         // being written.
         setNotes((current) => (current === "" ? loaded.run.notes : current));
@@ -746,11 +751,11 @@ export default function EvalRunPage({
     }
   };
 
-  const publish = async (isPublic: boolean) => {
+  const publish = async (next: Visibility) => {
     setPublishing(true);
     try {
-      const { url } = await publishRun(run.id, isPublic);
-      setPublicUrl(url);
+      const saved = await setRunVisibility(run.id, next);
+      setVisibilityState(saved.visibility);
       setConfirmingPublish(false);
     } catch (e) {
       setError((e as Error).message);
@@ -933,16 +938,12 @@ export default function EvalRunPage({
                 <MenuItem
                   onClick={() => {
                     close();
-                    if (publicUrl) publish(false);
-                    else setConfirmingPublish(true);
+                    setChosenVisibility(visibility);
+                    setConfirmingPublish(true);
                   }}
-                  hint={
-                    publicUrl
-                      ? "Kills the link"
-                      : "A link anyone can open, read only"
-                  }
+                  hint={`Now ${visibility}: private, restricted or public`}
                 >
-                  {publicUrl ? "Unpublish" : "Publish…"}
+                  Visibility…
                 </MenuItem>
                 {!running && (
                   <MenuItem
@@ -1072,7 +1073,9 @@ export default function EvalRunPage({
 
       {publicUrl && (
         <p className="flex items-center gap-1 text-sm text-zinc-500">
-          Published — anyone with this link can read it:{" "}
+          {visibility === "public"
+            ? "Public: anyone with this link can read it:"
+            : "Restricted: members and restricted readers can read it at this link, once signed in:"}{" "}
           <code className="rounded bg-zinc-100 px-1">{publicUrl}</code>
           {/* The copied link is absolute: whoever receives it has none of this
               window's context, and a relative address would tell them nothing.
@@ -1205,15 +1208,16 @@ export default function EvalRunPage({
 
       <ConfirmDialog
         open={confirmingPublish}
-        title="Publish this run?"
-        confirmLabel="Publish"
+        title="Who can read this run?"
+        confirmLabel="Save visibility"
         busy={publishing}
-        onConfirm={() => publish(true)}
+        onConfirm={() => publish(chosenVisibility)}
         onCancel={() => setConfirmingPublish(false)}
       >
+        <VisibilityChoices value={chosenVisibility} onChange={setChosenVisibility} />
         <p className="text-sm">
-          Anyone with the link will be able to read it, without signing in. The
-          link is not listed anywhere, and unpublishing kills it.
+          Restricted or public, the run can be read at its link, which is not
+          listed anywhere. Setting it back to private kills the link.
         </p>
         <ConfirmRows
           rows={[

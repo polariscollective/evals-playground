@@ -25,7 +25,7 @@ import type { FilterableDraft, FilterableRun } from "./run-filters.ts";
 const run = (over: Partial<FilterableRun> = {}): FilterableRun => ({
   status: "done",
   origin: "cloud-run",
-  is_public: false,
+  visibility: "private",
   launched_via: "ui",
   ...over,
 });
@@ -50,7 +50,8 @@ test("an ordinary run falls on the plain side of every dimension", () => {
 
 test("each notable property tips its dimension", () => {
   assert.equal(runSides(run({ origin: "local" })).machine, "a");
-  assert.equal(runSides(run({ is_public: true })).visibility, "a");
+  assert.equal(runSides(run({ visibility: "public" })).visibility, "a");
+  assert.equal(runSides(run({ visibility: "restricted" })).visibility, "c");
   assert.equal(runSides(run({ launched_via: "mcp" })).author, "a");
   assert.equal(runSides(run({ origin: "external" })).played, "a");
 });
@@ -211,7 +212,7 @@ test("both sides of every dimension are reserved, and so are the statuses", () =
   const reserved = [
     "local", "live", "public", "private", "mcp", "MCP", "manual",
     "extend", "creation", "launched", "waiting", "done", "ERROR", " Running ",
-    "external", "External",
+    "external", "External", "restricted", "Restricted",
   ];
   for (const label of reserved) {
     assert.equal(isReservedTag(label), true, label);
@@ -226,7 +227,7 @@ test("every displayable word has its classes", () => {
   // diverging.
   const words = [
     ...STATUS_TAGS,
-    ...Object.values(DIMENSIONS).flatMap((d) => [d.a, d.b]),
+    ...Object.values(DIMENSIONS).flatMap((d) => ("c" in d ? [d.a, d.b, d.c] : [d.a, d.b])),
   ];
   for (const word of words) {
     assert.ok(PSEUDO_TAG_CLASSES[word]?.length > 0, word);
@@ -283,4 +284,31 @@ test("it searches in the identifier, not only in the name", () => {
 test("an absent name does not bring the search down", () => {
   assert.equal(matchesQuery([null, "abc"], "abc"), true);
   assert.equal(matchesQuery([null, "abc"], "zzz"), false);
+});
+
+// --- the one dimension with three sides -----------------------------------
+
+test("visibility cycles through public, private and restricted, then all", () => {
+  let state = OPEN;
+  const seen: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    state = cycleDimension(state, "visibility");
+    seen.push(choiceOf(state, "visibility"));
+  }
+  assert.deepEqual(seen, ["a", "b", "c", "both"]);
+  assert.equal(sideLabel("visibility", "c"), "restricted");
+  // A two-sided dimension never reaches a third side.
+  assert.equal(nextChoice("b"), "both");
+});
+
+test("only restricted runs, when the button says restricted", () => {
+  const state = cycleDimension(cycleDimension(cycleDimension(OPEN, "visibility"), "visibility"), "visibility");
+  assert.equal(passes(runSides(run({ visibility: "restricted" })), [], state), true);
+  assert.equal(passes(runSides(run({ visibility: "public" })), [], state), false);
+  assert.equal(passes(runSides(run()), [], state), false);
+});
+
+test("a restricted run alone is enough to offer the visibility button", () => {
+  const rows = [{ sides: runSides(run({ visibility: "restricted" })), labels: [] }];
+  assert.deepEqual(offered("runs", rows).dims, ["visibility"]);
 });

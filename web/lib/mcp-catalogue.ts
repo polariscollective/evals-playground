@@ -186,11 +186,12 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "set_run_visibility",
     summary:
-      "Publishes a run, readable by anyone at its public address with no sign-in, or makes it " +
-      "private again. The run's creator only, and only while they leave the switch below on. " +
-      "Nothing runs and nothing is spent.",
-    input: ["run_id", "public"],
-    output: "The public address, or that the run is private again.",
+      "Sets who can read a run: private (members only), restricted (members and the listed " +
+      "restricted readers, signed in, by its link) or public (anyone with its link). The run's " +
+      "creator only, and only while they leave the switch below on. Nothing runs and nothing " +
+      "is spent.",
+    input: ["run_id", "visibility"],
+    output: "The shared address, or that the run is private again.",
   },
   {
     name: "set_run_tags",

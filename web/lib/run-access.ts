@@ -8,7 +8,8 @@
 // A module of its own rather than one more function in `runs.ts`: that one is
 // 607 lines already and has never needed to know about authentication.
 import "server-only";
-import { requireUser } from "@/auth";
+import { getSessionAccess } from "@/auth";
+import { sharedView, visibilityOf } from "./visibility";
 import { RUNS, select } from "./supabase";
 
 /** Does the run exist, and can this caller read its logs?
@@ -17,16 +18,17 @@ import { RUNS, select } from "./supabase";
  * give `false`: from outside they must look alike, otherwise the address says
  * who exists. */
 export async function canReadRun(runId: string): Promise<boolean> {
-  const rows = await select<{ is_public: boolean | null }>(RUNS, {
+  const rows = await select<{ is_public: boolean | null; visibility?: string | null }>(RUNS, {
     id: `eq.${runId}`,
     deleted_at: "is.null",
-    select: "is_public",
+    select: "*",
     limit: 1,
   });
   const run = rows[0];
   if (!run) return false;
-  if (run.is_public === true) return true;
-
-  const user = await requireUser();
-  return !("response" in user);
+  // The same rule as the shared page (`sharedView`), plus the members, who
+  // read every run of the application.
+  const access = await getSessionAccess();
+  if (access === "member") return true;
+  return sharedView(visibilityOf(run), access) === "show";
 }

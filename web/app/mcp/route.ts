@@ -55,6 +55,7 @@ import {
 } from "@/lib/import-results";
 import { judgeNoteChoiceProblem, noteNamesOf } from "@/lib/judge-notes";
 import { extensionAddsNothing } from "@/lib/extension-plan";
+import { visibilityOf, type Visibility } from "@/lib/visibility";
 import { authorOnly, extensionRefusal, importDraft } from "@/lib/import-draft";
 import { sealUploadLink, UPLOAD_LINK_TTL_MS } from "@/lib/import-upload-link";
 import { MCP_INSTRUCTIONS } from "@/lib/mcp-catalogue";
@@ -81,7 +82,7 @@ import {
   reusedJudges,
   saveAnalysis,
   saveNotes,
-  setPublic,
+  setVisibility,
 } from "@/lib/runs";
 import { isRunId, publicRunPath } from "@/lib/run-id";
 import { extensionsOf } from "@/lib/run-extensions";
@@ -536,9 +537,13 @@ const handler = createMcpHandler((server) => {
         created_at: run.created_at,
         started_at: run.started_at,
         finished_at: run.finished_at,
+        // private, restricted or public. is_public stays, true only when public.
+        visibility: visibilityOf(run),
         is_public: run.is_public,
-        // The address anyone can read it at, with no sign-in; null while private.
-        public_url: run.is_public ? `${siteOrigin}${publicRunPath(run.id)}` : null,
+        // The shared address: anyone reads it when public, a signed-in member or
+        // restricted reader when restricted; null while private.
+        public_url:
+          visibilityOf(run) === "private" ? null : `${siteOrigin}${publicRunPath(run.id)}`,
         notes: run.notes,
         analysis: run.analysis,
         total_samples: run.total_samples,
@@ -2351,17 +2356,26 @@ const handler = createMcpHandler((server) => {
   server.registerTool(
     "set_run_visibility",
     {
-      title: "Publish a run, or make it private again",
+      title: "Make a run private, restricted or public",
       description:
-        "Starts nothing and spends nothing. Makes a run public, readable by anyone at its public " +
-        "address with no sign-in, or private again, which kills that address. The answer gives " +
-        "the public address when the run is public. Restricted to the run's own creator, and " +
+        "Starts nothing and spends nothing. Sets who can read a run outside the application: " +
+        "private (members only; its shared address answers not found), restricted (members, and " +
+        "the people this deployment lists as restricted readers, once signed in, by its link " +
+        "only), or public (anyone with its link, no sign-in). The answer gives the shared " +
+        "address when the run is restricted or public. Restricted to the run's own creator, and " +
         "refused when that person has turned off \"Let an agent change a run's visibility\" on " +
         "the MCP settings page (on by default). A public run shows its conversations, grades and " +
-        "notes to anyone with the link: publish only what its creator asked to share.",
+        "notes to anyone with the link: open it only as far as its creator asked.",
       inputSchema: z.object({
         run_id: z.string().describe("The run's UUID."),
-        public: z.boolean().describe("true to publish, false to make it private again."),
+        visibility: z
+          .enum(["private", "restricted", "public"])
+          .optional()
+          .describe("private, restricted or public."),
+        public: z
+          .boolean()
+          .optional()
+          .describe("The older form: true for public, false for private. Prefer visibility."),
       }),
     },
     async (input, ctx) => {
@@ -2383,19 +2397,21 @@ const handler = createMcpHandler((server) => {
             "page, so this run's visibility can only be changed from its page in the application.",
         );
       }
-      await setPublic(input.run_id, input.public);
+      const visibility: Visibility | null =
+        input.visibility ?? (input.public === undefined ? null : input.public ? "public" : "private");
+      if (!visibility) return toolError("Say which: visibility is private, restricted or public.");
+      await setVisibility(input.run_id, visibility);
       const origin = ctx.http?.req ? getPublicOrigin(ctx.http.req) : "";
-      return {
-        content: [
-          {
-            type: "text",
-            text: input.public
-              ? `Run ${input.run_id} is public. Anyone with this address can read it, no sign-in:\n\n` +
-                `${origin}${publicRunPath(input.run_id)}`
-              : `Run ${input.run_id} is private again. Its public address no longer answers.`,
-          },
-        ],
-      };
+      const address = `${origin}${publicRunPath(input.run_id)}`;
+      const text =
+        visibility === "public"
+          ? `Run ${input.run_id} is public. Anyone with this address can read it, no sign-in:\n\n${address}`
+          : visibility === "restricted"
+            ? `Run ${input.run_id} is restricted. Members and the listed restricted readers can ` +
+              `read it at this address once signed in; anyone else is asked to sign in or to ask ` +
+              `for access:\n\n${address}`
+            : `Run ${input.run_id} is private. Its shared address answers not found.`;
+      return { content: [{ type: "text", text }] };
     },
   );
 

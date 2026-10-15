@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   discardDraft,
-  publishRun,
+  setRunVisibility,
   getDrafts,
   getMe,
   setRunTags,
@@ -13,6 +13,8 @@ import {
 import { formatMean, formatValue, rubricBounds } from "@/lib/rubric";
 import { CopyButton, CopyIcon, CopyId, PublicIcon } from "@/components/CopyButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { VisibilityChoices } from "@/components/VisibilityChoices";
+import { visibilityOf, type Visibility } from "@/lib/visibility";
 import { Dialog } from "@/components/Dialog";
 import { TagField } from "@/components/TagField";
 import { Refreshing } from "@/components/Loading";
@@ -137,7 +139,7 @@ export default function RunsPage() {
    *  publishing and discarding have neither the same dialogue nor the same
    *  tone. */
   const [confirmingPublish, setConfirmingPublish] = useState<
-    { id: string; label: string; next: boolean } | null
+    { id: string; label: string; chosen: Visibility } | null
   >(null);
   /** The identifier of the run whose publication is in flight, so as to turn off
    *  its button only — not the other thirteen. */
@@ -150,7 +152,7 @@ export default function RunsPage() {
    * confirmation therefore stays open and becomes the place the link is copied
    * from. Unpublishing has nothing to show and closes as before. */
   const [justPublished, setJustPublished] = useState<
-    { label: string; url: string } | null
+    { label: string; url: string; visibility: Visibility } | null
   >(null);
 
   // On every arrival at the tab: we check again, indicator lit. The rows already
@@ -198,16 +200,16 @@ export default function RunsPage() {
   /** Publish or unpublish, then read the list again. Silent: the button already
    *  says it is working, and a second indicator at the top of the page would say
    *  nothing more. */
-  const setPublished = async (runId: string, next: boolean, label: string) => {
+  const setPublished = async (runId: string, next: Visibility, label: string) => {
     setPublishing(runId);
     try {
-      const { url } = await publishRun(runId, next);
+      const { url } = await setRunVisibility(runId, next);
       await refreshRuns({ silent: true });
       setConfirmingPublish(null);
-      // On publication only, and only if the route really gave an address: a
+      // Only when the run now has a link, and the route really gave it: a
       // window announcing a link it does not hold would be worse than the one
       // that closes.
-      if (next && url) setJustPublished({ label, url });
+      if (next !== "private" && url) setJustPublished({ label, url, visibility: next });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -286,7 +288,7 @@ export default function RunsPage() {
   // filtering. See `run-filters.ts`.
   const runRows = runsInScope.map((entry) => ({
     entry,
-    sides: runSides(entry.run),
+    sides: runSides({ ...entry.run, visibility: visibilityOf(entry.run) }),
     labels: [
       entry.run.status,
       ...(tagAssignments.runs[entry.run.id] ?? []).map((tag) => tag.label),
@@ -627,17 +629,16 @@ export default function RunsPage() {
                         setConfirmingPublish({
                           id: run.id,
                           label: run.label ?? run.first_scenario_title ?? run.id,
-                          next: !run.is_public,
+                          chosen: visibilityOf(run),
                         })
                       }
                       disabled={publishing === run.id}
-                      title={run.is_public ? "Published — click to unpublish" : "Not published — click to publish"}
-                      aria-label={run.is_public ? `Unpublish run ${run.label ?? run.id}` : `Publish run ${run.label ?? run.id}`}
-                      aria-pressed={run.is_public}
+                      title={`${visibilityOf(run)}: click to change who can read it`}
+                      aria-label={`Visibility of run ${run.label ?? run.id}: ${visibilityOf(run)}`}
                       className={
-                        run.is_public
-                          ? `rounded-full p-1 disabled:opacity-40 ${PSEUDO_TAG_CLASSES.public}`
-                          : "rounded-full p-1 text-zinc-300 hover:text-zinc-600 disabled:opacity-40"
+                        visibilityOf(run) === "private"
+                          ? "rounded-full p-1 text-zinc-300 hover:text-zinc-600 disabled:opacity-40"
+                          : `rounded-full p-1 disabled:opacity-40 ${PSEUDO_TAG_CLASSES[visibilityOf(run)]}`
                       }
                     >
                       <PublicIcon />
@@ -669,39 +670,33 @@ export default function RunsPage() {
       )}
       <ConfirmDialog
         open={confirmingPublish !== null}
-        title={
-          confirmingPublish?.next ? "Publish this run?" : "Unpublish this run?"
-        }
-        confirmLabel={confirmingPublish?.next ? "Publish" : "Unpublish"}
-        tone={confirmingPublish?.next ? "neutral" : "warning"}
+        title="Who can read this run?"
+        confirmLabel="Save visibility"
         busy={publishing !== null}
         onConfirm={() =>
           confirmingPublish &&
           void setPublished(
             confirmingPublish.id,
-            confirmingPublish.next,
+            confirmingPublish.chosen,
             confirmingPublish.label,
           )
         }
         onCancel={() => setConfirmingPublish(null)}
       >
-        {confirmingPublish?.next ? (
-          <p className="text-sm">
-            Anyone with the link will be able to read{" "}
-            <strong>{confirmingPublish?.label}</strong> without signing in —
-            scores, judge justifications, full conversations and the scenarios
-            themselves. The link is not listed anywhere, and unpublishing kills
-            it.
-          </p>
-        ) : (
-          <p className="text-sm">
-            The public link to <strong>{confirmingPublish?.label}</strong> will
-            stop answering — for everyone, including the Inspect logs served
-            under it. Nobody holding that link is told; it simply stops working.
-            Publishing again mints the same address, but anything open on it
-            right now breaks.
-          </p>
-        )}
+        <p className="text-sm">
+          <strong>{confirmingPublish?.label}</strong>: scores, judge
+          justifications, full conversations and the scenarios themselves.
+        </p>
+        <VisibilityChoices
+          value={confirmingPublish?.chosen ?? "private"}
+          onChange={(chosen) =>
+            setConfirmingPublish((current) => (current ? { ...current, chosen } : current))
+          }
+        />
+        <p className="text-sm text-zinc-600">
+          The link is not listed anywhere. Back to private, it stops answering
+          for everyone holding it, Inspect logs included, with no warning.
+        </p>
       </ConfirmDialog>
 
       {/* What the confirmation becomes once the run is published. A `Dialog`
@@ -710,7 +705,7 @@ export default function RunsPage() {
           a way to take it back. */}
       <Dialog
         open={justPublished !== null}
-        title="Run published"
+        title={justPublished?.visibility === "restricted" ? "Run restricted" : "Run published"}
         onClose={() => setJustPublished(null)}
         footer={
           <div className="flex justify-end">
@@ -724,9 +719,11 @@ export default function RunsPage() {
         }
       >
         <p className="text-sm">
-          <strong>{justPublished?.label}</strong> now answers on this link.
-          Anyone holding it can read the run without signing in. Unpublishing
-          kills it.
+          <strong>{justPublished?.label}</strong> now answers on this link.{" "}
+          {justPublished?.visibility === "restricted"
+            ? "Members and restricted readers can read it there, once signed in; anyone else is asked to sign in."
+            : "Anyone holding it can read the run without signing in."}{" "}
+          Setting it back to private kills it.
         </p>
         <p className="mt-3 flex items-center gap-1">
           <code className="grow truncate rounded bg-zinc-100 px-1 font-mono text-xs">

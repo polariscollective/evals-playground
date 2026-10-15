@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { isAllowedEmail } from "./lib/allowed-email";
+import { accessOf, type Access } from "./lib/visibility";
 import { ensureProfile } from "./lib/profiles";
 
 /** What signing in cannot work without on a deployment.
@@ -32,8 +32,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // The application's only access control: signing in with Google is not
     // enough, one has to be on the list. Refusing here rather than afterwards
     // keeps a session from existing for somebody who has no business there.
+    // Members, and the restricted readers: the latter sign in only to open a
+    // restricted run they were sent; `requireUser` keeps them out of the rest.
     async signIn({ user }) {
-      return isAllowedEmail(user.email);
+      return accessOf(user.email) !== null;
     },
   },
 });
@@ -69,6 +71,19 @@ export async function requireUser(): Promise<
       response: Response.json({ error: "not signed in" }, { status: 401 }),
     };
   }
+  // Signed in is not enough since restricted readers can sign in too: every
+  // route behind this function is a member's.
+  if ((await getSessionAccess()) !== "member") {
+    return {
+      response: Response.json(
+        {
+          error:
+            "This account can open the restricted runs it has been sent a link to, and nothing else here.",
+        },
+        { status: 403 },
+      ),
+    };
+  }
 
   // At best: the door lays the profile down as soon as an identity presents
   // itself, as `callerEmail` does on the MCP side, so that it already exists when
@@ -99,4 +114,19 @@ export async function getSessionEmail(): Promise<string | null> {
   }
   const session = await auth();
   return session?.user?.email ?? null;
+}
+
+/** What the signed-in person may do: a member, a restricted reader, or
+ *  `null` when nobody is signed in. The local development bypass signs in a
+ *  member. */
+export async function getSessionAccess(): Promise<Access | null> {
+  const email = await getSessionEmail();
+  if (!email) return null;
+  if (
+    process.env.NODE_ENV !== "production" &&
+    process.env.LOCAL_AUTHENTICATION_NEEDED === "false"
+  ) {
+    return "member";
+  }
+  return accessOf(email);
 }

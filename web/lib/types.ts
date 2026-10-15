@@ -1,3 +1,5 @@
+import type { Visibility } from "./visibility.ts";
+
 /** `triggered`: the job has been asked for, the container has not written yet. */
 export type RunStatus =
   | "triggered"
@@ -1015,9 +1017,13 @@ export interface EvalRun {
   /** Written afterwards, distinct from `notes`, which is the preamble. Never
    *  carried by `config`: a duplication does not take it back. */
   analysis: string;
-  /** Published: `/shared/<id>` answers outside a session. Written by the single
-   *  route `/api/runs/<id>/publish`. */
+  /** Published: `/shared/<id>` answers outside a session. Derived from
+   *  `visibility` by the database since visibility has three levels; read it
+   *  through `visibilityOf` (lib/visibility.ts). */
   is_public: boolean;
+  /** private, restricted or public — see lib/visibility.ts. Absent on a row
+   *  read before the column existed; `visibilityOf` falls back on is_public. */
+  visibility?: Visibility;
   /** Set aside from the lists and from public reading. Nothing is erased. */
   deleted_at: string | null;
   total_samples: number;
@@ -1261,6 +1267,8 @@ export interface RunListRun {
   status: RunStatus;
   cost_usd: number | null;
   is_public: boolean;
+  /** See `EvalRun.visibility`. */
+  visibility?: Visibility;
   /** Where the run was played: a job on a development machine, the deployed
    *  job, or outside the playground altogether, handed over through
    *  `import_draft_results`. An external run is never played by our engine;

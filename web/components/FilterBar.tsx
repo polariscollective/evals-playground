@@ -14,13 +14,14 @@
 import { DimensionIcon } from "@/components/DimensionIcon";
 import { colorClasses } from "@/lib/tag-colors";
 import {
-  DIMENSIONS,
   PSEUDO_TAG_CLASSES,
   OPEN,
   STATUS_LABELS,
   choiceOf,
   sameFilter,
+  nextChoice,
   sideLabel,
+  sidesOf,
   type DimensionKey,
   type FilterState,
 } from "@/lib/run-filters";
@@ -41,22 +42,19 @@ function DimensionButton({
   onCycle: () => void;
 }) {
   const choice = choiceOf(state, dimension);
-  const { a, b } = DIMENSIONS[dimension];
+  const sides = sidesOf(dimension);
+  const names = sides.map((side) => sideLabel(dimension, side));
   const open = choice === "both";
   const word = open ? "both" : sideLabel(dimension, choice);
+  const next = nextChoice(choice, sides);
+  const then = next === "both" ? "both" : `only ${sideLabel(dimension, next)}`;
 
   return (
     <button
       type="button"
       onClick={onCycle}
-      title={
-        open
-          ? `Showing both — click to see only ${a}`
-          : choice === "a"
-            ? `Showing only ${a} — click to see only ${b}`
-            : `Showing only ${b} — click to see both`
-      }
-      aria-label={`${a} or ${b}: currently ${word}`}
+      title={`Showing ${open ? (sides.length > 2 ? "all" : "both") : `only ${word}`}: click to see ${next === "both" && sides.length > 2 ? "all" : then}`}
+      aria-label={`${names.join(" or ")}: currently ${open && sides.length > 2 ? "all" : word}`}
       className={open ? OPEN_PILL : `${PILL} ${PSEUDO_TAG_CLASSES[word] ?? ""}`}
     >
       <DimensionIcon dimension={dimension} />

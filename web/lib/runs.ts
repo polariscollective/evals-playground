@@ -2,6 +2,7 @@
 // tables.
 import "server-only";
 import { judgeNoteChoiceProblem } from "./judge-notes.ts";
+import { sharedView, visibilityOf, type Access, type Visibility } from "./visibility.ts";
 import { planCopy, type CopyRequest } from "./run-copy.ts";
 import { databaseRefusal } from "./database-refusal.ts";
 import { randomUUID } from "node:crypto";
@@ -258,6 +259,7 @@ interface RunListRow {
   status: RunStatus;
   cost_usd: number | null;
   is_public: boolean;
+  visibility?: string | null;
   origin: "local" | "cloud-run" | "external";
   launched_via: "ui" | "mcp";
   rubric: RubricLevel[] | null;
@@ -314,6 +316,7 @@ export async function loadRunList(): Promise<RunListItem[]> {
       status: row.status,
       cost_usd: row.cost_usd,
       is_public: row.is_public,
+      visibility: visibilityOf(row),
       origin: row.origin,
       launched_via: row.launched_via,
       rubric: row.rubric ?? [],
@@ -2011,12 +2014,17 @@ export async function extendRun(
  * without anyone wondering whether it is still acceptable in front of an
  * anonymous caller.
  *
+ * `access` is the visitor's: a restricted run is shown to a signed-in member
+ * or restricted reader only (see `sharedView`, lib/visibility.ts).
+ *
  * Throws:
- *   NotFound: if no run carries this identifier, or if it is not published.
+ *   NotFound: if no run carries this identifier, or it is private.
+ *   RunRestricted: if it is restricted and the visitor is not signed in.
  */
 export async function loadPublicRun(
   runId: string,
   options: { withTranscripts?: boolean; withJudges?: boolean } = {},
+  access: Access | null = null,
 ): Promise<PublicRunDetail> {
   // The button that reads `source_csv_available` only exists on the private page,
   // and the stranger reading a published page has nothing to do with it — hence
@@ -2029,7 +2037,9 @@ export async function loadPublicRun(
     ...options,
     withSourceCsvFlag: false,
   });
-  if (!detail.run.is_public) throw new NotFound(`Unknown run: ${runId}`);
+  const view = sharedView(visibilityOf(detail.run), access);
+  if (view === "not_found") throw new NotFound(`Unknown run: ${runId}`);
+  if (view === "restricted") throw new RunRestricted(runId);
   return withoutIdentity(detail);
 }
 
@@ -2055,9 +2065,17 @@ export async function softDeleteRun(runId: string): Promise<void> {
   await remove(RUN_TAGS, { run_id: `eq.${runId}` });
 }
 
-/** Publishing or unpublishing. The only place that writes this column. */
-export async function setPublic(runId: string, isPublic: boolean): Promise<void> {
-  await update(RUNS, { is_public: isPublic }, { id: `eq.${runId}` });
+/** Setting a run private, restricted or public. The only place that writes
+ *  `visibility`; the database keeps `is_public` in step. */
+export async function setVisibility(runId: string, visibility: Visibility): Promise<void> {
+  await update(RUNS, { visibility }, { id: `eq.${runId}` });
+}
+
+/** A restricted run asked for by a visitor who is not signed in. */
+export class RunRestricted extends Error {
+  constructor(runId: string) {
+    super(`Run ${runId} is restricted.`);
+  }
 }
 
 /** One single conversation, without loading the rest of the run — a run carries

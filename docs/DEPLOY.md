@@ -33,6 +33,8 @@ AUTH_GOOGLE_SECRET
 AUTH_SECRET                    openssl rand -base64 32
 ALLOWED_EMAILS                 allowed addresses, comma separated
 ALLOWED_DOMAINS                allowed domains, likewise
+ALLOWED_RESTRICTED_EMAILS      restricted readers: may sign in and open restricted runs by their link, nothing else
+ALLOWED_RESTRICTED_DOMAINS     restricted reader domains, likewise
 MCP_CLIENT_ID                  openssl rand -hex 16 — see "The MCP connector"
 ```
 

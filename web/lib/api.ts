@@ -3,6 +3,7 @@
 // therefore never sees the service key.
 import type { CopyScope, JudgeDetail, JudgeSummary } from "./types";
 import type { CopyRequest } from "./run-copy";
+import type { Visibility } from "./visibility";
 import type {
   CostEstimate,
   Draft,
@@ -268,11 +269,13 @@ export const saveAnalysis = (runId: string, analysis: string) =>
   });
 
 /** Publishes a run, or unpublishes it. Returns the public address, or null. */
-export const publishRun = (runId: string, isPublic: boolean) =>
-  request<{ ok: true; url: string | null }>(`/api/runs/${runId}/publish`, {
-    method: "POST",
-    body: JSON.stringify({ public: isPublic }),
-  });
+/** Sets a run private, restricted or public; `url` is its shared address
+ *  unless private. */
+export const setRunVisibility = (runId: string, visibility: Visibility) =>
+  request<{ ok: true; url: string | null; visibility: Visibility }>(
+    `/api/runs/${runId}/publish`,
+    { method: "POST", body: JSON.stringify({ visibility }) },
+  );
 
 export const getTags = () => request<Tag[]>("/api/tags");
 
