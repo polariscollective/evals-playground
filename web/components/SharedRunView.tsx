@@ -33,11 +33,15 @@ import { runReturn } from "@/lib/shared-return";
 export function SharedRunView({
   detail,
   signedIn = false,
+  appLink = true,
 }: {
   detail: PublicRunDetail;
   /** Decided on the server by the page above. Absent means signed out, which is
    *  what a caller that does not know is describing. */
   signedIn?: boolean;
+  /** False for a restricted reader: the application is not theirs to open,
+   *  signed in or not. */
+  appLink?: boolean;
 }) {
   const [view, setView] = useState<MatrixView>(PLAIN_VIEW);
   const [openScenario, setOpenScenario] = useState<number | null>(null);
@@ -65,7 +69,7 @@ export function SharedRunView({
     <>
       <PublicHeader>
         <p className="text-xs text-zinc-500">Shared run, read only</p>
-        <OpenInApp href={runReturn(run.id)} signedIn={signedIn} />
+        {appLink ? <OpenInApp href={runReturn(run.id)} signedIn={signedIn} /> : null}
       </PublicHeader>
       <main className="mx-auto w-full max-w-6xl space-y-6 px-8 pb-8 pt-6">
         <div>

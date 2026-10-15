@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { callbackFor } from "@/lib/signin-callback";
+import { PATH_HEADER } from "@/lib/visibility";
 
 // This file does **not** authenticate. It routes.
 //
@@ -33,13 +34,24 @@ const skipAuthInDev =
   process.env.NODE_ENV !== "production" &&
   process.env.LOCAL_AUTHENTICATION_NEEDED === "false";
 
+/** Lets the request through, telling the root layout which path it asked
+ *  for: a layout is not told, and it is the layout that turns a restricted
+ *  reader away from the application (see `pageAllowed`). Set here, never
+ *  trusted from the client: whatever the browser sent under that name is
+ *  overwritten. */
+function pass(request: NextRequest): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set(PATH_HEADER, request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
+}
+
 export function proxy(request: NextRequest) {
-  if (skipAuthInDev) return NextResponse.next();
+  if (skipAuthInDev) return pass(request);
 
   const signedIn = SESSION_COOKIES.some(
     (name) => request.cookies.get(name)?.value,
   );
-  if (signedIn) return NextResponse.next();
+  if (signedIn) return pass(request);
 
   // An API route answers 401; a page leaves for the sign-in screen. Returning a
   // sign-in page to a `fetch` would produce HTML where the code expects JSON, and

@@ -70,3 +70,22 @@ export function visibilityOf(run: {
   if (isVisibility(run.visibility)) return run.visibility;
   return run.is_public ? "public" : "private";
 }
+
+/** The request header the proxy writes on every page it lets through: the
+ *  path asked for. Absent on the paths the proxy never sees (`/shared`,
+ *  `/signin`, `/inspect-view`, ...), which are the ones a restricted reader
+ *  may open. A client cannot forge it on the others: the proxy overwrites it. */
+export const PATH_HEADER = "x-playground-path";
+
+/** The paths a restricted reader may open: a run's shared page, its Inspect
+ *  log, and the sign-in screen. Everything else in the application is for
+ *  members. */
+const READER_PREFIXES = ["/shared", "/inspect-view", "/signin"];
+
+/** Whether the application's page at `path` is shown to this visitor. Only a
+ *  restricted reader is ever turned away here: a stranger is sent to sign in
+ *  by the proxy, and a member sees everything. */
+export function pageAllowed(access: Access | null, path: string | null): boolean {
+  if (access !== "restricted" || path === null) return true;
+  return READER_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}

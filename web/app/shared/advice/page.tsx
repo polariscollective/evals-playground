@@ -24,7 +24,7 @@
 // `renderMarkdown` and `notes-prose`, like the private page: two renderings
 // of the same document would end up not resembling each other.
 import type { Metadata } from "next";
-import { getSessionEmail } from "@/auth";
+import { getSessionAccess } from "@/auth";
 import { OpenInApp } from "@/components/OpenInApp";
 import { PublicHeader } from "@/components/PublicHeader";
 import { adviceReturn } from "@/lib/shared-return";
@@ -71,7 +71,9 @@ export default async function SharedAdvice({
   // Only decides one word on the link below — see `OpenInApp`. It changes
   // nothing about the documents themselves: this page serves the defaults to
   // everybody, signed in or not, because a profile's own rewrite is private.
-  const signedIn = (await getSessionEmail()) !== null;
+  // A restricted reader gets no link at all: the application is for members.
+  const access = await getSessionAccess();
+  const signedIn = access === "member";
 
   return (
     <>
@@ -79,7 +81,9 @@ export default async function SharedAdvice({
         <p className="text-xs text-zinc-500">Advice, read only</p>
         {/* The tab being read travels with the visitor. Somebody signing in
             from the judge document should come back to the judge document. */}
-        <OpenInApp href={adviceReturn(initial)} signedIn={signedIn} />
+        {access === "restricted" ? null : (
+          <OpenInApp href={adviceReturn(initial)} signedIn={signedIn} />
+        )}
       </PublicHeader>
       <main className="mx-auto w-full max-w-6xl space-y-4 px-8 pb-8 pt-6">
       <SharedAdviceView

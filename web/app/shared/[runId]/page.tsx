@@ -49,7 +49,9 @@ export default async function SharedRun({
   // "Open in the app" is for members only: a restricted reader may not.
   const signedIn = access === "member";
 
-  return <SharedRunView detail={detail} signedIn={signedIn} />;
+  return (
+    <SharedRunView detail={detail} signedIn={signedIn} appLink={access !== "restricted"} />
+  );
 }
 
 /** A restricted run, for a visitor who is not signed in: what it is, how to

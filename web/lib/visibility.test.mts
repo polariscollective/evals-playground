@@ -1,7 +1,7 @@
 // Who may sign in, as what, and what a visitor sees of a run's shared page.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accessOf, sharedView, visibilityOf } from "./visibility.ts";
+import { accessOf, sharedView, visibilityOf, pageAllowed } from "./visibility.ts";
 
 const ENV = {
   ALLOWED_EMAILS: "sam@polariscollective.org",
@@ -54,4 +54,20 @@ test("a row read before the visibility column falls back on is_public", () => {
   assert.equal(visibilityOf({ is_public: true }), "public");
   assert.equal(visibilityOf({ is_public: false }), "private");
   assert.equal(visibilityOf({ visibility: null, is_public: null }), "private");
+});
+
+test("a restricted reader opens shared runs and nothing else of the application", () => {
+  assert.equal(pageAllowed("restricted", "/shared/abc"), true);
+  assert.equal(pageAllowed("restricted", "/inspect-view/abc"), true);
+  assert.equal(pageAllowed("restricted", "/signin"), true);
+  for (const path of ["/", "/runs", "/eval/abc", "/judges", "/advice", "/settings/mcp", "/sharedx"]) {
+    assert.equal(pageAllowed("restricted", path), false, path);
+  }
+  // No header: a path the proxy never sees, all of them open ones.
+  assert.equal(pageAllowed("restricted", null), true);
+});
+
+test("a member, or a stranger the proxy already redirected, is never turned away here", () => {
+  assert.equal(pageAllowed("member", "/runs"), true);
+  assert.equal(pageAllowed(null, "/runs"), true);
 });
